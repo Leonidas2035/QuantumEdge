@@ -1,1 +1,1 @@
-# Sandbox utilities and offline experiments
+"""Sandbox utilities (moved to SupervisorAgent.research.sandbox)."""

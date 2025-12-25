@@ -1,33 +1,43 @@
-import numpy as np
-import pandas as pd
+﻿"""Deprecated wrapper. Moved to SupervisorAgent.research.offline.indicators.ohlcv_indicators."""
+from __future__ import annotations
+
+import importlib
+import sys
+from pathlib import Path
 
 
-def ema(series: pd.Series, period: int):
-    return series.ewm(span=period, adjust=False).mean().iloc[-1]
+def _find_qe_root() -> Path:
+    here = Path(__file__).resolve()
+    for parent in [here] + list(here.parents):
+        if (parent / "QuantumEdge.py").exists():
+            return parent
+    return here.parents[-1]
 
 
-def rsi(series: pd.Series, period: int = 14):
-    delta = series.diff()
-
-    gain = (delta.where(delta > 0, 0)).rolling(period).mean()
-    loss = (-delta.where(delta < 0, 0)).rolling(period).mean()
-
-    rs = gain / (loss + 1e-10)
-    rsi = 100 - (100 / (1 + rs))
-
-    return rsi.iloc[-1]
+def _ensure_sys_path() -> None:
+    root = _find_qe_root()
+    if str(root) not in sys.path:
+        sys.path.insert(0, str(root))
+    bot_dir = root / "ai_scalper_bot"
+    if bot_dir.exists() and str(bot_dir) not in sys.path:
+        sys.path.insert(0, str(bot_dir))
 
 
-def atr(df: pd.DataFrame, period=14):
-    df["hl"] = df["high"] - df["low"]
-    df["hc"] = (df["high"] - df["close"].shift()).abs()
-    df["lc"] = (df["low"] - df["close"].shift()).abs()
-
-    tr = df[["hl", "hc", "lc"]].max(axis=1)
-    return tr.rolling(period).mean().iloc[-1]
+def _target():
+    _ensure_sys_path()
+    return importlib.import_module("SupervisorAgent.research.offline.indicators.ohlcv_indicators")
 
 
-def vwap(df: pd.DataFrame):
-    pv = (df["close"] * df["volume"]).cumsum()
-    vol = df["volume"].cumsum()
-    return (pv / vol).iloc[-1]
+def __getattr__(name):
+    return getattr(_target(), name)
+
+
+def main():
+    target = _target()
+    if hasattr(target, "main"):
+        return target.main()
+    raise SystemExit("No CLI entrypoint in SupervisorAgent.research.offline.indicators.ohlcv_indicators")
+
+
+if __name__ == "__main__":
+    main()

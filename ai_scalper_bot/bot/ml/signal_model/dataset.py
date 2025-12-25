@@ -1,26 +1,43 @@
-"""
-Deprecated placeholder. Dataset creation now lives in DatasetBuilder.
-Kept for backward compatibility; prefer using DatasetBuilder directly.
-"""
+﻿"""Deprecated wrapper. Moved to SupervisorAgent.research.offline.signal_model.dataset."""
+from __future__ import annotations
 
+import importlib
+import sys
 from pathlib import Path
-from typing import Tuple
-
-import pandas as pd
-
-from bot.ml.signal_model.dataset_builder import DatasetBuilder
 
 
-class SignalDataset:
-    def __init__(self, data_path: str = "./data", symbol: str = "BTCUSDT", horizon: int = 1):
-        self.data_path = Path(data_path)
-        self.symbol = symbol
-        self.horizon = horizon
+def _find_qe_root() -> Path:
+    here = Path(__file__).resolve()
+    for parent in [here] + list(here.parents):
+        if (parent / "QuantumEdge.py").exists():
+            return parent
+    return here.parents[-1]
 
-    def create_dataset(self, limit: int = 5000) -> Tuple[pd.DataFrame, pd.Series]:
-        builder = DatasetBuilder(symbol=self.symbol, horizon=self.horizon, data_dir=self.data_path / "ticks")
-        X, y, _ = builder.build()
-        if limit and not X.empty:
-            X = X.head(limit)
-            y = y.head(limit)
-        return X, y
+
+def _ensure_sys_path() -> None:
+    root = _find_qe_root()
+    if str(root) not in sys.path:
+        sys.path.insert(0, str(root))
+    bot_dir = root / "ai_scalper_bot"
+    if bot_dir.exists() and str(bot_dir) not in sys.path:
+        sys.path.insert(0, str(bot_dir))
+
+
+def _target():
+    _ensure_sys_path()
+    return importlib.import_module("SupervisorAgent.research.offline.signal_model.dataset")
+
+
+def __getattr__(name):
+    return getattr(_target(), name)
+
+
+def main():
+    target = _target()
+    if hasattr(target, "main"):
+        return target.main()
+    raise SystemExit("No CLI entrypoint in SupervisorAgent.research.offline.signal_model.dataset")
+
+
+if __name__ == "__main__":
+    main()

@@ -29,3 +29,7 @@ Policy contract (Supervisor -> bot):
 - File: `runtime/policy.json`
 - API: `GET /api/v1/policy/current`
 - Schema: `docs/policy_schema_v1.json`
+
+Runtime vs research:
+- Live trading runtime remains under `ai_scalper_bot/bot`.
+- Offline/backtest tooling moved to `SupervisorAgent/research/` (compat wrappers remain under `ai_scalper_bot` for one stage).

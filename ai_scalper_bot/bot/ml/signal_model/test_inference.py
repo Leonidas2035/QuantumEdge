@@ -1,24 +1,43 @@
-# C:\ai_scalper_bot\bot\ml\signal_model\test_inference.py
-from dataset import SignalDataset
-from model import SignalModel
-import pandas as pd
+﻿"""Deprecated wrapper. Moved to SupervisorAgent.research.offline.signal_model.test_inference."""
+from __future__ import annotations
 
-# adjust path if needed
-ds = SignalDataset(data_path="../../data")
-symbols = ds.available_symbols()
-print("Available symbols:", symbols)
-symbol = symbols[-1]  # choose last
-print("Using symbol:", symbol)
+import importlib
+import sys
+from pathlib import Path
 
-# build a single-row dataset (most recent seconds)
-X, y = ds.build_dataset(symbol, limit_files=500, horizon_seconds=1, sample_limit=200)
-print("Built X shape:", X.shape)
 
-model = SignalModel()
-model.load("signal_model.pkl")
-# use last row as example
-x_last = X.tail(1)
-pred = model.predict(x_last)
-proba = model.predict_proba(x_last)
-print("Last features:\n", x_last.to_dict(orient="records"))
-print("Pred:", pred, "Proba:", proba)
+def _find_qe_root() -> Path:
+    here = Path(__file__).resolve()
+    for parent in [here] + list(here.parents):
+        if (parent / "QuantumEdge.py").exists():
+            return parent
+    return here.parents[-1]
+
+
+def _ensure_sys_path() -> None:
+    root = _find_qe_root()
+    if str(root) not in sys.path:
+        sys.path.insert(0, str(root))
+    bot_dir = root / "ai_scalper_bot"
+    if bot_dir.exists() and str(bot_dir) not in sys.path:
+        sys.path.insert(0, str(bot_dir))
+
+
+def _target():
+    _ensure_sys_path()
+    return importlib.import_module("SupervisorAgent.research.offline.signal_model.test_inference")
+
+
+def __getattr__(name):
+    return getattr(_target(), name)
+
+
+def main():
+    target = _target()
+    if hasattr(target, "main"):
+        return target.main()
+    raise SystemExit("No CLI entrypoint in SupervisorAgent.research.offline.signal_model.test_inference")
+
+
+if __name__ == "__main__":
+    main()

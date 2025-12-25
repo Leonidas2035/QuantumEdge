@@ -1,26 +1,43 @@
-import numpy as np
-import pandas as pd
+﻿"""Deprecated wrapper. Moved to SupervisorAgent.research.offline.indicators.volatility."""
+from __future__ import annotations
+
+import importlib
+import sys
+from pathlib import Path
 
 
-def realized_volatility(series: pd.Series, window=30):
-    returns = series.pct_change()
-    return np.sqrt(np.sum(returns**2)) * np.sqrt(1e3)
+def _find_qe_root() -> Path:
+    here = Path(__file__).resolve()
+    for parent in [here] + list(here.parents):
+        if (parent / "QuantumEdge.py").exists():
+            return parent
+    return here.parents[-1]
 
 
-def std_vol(series: pd.Series, window=30):
-    return series.pct_change().rolling(window).std().iloc[-1]
+def _ensure_sys_path() -> None:
+    root = _find_qe_root()
+    if str(root) not in sys.path:
+        sys.path.insert(0, str(root))
+    bot_dir = root / "ai_scalper_bot"
+    if bot_dir.exists() and str(bot_dir) not in sys.path:
+        sys.path.insert(0, str(bot_dir))
 
 
-def micro_price(asks, bids):
-    """
-    Microprice = (best_bid * ask_volume + best_ask * bid_volume) / (ask_volume + bid_volume)
-    """
-    if not asks or not bids:
-        return None
+def _target():
+    _ensure_sys_path()
+    return importlib.import_module("SupervisorAgent.research.offline.indicators.volatility")
 
-    best_ask = float(asks[0][0])
-    best_bid = float(bids[0][0])
-    ask_vol = float(asks[0][1])
-    bid_vol = float(bids[0][1])
 
-    return (best_ask * bid_vol + best_bid * ask_vol) / (ask_vol + bid_vol + 1e-9)
+def __getattr__(name):
+    return getattr(_target(), name)
+
+
+def main():
+    target = _target()
+    if hasattr(target, "main"):
+        return target.main()
+    raise SystemExit("No CLI entrypoint in SupervisorAgent.research.offline.indicators.volatility")
+
+
+if __name__ == "__main__":
+    main()

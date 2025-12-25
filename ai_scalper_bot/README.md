@@ -1,5 +1,9 @@
 # QuantumEdge / ai_scalper_bot
 
+## Runtime vs research
+- Runtime path: `ai_scalper_bot/bot` (live market data, execution, decisioning, hard risk, online ML inference).
+- Research/offline tooling moved to `SupervisorAgent/research/...` with thin wrappers left in `ai_scalper_bot` for one stage.
+
 ## SupervisorAgent heartbeat integration
 - The bot can send runtime heartbeats to SupervisorAgent (`QE_ROOT/SupervisorAgent`) to expose uptime, PnL, and equity in real time.
 - Configure under `config/settings.yaml` -> `supervisor` section:
@@ -38,10 +42,12 @@
 ## ML models
 - Models are stored under `storage/models/` with a registry in `storage/models/registry.json` (entries: symbol, horizon, created_at, feature_schema_hash, model_path).
 - Train all configured symbols/horizons with:
-  - `python -m bot.ml.signal_model.train_all --symbols BTCUSDT,ETHUSDT --horizons 1,5,30 --data data/ticks --min-rows 1000`
+  - `python -m SupervisorAgent.research.offline.signal_model.train_all --symbols BTCUSDT,ETHUSDT --horizons 1,5,30 --data data/ticks --min-rows 1000`
+  - (compat wrapper) `python -m bot.ml.signal_model.train_all ...`
 - On startup, the bot checks required models (config `ml.horizons`) and blocks trading if `ml.require_models=true` and any are missing. A readiness table is printed at launch.
 
 ## Backtesting & tests
-- Offline backtest: `python -m bot.sandbox.offline_loop --symbol BTCUSDT --ticks-path data/ticks/BTCUSDT_sample.csv`
+- Offline backtest: `python -m SupervisorAgent.research.sandbox.offline_loop --symbol BTCUSDT --ticks-path data/ticks/BTCUSDT_sample.csv`
+- (compat wrapper) `python -m bot.sandbox.offline_loop --symbol BTCUSDT --ticks-path data/ticks/BTCUSDT_sample.csv`
 - Run tests: `python -m pytest`
 - Recommended pre-deploy workflow: run pytest + a quick offline backtest on recent ticks to confirm risk limits and data writers behave.

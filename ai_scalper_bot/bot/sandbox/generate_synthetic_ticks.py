@@ -1,39 +1,42 @@
-import numpy as np
-import pandas as pd
+﻿"""Deprecated wrapper. Moved to SupervisorAgent.research.sandbox.generate_synthetic_ticks."""
+from __future__ import annotations
+
+import importlib
+import sys
 from pathlib import Path
 
-OUTPUT_DIR = Path("data") / "ticks"
-DEFAULT_FILE = OUTPUT_DIR / "BTCUSDT_synthetic.csv"
+
+def _find_qe_root() -> Path:
+    here = Path(__file__).resolve()
+    for parent in [here] + list(here.parents):
+        if (parent / "QuantumEdge.py").exists():
+            return parent
+    return here.parents[-1]
 
 
-def generate_ticks(n: int = 5000, symbol: str = "BTCUSDT") -> pd.DataFrame:
-    rng = np.random.default_rng(seed=42)
-    base_price = 45000.0
-    price_changes = rng.normal(loc=0, scale=5, size=n)
-    prices = base_price + np.cumsum(price_changes)
+def _ensure_sys_path() -> None:
+    root = _find_qe_root()
+    if str(root) not in sys.path:
+        sys.path.insert(0, str(root))
+    bot_dir = root / "ai_scalper_bot"
+    if bot_dir.exists() and str(bot_dir) not in sys.path:
+        sys.path.insert(0, str(bot_dir))
 
-    qty = rng.uniform(0.001, 0.01, size=n)
-    sides = rng.choice(["buy", "sell"], size=n)
 
-    timestamps = np.arange(0, n, dtype=int) * 50
-    timestamps = timestamps + 1700000000000
+def _target():
+    _ensure_sys_path()
+    return importlib.import_module("SupervisorAgent.research.sandbox.generate_synthetic_ticks")
 
-    df = pd.DataFrame(
-        {
-            "timestamp": timestamps,
-            "price": prices,
-            "qty": qty,
-            "side": sides,
-        }
-    )
-    return df
+
+def __getattr__(name):
+    return getattr(_target(), name)
 
 
 def main():
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    df = generate_ticks()
-    df.to_csv(DEFAULT_FILE, index=False)
-    print(f"[OK] Generated {len(df)} synthetic ticks at {DEFAULT_FILE}")
+    target = _target()
+    if hasattr(target, "main"):
+        return target.main()
+    raise SystemExit("No CLI entrypoint in SupervisorAgent.research.sandbox.generate_synthetic_ticks")
 
 
 if __name__ == "__main__":
