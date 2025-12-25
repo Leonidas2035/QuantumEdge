@@ -65,6 +65,24 @@ Bot loading (from `config/bot.yaml`):
 - `ml.runtime_models_dir`: default `runtime/models`
 - `ml.ml_required`: if true, missing/invalid models disable trading
 
+## Research suite (SupervisorAgent)
+Offline research runs live under `SupervisorAgent/research/` and write outputs to `artifacts/research/<run_id>/`.
+These commands never call external services and are deterministic with a fixed seed.
+
+Commands:
+- Backtest: `python SupervisorAgent/supervisor.py research backtest --symbol BTCUSDT --data_dir data/ticks`
+- Replay: `python SupervisorAgent/supervisor.py research replay --symbol BTCUSDT --data_dir data/ticks --speed 1.0`
+- Scenario: `python SupervisorAgent/supervisor.py research scenario --name spread_spike --symbol BTCUSDT --data_dir data/ticks`
+
+Outputs per run:
+- `results.json` (metrics + trades)
+- `summary.md` (human readable)
+- `trades.jsonl` and `equity_curve.csv` (optional)
+
+Add new scenarios by:
+1) Defining a `ScenarioSpec` in `SupervisorAgent/research/scenarios/definitions.py`
+2) Applying logic in `SupervisorAgent/research/scenarios/injector.py`
+
 ## Policy contract (Supervisor -> bot)
 Supervisor publishes a versioned policy contract that the bot consumes:
 - File: `runtime/policy.json` (atomic write every few seconds)

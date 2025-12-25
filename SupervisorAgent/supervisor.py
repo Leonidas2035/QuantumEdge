@@ -809,6 +809,7 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
             "tsdb-migrate",
             "tsdb-maintain",
             "ml",
+            "research",
         ],
         help="Command to execute",
     )
@@ -971,6 +972,15 @@ def main(argv: Optional[list[str]] = None) -> None:
 
             ml_args = parse_ml_args(args.ml_args)
             code = run_ml_command(ml_args)
+            sys.exit(code)
+        elif args.command == "research":
+            try:
+                from SupervisorAgent.research.cli import parse_research_args, run_research_command
+            except ModuleNotFoundError:
+                from research.cli import parse_research_args, run_research_command
+
+            research_args = parse_research_args(args.ml_args)
+            code = run_research_command(research_args)
             sys.exit(code)
     except Exception as exc:
         logging.getLogger(__name__).exception("Command '%s' failed: %s", args.command, exc)

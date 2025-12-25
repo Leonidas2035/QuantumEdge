@@ -38,3 +38,8 @@ Runtime vs research:
 ModelOps (SupervisorAgent):
 - Train/publish models: `python SupervisorAgent/supervisor.py ml train --symbol BTCUSDT --horizons 1,5,30 --source ticks --input-dir data/ticks --publish`
 - Runtime models live under `runtime/models/<symbol>/<horizon>/current/`
+
+Research suite (SupervisorAgent):
+- Backtest: `python SupervisorAgent/supervisor.py research backtest --symbol BTCUSDT --data_dir data/ticks`
+- Replay: `python SupervisorAgent/supervisor.py research replay --symbol BTCUSDT --data_dir data/ticks --speed 1.0`
+- Scenario: `python SupervisorAgent/supervisor.py research scenario --name spread_spike --symbol BTCUSDT --data_dir data/ticks`
