@@ -48,6 +48,21 @@ Supervisor API endpoints (local, no secrets):
 - `POST /api/v1/bot/stop`: stop the bot.
 - `POST /api/v1/bot/restart`: restart the bot.
 
+## Policy contract (Supervisor -> bot)
+Supervisor publishes a versioned policy contract that the bot consumes:
+- File: `runtime/policy.json` (atomic write every few seconds)
+- API: `GET /api/v1/policy/current`
+- Schema: `docs/policy_schema_v1.json`
+
+Bot defaults (from `config/bot.yaml`):
+- `policy.policy_source`: `file` | `api` | `auto` (file-first)
+- `policy.policy_file_path`: default `runtime/policy.json`
+- `policy.policy_api_url`: default `http://127.0.0.1:8765/api/v1/policy/current`
+- `policy.policy_ttl_grace_sec`: default `0`
+- `policy.safe_mode_default`: default `risk_off`
+
+If no fresh policy is available, the bot enters safe mode (no new entries, exits allowed).
+
 ## Secrets (local only, BingX demo)
 Secrets are loaded locally and never committed.
 

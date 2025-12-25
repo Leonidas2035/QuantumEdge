@@ -30,3 +30,16 @@ snapshots:
   enabled: true
   interval_minutes: 5
   history_window_minutes: 15
+
+# Policy publishing (Supervisor -> bot)
+policy:
+  publish_interval_s: 5
+  ttl_sec: 30
+  file_path: "runtime/policy.json"
+  allow_trading: true
+  mode: "normal"   # normal | scalp | risk_off | conservative
+  size_multiplier: 1.0
+  cooldown_sec: 0
+  spread_max_bps: null
+  max_daily_loss: null
+  reason: "OK"

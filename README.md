@@ -24,3 +24,8 @@ Recommended entrypoint:
 - `python QuantumEdge.py stop`
 
 Supervisor health endpoint: `/api/v1/dashboard/health` (configurable via `config/supervisor.yaml` `health_path`).
+
+Policy contract (Supervisor -> bot):
+- File: `runtime/policy.json`
+- API: `GET /api/v1/policy/current`
+- Schema: `docs/policy_schema_v1.json`

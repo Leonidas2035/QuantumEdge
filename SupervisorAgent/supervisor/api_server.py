@@ -142,6 +142,14 @@ class ApiServer:
             def do_GET(self) -> None:  # noqa: N802
                 if not self._check_auth():
                     return
+                if self.path == "/api/v1/policy/current":
+                    try:
+                        response = app.get_policy_payload()
+                        self._send_json(200, response)
+                    except Exception as exc:  # pylint: disable=broad-except
+                        logger.exception("Error building policy payload: %s", exc)
+                        self._send_json(500, {"error": "internal_error"})
+                    return
                 if self.path == "/api/v1/bot/status":
                     try:
                         response = app.get_bot_status()

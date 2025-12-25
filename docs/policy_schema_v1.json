@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "QuantumEdge Policy Contract v1",
+  "type": "object",
+  "required": ["version", "ts", "ttl_sec", "allow_trading", "mode"],
+  "properties": {
+    "version": { "type": "string", "minLength": 1 },
+    "ts": { "type": "integer", "minimum": 0 },
+    "ttl_sec": { "type": "integer", "minimum": 1 },
+    "allow_trading": { "type": "boolean" },
+    "mode": { "type": "string", "enum": ["conservative", "normal", "risk_off", "scalp"] },
+    "size_multiplier": { "type": "number", "minimum": 0.0, "default": 1.0 },
+    "cooldown_sec": { "type": "integer", "minimum": 0, "default": 0 },
+    "spread_max_bps": { "type": "number", "minimum": 0.0 },
+    "max_daily_loss": { "type": "number", "minimum": 0.0 },
+    "reason": { "type": "string", "minLength": 1, "default": "OK" }
+  },
+  "additionalProperties": true
+}

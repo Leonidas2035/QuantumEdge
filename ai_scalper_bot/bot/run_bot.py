@@ -31,6 +31,7 @@ from bot.integrations.supervisor_snapshot_client import SupervisorSnapshotClient
 from bot.monitoring.supervisor_snapshot_monitor import run_supervisor_snapshot_monitor
 from bot.risk.scalp_guards import ScalpGuard
 from bot.ops.status_writer import BotStatusWriter
+from bot.policy.policy_client import PolicyClient
 
 _kill_cache = {"ts": 0.0, "active": False, "reason": None}
 
@@ -138,6 +139,23 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
     supervisor_cfg = load_supervisor_settings(config)
     print(f"[INFO] Using config: {config.config_path}")
     print(f"[INFO] Supervisor URL: {supervisor_cfg.base_url}")
+    policy_cfg = config.get("policy", {}) or {}
+    policy_source = str(policy_cfg.get("policy_source", "auto")).lower()
+    policy_file_raw = policy_cfg.get("policy_file_path", "runtime/policy.json")
+    policy_file_path = Path(policy_file_raw)
+    if not policy_file_path.is_absolute():
+        policy_file_path = (Path(config.qe_root) / policy_file_path).resolve()
+    policy_api_url = str(policy_cfg.get("policy_api_url", "http://127.0.0.1:8765/api/v1/policy/current"))
+    policy_ttl_grace_sec = int(policy_cfg.get("policy_ttl_grace_sec", 0) or 0)
+    safe_mode_default = str(policy_cfg.get("safe_mode_default", "risk_off"))
+    policy_client = PolicyClient(
+        source=policy_source,
+        file_path=policy_file_path,
+        api_url=policy_api_url,
+        ttl_grace_sec=policy_ttl_grace_sec,
+        safe_mode_default=safe_mode_default,
+        request_timeout_s=float(policy_cfg.get("policy_api_timeout_s", 0.3)),
+    )
     mode = str(config.get("app.mode", "paper")).lower()
     demo_mode = mode == "demo"
     data_source = _resolve_data_source()
@@ -440,6 +458,11 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
                     approved = True
                     print(f"[WARN] LLM risk moderator failed; falling back to rules. err={exc}")
 
+            policy = policy_client.get_effective_policy()
+            policy_allows_entry = bool(policy.allow_trading) and policy.mode != "risk_off"
+            if policy.cooldown_sec > 0 and time.time() < (policy.ts + policy.cooldown_sec):
+                policy_allows_entry = False
+
             position_state = 1 if trader.position > 0 else (-1 if trader.position < 0 else 0)
             if trading_enabled and not skip_trading and meta.components:
                 decision = engine.decide(
@@ -450,7 +473,18 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
                     approved=approved,
                     warmup_ready=True,
                 )
-                if decision.action not in (DecisionAction.NO_TRADE, DecisionAction.HOLD):
+                if decision.action == DecisionAction.ENTER and not policy_allows_entry:
+                    logging.getLogger("policy_client").info(
+                        "Policy blocks entry for %s (mode=%s allow_trading=%s reason=%s)",
+                        evt_symbol,
+                        policy.mode,
+                        policy.allow_trading,
+                        policy.reason,
+                    )
+                    decision = None
+                elif decision.action == DecisionAction.ENTER and policy.size_multiplier != 1.0:
+                    decision.size = max(0.0, decision.size * policy.size_multiplier)
+                if decision and decision.action not in (DecisionAction.NO_TRADE, DecisionAction.HOLD):
                     # Map decision to existing trader actions
                     async def _supervisor_allows(action: str, size: float, reduce_only: bool) -> bool:
                         if supervisor_client is None:
@@ -564,6 +598,9 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
                 "risk_block": engine.last_risk_state.get(evt_symbol, ""),
                 "kill_switch": bool(_kill_switch_active().get("active")),
                 "kill_reason": _kill_switch_active().get("reason"),
+                "policy_mode": policy.mode,
+                "policy_allow_trading": policy.allow_trading,
+                "policy_reason": policy.reason,
             }
 
             write_status(status_extra)

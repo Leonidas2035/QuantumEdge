@@ -47,6 +47,14 @@ supervisor:
   risk_on_error: "bypass"
   risk_log_level: "info"
 
+policy:
+  policy_source: "auto"  # file | api | auto
+  policy_file_path: "runtime/policy.json"
+  policy_api_url: "http://127.0.0.1:8765/api/v1/policy/current"
+  policy_api_timeout_s: 0.3
+  policy_ttl_grace_sec: 0
+  safe_mode_default: "risk_off"
+
 ops:
   status_file: "runtime/bot_status.json"
   write_interval_seconds: 2

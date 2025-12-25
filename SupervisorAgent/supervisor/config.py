@@ -46,6 +46,16 @@ class SupervisorConfig:
     bot_restart_enabled: bool = True
     bot_restart_max_retries: int = 5
     bot_restart_backoff_seconds: List[int] = field(default_factory=lambda: [1, 2, 5, 10, 30])
+    policy_publish_interval_s: float = 5.0
+    policy_ttl_sec: int = 30
+    policy_file_path: str = "runtime/policy.json"
+    policy_allow_trading: bool = True
+    policy_mode: str = "normal"
+    policy_size_multiplier: float = 1.0
+    policy_cooldown_sec: int = 0
+    policy_spread_max_bps: Optional[float] = None
+    policy_max_daily_loss: Optional[float] = None
+    policy_reason: str = "OK"
 
 
 @dataclass
@@ -309,6 +319,30 @@ def load_supervisor_config(path: Path) -> SupervisorConfig:
     if not bot_restart_backoff_seconds:
         bot_restart_backoff_seconds = [1, 2, 5, 10, 30]
 
+    policy_section = raw.get("policy", {}) or {}
+    policy_publish_interval_s = float(policy_section.get("publish_interval_s", 5))
+    if policy_publish_interval_s <= 0:
+        policy_publish_interval_s = 5.0
+    policy_ttl_sec = int(policy_section.get("ttl_sec", 30))
+    if policy_ttl_sec <= 0:
+        policy_ttl_sec = 30
+    policy_file_path = str(policy_section.get("file_path", "runtime/policy.json"))
+    policy_allow_trading = bool(policy_section.get("allow_trading", True))
+    policy_mode = str(policy_section.get("mode", "normal"))
+    policy_size_multiplier = float(policy_section.get("size_multiplier", 1.0))
+    if policy_size_multiplier < 0:
+        policy_size_multiplier = 0.0
+    policy_cooldown_sec = int(policy_section.get("cooldown_sec", 0))
+    if policy_cooldown_sec < 0:
+        policy_cooldown_sec = 0
+    policy_spread_max_bps = policy_section.get("spread_max_bps")
+    if policy_spread_max_bps is not None:
+        policy_spread_max_bps = float(policy_spread_max_bps)
+    policy_max_daily_loss = policy_section.get("max_daily_loss")
+    if policy_max_daily_loss is not None:
+        policy_max_daily_loss = float(policy_max_daily_loss)
+    policy_reason = str(policy_section.get("reason", "OK"))
+
     return SupervisorConfig(
         mode=mode,
         heartbeat_port=heartbeat_port,
@@ -327,6 +361,16 @@ def load_supervisor_config(path: Path) -> SupervisorConfig:
         bot_restart_enabled=bot_restart_enabled,
         bot_restart_max_retries=bot_restart_max_retries,
         bot_restart_backoff_seconds=bot_restart_backoff_seconds,
+        policy_publish_interval_s=policy_publish_interval_s,
+        policy_ttl_sec=policy_ttl_sec,
+        policy_file_path=policy_file_path,
+        policy_allow_trading=policy_allow_trading,
+        policy_mode=policy_mode,
+        policy_size_multiplier=policy_size_multiplier,
+        policy_cooldown_sec=policy_cooldown_sec,
+        policy_spread_max_bps=policy_spread_max_bps,
+        policy_max_daily_loss=policy_max_daily_loss,
+        policy_reason=policy_reason,
     )
 
 

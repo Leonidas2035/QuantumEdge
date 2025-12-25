@@ -57,6 +57,9 @@ from supervisor.tasks.snapshot_scheduler import SnapshotScheduler
 from supervisor.dashboard.service import DashboardService
 from supervisor.tsdb import NoopTimeseriesStore, ClickHouseTimeseriesStore, QuestDbTimeseriesStore, TsdbWriter
 from supervisor.tsdb.maintenance import apply_retention_and_rollups
+from policy.policy_contract import policy_fingerprint
+from policy.policy_store import PolicyStore
+from policy.policy_publisher import PolicyPublisher
 
 try:
     from tools.qe_config import get_qe_paths
@@ -159,6 +162,22 @@ class SupervisorApp:
         )
         self.api_server = ApiServer(api_config, self, self.logger) if config.api_enabled else None
         self._lock = threading.Lock()
+        policy_file = Path(config.policy_file_path)
+        if not policy_file.is_absolute():
+            policy_file = self.paths.qe_root / policy_file
+        self.policy_store = PolicyStore(
+            ttl_sec=config.policy_ttl_sec,
+            allow_trading=config.policy_allow_trading,
+            mode=config.policy_mode,
+            size_multiplier=config.policy_size_multiplier,
+            cooldown_sec=config.policy_cooldown_sec,
+            spread_max_bps=config.policy_spread_max_bps,
+            max_daily_loss=config.policy_max_daily_loss,
+            reason=config.policy_reason,
+        )
+        self.policy_publisher = PolicyPublisher(policy_file, self.logger)
+        self.policy_publish_interval_s = float(config.policy_publish_interval_s)
+        self._last_policy_fingerprint: Optional[str] = None
 
     def _build_tsdb_writer(self, tsdb_config: TsdbConfig) -> Optional[TsdbWriter]:
         self.tsdb_backend = "none"
@@ -218,6 +237,27 @@ class SupervisorApp:
     def get_bot_status(self) -> Dict[str, Any]:
         return self.process_manager.get_status_payload()
 
+    def get_policy_payload(self) -> Dict[str, Any]:
+        policy = self.policy_store.get_current_policy()
+        return policy.to_dict()
+
+    def _publish_policy(self) -> None:
+        policy = self.policy_store.get_current_policy()
+        if not self.policy_publisher.publish(policy):
+            return
+        fingerprint = policy_fingerprint(policy)
+        if fingerprint != self._last_policy_fingerprint:
+            self.logger.info(
+                "Policy updated: mode=%s allow_trading=%s ttl=%s size_multiplier=%.3f reason=%s hash=%s",
+                policy.mode,
+                policy.allow_trading,
+                policy.ttl_sec,
+                policy.size_multiplier,
+                policy.reason,
+                fingerprint[:12],
+            )
+            self._last_policy_fingerprint = fingerprint
+
     def start_bot(self) -> Dict[str, Any]:
         try:
             self.process_manager.start(self.config.mode)
@@ -247,11 +287,15 @@ class SupervisorApp:
         next_llm_check_at = time.time() + (self.llm_config.check_interval_minutes * 60 if self.llm_config.enabled else 0)
         snapshot_interval = self.snapshot_config.interval_minutes * 60 if self.snapshot_config.enabled else None
         next_snapshot_at = time.time() + snapshot_interval if snapshot_interval else float("inf")
+        next_policy_publish_at = 0.0
         if self.api_server:
             self.api_server.start()
         try:
             while True:
                 self.process_manager.tick(self.config.mode)
+                if time.time() >= next_policy_publish_at:
+                    self._publish_policy()
+                    next_policy_publish_at = time.time() + self.policy_publish_interval_s
                 if (
                     self.llm_config.enabled
                     and time.time() >= next_llm_check_at
