@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 import sys
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Optional, List
 
@@ -41,6 +41,10 @@ class SupervisorConfig:
     bot_entrypoint: str = "ai_scalper_bot/run_bot.py"
     bot_workdir: str = "ai_scalper_bot"
     bot_config: str = "config/bot.yaml"
+    bot_auto_start: bool = True
+    bot_restart_enabled: bool = True
+    bot_restart_max_retries: int = 5
+    bot_restart_backoff_seconds: List[int] = field(default_factory=lambda: [1, 2, 5, 10, 30])
 
 
 @dataclass
@@ -282,6 +286,26 @@ def load_supervisor_config(path: Path) -> SupervisorConfig:
     bot_entrypoint = str(raw.get("bot_entrypoint", "ai_scalper_bot/run_bot.py"))
     bot_workdir = str(raw.get("bot_workdir", "ai_scalper_bot"))
     bot_config = str(raw.get("bot_config", "config/bot.yaml"))
+    bot_section = raw.get("bot", {}) or {}
+    bot_auto_start = bool(bot_section.get("auto_start", True))
+    restart_section = bot_section.get("restart", {}) or {}
+    bot_restart_enabled = bool(restart_section.get("enabled", True))
+    bot_restart_max_retries = int(restart_section.get("max_retries", restart_max_attempts))
+    if bot_restart_max_retries < 0:
+        bot_restart_max_retries = 0
+    backoff_raw = restart_section.get("backoff_seconds")
+    if isinstance(backoff_raw, list) and backoff_raw:
+        bot_restart_backoff_seconds = [int(val) for val in backoff_raw if int(val) > 0]
+    elif backoff_raw is None:
+        bot_restart_backoff_seconds = [int(restart_backoff_s)] if restart_backoff_s > 0 else [1, 2, 5, 10, 30]
+    else:
+        try:
+            val = float(backoff_raw)
+            bot_restart_backoff_seconds = [int(val)] if val > 0 else [1, 2, 5, 10, 30]
+        except (TypeError, ValueError):
+            bot_restart_backoff_seconds = [1, 2, 5, 10, 30]
+    if not bot_restart_backoff_seconds:
+        bot_restart_backoff_seconds = [1, 2, 5, 10, 30]
 
     return SupervisorConfig(
         mode=mode,
@@ -296,6 +320,10 @@ def load_supervisor_config(path: Path) -> SupervisorConfig:
         bot_entrypoint=bot_entrypoint,
         bot_workdir=bot_workdir,
         bot_config=bot_config,
+        bot_auto_start=bot_auto_start,
+        bot_restart_enabled=bot_restart_enabled,
+        bot_restart_max_retries=bot_restart_max_retries,
+        bot_restart_backoff_seconds=bot_restart_backoff_seconds,
     )
 
 

@@ -325,6 +325,12 @@ def _wait_for_http_ready(
 
 
 def _get_supervisor_bot_state(supervisor_url: str, logger: logging.Logger) -> tuple[str, Optional[int]]:
+    api_url = _join_url(supervisor_url, "/api/v1/bot/status")
+    payload = _fetch_json(api_url, logger)
+    if payload and isinstance(payload, dict) and payload.get("state"):
+        state = str(payload.get("state", "UNKNOWN")).upper()
+        pid = payload.get("pid") if isinstance(payload.get("pid"), int) else None
+        return state, pid
     status_url = _join_url(supervisor_url, "/api/v1/status")
     payload = _fetch_json(status_url, logger)
     if not payload or not isinstance(payload.get("bot"), dict):
@@ -478,6 +484,10 @@ def _run_diag(
     print(f"Supervisor health path: {orchestrator_settings['health_path']}")
     managed_by_supervisor = _resolve_bot_management(supervisor_config, orchestrator_settings)
     print(f"Bot managed_by_supervisor: {managed_by_supervisor}")
+    if managed_by_supervisor:
+        state, pid = _get_supervisor_bot_state(supervisor_settings["url"], logging.getLogger("quantumedge"))
+        pid_note = f" pid={pid}" if pid else ""
+        print(f"Supervisor bot state: {state}{pid_note}")
 
     failures = 0
     for name, path in config_paths.items():

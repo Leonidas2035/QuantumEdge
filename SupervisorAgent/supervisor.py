@@ -205,15 +205,36 @@ class SupervisorApp:
 
     def start(self) -> None:
         info = self.process_manager.start(self.config.mode)
-        self.logger.info("QuantumEdge started with PID %s", info.pid)
+        self.logger.info("Bot started with PID %s", info.pid)
 
     def stop(self) -> None:
         self.process_manager.stop()
-        self.logger.info("QuantumEdge stopped.")
+        self.logger.info("Bot stopped.")
 
     def restart(self) -> None:
         info = self.process_manager.restart(self.config.mode)
-        self.logger.info("QuantumEdge restarted with PID %s", info.pid)
+        self.logger.info("Bot restarted with PID %s", info.pid)
+
+    def get_bot_status(self) -> Dict[str, Any]:
+        return self.process_manager.get_status_payload()
+
+    def start_bot(self) -> Dict[str, Any]:
+        try:
+            self.process_manager.start(self.config.mode)
+        except Exception as exc:
+            self.logger.error("Bot start failed: %s", exc)
+        return self.get_bot_status()
+
+    def stop_bot(self) -> Dict[str, Any]:
+        self.process_manager.stop()
+        return self.get_bot_status()
+
+    def restart_bot(self) -> Dict[str, Any]:
+        try:
+            self.process_manager.restart(self.config.mode)
+        except Exception as exc:
+            self.logger.error("Bot restart failed: %s", exc)
+        return self.get_bot_status()
 
     def status(self) -> None:
         running = self.process_manager.is_running()
@@ -223,7 +244,6 @@ class SupervisorApp:
     def run_foreground(self) -> None:
         """Run supervisor loop, restarting the child if it dies."""
 
-        attempts = 0
         next_llm_check_at = time.time() + (self.llm_config.check_interval_minutes * 60 if self.llm_config.enabled else 0)
         snapshot_interval = self.snapshot_config.interval_minutes * 60 if self.snapshot_config.enabled else None
         next_snapshot_at = time.time() + snapshot_interval if snapshot_interval else float("inf")
@@ -231,18 +251,7 @@ class SupervisorApp:
             self.api_server.start()
         try:
             while True:
-                if not self.process_manager.is_running():
-                    if attempts > self.config.restart_max_attempts:
-                        self.logger.error("Exceeded restart attempts; exiting foreground loop.")
-                        break
-                    attempts += 1
-                    try:
-                        self.process_manager.start(self.config.mode)
-                        attempts = 0
-                    except Exception as exc:
-                        self.logger.error("Start attempt failed (%s/%s): %s", attempts, self.config.restart_max_attempts, exc)
-                        time.sleep(self.config.restart_backoff_s)
-                        continue
+                self.process_manager.tick(self.config.mode)
                 if (
                     self.llm_config.enabled
                     and time.time() >= next_llm_check_at
@@ -293,19 +302,20 @@ class SupervisorApp:
         heartbeat_state = self.heartbeat_server.get_state()
         heartbeat_status = heartbeat_state.status
         risk_state = self.risk_engine.get_state()
+        state = self.process_manager.get_state()
 
         print("Supervisor status")
         print("=================")
         if running and info:
             uptime = (datetime.now(info.start_time.tzinfo) - info.start_time).total_seconds() if info.start_time else None
             uptime_str = f"{uptime:.0f}s" if uptime is not None else "unknown"
-            print(f"QuantumEdge: RUNNING (pid={info.pid}, uptime={uptime_str})")
+            print(f"Bot: {state} (pid={info.pid}, uptime={uptime_str})")
         elif info:
             exit_code = info.last_exit_code if info.last_exit_code is not None else "unknown"
             exit_time = info.last_exit_time.isoformat() if info.last_exit_time else "unknown time"
-            print(f"QuantumEdge: STOPPED (last exit code={exit_code}, last exit={exit_time})")
+            print(f"Bot: {state} (last exit code={exit_code}, last exit={exit_time})")
         else:
-            print("QuantumEdge: NOT STARTED")
+            print(f"Bot: {state}")
 
         print(f"Heartbeat: {heartbeat_status}")
         if heartbeat_state.last_heartbeat_time:
@@ -494,10 +504,16 @@ class SupervisorApp:
 
         running = self.process_manager.is_running()
         info = self.process_manager.get_info()
+        status = self.process_manager.get_status_payload()
         heartbeat_state = self.heartbeat_server.get_state()
         snapshot = self.risk_engine.get_state()
 
-        bot_data: Dict[str, Any] = {"running": running}
+        bot_data: Dict[str, Any] = {
+            "running": running,
+            "state": status.get("state"),
+            "restarts": status.get("restarts"),
+            "last_exit_code": status.get("last_exit_code"),
+        }
         if running and info:
             uptime = (datetime.now(info.start_time.tzinfo) - info.start_time).total_seconds() if info.start_time else None
             bot_data.update({"pid": info.pid, "uptime_seconds": uptime})

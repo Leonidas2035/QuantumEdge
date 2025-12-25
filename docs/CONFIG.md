@@ -36,4 +36,16 @@ Use the single entrypoint from the repo root:
 `config/quantumedge.yaml` includes orchestrator defaults (health probe path, startup timeout, and whether Supervisor spawns the bot).
 The Supervisor health endpoint defaults to `/api/v1/dashboard/health` and can be overridden via `config/supervisor.yaml` (`health_path`).
 
+## Bot lifecycle (Supervisor-managed)
+Supervisor is the single authority for bot lifecycle. Configuration lives in `config/supervisor.yaml`:
+- `bot.auto_start`: start the bot automatically on Supervisor boot.
+- `bot.restart.enabled`: restart on crash with bounded retries.
+- `bot.restart.max_retries` and `bot.restart.backoff_seconds`: restart policy.
+
+Supervisor API endpoints (local, no secrets):
+- `GET /api/v1/bot/status`: current bot state (RUNNING/STOPPED/CRASHED/FAILED/STARTING).
+- `POST /api/v1/bot/start`: start the bot if stopped.
+- `POST /api/v1/bot/stop`: stop the bot.
+- `POST /api/v1/bot/restart`: restart the bot.
+
 All commands assume a single root `.venv` and use `QE_ROOT` for resolution.

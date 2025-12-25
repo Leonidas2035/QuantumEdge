@@ -18,6 +18,13 @@ bot_entrypoint: "ai_scalper_bot/run_bot.py"
 bot_workdir: "ai_scalper_bot"
 bot_config: "config/bot.yaml"
 
+bot:
+  auto_start: true
+  restart:
+    enabled: true
+    max_retries: 5
+    backoff_seconds: [1, 2, 5, 10, 30]
+
 snapshots:
   enabled: true
   interval_minutes: 5

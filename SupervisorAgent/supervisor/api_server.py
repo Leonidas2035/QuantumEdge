@@ -87,6 +87,30 @@ class ApiServer:
             def do_POST(self) -> None:  # noqa: N802
                 if not self._check_auth():
                     return
+                if self.path == "/api/v1/bot/restart":
+                    try:
+                        response = app.restart_bot()
+                        self._send_json(200, response)
+                    except Exception as exc:  # pylint: disable=broad-except
+                        logger.exception("Error restarting bot: %s", exc)
+                        self._send_json(500, {"error": "internal_error"})
+                    return
+                if self.path == "/api/v1/bot/stop":
+                    try:
+                        response = app.stop_bot()
+                        self._send_json(200, response)
+                    except Exception as exc:  # pylint: disable=broad-except
+                        logger.exception("Error stopping bot: %s", exc)
+                        self._send_json(500, {"error": "internal_error"})
+                    return
+                if self.path == "/api/v1/bot/start":
+                    try:
+                        response = app.start_bot()
+                        self._send_json(200, response)
+                    except Exception as exc:  # pylint: disable=broad-except
+                        logger.exception("Error starting bot: %s", exc)
+                        self._send_json(500, {"error": "internal_error"})
+                    return
                 if self.path == "/api/v1/heartbeat":
                     payload = self._parse_json()
                     if payload is None:
@@ -117,6 +141,14 @@ class ApiServer:
 
             def do_GET(self) -> None:  # noqa: N802
                 if not self._check_auth():
+                    return
+                if self.path == "/api/v1/bot/status":
+                    try:
+                        response = app.get_bot_status()
+                        self._send_json(200, response)
+                    except Exception as exc:  # pylint: disable=broad-except
+                        logger.exception("Error building bot status: %s", exc)
+                        self._send_json(500, {"error": "internal_error"})
                     return
                 if self.path == "/api/v1/status":
                     try:

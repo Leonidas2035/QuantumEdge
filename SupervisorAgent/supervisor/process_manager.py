@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import signal
@@ -33,6 +34,14 @@ class ProcessInfo:
         return None
 
 
+class BotState:
+    STOPPED = "STOPPED"
+    STARTING = "STARTING"
+    RUNNING = "RUNNING"
+    CRASHED = "CRASHED"
+    FAILED = "FAILED"
+
+
 class ProcessManager:
     """Starts, stops, and tracks the QuantumEdge child process."""
 
@@ -54,39 +63,70 @@ class ProcessManager:
         self._child_log_file = None
         self._info: Optional[ProcessInfo] = state_utils.load_process_info(state_dir)
         self._restart_attempts = 0
+        self._next_restart_at: Optional[float] = None
+        self._state = BotState.STOPPED
+        self._stop_requested = False
+        self._auto_start_suspended = False
+        self._state_path = self.state_dir / "bot.state.json"
 
         if self._info and not self._pid_running(self._info.pid):
             self.logger.info("Found stale process state; marking process as stopped.")
             if self._info.last_exit_time is None:
                 self._info.last_exit_time = datetime.now(timezone.utc)
             state_utils.save_process_info(self.state_dir, self._info)
+            self._state = BotState.STOPPED
+        elif self._info and self._pid_running(self._info.pid):
+            self._state = BotState.RUNNING
+
+        self._write_bot_state()
 
     def get_info(self) -> Optional[ProcessInfo]:
         return self._info
 
+    def get_state(self) -> str:
+        return self._state
+
+    def get_status_payload(self) -> dict:
+        pid = self._info.pid if self._info and self._pid_running(self._info.pid) else None
+        last_exit_code = self._info.last_exit_code if self._info else None
+        last_exit_time = self._info.last_exit_time.isoformat() if self._info and self._info.last_exit_time else None
+        return {
+            "managed": True,
+            "state": self._state,
+            "pid": pid,
+            "restarts": self._restart_attempts,
+            "last_exit_code": last_exit_code,
+            "last_exit_time": last_exit_time,
+        }
+
+    def tick(self, mode: str) -> None:
+        """Poll process status and apply restart policy."""
+
+        self._refresh_state()
+        if self._state == BotState.RUNNING:
+            return
+        if mode == "off":
+            return
+
+        if self._state == BotState.CRASHED and self._next_restart_at is not None:
+            if time.monotonic() < self._next_restart_at:
+                return
+            self._next_restart_at = None
+
+        if self._state in {BotState.STOPPED, BotState.CRASHED}:
+            if self._state == BotState.STOPPED and (not self.config.bot_auto_start or self._auto_start_suspended):
+                return
+            if self._state == BotState.CRASHED and not self.config.bot_restart_enabled:
+                return
+            try:
+                self.start(mode)
+            except Exception as exc:
+                self.logger.error("Bot start attempt failed: %s", exc)
+
     def is_running(self) -> bool:
         """Check whether the managed process is currently alive."""
-
-        if self._process:
-            return_code = self._process.poll()
-            if return_code is None:
-                return True
-            self.logger.warning("QuantumEdge exited with code %s", return_code)
-            self._update_exit_state(return_code)
-            if self._events:
-                self._events.log_anomaly("unexpected_exit", f"Process exited with code {return_code}", {"pid": self._info.pid if self._info else None})
-                self._log_bot_stop("unexpected-exit")
-            self._cleanup_process_handles()
-            return False
-
-        if self._info:
-            alive = self._pid_running(self._info.pid)
-            if alive:
-                return True
-            if self._info.last_exit_time is None:
-                self._update_exit_state(self._info.last_exit_code)
-
-        return False
+        self._refresh_state()
+        return self._state == BotState.RUNNING
 
     def start(self, mode: str) -> ProcessInfo:
         """Start the QuantumEdge process if not already running."""
@@ -95,50 +135,43 @@ class ProcessManager:
             raise ValueError("Cannot start QuantumEdge when mode is 'off'.")
 
         if self.is_running():
-            self.logger.info("QuantumEdge already running with PID %s", self._info.pid)
+            self.logger.info("Bot already running with PID %s", self._info.pid)
             return self._info  # type: ignore[return-value]
 
-        attempts = 0
-        last_error: Optional[Exception] = None
-
-        while attempts <= self.config.restart_max_attempts:
-            attempts += 1
-            try:
-                info = self._spawn_process(mode)
-                time.sleep(0.5)
-                if self._process and self._process.poll() is None:
-                    self.logger.info("Started QuantumEdge PID %s (attempt %s)", info.pid, attempts)
-                    self._restart_attempts = 0
-                    if self._events:
-                        self._events.log_bot_start(mode, info)
-                    return info
-                # Process exited immediately
-                return_code = self._process.poll() if self._process else None
-                self.logger.error("QuantumEdge exited immediately with code %s", return_code)
-                last_error = RuntimeError(f"Immediate exit with code {return_code}")
-                self._update_exit_state(return_code)
-                self._log_bot_stop("immediate-exit")
-                if self._events:
-                    self._events.log_anomaly("immediate_exit", f"Process exited during startup with code {return_code}")
-            except Exception as exc:
-                last_error = exc
-                self.logger.exception("Failed to start QuantumEdge (attempt %s/%s)", attempts, self.config.restart_max_attempts + 1)
-            self._cleanup_process_handles()
-            if attempts <= self.config.restart_max_attempts:
-                self.logger.info("Retrying start after %.1fs backoff", self.config.restart_backoff_s)
-                time.sleep(self.config.restart_backoff_s)
-
-        raise RuntimeError(f"Unable to start QuantumEdge after {attempts} attempts: {last_error}")
+        self._stop_requested = False
+        self._auto_start_suspended = False
+        self._set_state(BotState.STARTING)
+        info = self._spawn_process(mode)
+        time.sleep(0.5)
+        if self._process and self._process.poll() is None:
+            self._set_state(BotState.RUNNING)
+            self._restart_attempts = 0
+            self._next_restart_at = None
+            self._write_bot_state()
+            if self._events:
+                self._events.log_bot_start(mode, info)
+            self.logger.info("Bot started with PID %s", info.pid)
+            return info
+        return_code = self._process.poll() if self._process else None
+        self.logger.error("Bot exited immediately with code %s", return_code)
+        self._handle_exit(return_code, "immediate-exit")
+        raise RuntimeError(f"Bot exited during startup with code {return_code}")
 
     def stop(self, graceful_timeout_s: float = 10.0) -> None:
         """Stop the managed process."""
+        self._stop_requested = True
+        self._auto_start_suspended = True
 
         if not self._info or not self.is_running():
             self._cleanup_process_handles()
+            self._set_state(BotState.STOPPED)
+            self._restart_attempts = 0
+            self._next_restart_at = None
+            self._write_bot_state()
             return
 
         pid = self._info.pid
-        self.logger.info("Stopping QuantumEdge PID %s", pid)
+        self.logger.info("Stopping bot PID %s", pid)
 
         if self._process:
             stop_reason = "graceful-stop"
@@ -156,16 +189,25 @@ class ProcessManager:
             self._update_exit_state(self._process.returncode)
             self._log_bot_stop(stop_reason)
             self._cleanup_process_handles()
+            self._set_state(BotState.STOPPED)
+            self._restart_attempts = 0
+            self._next_restart_at = None
+            self._write_bot_state()
             return
 
         # No local handle; fall back to signals and OS tools.
         self._terminate_external(pid, graceful_timeout_s)
+        self._set_state(BotState.STOPPED)
+        self._restart_attempts = 0
+        self._next_restart_at = None
+        self._write_bot_state()
 
     def restart(self, mode: str) -> ProcessInfo:
         """Restart the managed process using the configured backoff."""
-
+        self._restart_attempts = 0
+        self._next_restart_at = None
         self.stop()
-        time.sleep(self.config.restart_backoff_s)
+        time.sleep(self._restart_delay())
         return self.start(mode)
 
     # Internal helpers
@@ -181,8 +223,7 @@ class ProcessManager:
         if not bot_workdir.is_absolute():
             bot_workdir = (qe_root / bot_workdir).resolve()
 
-        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
-        log_path = self.paths.logs_dir / f"quantumedge_{timestamp}.log"
+        log_path = self.paths.logs_dir / "bot.log"
         log_path.parent.mkdir(parents=True, exist_ok=True)
 
         log_handle = log_path.open("a", encoding="utf-8")
@@ -206,6 +247,7 @@ class ProcessManager:
             if not bot_config.is_absolute():
                 bot_config = (qe_root / bot_config).resolve()
             env.setdefault("QE_CONFIG_PATH", str(bot_config))
+            env.setdefault("BOT_CONFIG_PATH", str(bot_config))
         py_paths = [str(qe_root), str(self.paths.quantumedge_root)]
         existing = env.get("PYTHONPATH")
         if existing:
@@ -236,6 +278,91 @@ class ProcessManager:
         )
         state_utils.save_process_info(self.state_dir, self._info)
         return self._info
+
+    def _set_state(self, state: str) -> None:
+        if state != self._state:
+            self._state = state
+            self._write_bot_state()
+
+    def _write_bot_state(self) -> None:
+        payload = {
+            "state": self._state,
+            "pid": self._info.pid if self._info else None,
+            "restarts": self._restart_attempts,
+            "last_exit_code": self._info.last_exit_code if self._info else None,
+            "last_exit_time": self._info.last_exit_time.isoformat() if self._info and self._info.last_exit_time else None,
+            "updated_at": datetime.now(timezone.utc).isoformat(),
+        }
+        try:
+            self._state_path.parent.mkdir(parents=True, exist_ok=True)
+            with self._state_path.open("w", encoding="utf-8") as handle:
+                json.dump(payload, handle, indent=2)
+        except OSError as exc:
+            self.logger.debug("Failed to write bot state: %s", exc)
+
+    def _restart_delay(self) -> float:
+        backoffs = self.config.bot_restart_backoff_seconds or [self.config.restart_backoff_s]
+        index = max(0, min(self._restart_attempts - 1, len(backoffs) - 1))
+        try:
+            delay = float(backoffs[index])
+        except (TypeError, ValueError):
+            delay = float(self.config.restart_backoff_s)
+        return max(0.0, delay)
+
+    def _schedule_restart(self) -> None:
+        if not self.config.bot_restart_enabled:
+            return
+        self._restart_attempts += 1
+        if self._restart_attempts > self.config.bot_restart_max_retries:
+            self._set_state(BotState.FAILED)
+            self.logger.error("Bot restart attempts exhausted; marking FAILED.")
+            return
+        delay = self._restart_delay()
+        self._next_restart_at = time.monotonic() + delay
+        self.logger.warning(
+            "Scheduling bot restart in %.1fs (attempt %s/%s)",
+            delay,
+            self._restart_attempts,
+            self.config.bot_restart_max_retries,
+        )
+        self._write_bot_state()
+
+    def _handle_exit(self, exit_code: Optional[int], reason: str) -> None:
+        self._update_exit_state(exit_code)
+        self._log_bot_stop(reason)
+        if self._events:
+            self._events.log_anomaly("bot_exit", f"Bot exited ({reason}) with code {exit_code}", {"pid": self._info.pid if self._info else None})
+        self._cleanup_process_handles()
+        if self._stop_requested:
+            self._set_state(BotState.STOPPED)
+            return
+        self._set_state(BotState.CRASHED)
+        if self.config.bot_restart_enabled:
+            self._schedule_restart()
+
+    def _refresh_state(self) -> None:
+        if self._process:
+            return_code = self._process.poll()
+            if return_code is None:
+                self._set_state(BotState.RUNNING)
+                return
+            self.logger.warning("Bot exited with code %s", return_code)
+            self._handle_exit(return_code, "unexpected-exit")
+            return
+
+        if self._info:
+            alive = self._pid_running(self._info.pid)
+            if alive:
+                self._set_state(BotState.RUNNING)
+                return
+            if self._info.last_exit_time is None:
+                self._update_exit_state(self._info.last_exit_code)
+            if self._state == BotState.RUNNING and not self._stop_requested:
+                self._set_state(BotState.CRASHED)
+                if self.config.bot_restart_enabled:
+                    self._schedule_restart()
+        elif self._state != BotState.STOPPED:
+            self._set_state(BotState.STOPPED)
 
     def _update_exit_state(self, exit_code: Optional[int]) -> None:
         if not self._info:
