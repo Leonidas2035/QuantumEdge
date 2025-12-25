@@ -33,6 +33,11 @@ bingx_demo:
 
 ml:
   require_models: false
+  ml_required: false
+  model_source: "runtime"   # runtime | legacy
+  runtime_models_dir: "runtime/models"
+  thresholds:
+    p_up: 0.55
   horizons: [1, 5, 30]
   warmup_seconds: 600
 

@@ -12,6 +12,7 @@ __pycache__/
 /runtime/
 /data/
 *.log
+/artifacts/
 
 # Secrets and encrypted files
 **/secrets.env

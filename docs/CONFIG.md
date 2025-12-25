@@ -48,6 +48,23 @@ Supervisor API endpoints (local, no secrets):
 - `POST /api/v1/bot/stop`: stop the bot.
 - `POST /api/v1/bot/restart`: restart the bot.
 
+## ModelOps (SupervisorAgent)
+Supervisor owns model training and publishing under `SupervisorAgent/mlops/`:
+- Artifacts: `artifacts/models/<symbol>/<horizon>/<version>/`
+- Published runtime: `runtime/models/<symbol>/<horizon>/current/`
+- Manifest: `runtime/models/.../manifest.json` (version `model.v1`)
+
+Example commands:
+- Dataset: `python SupervisorAgent/supervisor.py ml dataset --symbol BTCUSDT --source ticks --input-dir data/ticks`
+- Train: `python SupervisorAgent/supervisor.py ml train --symbol BTCUSDT --horizons 1,5,30 --source ticks --input-dir data/ticks --publish`
+- Validate: `python SupervisorAgent/supervisor.py ml validate --manifest artifacts/models/BTCUSDT/1/<version>/manifest.json --dataset artifacts/datasets/BTCUSDT/ticks/<version>/BTCUSDT_h1.csv`
+- Publish: `python SupervisorAgent/supervisor.py ml publish --artifact-dir artifacts/models/BTCUSDT/1/<version>`
+
+Bot loading (from `config/bot.yaml`):
+- `ml.model_source`: `runtime` (default) or `legacy`
+- `ml.runtime_models_dir`: default `runtime/models`
+- `ml.ml_required`: if true, missing/invalid models disable trading
+
 ## Policy contract (Supervisor -> bot)
 Supervisor publishes a versioned policy contract that the bot consumes:
 - File: `runtime/policy.json` (atomic write every few seconds)

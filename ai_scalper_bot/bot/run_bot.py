@@ -19,6 +19,7 @@ from bot.ml.ensemble import EnsembleSignalModel, EnsembleOutput
 from bot.ml.signal_model.model import SignalOutput
 from bot.ml.signal_model.online_features import OnlineFeatureBuilder
 from bot.ml.signal_model.registry import load_registry, find_entry, feature_schema_hash
+from bot.ml.runtime_models import load_runtime_models, resolve_models_root
 from bot.trading.executor import BinanceDemoExecutor
 from bot.trading.bingx_executor import BingXDemoExecutor
 from bot.trading.paper_trader import PaperTrader
@@ -160,7 +161,9 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
     demo_mode = mode == "demo"
     data_source = _resolve_data_source()
     start_time = time.time()
+    ml_cfg = config.get("ml", {}) or {}
     require_models = bool(config.get("ml.require_models", True))
+    ml_required = bool(ml_cfg.get("ml_required", ml_cfg.get("required", require_models)))
     observer_mode = not require_models
     observer_notice_logged = False
     missing_required_models = False
@@ -235,6 +238,11 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
     if scalp_enabled and data_source != "ws":
         print("[WARN] Scalp mode enabled without live depth; using mock/estimated depth only.")
 
+    runtime_models_dir = Path(ml_cfg.get("runtime_models_dir", resolve_models_root()))
+    if not runtime_models_dir.is_absolute():
+        runtime_models_dir = (Path(config.qe_root) / runtime_models_dir).resolve()
+    model_source = str(ml_cfg.get("model_source", "runtime")).lower()
+    threshold_default = float((ml_cfg.get("thresholds") or {}).get("p_up", 0.55))
     engines = {}
     if observer_mode and not observer_notice_logged:
         print("[WARN] Observer mode enabled (ml.require_models=false); trading disabled.")
@@ -249,7 +257,24 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
             status = "OK" if info["ok"] else f"MISSING ({info['reason']})"
             print(f"  {sym} h={h}: {status}")
     for sym in symbols:
-        ensemble = EnsembleSignalModel(symbol=sym, horizons=[1, 5, 30])
+        runtime_models = None
+        thresholds = None
+        if model_source == "runtime":
+            loaded, errors = load_runtime_models(
+                symbol=sym,
+                horizons=config.get("ml.horizons", [1, 5, 30]),
+                models_root=Path(runtime_models_dir),
+                threshold_default=threshold_default,
+            )
+            if errors:
+                print(f"[WARN] Runtime models missing/invalid for {sym}: {errors}")
+                if ml_required:
+                    observer_mode = True
+            if loaded:
+                runtime_models = {h: info.model for h, info in loaded.items()}
+                thresholds = {h: info.threshold for h, info in loaded.items()}
+
+        ensemble = EnsembleSignalModel(symbol=sym, horizons=[1, 5, 30], runtime_models=runtime_models, thresholds=thresholds)
         loaded_horizons = sorted(list(ensemble.models.keys()))
         expected_horizons = ensemble.horizons
         missing_h = [h for h in expected_horizons if not readiness.get(sym, {}).get(h, {}).get("ok")]
@@ -481,6 +506,11 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
                         policy.allow_trading,
                         policy.reason,
                     )
+                    decision = None
+                elif decision.action == DecisionAction.ENTER and not ensemble.thresholds_met(meta.components):
+                    if not ctx.get("threshold_warned"):
+                        print(f"[WARN] Model thresholds not met for {evt_symbol}; entry blocked.")
+                        ctx["threshold_warned"] = True
                     decision = None
                 elif decision.action == DecisionAction.ENTER and policy.size_multiplier != 1.0:
                     decision.size = max(0.0, decision.size * policy.size_multiplier)

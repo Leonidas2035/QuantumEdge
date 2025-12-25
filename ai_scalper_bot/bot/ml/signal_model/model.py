@@ -21,11 +21,14 @@ class SignalModel:
     Thin wrapper around an XGBoost binary classifier for signal generation.
     """
 
-    def __init__(self, symbol: str = "BTCUSDT", horizon: int = 1, model_dir: Optional[Path] = None):
+    def __init__(self, symbol: str = "BTCUSDT", horizon: int = 1, model_dir: Optional[Path] = None, model_path: Optional[Path] = None):
         root = Path(__file__).resolve().parents[3]
         self.model_dir = model_dir or (root / "storage" / "models")
         self.model_dir.mkdir(parents=True, exist_ok=True)
-        self.model_path = self.model_dir / f"signal_xgb_{symbol}_h{horizon}.json"
+        if model_path is not None:
+            self.model_path = Path(model_path)
+        else:
+            self.model_path = self.model_dir / f"signal_xgb_{symbol}_h{horizon}.json"
         self.model = self._load_model()
 
     def _load_model(self) -> xgb.XGBClassifier:

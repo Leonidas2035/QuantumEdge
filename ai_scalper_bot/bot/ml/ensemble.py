@@ -19,18 +19,28 @@ class EnsembleSignalModel:
     Loads multiple horizons and combines edges with fixed weights.
     """
 
-    def __init__(self, symbol: str = "BTCUSDT", horizons: Optional[List[int]] = None):
+    def __init__(
+        self,
+        symbol: str = "BTCUSDT",
+        horizons: Optional[List[int]] = None,
+        runtime_models: Optional[Dict[int, SignalModel]] = None,
+        thresholds: Optional[Dict[int, float]] = None,
+    ):
         self.symbol = symbol
         cfg_horizons = config.get("ml.horizons", [1, 5, 30])
         self.horizons = horizons or cfg_horizons
         # simple equal weights by default
         self.weights = {h: 1.0 for h in self.horizons}
         self.models: Dict[int, SignalModel] = {}
-        for h in self.horizons:
-            try:
-                self.models[h] = SignalModel(symbol=symbol, horizon=h)
-            except FileNotFoundError:
-                print(f"[WARN] Model for horizon {h} missing. Skipping in ensemble.")
+        self.thresholds: Dict[int, float] = thresholds or {}
+        if runtime_models:
+            self.models.update(runtime_models)
+        else:
+            for h in self.horizons:
+                try:
+                    self.models[h] = SignalModel(symbol=symbol, horizon=h)
+                except FileNotFoundError:
+                    print(f"[WARN] Model for horizon {h} missing. Skipping in ensemble.")
 
     def _combine(self, outputs: Dict[int, SignalOutput]) -> EnsembleOutput:
         if not outputs:
@@ -65,6 +75,17 @@ class EnsembleSignalModel:
             except Exception as exc:
                 print(f"[WARN] Horizon {h} prediction failed: {exc}")
         return outputs
+
+    def thresholds_met(self, outputs: Dict[int, SignalOutput]) -> bool:
+        if not self.thresholds:
+            return True
+        for horizon, threshold in self.thresholds.items():
+            sig = outputs.get(horizon)
+            if sig is None:
+                return False
+            if sig.p_up < threshold and sig.p_down < threshold:
+                return False
+        return True
 
     @staticmethod
     def filter_blocks(features: np.ndarray) -> Tuple[bool, str]:

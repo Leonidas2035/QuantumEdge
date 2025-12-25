@@ -33,3 +33,7 @@ Policy contract (Supervisor -> bot):
 Runtime vs research:
 - Live trading runtime remains under `ai_scalper_bot/bot`.
 - Offline/backtest tooling moved to `SupervisorAgent/research/` (compat wrappers remain under `ai_scalper_bot` for one stage).
+
+ModelOps (SupervisorAgent):
+- Train/publish models: `python SupervisorAgent/supervisor.py ml train --symbol BTCUSDT --horizons 1,5,30 --source ticks --input-dir data/ticks --publish`
+- Runtime models live under `runtime/models/<symbol>/<horizon>/current/`

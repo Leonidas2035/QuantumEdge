@@ -45,6 +45,8 @@
   - `python -m SupervisorAgent.research.offline.signal_model.train_all --symbols BTCUSDT,ETHUSDT --horizons 1,5,30 --data data/ticks --min-rows 1000`
   - (compat wrapper) `python -m bot.ml.signal_model.train_all ...`
 - On startup, the bot checks required models (config `ml.horizons`) and blocks trading if `ml.require_models=true` and any are missing. A readiness table is printed at launch.
+ - Published runtime models (recommended) live under `runtime/models/<symbol>/<horizon>/current/` with a `manifest.json`.
+ - Set `ml.model_source: runtime` (default) to load published runtime models and validate sha256.
 
 ## Backtesting & tests
 - Offline backtest: `python -m SupervisorAgent.research.sandbox.offline_loop --symbol BTCUSDT --ticks-path data/ticks/BTCUSDT_sample.csv`

@@ -781,6 +781,7 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
             "tsdb-backfill",
             "tsdb-migrate",
             "tsdb-maintain",
+            "ml",
         ],
         help="Command to execute",
     )
@@ -804,6 +805,11 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         "--config",
         dest="config_path",
         help="Path to supervisor config YAML (defaults to QE_ROOT/config/supervisor.yaml).",
+    )
+    parser.add_argument(
+        "ml_args",
+        nargs=argparse.REMAINDER,
+        help="ModelOps subcommands (e.g. ml train --symbol BTCUSDT --horizons 1,5,30)",
     )
     return parser.parse_args(argv)
 
@@ -933,6 +939,12 @@ def main(argv: Optional[list[str]] = None) -> None:
         elif args.command == "tsdb-maintain":
             ok = apply_retention_and_rollups(project_root, app.tsdb_config, app.tsdb_retention, logging.getLogger(__name__))
             sys.exit(0 if ok else 1)
+        elif args.command == "ml":
+            from SupervisorAgent.mlops.cli import parse_ml_args, run_ml_command
+
+            ml_args = parse_ml_args(args.ml_args)
+            code = run_ml_command(ml_args)
+            sys.exit(code)
     except Exception as exc:
         logging.getLogger(__name__).exception("Command '%s' failed: %s", args.command, exc)
         sys.exit(1)
