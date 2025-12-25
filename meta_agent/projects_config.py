@@ -7,7 +7,12 @@ import yaml
 
 from paths import BASE_DIR
 
-DEFAULT_PROJECTS_PATH = os.path.join(BASE_DIR, "config", "projects.yaml")
+try:
+    from tools.qe_config import get_qe_paths
+except Exception:  # pragma: no cover - fallback for legacy runs
+    get_qe_paths = None
+
+DEFAULT_PROJECTS_PATH = os.path.join("config", "projects.yaml")
 
 
 @dataclass
@@ -39,15 +44,15 @@ def _ensure_default_config(path: str = DEFAULT_PROJECTS_PATH) -> None:
         "default": "ai_scalper_bot",
         "projects": {
             "ai_scalper_bot": {
-                "path": "C:/QuantumEdge/ai_scalper_bot",
+                "path": "ai_scalper_bot",
                 "description": "QuantumEdge trading engine",
             },
             "supervisor_agent": {
-                "path": "C:/QuantumEdge/SupervisorAgent",
+                "path": "SupervisorAgent",
                 "description": "Supervisor control plane",
             },
             "meta_agent": {
-                "path": "C:/QuantumEdge/meta_agent",
+                "path": "meta_agent",
                 "description": "Meta-Agent orchestrator",
             },
         },
@@ -72,15 +77,58 @@ def _normalize_legacy(raw: dict) -> dict:
     return {"default": raw.get("default", "ai_scalper_bot"), "projects": projects_block}
 
 
+def _resolve_base_dir() -> Path:
+    env_root = os.getenv("QE_ROOT")
+    if env_root:
+        return Path(env_root)
+    if get_qe_paths:
+        try:
+            return get_qe_paths()["qe_root"]
+        except Exception:
+            pass
+    parent = Path(BASE_DIR).parent
+    if (parent / "config").is_dir() and (parent / "ai_scalper_bot").is_dir():
+        return parent
+    return Path(BASE_DIR)
+
+
+def _resolve_config_path(path: str) -> str:
+    base = _resolve_base_dir()
+    candidate = Path(path)
+    if not candidate.is_absolute():
+        candidate = base / candidate
+    return str(candidate.resolve())
+
+
+def _load_meta_agent_defaults() -> Dict[str, str]:
+    base = _resolve_base_dir()
+    cfg_path = Path(os.getenv("META_AGENT_CONFIG") or (base / "config" / "meta_agent.yaml"))
+    if not cfg_path.exists():
+        return {}
+    try:
+        with cfg_path.open("r", encoding="utf-8") as handle:
+            data = yaml.safe_load(handle) or {}
+    except yaml.YAMLError:
+        return {}
+    if not isinstance(data, dict):
+        return {}
+    return {k: str(v) for k, v in data.items() if isinstance(v, (str, Path))}
+
+
 def load_project_registry(config_path: str = DEFAULT_PROJECTS_PATH) -> ProjectRegistry:
     """
     Reads config/projects.yaml, resolves paths, and returns a registry.
     If the file is missing, a default config is created automatically.
     """
-    _ensure_default_config(config_path)
+    env_override = os.getenv("META_AGENT_PROJECTS_PATH")
+    defaults = _load_meta_agent_defaults()
+    effective_path = env_override or defaults.get("projects_path") or config_path
+    resolved_path = _resolve_config_path(effective_path)
+
+    _ensure_default_config(resolved_path)
 
     try:
-        with open(config_path, "r", encoding="utf-8") as handle:
+        with open(resolved_path, "r", encoding="utf-8") as handle:
             raw = yaml.safe_load(handle) or {}
     except yaml.YAMLError as exc:
         raise RuntimeError(f"Failed to parse project registry: {exc}")
@@ -100,7 +148,7 @@ def load_project_registry(config_path: str = DEFAULT_PROJECTS_PATH) -> ProjectRe
             continue
         root_path = Path(rel_path)
         if not root_path.is_absolute():
-            root_path = Path(BASE_DIR) / rel_path
+            root_path = _resolve_base_dir() / rel_path
         projects[pid] = ProjectInfo(
             project_id=pid,
             root_path=root_path.resolve(),

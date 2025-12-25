@@ -1,0 +1,23 @@
+# Supervisor runtime configuration (shared defaults).
+
+mode: "paper"  # paper | demo | off
+exchange: ""   # optional: e.g. "bingx_swap"
+heartbeat_port: 8765
+heartbeat_timeout_s: 15
+restart_max_attempts: 3
+restart_backoff_s: 5
+
+# HTTP API settings
+api_enabled: true
+api_host: "127.0.0.1"
+api_auth_token: ""  # optional shared secret; empty disables auth
+
+# Bot process wiring (relative to QE_ROOT)
+bot_entrypoint: "ai_scalper_bot/run_bot.py"
+bot_workdir: "ai_scalper_bot"
+bot_config: "config/bot.yaml"
+
+snapshots:
+  enabled: true
+  interval_minutes: 5
+  history_window_minutes: 15

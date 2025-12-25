@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 import sys
 from dataclasses import dataclass
 from pathlib import Path
@@ -14,10 +15,12 @@ import yaml
 class PathsConfig:
     """File system layout for SupervisorAgent and external dependencies."""
 
+    qe_root: Path
     quantumedge_root: Path
     python_executable: Path
     meta_agent_root: Path
     logs_dir: Path
+    runtime_dir: Path
     events_dir: Path
     reports_dir: Path
 
@@ -35,6 +38,9 @@ class SupervisorConfig:
     api_enabled: bool = True
     api_host: str = "127.0.0.1"
     api_auth_token: str = ""
+    bot_entrypoint: str = "ai_scalper_bot/run_bot.py"
+    bot_workdir: str = "ai_scalper_bot"
+    bot_config: str = "config/bot.yaml"
 
 
 @dataclass
@@ -205,37 +211,50 @@ def _load_yaml(path: Path) -> Dict[str, Any]:
     return data
 
 
+def _resolve_path(value: Optional[str | Path], base: Path, default: Optional[Path] = None) -> Path:
+    if value is None or value == "":
+        return default.resolve() if default is not None else base.resolve()
+    path = Path(value).expanduser()
+    if not path.is_absolute():
+        path = base / path
+    return path.resolve()
+
+
 def load_paths_config(path: Path) -> PathsConfig:
     """Load filesystem-related configuration from YAML."""
 
     raw = _load_yaml(path)
+    if isinstance(raw.get("paths"), dict):
+        raw = raw["paths"]
     project_root = path.parent.parent.resolve()
 
-    quantumedge_root_value = raw.get("quantumedge_root")
-    if not quantumedge_root_value:
-        raise ValueError("quantumedge_root must be specified in paths config")
-    quantumedge_root = Path(quantumedge_root_value).expanduser()
+    qe_root = _resolve_path(raw.get("qe_root") or os.getenv("QE_ROOT") or project_root, project_root)
+
+    quantumedge_root = _resolve_path(
+        raw.get("quantumedge_root"),
+        qe_root,
+        qe_root / "ai_scalper_bot",
+    )
 
     python_executable_value = raw.get("python_executable") or sys.executable
-    python_executable = Path(python_executable_value).expanduser()
+    python_executable = Path(str(python_executable_value)).expanduser()
 
-    meta_agent_root_value = raw.get("meta_agent_root", "")
-    meta_agent_root = Path(meta_agent_root_value).expanduser() if meta_agent_root_value else project_root
+    meta_agent_root = _resolve_path(raw.get("meta_agent_root"), qe_root, qe_root / "meta_agent")
 
-    logs_dir_value = raw.get("logs_dir")
-    logs_dir = Path(logs_dir_value).expanduser() if logs_dir_value else project_root / "logs"
+    logs_dir = _resolve_path(raw.get("logs_dir"), qe_root, qe_root / "logs")
+    runtime_dir = _resolve_path(raw.get("runtime_dir"), qe_root, qe_root / "runtime")
 
-    events_dir_value = raw.get("events_dir")
-    events_dir = Path(events_dir_value).expanduser() if events_dir_value else logs_dir / "events"
+    events_dir = _resolve_path(raw.get("events_dir"), qe_root, logs_dir / "events")
 
-    reports_dir_value = raw.get("reports_dir")
-    reports_dir = Path(reports_dir_value).expanduser() if reports_dir_value else project_root / "reports"
+    reports_dir = _resolve_path(raw.get("reports_dir"), qe_root, project_root / "reports")
 
     return PathsConfig(
+        qe_root=qe_root.resolve(),
         quantumedge_root=quantumedge_root.resolve(),
         python_executable=python_executable.resolve(),
         meta_agent_root=meta_agent_root.resolve(),
         logs_dir=logs_dir.resolve(),
+        runtime_dir=runtime_dir.resolve(),
         events_dir=events_dir.resolve(),
         reports_dir=reports_dir.resolve(),
     )
@@ -250,12 +269,19 @@ def load_supervisor_config(path: Path) -> SupervisorConfig:
     if mode not in allowed_modes:
         raise ValueError(f"Invalid mode '{mode}'. Allowed: {', '.join(sorted(allowed_modes))}")
 
-    heartbeat_port = int(raw.get("heartbeat_port", 8765))
+    env_port = os.getenv("SUPERVISOR_PORT") or os.getenv("QE_SUPERVISOR_PORT")
+    heartbeat_port = int(env_port or raw.get("heartbeat_port", 8765))
     heartbeat_timeout_s = float(raw.get("heartbeat_timeout_s", 15))
     restart_max_attempts = int(raw.get("restart_max_attempts", 3))
     restart_backoff_s = float(raw.get("restart_backoff_s", 5))
     if heartbeat_port < 1 or heartbeat_port > 65535:
         raise ValueError("heartbeat_port must be between 1 and 65535")
+
+    env_host = os.getenv("SUPERVISOR_HOST") or os.getenv("QE_SUPERVISOR_HOST")
+    api_host = str(env_host or raw.get("api_host", "127.0.0.1"))
+    bot_entrypoint = str(raw.get("bot_entrypoint", "ai_scalper_bot/run_bot.py"))
+    bot_workdir = str(raw.get("bot_workdir", "ai_scalper_bot"))
+    bot_config = str(raw.get("bot_config", "config/bot.yaml"))
 
     return SupervisorConfig(
         mode=mode,
@@ -265,8 +291,11 @@ def load_supervisor_config(path: Path) -> SupervisorConfig:
         restart_backoff_s=restart_backoff_s,
         exchange=str(raw.get("exchange", "")),
         api_enabled=bool(raw.get("api_enabled", True)),
-        api_host=str(raw.get("api_host", "127.0.0.1")),
+        api_host=api_host,
         api_auth_token=str(raw.get("api_auth_token", "")),
+        bot_entrypoint=bot_entrypoint,
+        bot_workdir=bot_workdir,
+        bot_config=bot_config,
     )
 
 

@@ -2,13 +2,13 @@
 
 projects:
   ai_scalper_bot:
-    path: "C:/QuantumEdge/ai_scalper_bot"
+    path: "ai_scalper_bot"
     description: "QuantumEdge trading engine"
 
   supervisor_agent:
-    path: "C:/QuantumEdge/SupervisorAgent"
+    path: "SupervisorAgent"
     description: "Supervisor control plane"
 
   meta_agent:
-    path: "C:/QuantumEdge/meta_agent"
+    path: "meta_agent"
     description: "Meta-Agent orchestrator"

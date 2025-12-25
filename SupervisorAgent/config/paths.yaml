@@ -1,9 +1,10 @@
 # Paths configuration for SupervisorAgent.
 # Adjust these paths to match your environment.
 
-quantumedge_root: "C:/QuantumEdge/ai_scalper_bot"
+quantumedge_root: "../ai_scalper_bot"
 python_executable: ""  # leave empty to use the current Python interpreter
-meta_agent_root: "C:/QuantumEdge/meta_agent"
-logs_dir: "C:/QuantumEdge/SupervisorAgent/logs"
+meta_agent_root: "../meta_agent"
+logs_dir: "../logs"
+runtime_dir: "../runtime"
 events_dir: ""  # optional, defaults to <logs_dir>/events
 reports_dir: ""  # optional, defaults to <project_root>/reports

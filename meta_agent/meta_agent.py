@@ -31,6 +31,35 @@ ALLOWED_MODES = {"readonly", "write_dev", "write_prod"}
 DEFAULT_TASK_FILE = os.path.join(TASKS_DIR, "task_current.md")
 MAX_CONTEXT_CHARS = 250_000
 
+try:
+    from tools.qe_config import get_qe_paths
+except Exception:  # pragma: no cover - fallback for legacy runs
+    get_qe_paths = None
+
+
+def _resolve_base_dir() -> str:
+    env_root = os.getenv("QE_ROOT")
+    if env_root:
+        return env_root
+    if get_qe_paths:
+        try:
+            return str(get_qe_paths()["qe_root"])
+        except Exception:
+            pass
+    parent = os.path.abspath(os.path.join(BASE_DIR, os.pardir))
+    if os.path.isdir(os.path.join(parent, "config")) and os.path.isdir(os.path.join(parent, "ai_scalper_bot")):
+        return parent
+    return BASE_DIR
+
+
+def _resolve_meta_config_path(path: Optional[str]) -> str:
+    base = _resolve_base_dir()
+    env_override = os.getenv("META_AGENT_CONFIG")
+    candidate = env_override or path or "config/meta_agent.yaml"
+    if os.path.isabs(candidate):
+        return candidate
+    return os.path.abspath(os.path.join(base, candidate))
+
 
 def load_task_from_file(path: str) -> Tuple[Dict, str]:
     """
@@ -63,19 +92,23 @@ def load_task_from_file(path: str) -> Tuple[Dict, str]:
 
 class MetaAgent:
     def __init__(self, config_path: str = "config.json"):
-        self.config = self._load_config(config_path)
+        resolved = _resolve_meta_config_path(config_path)
+        self.config = self._load_config(resolved)
         self.builder = PromptBuilder()
         self.mode = self._resolve_mode()
         self.client = CodexClient(mode=self.mode)
-        self.project_registry = load_project_registry()
+        projects_path = (self.config or {}).get("projects_path")
+        self.project_registry = load_project_registry(projects_path) if projects_path else load_project_registry()
 
     def _load_config(self, path: str) -> Dict:
         if not os.path.exists(path):
             return {}
         try:
             with open(path, "r", encoding="utf-8") as handle:
+                if path.lower().endswith((".yaml", ".yml")):
+                    return yaml.safe_load(handle) or {}
                 return json.load(handle)
-        except (json.JSONDecodeError, OSError):
+        except (json.JSONDecodeError, yaml.YAMLError, OSError):
             return {}
 
     def _resolve_mode(self) -> str:
@@ -227,6 +260,7 @@ class MetaAgent:
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Meta-Agent CLI")
+    parser.add_argument("--config", dest="config_path", help="Path to meta-agent config (YAML/JSON).")
     parser.add_argument("--mode", default="auto", help="Execution mode (stages|task) or supervisor cadence (daily|weekly|adhoc|auto).")
     parser.add_argument("--task", dest="task_path", help="Path to a .md task file for task mode.")
     parser.add_argument("--task-id", dest="task_id", help="Task ID to resolve in tasks/<ID>.md for task mode.")
@@ -295,6 +329,8 @@ def cleanup_after_successful_run(stages: list) -> None:
 
 def main() -> int:
     args = parse_args()
+    if args.config_path:
+        os.environ["META_AGENT_CONFIG"] = args.config_path
 
     if args.once:
         print("[INFO] --once specified; running a single pass.")

@@ -15,15 +15,47 @@ from bot.core.secret_store import (
     load_secrets,
 )
 
+try:
+    from tools.qe_config import get_qe_config, get_qe_paths
+except Exception:  # pragma: no cover - fallback for legacy runs
+    get_qe_config = None
+    get_qe_paths = None
+
 
 class Config:
     def __init__(self, config_path: str = "config/settings.yaml"):
         self.root = Path(__file__).resolve().parents[2]
+        self.qe_root = Path(os.getenv("QE_ROOT") or self.root.parent)
+        if get_qe_paths:
+            try:
+                qe_paths = get_qe_paths()
+                self.qe_root = qe_paths.get("qe_root", self.qe_root)
+            except Exception:
+                pass
+
         env_path = os.getenv("QE_CONFIG_PATH")
-        effective_path = env_path or config_path
-        self.config_path = self.root / effective_path
+        if env_path:
+            effective_path = env_path
+        else:
+            candidate = self.qe_root / "config" / "bot.yaml"
+            effective_path = str(candidate) if candidate.exists() else config_path
+
+        resolved = Path(effective_path)
+        if not resolved.is_absolute():
+            qe_candidate = self.qe_root / resolved
+            resolved = qe_candidate if qe_candidate.exists() else self.root / resolved
+        self.config_path = resolved.resolve()
         with open(self.config_path, "r", encoding="utf-8") as f:
-            self.data = yaml.safe_load(f)
+            self.data = yaml.safe_load(f) or {}
+
+        env_data_dir = os.getenv("QE_DATA_DIR")
+        if env_data_dir:
+            self.data.setdefault("app", {})["data_path"] = env_data_dir
+        env_runtime_dir = os.getenv("QE_RUNTIME_DIR")
+        if env_runtime_dir:
+            self.data.setdefault("ops", {})["status_file"] = str(Path(env_runtime_dir) / "bot_status.json")
+
+        print(f"[INFO] Config loaded from: {self.config_path}")
 
         self.secrets: Dict[str, str] = {}
         self._secrets_loaded = False
@@ -155,9 +187,28 @@ class SupervisorSnapshotsSettings:
 
 def load_supervisor_settings(cfg: Config) -> SupervisorSettings:
     data = cfg.get("supervisor", {}) or {}
+    env_url = os.getenv("SUPERVISOR_URL")
+    env_host = os.getenv("SUPERVISOR_HOST")
+    env_port = os.getenv("SUPERVISOR_PORT")
+    qe_host = None
+    qe_port = None
+    if get_qe_config:
+        try:
+            qe_cfg = get_qe_config()
+            qe_host = qe_cfg.get("supervisor", {}).get("host")
+            qe_port = qe_cfg.get("supervisor", {}).get("port")
+        except Exception:
+            pass
+    host = env_host or qe_host or "127.0.0.1"
+    port = env_port or qe_port or 8765
+    try:
+        port_int = int(port)
+    except (TypeError, ValueError):
+        port_int = 8765
+    base_url = env_url or data.get("base_url") or f"http://{host}:{port_int}"
     return SupervisorSettings(
         enabled=bool(data.get("enabled", False)),
-        base_url=str(data.get("base_url", "http://127.0.0.1:8765")),
+        base_url=str(base_url),
         api_token=str(data.get("api_token", "")),
         heartbeat_interval_s=float(data.get("heartbeat_interval_s", 5.0)),
         timeout_s=float(data.get("timeout_s", 1.0)),
@@ -170,9 +221,11 @@ def load_supervisor_settings(cfg: Config) -> SupervisorSettings:
 
 def load_supervisor_snapshot_settings(cfg: Config) -> SupervisorSnapshotsSettings:
     data = cfg.get("supervisor_snapshots", {}) or {}
+    env_url = os.getenv("SUPERVISOR_URL")
+    supervisor_url = env_url or data.get("supervisor_url", "http://localhost:8000")
     return SupervisorSnapshotsSettings(
         enabled=bool(data.get("enabled", False)),
-        supervisor_url=str(data.get("supervisor_url", "http://localhost:8000")),
+        supervisor_url=str(supervisor_url),
         endpoint=str(data.get("endpoint", "/api/v1/supervisor/snapshot")),
         timeout_ms=int(data.get("timeout_ms", 500)),
         poll_interval_seconds=int(data.get("poll_interval_seconds", 60)),

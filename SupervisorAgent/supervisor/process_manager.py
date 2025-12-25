@@ -170,9 +170,16 @@ class ProcessManager:
 
     # Internal helpers
     def _spawn_process(self, mode: str) -> ProcessInfo:
-        run_bot = self.paths.quantumedge_root / "run_bot.py"
+        qe_root = self.paths.qe_root
+        run_bot = Path(self.config.bot_entrypoint)
+        if not run_bot.is_absolute():
+            run_bot = (qe_root / run_bot).resolve()
         if not run_bot.exists():
             raise FileNotFoundError(f"QuantumEdge entrypoint not found: {run_bot}")
+
+        bot_workdir = Path(self.config.bot_workdir) if self.config.bot_workdir else self.paths.quantumedge_root
+        if not bot_workdir.is_absolute():
+            bot_workdir = (qe_root / bot_workdir).resolve()
 
         timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
         log_path = self.paths.logs_dir / f"quantumedge_{timestamp}.log"
@@ -186,12 +193,30 @@ class ProcessManager:
             creationflags = subprocess.CREATE_NEW_PROCESS_GROUP
 
         env = os.environ.copy()
+        env.setdefault("QE_ROOT", str(qe_root))
+        env.setdefault("QE_CONFIG_DIR", str(qe_root / "config"))
+        env.setdefault("QE_RUNTIME_DIR", str(qe_root / "runtime"))
+        env.setdefault("QE_LOGS_DIR", str(qe_root / "logs"))
+        env.setdefault("QE_DATA_DIR", str(qe_root / "data"))
+        env.setdefault("SUPERVISOR_HOST", self.config.api_host)
+        env.setdefault("SUPERVISOR_PORT", str(self.config.heartbeat_port))
+        env.setdefault("SUPERVISOR_URL", f"http://{self.config.api_host}:{self.config.heartbeat_port}")
+        if self.config.bot_config:
+            bot_config = Path(self.config.bot_config)
+            if not bot_config.is_absolute():
+                bot_config = (qe_root / bot_config).resolve()
+            env.setdefault("QE_CONFIG_PATH", str(bot_config))
+        py_paths = [str(qe_root), str(self.paths.quantumedge_root)]
+        existing = env.get("PYTHONPATH")
+        if existing:
+            py_paths.append(existing)
+        env["PYTHONPATH"] = os.pathsep.join(py_paths)
         if self.config.exchange:
             env["EXCHANGE"] = self.config.exchange
         try:
             process = subprocess.Popen(
                 cmd,
-                cwd=self.paths.quantumedge_root,
+                cwd=bot_workdir,
                 stdout=log_handle,
                 stderr=subprocess.STDOUT,
                 creationflags=creationflags,

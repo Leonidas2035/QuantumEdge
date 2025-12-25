@@ -17,11 +17,42 @@ from safety_policy import evaluate_change_set, load_safety_policy
 from task_manager import load_task
 from task_schema import TaskParseError
 
+import yaml
+
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
-CONFIG_PATH = os.path.join(BASE_DIR, "config.json")
+CONFIG_PATH = os.path.join("config", "meta_agent.yaml")
 TASKS_DIR = os.path.join(BASE_DIR, "tasks")
 REPORTS_DIR = os.path.join(BASE_DIR, "reports")
 PATCHES_DIR = os.path.join(BASE_DIR, "patches")
+
+try:
+    from tools.qe_config import get_qe_paths
+except Exception:  # pragma: no cover - fallback for legacy runs
+    get_qe_paths = None
+
+
+def _resolve_base_dir() -> str:
+    env_root = os.getenv("QE_ROOT")
+    if env_root:
+        return env_root
+    if get_qe_paths:
+        try:
+            return str(get_qe_paths()["qe_root"])
+        except Exception:
+            pass
+    parent = os.path.abspath(os.path.join(BASE_DIR, os.pardir))
+    if os.path.isdir(os.path.join(parent, "config")) and os.path.isdir(os.path.join(parent, "ai_scalper_bot")):
+        return parent
+    return BASE_DIR
+
+
+def _resolve_meta_config_path(path: str = CONFIG_PATH) -> str:
+    base = _resolve_base_dir()
+    env_override = os.getenv("META_AGENT_CONFIG")
+    candidate = env_override or path
+    if os.path.isabs(candidate):
+        return candidate
+    return os.path.abspath(os.path.join(base, candidate))
 
 
 def _ensure_dir(path: str) -> None:
@@ -29,12 +60,15 @@ def _ensure_dir(path: str) -> None:
 
 
 def _load_config(path: str = CONFIG_PATH) -> Dict:
-    if not os.path.exists(path):
+    resolved = _resolve_meta_config_path(path)
+    if not os.path.exists(resolved):
         return {}
     try:
-        with open(path, "r", encoding="utf-8") as handle:
+        with open(resolved, "r", encoding="utf-8") as handle:
+            if resolved.lower().endswith((".yaml", ".yml")):
+                return yaml.safe_load(handle) or {}
             return json.load(handle)
-    except (json.JSONDecodeError, OSError):
+    except (json.JSONDecodeError, yaml.YAMLError, OSError):
         return {}
 
 
@@ -58,9 +92,13 @@ def _resolve_target_project(task_project: str) -> str:
         return task_project
     config = _load_config()
     project_root = config.get("project_root")
-    if project_root and os.path.exists(project_root):
-        return project_root
-    return os.path.abspath(task_project)
+    base = _resolve_base_dir()
+    if project_root:
+        if not os.path.isabs(project_root):
+            project_root = os.path.abspath(os.path.join(base, project_root))
+        if os.path.exists(project_root):
+            return project_root
+    return os.path.abspath(os.path.join(base, task_project))
 
 
 def run_basic_quality_checks(project_root: str, affected_files: List[str]) -> Dict[str, any]:

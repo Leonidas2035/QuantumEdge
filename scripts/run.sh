@@ -18,7 +18,7 @@ if [ ! -x "$PYTHON_BIN" ]; then
   exit 1
 fi
 
-PYTHONPATH="$ROOT_DIR/ai_scalper_bot:$ROOT_DIR/SupervisorAgent:$ROOT_DIR/meta_agent${PYTHONPATH:+:$PYTHONPATH}"
+PYTHONPATH="$ROOT_DIR:$ROOT_DIR/ai_scalper_bot:$ROOT_DIR/SupervisorAgent:$ROOT_DIR/meta_agent${PYTHONPATH:+:$PYTHONPATH}"
 export PYTHONPATH
 export QE_ROOT="$ROOT_DIR"
 
@@ -33,13 +33,13 @@ echo "  OPENAI_API_KEY_DEV / OPENAI_API_KEY_PROD"
 
 case "$MODE" in
   supervisor)
-    "$PYTHON_BIN" "$CLI" supervisor-foreground "$@"
+    "$PYTHON_BIN" "$CLI" supervisor --config "$ROOT_DIR/config/supervisor.yaml" "$@"
     ;;
   bot)
-    "$PYTHON_BIN" "$CLI" bot-run "$@"
+    "$PYTHON_BIN" "$CLI" bot --config "$ROOT_DIR/config/bot.yaml" "$@"
     ;;
   meta)
-    "$PYTHON_BIN" "$CLI" meta-run "$@"
+    "$PYTHON_BIN" "$CLI" meta --config "$ROOT_DIR/config/meta_agent.yaml" "$@"
     ;;
   *)
     echo "Unknown mode: $MODE"

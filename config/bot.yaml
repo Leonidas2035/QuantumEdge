@@ -1,0 +1,46 @@
+# QuantumEdge bot defaults (safe, no secrets).
+
+app:
+  mode: "paper"          # paper | demo
+  websocket: "mock"      # mock | binance
+  log_level: "INFO"
+  llm_enabled: false
+  exchange: "binance_demo"
+  data_path: "data"
+
+binance:
+  base_url: "https://api.binance.com"
+  ws_spot_base: "wss://stream.binance.com:9443"
+  recv_window: 5000
+  symbols: ["BTCUSDT", "ETHUSDT"]
+
+binance_demo:
+  enabled: true
+  testnet: true
+  symbols: ["BTCUSDT", "ETHUSDT"]
+  max_notional_per_trade: 50
+  max_open_positions: 1
+
+bingx_demo:
+  enabled: true
+  symbols: ["BTC-USDT"]
+
+ml:
+  require_models: false
+  horizons: [1, 5, 30]
+  warmup_seconds: 600
+
+supervisor:
+  enabled: true
+  base_url: "http://127.0.0.1:8765"
+  api_token: ""
+  heartbeat_interval_s: 5
+  timeout_s: 1.0
+  on_error: "log_and_continue"
+  risk_enabled: true
+  risk_on_error: "bypass"
+  risk_log_level: "info"
+
+ops:
+  status_file: "runtime/bot_status.json"
+  write_interval_seconds: 2

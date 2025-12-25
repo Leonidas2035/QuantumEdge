@@ -1,0 +1,6 @@
+# Meta-Agent defaults (safe, no secrets).
+mode: "dev"
+projects_path: "meta_agent/config/projects.yaml"
+offmarket_schedule_path: "meta_agent/config/offmarket_schedule.yaml"
+logs_dir: "logs"
+runtime_dir: "runtime"

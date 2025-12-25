@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -9,26 +10,83 @@ from offmarket_state import OffmarketState, load_offmarket_state, save_offmarket
 from projects_config import load_project_registry
 from supervisor_runner import run_supervisor_maintenance_once
 
-SCHEDULE_CFG_PATH = Path("config/offmarket_schedule.yaml")
-STATE_PATH = Path("state/offmarket_state.json")
-LOG_PATH = Path("logs/offmarket_scheduler.log")
+try:
+    from tools.qe_config import get_qe_paths
+except Exception:  # pragma: no cover - fallback for legacy runs
+    get_qe_paths = None
+
+
+def _resolve_base_dir() -> Path:
+    env_root = os.getenv("QE_ROOT")
+    if env_root:
+        return Path(env_root)
+    if get_qe_paths:
+        try:
+            return get_qe_paths()["qe_root"]
+        except Exception:
+            pass
+    base = Path(__file__).resolve().parent
+    parent = base.parent
+    if (parent / "config").is_dir() and (parent / "ai_scalper_bot").is_dir():
+        return parent
+    return base
+
+
+def _resolve_schedule_path() -> Path:
+    base = _resolve_base_dir()
+    override = os.getenv("META_AGENT_OFFMARKET_CONFIG")
+    if override:
+        candidate = Path(override)
+    else:
+        meta_cfg = base / "config" / "meta_agent.yaml"
+        if meta_cfg.exists():
+            try:
+                import yaml
+
+                raw = yaml.safe_load(meta_cfg.read_text(encoding="utf-8")) or {}
+                candidate = Path(raw.get("offmarket_schedule_path", "config/offmarket_schedule.yaml"))
+            except yaml.YAMLError:
+                candidate = Path("config/offmarket_schedule.yaml")
+        else:
+            candidate = Path("config/offmarket_schedule.yaml")
+    if not candidate.is_absolute():
+        candidate = base / candidate
+    return candidate.resolve()
+
+
+def _resolve_state_path() -> Path:
+    base = _resolve_base_dir()
+    runtime_dir = os.getenv("QE_RUNTIME_DIR")
+    if runtime_dir:
+        return Path(runtime_dir).resolve() / "meta_agent" / "offmarket_state.json"
+    return base / "runtime" / "meta_agent" / "offmarket_state.json"
+
+
+def _resolve_log_path() -> Path:
+    base = _resolve_base_dir()
+    logs_dir = os.getenv("QE_LOGS_DIR")
+    if logs_dir:
+        return Path(logs_dir).resolve() / "offmarket_scheduler.log"
+    return base / "logs" / "offmarket_scheduler.log"
 
 
 def _load_schedule() -> dict:
     import yaml
 
-    if not SCHEDULE_CFG_PATH.exists():
+    schedule_path = _resolve_schedule_path()
+    if not schedule_path.exists():
         return {"enabled": False}
-    with SCHEDULE_CFG_PATH.open("r", encoding="utf-8") as handle:
+    with schedule_path.open("r", encoding="utf-8") as handle:
         return yaml.safe_load(handle) or {}
 
 
 def _setup_logging() -> logging.Logger:
-    LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+    log_path = _resolve_log_path()
+    log_path.parent.mkdir(parents=True, exist_ok=True)
     logger = logging.getLogger("offmarket_scheduler")
     if not logger.handlers:
         logger.setLevel(logging.INFO)
-        fh = logging.FileHandler(LOG_PATH, encoding="utf-8")
+        fh = logging.FileHandler(log_path, encoding="utf-8")
         fmt = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s")
         fh.setFormatter(fmt)
         logger.addHandler(fh)
@@ -87,7 +145,7 @@ def main() -> None:
         return
 
     now = datetime.now(timezone.utc)
-    state = load_offmarket_state(STATE_PATH)
+    state = load_offmarket_state(_resolve_state_path())
 
     if not _within_window(schedule_cfg, now):
         logger.info("Outside allowed window; skipping.")
@@ -115,12 +173,12 @@ def main() -> None:
         state.last_run_utc = now
         state.runs_today += 1
         state.last_run_result = result.get("status")
-        save_offmarket_state(STATE_PATH, state)
+        save_offmarket_state(_resolve_state_path(), state)
         logger.info("Offmarket maintenance completed with status=%s", result.get("status"))
     except Exception as exc:
         state.last_run_utc = now
         state.last_run_result = f"error: {exc}"
-        save_offmarket_state(STATE_PATH, state)
+        save_offmarket_state(_resolve_state_path(), state)
         logger.error("Offmarket maintenance failed: %s", exc)
 
 

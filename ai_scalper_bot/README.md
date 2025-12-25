@@ -1,7 +1,7 @@
 # QuantumEdge / ai_scalper_bot
 
 ## SupervisorAgent heartbeat integration
-- The bot can send runtime heartbeats to SupervisorAgent (`C:/SupervisorAgent`) to expose uptime, PnL, and equity in real time.
+- The bot can send runtime heartbeats to SupervisorAgent (`QE_ROOT/SupervisorAgent`) to expose uptime, PnL, and equity in real time.
 - Configure under `config/settings.yaml` -> `supervisor` section:
   - `enabled`: turn integration on/off.
   - `base_url`: SupervisorAgent API base (default `http://127.0.0.1:8765`).

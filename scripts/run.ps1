@@ -18,6 +18,7 @@ if (-not (Test-Path $python)) {
 }
 
 $paths = @(
+    $root,
     Join-Path $root "ai_scalper_bot",
     Join-Path $root "SupervisorAgent",
     Join-Path $root "meta_agent"
@@ -36,9 +37,15 @@ Write-Host "  OPENAI_API_KEY / OPENAI_API_KEY_SUPERVISOR"
 Write-Host "  OPENAI_API_KEY_DEV / OPENAI_API_KEY_PROD"
 
 $subcommand = switch ($Mode) {
-    "supervisor" { "supervisor-foreground" }
-    "bot" { "bot-run" }
-    "meta" { "meta-run" }
+    "supervisor" { "supervisor" }
+    "bot" { "bot" }
+    "meta" { "meta" }
 }
 
-& $python $cli $subcommand @args
+$configPath = switch ($Mode) {
+    "supervisor" { Join-Path $root "config\supervisor.yaml" }
+    "bot" { Join-Path $root "config\bot.yaml" }
+    "meta" { Join-Path $root "config\meta_agent.yaml" }
+}
+
+& $python $cli $subcommand --config $configPath @args

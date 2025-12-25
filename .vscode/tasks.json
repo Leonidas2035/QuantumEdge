@@ -16,7 +16,7 @@
     {
       "label": "Run: Supervisor (foreground)",
       "type": "shell",
-      "command": "powershell -NoProfile -Command \"if (Test-Path '.venv\\\\Scripts\\\\python.exe') { Write-Host 'Activate .venv and run: python SupervisorAgent\\\\supervisor.py' } else { Write-Host 'Create .venv: python -m venv .venv'; Write-Host 'Install deps: pip install -r SupervisorAgent\\\\requirements.txt'; Write-Host 'Then run: python SupervisorAgent\\\\supervisor.py' }\"",
+      "command": "powershell -NoProfile -Command \"if (Test-Path '.venv\\\\Scripts\\\\python.exe') { Write-Host 'Run: .\\\\.venv\\\\Scripts\\\\python.exe tools\\\\qe_cli.py supervisor --config config\\\\supervisor.yaml' } else { Write-Host 'Create .venv: python -m venv .venv'; Write-Host 'Install deps: pip install -r requirements\\\\requirements.txt'; Write-Host 'Then run: .\\\\.venv\\\\Scripts\\\\python.exe tools\\\\qe_cli.py supervisor --config config\\\\supervisor.yaml' }\"",
       "problemMatcher": []
     }
   ]

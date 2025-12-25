@@ -1,0 +1,13 @@
+# Shared path aliases (relative to QE_ROOT).
+paths:
+  qe_root: "."
+  config_dir: "config"
+  runtime_dir: "runtime"
+  logs_dir: "logs"
+  data_dir: "data"
+  bot_dir: "ai_scalper_bot"
+  supervisor_dir: "SupervisorAgent"
+  meta_agent_dir: "meta_agent"
+  bot_config_dir: "ai_scalper_bot/config"
+  supervisor_config_dir: "SupervisorAgent/config"
+  meta_agent_config_dir: "meta_agent/config"

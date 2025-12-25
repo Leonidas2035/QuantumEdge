@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import logging
+import os
 import sys
 import time
 from datetime import datetime, date, timezone
@@ -57,6 +58,11 @@ from supervisor.dashboard.service import DashboardService
 from supervisor.tsdb import NoopTimeseriesStore, ClickHouseTimeseriesStore, QuestDbTimeseriesStore, TsdbWriter
 from supervisor.tsdb.maintenance import apply_retention_and_rollups
 
+try:
+    from tools.qe_config import get_qe_paths
+except Exception:  # pragma: no cover - fallback for legacy runs
+    get_qe_paths = None
+
 
 class SupervisorApp:
     """High-level facade for supervisor commands."""
@@ -90,7 +96,7 @@ class SupervisorApp:
         self.project_root = project_root
         self.tsdb_config = tsdb_config
         self.logger = logger or logging.getLogger(__name__)
-        self.state_dir = project_root / "state"
+        self.state_dir = paths.runtime_dir / "supervisor"
         self.state_dir.mkdir(parents=True, exist_ok=True)
 
         events_path = paths.events_dir / f"events_{date.today().isoformat()}.jsonl"
@@ -623,7 +629,9 @@ class SupervisorApp:
         def add(status: str, message: str) -> None:
             results.append((status, message))
 
-        run_bot = self.paths.quantumedge_root / "run_bot.py"
+        run_bot = Path(self.config.bot_entrypoint)
+        if not run_bot.is_absolute():
+            run_bot = (self.paths.qe_root / run_bot).resolve()
         if run_bot.exists():
             add("OK", f"QuantumEdge path: {run_bot}")
         else:
@@ -732,23 +740,33 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         default=None,
         help="Number of days for tsdb-backfill (overrides config backfill.from_days).",
     )
+    parser.add_argument(
+        "--config",
+        dest="config_path",
+        help="Path to supervisor config YAML (defaults to QE_ROOT/config/supervisor.yaml).",
+    )
     return parser.parse_args(argv)
 
 
-def build_app(project_root: Path) -> SupervisorApp:
-    paths_config = load_paths_config(project_root / "config" / "paths.yaml")
+def build_app(
+    project_root: Path,
+    paths_config_path: Path,
+    supervisor_config_path: Path,
+    supervisor_config_dir: Path,
+) -> SupervisorApp:
+    paths_config = load_paths_config(paths_config_path)
     setup_logging(paths_config.logs_dir)
-    supervisor_config = load_supervisor_config(project_root / "config" / "supervisor.yaml")
-    risk_config = load_risk_config(project_root / "config" / "risk.yaml")
-    llm_config = load_llm_supervisor_config(project_root / "config" / "llm_supervisor.yaml")
-    trend_config = load_trend_evaluator_config(project_root / "config" / "llm_trend_evaluator.yaml")
-    market_risk_config = load_market_risk_config(project_root / "config" / "llm_market_risk.yaml")
-    behavior_config = load_trading_behavior_config(project_root / "config" / "llm_trading_behavior.yaml")
-    snapshot_config = load_snapshot_scheduler_config(project_root / "config" / "supervisor.yaml")
-    meta_config = load_meta_supervisor_config(project_root / "config" / "meta_supervisor.yaml", paths_config)
-    dashboard_config = load_dashboard_config(project_root / "config" / "dashboard.yaml")
-    tsdb_config = load_tsdb_config(project_root / "config" / "tsdb.yaml")
-    tsdb_retention = load_tsdb_retention_config(project_root / "config" / "tsdb_retention.yaml")
+    supervisor_config = load_supervisor_config(supervisor_config_path)
+    risk_config = load_risk_config(supervisor_config_dir / "risk.yaml")
+    llm_config = load_llm_supervisor_config(supervisor_config_dir / "llm_supervisor.yaml")
+    trend_config = load_trend_evaluator_config(supervisor_config_dir / "llm_trend_evaluator.yaml")
+    market_risk_config = load_market_risk_config(supervisor_config_dir / "llm_market_risk.yaml")
+    behavior_config = load_trading_behavior_config(supervisor_config_dir / "llm_trading_behavior.yaml")
+    snapshot_config = load_snapshot_scheduler_config(supervisor_config_path)
+    meta_config = load_meta_supervisor_config(supervisor_config_dir / "meta_supervisor.yaml", paths_config)
+    dashboard_config = load_dashboard_config(supervisor_config_dir / "dashboard.yaml")
+    tsdb_config = load_tsdb_config(supervisor_config_dir / "tsdb.yaml")
+    tsdb_retention = load_tsdb_retention_config(supervisor_config_dir / "tsdb_retention.yaml")
     return SupervisorApp(
         paths_config,
         supervisor_config,
@@ -768,11 +786,36 @@ def build_app(project_root: Path) -> SupervisorApp:
 
 
 def main(argv: Optional[list[str]] = None) -> None:
-    project_root = Path(__file__).resolve().parent
     args = parse_args(argv)
+    project_root = Path(__file__).resolve().parent
+
+    qe_paths = None
+    if get_qe_paths:
+        try:
+            qe_paths = get_qe_paths()
+        except Exception:
+            qe_paths = None
+
+    qe_root = Path(os.getenv("QE_ROOT") or (qe_paths["qe_root"] if qe_paths else project_root.parent))
+    os.environ.setdefault("QE_ROOT", str(qe_root))
+
+    config_dir = Path(os.getenv("QE_CONFIG_DIR") or (qe_paths["config_dir"] if qe_paths else qe_root / "config"))
+    supervisor_config_dir = Path(qe_paths["supervisor_config_dir"] if qe_paths else project_root / "config")
+    project_root = Path(qe_paths["supervisor_dir"] if qe_paths else project_root)
+
+    if not supervisor_config_dir.exists():
+        supervisor_config_dir = project_root / "config"
+
+    paths_config_path = config_dir / "paths.yaml"
+    if not paths_config_path.exists():
+        paths_config_path = project_root / "config" / "paths.yaml"
+
+    supervisor_config_path = Path(args.config_path) if args.config_path else Path(os.getenv("SUPERVISOR_CONFIG") or config_dir / "supervisor.yaml")
+    if not supervisor_config_path.exists():
+        supervisor_config_path = supervisor_config_dir / "supervisor.yaml"
 
     try:
-        app = build_app(project_root)
+        app = build_app(project_root, paths_config_path, supervisor_config_path, supervisor_config_dir)
     except Exception as exc:
         print(f"Failed to initialize supervisor: {exc}", file=sys.stderr)
         sys.exit(1)

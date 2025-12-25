@@ -135,6 +135,9 @@ def _build_signal_from_meta(meta: EnsembleOutput) -> SignalOutput:
 async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, status_writer: Optional[BotStatusWriter] = None, logger: Optional[logging.Logger] = None):
     if logger is None:
         logging.basicConfig(level=getattr(logging, str(config.get("app.log_level", "INFO")).upper(), logging.INFO))
+    supervisor_cfg = load_supervisor_settings(config)
+    print(f"[INFO] Using config: {config.config_path}")
+    print(f"[INFO] Supervisor URL: {supervisor_cfg.base_url}")
     mode = str(config.get("app.mode", "paper")).lower()
     demo_mode = mode == "demo"
     data_source = _resolve_data_source()
