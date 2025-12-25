@@ -61,6 +61,7 @@ from policy.policy_contract import policy_fingerprint
 from policy.policy_publisher import PolicyPublisher
 from policy.policy_engine import PolicyEngine, PolicyEngineConfig, HysteresisConfig
 from policy.heuristics import HeuristicThresholds
+from monitoring.api import TelemetryManager, TelemetryConfig
 
 try:
     from tools.qe_config import get_qe_paths
@@ -196,7 +197,18 @@ class SupervisorApp:
             cb_open_sec=config.policy_llm_cb_open_sec,
             policy_state_path=self.paths.runtime_dir / "policy_state.json",
         )
-        self.policy_engine = PolicyEngine(engine_cfg, self.paths, self.process_manager, self.risk_engine, self.logger)
+        telemetry_persist = Path(config.telemetry_persist_path) if config.telemetry_persist_path else None
+        if telemetry_persist and not telemetry_persist.is_absolute():
+            telemetry_persist = (self.paths.qe_root / telemetry_persist).resolve()
+        telemetry_cfg = TelemetryConfig(
+            max_event_size_kb=config.telemetry_max_event_size_kb,
+            max_events_in_memory=config.telemetry_max_events_in_memory,
+            persist_path=str(telemetry_persist) if telemetry_persist else None,
+            alerts_thresholds=config.telemetry_alerts_thresholds,
+            alerts_cooldown_sec=config.telemetry_alerts_cooldown_sec,
+        )
+        self.telemetry = TelemetryManager(telemetry_cfg)
+        self.policy_engine = PolicyEngine(engine_cfg, self.paths, self.process_manager, self.risk_engine, self.logger, telemetry_manager=self.telemetry)
         self.policy_publisher = PolicyPublisher(policy_file, self.logger)
         self.policy_publish_interval_s = float(config.policy_publish_interval_s)
         self._last_policy_fingerprint: Optional[str] = None
@@ -267,11 +279,24 @@ class SupervisorApp:
     def get_policy_debug(self) -> Dict[str, Any]:
         return self.policy_engine.debug_payload()
 
+    def ingest_telemetry_event(self, payload: Dict[str, Any]) -> Dict[str, Any]:
+        return self.telemetry.ingest(payload)
+
+    def get_telemetry_summary(self) -> Dict[str, Any]:
+        return self.telemetry.summary()
+
+    def get_telemetry_events(self, limit: int = 200) -> List[Dict[str, Any]]:
+        return self.telemetry.events(limit=limit)
+
+    def get_telemetry_alerts(self) -> Dict[str, Any]:
+        return self.telemetry.alerts_payload()
+
     def _publish_policy(self) -> None:
         policy = self.policy_engine.evaluate()
         if not self.policy_publisher.publish(policy):
             return
         self._current_policy = policy
+        self.telemetry.record_policy(policy.to_dict())
         fingerprint = policy_fingerprint(policy)
         if fingerprint != self._last_policy_fingerprint:
             self.logger.info(
@@ -283,7 +308,7 @@ class SupervisorApp:
                 policy.reason,
                 fingerprint[:12],
             )
-            self._last_policy_fingerprint = fingerprint
+                self._last_policy_fingerprint = fingerprint
 
     def start_bot(self) -> Dict[str, Any]:
         try:
@@ -320,6 +345,7 @@ class SupervisorApp:
         try:
             while True:
                 self.process_manager.tick(self.config.mode)
+                self.telemetry.update_process_state(self.process_manager.get_status_payload())
                 if time.time() >= next_policy_publish_at:
                     self._publish_policy()
                     next_policy_publish_at = time.time() + self.policy_publish_interval_s

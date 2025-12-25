@@ -73,6 +73,19 @@ class SupervisorConfig:
     policy_llm_cb_failures: int = 3
     policy_llm_cb_window_sec: int = 300
     policy_llm_cb_open_sec: int = 120
+    telemetry_max_event_size_kb: int = 32
+    telemetry_max_events_in_memory: int = 5000
+    telemetry_persist_path: str = "runtime/telemetry_store.jsonl"
+    telemetry_alerts_cooldown_sec: int = 120
+    telemetry_alerts_thresholds: Dict[str, Optional[float]] = field(
+        default_factory=lambda: {
+            "error_rate_1m": 5.0,
+            "latency_ms": 500.0,
+            "drawdown_abs": None,
+            "max_daily_loss": None,
+            "restart_rate_per_hour": 3.0,
+        }
+    )
 
 
 @dataclass
@@ -243,6 +256,15 @@ def _load_yaml(path: Path) -> Dict[str, Any]:
     return data
 
 
+def _coerce_optional_float(value: Optional[object]) -> Optional[float]:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
 def _resolve_path(value: Optional[str | Path], base: Path, default: Optional[Path] = None) -> Path:
     if value is None or value == "":
         return default.resolve() if default is not None else base.resolve()
@@ -389,6 +411,23 @@ def load_supervisor_config(path: Path) -> SupervisorConfig:
     policy_llm_cb_window_sec = int(cb.get("window_sec", 300))
     policy_llm_cb_open_sec = int(cb.get("open_sec", 120))
 
+    telemetry_section = raw.get("telemetry", {}) or {}
+    ingest_section = telemetry_section.get("ingest", {}) or {}
+    store_section = telemetry_section.get("store", {}) or {}
+    alerts_section = telemetry_section.get("alerts", {}) or {}
+    thresholds_raw = alerts_section.get("thresholds", {}) or {}
+    telemetry_max_event_size_kb = int(ingest_section.get("max_event_size_kb", 32))
+    telemetry_max_events_in_memory = int(store_section.get("max_events_in_memory", 5000))
+    telemetry_persist_path = str(store_section.get("persist_path", "runtime/telemetry_store.jsonl"))
+    telemetry_alerts_cooldown_sec = int(alerts_section.get("cooldown_sec", 120))
+    telemetry_alerts_thresholds = {
+        "error_rate_1m": _coerce_optional_float(thresholds_raw.get("error_rate_1m", 5.0)),
+        "latency_ms": _coerce_optional_float(thresholds_raw.get("latency_ms", 500.0)),
+        "drawdown_abs": _coerce_optional_float(thresholds_raw.get("drawdown_abs")),
+        "max_daily_loss": _coerce_optional_float(thresholds_raw.get("max_daily_loss")),
+        "restart_rate_per_hour": _coerce_optional_float(thresholds_raw.get("restart_rate_per_hour", 3.0)),
+    }
+
     return SupervisorConfig(
         mode=mode,
         heartbeat_port=heartbeat_port,
@@ -434,6 +473,11 @@ def load_supervisor_config(path: Path) -> SupervisorConfig:
         policy_llm_cb_failures=policy_llm_cb_failures,
         policy_llm_cb_window_sec=policy_llm_cb_window_sec,
         policy_llm_cb_open_sec=policy_llm_cb_open_sec,
+        telemetry_max_event_size_kb=telemetry_max_event_size_kb,
+        telemetry_max_events_in_memory=telemetry_max_events_in_memory,
+        telemetry_persist_path=telemetry_persist_path,
+        telemetry_alerts_cooldown_sec=telemetry_alerts_cooldown_sec,
+        telemetry_alerts_thresholds=telemetry_alerts_thresholds,
     )
 
 

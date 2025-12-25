@@ -136,12 +136,13 @@ class PolicyHysteresis:
 
 
 class PolicyEngine:
-    def __init__(self, config: PolicyEngineConfig, paths, process_manager, risk_engine, logger) -> None:
+    def __init__(self, config: PolicyEngineConfig, paths, process_manager, risk_engine, logger, telemetry_manager=None) -> None:
         self.config = config
         self.paths = paths
         self.process_manager = process_manager
         self.risk_engine = risk_engine
         self.logger = logger
+        self.telemetry = telemetry_manager
         self.hysteresis = PolicyHysteresis(config.hysteresis, config.policy_state_path)
         self.cb = CircuitBreaker(config.cb_failures, config.cb_window_sec, config.cb_open_sec)
         self.llm = None
@@ -199,7 +200,8 @@ class PolicyEngine:
 
     def evaluate(self) -> Policy:
         try:
-            signals = collect_signals(self.paths, self.process_manager, self.risk_engine, self.logger)
+            telemetry_summary = self.telemetry.summary() if self.telemetry else None
+            signals = collect_signals(self.paths, self.process_manager, self.risk_engine, self.logger, telemetry_summary)
             self._last_signals = signals
             decision = apply_heuristics(signals, self.config.thresholds)
             immediate = decision.reason in {"BOT_UNHEALTHY", "DAILY_LOSS_LIMIT", "DRAWDOWN_LIMIT", "RISK_ENGINE_HALTED"}

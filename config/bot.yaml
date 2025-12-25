@@ -63,3 +63,12 @@ policy:
 ops:
   status_file: "runtime/bot_status.json"
   write_interval_seconds: 2
+
+telemetry:
+  enabled: true
+  sink: "http"  # http | file | both
+  http_url: "http://127.0.0.1:8765/api/v1/telemetry/ingest"
+  file_path: "runtime/telemetry.jsonl"
+  flush_interval_sec: 1
+  sample:
+    latency_every_n: 10

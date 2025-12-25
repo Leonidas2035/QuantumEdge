@@ -23,6 +23,7 @@ def _base_signals(**overrides) -> Signals:
         "error_rate": None,
         "spread_bps": None,
         "volatility": None,
+        "latency_ms": None,
         "risk_halted": False,
         "risk_halt_reason": None,
         "evidence": {},

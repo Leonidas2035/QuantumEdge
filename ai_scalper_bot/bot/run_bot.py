@@ -33,6 +33,7 @@ from bot.monitoring.supervisor_snapshot_monitor import run_supervisor_snapshot_m
 from bot.risk.scalp_guards import ScalpGuard
 from bot.ops.status_writer import BotStatusWriter
 from bot.policy.policy_client import PolicyClient
+from telemetry.emitter import TelemetryEmitter, TelemetryConfig
 
 _kill_cache = {"ts": 0.0, "active": False, "reason": None}
 
@@ -157,6 +158,35 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
         safe_mode_default=safe_mode_default,
         request_timeout_s=float(policy_cfg.get("policy_api_timeout_s", 0.3)),
     )
+    telemetry_cfg = config.get("telemetry", {}) or {}
+    telemetry_enabled = bool(telemetry_cfg.get("enabled", True))
+    telemetry_sink = str(telemetry_cfg.get("sink", "http")).lower()
+    telemetry_http_url = str(telemetry_cfg.get("http_url", "http://127.0.0.1:8765/api/v1/telemetry/ingest"))
+    telemetry_file = Path(telemetry_cfg.get("file_path", "runtime/telemetry.jsonl"))
+    if not telemetry_file.is_absolute():
+        telemetry_file = (Path(config.qe_root) / telemetry_file).resolve()
+    telemetry_flush = float(telemetry_cfg.get("flush_interval_sec", 1))
+    telemetry_queue = int(telemetry_cfg.get("max_queue", 1000))
+    telemetry_timeout = float(telemetry_cfg.get("http_timeout_s", 0.3))
+    telemetry_max_kb = int(telemetry_cfg.get("max_event_size_kb", 32))
+    sample_cfg = telemetry_cfg.get("sample", {}) or {}
+    latency_every_n = int(sample_cfg.get("latency_every_n", 10) or 10)
+    telemetry_emitter = TelemetryEmitter(
+        TelemetryConfig(
+            enabled=telemetry_enabled,
+            sink=telemetry_sink,
+            http_url=telemetry_http_url,
+            file_path=telemetry_file,
+            flush_interval_sec=telemetry_flush,
+            max_queue=telemetry_queue,
+            timeout_s=telemetry_timeout,
+            max_event_kb=telemetry_max_kb,
+        )
+    ) if telemetry_enabled else None
+
+    def emit_event(event_type: str, data: Dict[str, Any], symbol_override: Optional[str] = None) -> None:
+        if telemetry_emitter:
+            telemetry_emitter.emit_event(event_type, data, symbol_override)
     mode = str(config.get("app.mode", "paper")).lower()
     demo_mode = mode == "demo"
     data_source = _resolve_data_source()
@@ -373,6 +403,7 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
 
     last_report = time.time()
     report_interval = 5.0
+    last_policy_snapshot: Dict[str, Any] = {}
 
     def write_status(extra: Optional[Dict[str, Any]] = None) -> None:
         if not status_writer:
@@ -396,10 +427,22 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
         if extra:
             status_payload.update(extra)
         status_writer.update(status_payload)
+        emit_event(
+            "status",
+            {
+                "state": "RUNNING" if status_payload.get("is_running") else "STOPPED",
+                "uptime_sec": time.time() - start_time,
+                "mode": mode,
+            },
+            symbol,
+        )
 
     try:
         write_status({"info": "startup"})
+        emit_event("status", {"state": "STARTING", "uptime_sec": 0.0, "mode": mode}, symbol)
+        latency_counter = 0
         async for event in _event_stream(list(engines.keys())):
+            loop_start = time.perf_counter()
             if stop_event and stop_event.is_set():
                 break
             try:
@@ -408,6 +451,7 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
                 qty = float(event["q"])
                 evt_symbol = event.get("s", symbol)
             except Exception:
+                emit_event("error", {"code": "event_parse", "message": "Failed to parse market event", "where": "event_stream"}, symbol)
                 continue
             if evt_symbol not in engines:
                 continue
@@ -482,11 +526,16 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
                 except Exception as exc:
                     approved = True
                     print(f"[WARN] LLM risk moderator failed; falling back to rules. err={exc}")
+                    emit_event("error", {"code": "llm_risk_moderator", "message": str(exc), "where": "risk_moderator"}, evt_symbol)
 
             policy = policy_client.get_effective_policy()
             policy_allows_entry = bool(policy.allow_trading) and policy.mode != "risk_off"
             if policy.cooldown_sec > 0 and time.time() < (policy.ts + policy.cooldown_sec):
                 policy_allows_entry = False
+            policy_snapshot = {"mode": policy.mode, "allow_trading": policy.allow_trading, "reason": policy.reason}
+            if policy_snapshot != last_policy_snapshot:
+                emit_event("policy", policy_snapshot, evt_symbol)
+                last_policy_snapshot = policy_snapshot
 
             position_state = 1 if trader.position > 0 else (-1 if trader.position < 0 else 0)
             if trading_enabled and not skip_trading and meta.components:
@@ -560,16 +609,49 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
                     )
                     if result.skipped and result.reason not in {"noop"}:
                         logging.getLogger("execution").debug("Execution skipped (%s)", result.reason)
+                    if result.executed:
+                        emit_event(
+                            "order",
+                            {
+                                "side": result.action,
+                                "qty": result.size,
+                                "price": price,
+                                "order_type": "market",
+                                "client_order_id": None,
+                            },
+                            evt_symbol,
+                        )
+                        emit_event(
+                            "fill",
+                            {
+                                "side": result.action,
+                                "qty": result.size,
+                                "price": price,
+                                "fee": None,
+                                "order_id": None,
+                            },
+                            evt_symbol,
+                        )
 
                     # Time-based exit for scalp mode (no-op for normal)
                     await execution_mode.enforce_time_stop(trader, price, ts, evt_symbol, allow_fn=_supervisor_allows)
 
+            stats = engine.trade_stats.setdefault(evt_symbol, TradeStats())
             now = time.time()
             if now - last_report >= report_interval:
                 summary = trader.summary()
                 print(
                     f"[STATS][{evt_symbol}] pos={summary['position']:.2f} trades={summary['trades']} "
                     f"pnl={summary['realized_pnl'] + summary['open_pnl']:.4f} meta_edge={meta.meta_edge:.4f}"
+                )
+                emit_event(
+                    "pnl",
+                    {
+                        "equity": float(summary.get("realized_pnl", 0.0) + summary.get("open_pnl", 0.0)),
+                        "pnl_day": float(stats.total_pnl()),
+                        "drawdown_day": float(stats.max_drawdown_abs()),
+                    },
+                    evt_symbol,
                 )
                 last_report = now
 
@@ -597,8 +679,6 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
                 await supervisor_client.send_heartbeat_if_due(build_payload)
 
             # trade stats + circuit breakers
-            stats = engine.trade_stats.setdefault(evt_symbol, TradeStats())
-
             losses = stats.loss_streak(engine.loss_cfg.get("window_trades", 10), engine.loss_cfg.get("max_losses", 3))
             overtrading = stats.trades_last_hour() >= engine.over_cfg.get("max_trades_per_hour", 60)
             daily_pnl = stats.total_pnl()
@@ -637,6 +717,10 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
 
             if once:
                 break
+            latency_counter += 1
+            if telemetry_emitter and latency_every_n > 0 and latency_counter % latency_every_n == 0:
+                loop_ms = (time.perf_counter() - loop_start) * 1000.0
+                emit_event("latency", {"loop_ms": loop_ms}, evt_symbol)
             await asyncio.sleep(0.02)
     finally:
         if snapshot_monitor_task:

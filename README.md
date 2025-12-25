@@ -31,6 +31,12 @@ Policy contract (Supervisor -> bot):
 - Schema: `docs/policy_schema_v1.json`
 - Policy engine config lives in `config/supervisor.yaml` (heuristics + optional LLM moderation).
 
+Telemetry (bot -> SupervisorAgent):
+- Ingest: `POST /api/v1/telemetry/ingest`
+- Summary: `GET /api/v1/telemetry/summary`
+- Events: `GET /api/v1/telemetry/events?limit=200`
+- Alerts: `GET /api/v1/telemetry/alerts`
+
 Runtime vs research:
 - Live trading runtime remains under `ai_scalper_bot/bot`.
 - Offline/backtest tooling moved to `SupervisorAgent/research/` (compat wrappers remain under `ai_scalper_bot` for one stage).

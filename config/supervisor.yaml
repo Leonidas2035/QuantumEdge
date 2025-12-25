@@ -67,3 +67,18 @@ llm:
     failures: 3
     window_sec: 300
     open_sec: 120
+
+telemetry:
+  ingest:
+    max_event_size_kb: 32
+  store:
+    max_events_in_memory: 5000
+    persist_path: "runtime/telemetry_store.jsonl"
+  alerts:
+    cooldown_sec: 120
+    thresholds:
+      error_rate_1m: 5
+      latency_ms: 500
+      drawdown_abs: null
+      max_daily_loss: null
+      restart_rate_per_hour: 3.0

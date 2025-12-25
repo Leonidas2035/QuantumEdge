@@ -99,6 +99,30 @@ Bot defaults (from `config/bot.yaml`):
 
 If no fresh policy is available, the bot enters safe mode (no new entries, exits allowed).
 
+## Telemetry & monitoring (SupervisorAgent)
+Bot emits lightweight telemetry events to SupervisorAgent (HTTP-first, file fallback).
+
+Bot config (`config/bot.yaml`):
+- `telemetry.enabled`: enable event emission.
+- `telemetry.sink`: `http` | `file` | `both`.
+- `telemetry.http_url`: default `http://127.0.0.1:8765/api/v1/telemetry/ingest`.
+- `telemetry.file_path`: default `runtime/telemetry.jsonl`.
+- `telemetry.flush_interval_sec`: file flush interval.
+- `telemetry.sample.latency_every_n`: only send latency every N ticks.
+
+Supervisor config (`config/supervisor.yaml`):
+- `telemetry.ingest.max_event_size_kb`
+- `telemetry.store.max_events_in_memory`
+- `telemetry.store.persist_path`
+- `telemetry.alerts.thresholds.*` (error_rate_1m, latency_ms, drawdown_abs, max_daily_loss, restart_rate_per_hour)
+- `telemetry.alerts.cooldown_sec`
+
+Endpoints:
+- `POST /api/v1/telemetry/ingest`
+- `GET /api/v1/telemetry/summary`
+- `GET /api/v1/telemetry/events?limit=200`
+- `GET /api/v1/telemetry/alerts`
+
 ### Policy engine (SupervisorAgent)
 Policy is computed on a schedule using deterministic heuristics and optional LLM moderation.
 Key settings live in `config/supervisor.yaml`:

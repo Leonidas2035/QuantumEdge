@@ -20,6 +20,7 @@ class Signals:
     error_rate: Optional[float]
     spread_bps: Optional[float]
     volatility: Optional[float]
+    latency_ms: Optional[float]
     risk_halted: bool
     risk_halt_reason: Optional[str]
     evidence: Dict[str, Any]
@@ -34,6 +35,7 @@ class Signals:
             "error_rate": self.error_rate,
             "spread_bps": self.spread_bps,
             "volatility": self.volatility,
+            "latency_ms": self.latency_ms,
             "risk_halted": self.risk_halted,
             "risk_halt_reason": self.risk_halt_reason,
         }
@@ -57,7 +59,7 @@ def _parse_last_exit_time(payload: Dict[str, Any]) -> Optional[float]:
         return None
 
 
-def collect_signals(paths, process_manager, risk_engine, logger) -> Signals:
+def collect_signals(paths, process_manager, risk_engine, logger, telemetry_summary: Optional[Dict[str, Any]] = None) -> Signals:
     evidence: Dict[str, Any] = {}
     status = process_manager.get_status_payload()
     bot_running = status.get("state") == "RUNNING"
@@ -72,6 +74,8 @@ def collect_signals(paths, process_manager, risk_engine, logger) -> Signals:
 
     pnl_day = None
     drawdown_day = None
+    latency_ms = None
+    error_rate = None
     risk_halted = False
     risk_halt_reason = None
     try:
@@ -102,15 +106,23 @@ def collect_signals(paths, process_manager, risk_engine, logger) -> Signals:
             except Exception:
                 pass
 
+    if isinstance(telemetry_summary, dict):
+        evidence["telemetry_ts"] = telemetry_summary.get("last_seen_ts")
+        pnl_day = telemetry_summary.get("pnl_day", pnl_day)
+        drawdown_day = telemetry_summary.get("drawdown_day", drawdown_day)
+        error_rate = telemetry_summary.get("error_rate_1m", error_rate)
+        latency_ms = telemetry_summary.get("latency_ms_p95", latency_ms)
+
     return Signals(
         bot_running=bool(bot_running),
         restart_rate=restart_rate,
         pnl_day=pnl_day,
         drawdown_day=drawdown_day,
         loss_streak=None,
-        error_rate=None,
+        error_rate=error_rate,
         spread_bps=None,
         volatility=None,
+        latency_ms=latency_ms,
         risk_halted=risk_halted,
         risk_halt_reason=risk_halt_reason,
         evidence=evidence,

@@ -76,6 +76,23 @@ class ApiServer:
                     self._send_json(400, {"error": "bad_json"})
                     return None
 
+            def _parse_json_limit(self, max_bytes: int) -> Optional[dict]:
+                length = self.headers.get("Content-Length")
+                try:
+                    content_length = int(length) if length else 0
+                except ValueError:
+                    self._send_json(400, {"error": "bad_length"})
+                    return None
+                if content_length > max_bytes:
+                    self._send_json(413, {"error": "payload_too_large"})
+                    return None
+                body = self.rfile.read(content_length) if content_length > 0 else b""
+                try:
+                    return json.loads(body.decode("utf-8")) if body else {}
+                except json.JSONDecodeError:
+                    self._send_json(400, {"error": "bad_json"})
+                    return None
+
             def do_OPTIONS(self) -> None:  # noqa: N802
                 # CORS preflight support
                 self.send_response(204)
@@ -123,6 +140,21 @@ class ApiServer:
                         self._send_json(500, {"error": "internal_error"})
                     return
 
+                if self.path == "/api/v1/telemetry/ingest":
+                    payload = self._parse_json_limit(app.config.telemetry_max_event_size_kb * 1024)
+                    if payload is None:
+                        return
+                    if not isinstance(payload, dict):
+                        self._send_json(400, {"error": "bad_json"})
+                        return
+                    try:
+                        app.ingest_telemetry_event(payload)
+                        self._send_json(200, {"status": "ok"})
+                    except Exception as exc:  # pylint: disable=broad-except
+                        logger.exception("Error ingesting telemetry: %s", exc)
+                        self._send_json(500, {"error": "internal_error"})
+                    return
+
                 if self.path == "/api/v1/risk/evaluate":
                     payload = self._parse_json()
                     if payload is None:
@@ -164,6 +196,39 @@ class ApiServer:
                         self._send_json(200, response)
                     except Exception as exc:  # pylint: disable=broad-except
                         logger.exception("Error building bot status: %s", exc)
+                        self._send_json(500, {"error": "internal_error"})
+                    return
+                if self.path.startswith("/api/v1/telemetry/summary"):
+                    try:
+                        response = app.get_telemetry_summary()
+                        self._send_json(200, response)
+                    except Exception as exc:  # pylint: disable=broad-except
+                        logger.exception("Error building telemetry summary: %s", exc)
+                        self._send_json(500, {"error": "internal_error"})
+                    return
+                if self.path.startswith("/api/v1/telemetry/events"):
+                    try:
+                        limit = 200
+                        if "?" in self.path:
+                            _, query = self.path.split("?", 1)
+                            for part in query.split("&"):
+                                if part.startswith("limit="):
+                                    try:
+                                        limit = int(part.split("=", 1)[1])
+                                    except ValueError:
+                                        limit = 200
+                        response = app.get_telemetry_events(limit=limit)
+                        self._send_json(200, {"events": response})
+                    except Exception as exc:  # pylint: disable=broad-except
+                        logger.exception("Error building telemetry events: %s", exc)
+                        self._send_json(500, {"error": "internal_error"})
+                    return
+                if self.path.startswith("/api/v1/telemetry/alerts"):
+                    try:
+                        response = app.get_telemetry_alerts()
+                        self._send_json(200, response)
+                    except Exception as exc:  # pylint: disable=broad-except
+                        logger.exception("Error building telemetry alerts: %s", exc)
                         self._send_json(500, {"error": "internal_error"})
                     return
                 if self.path == "/api/v1/status":
