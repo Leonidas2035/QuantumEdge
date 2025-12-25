@@ -1,0 +1,11 @@
+﻿enabled: true
+model: "gpt-4.1-mini"
+temperature: 0.2
+timeout_ms: 1500
+
+history:
+  trades: 40
+  signals: 60
+
+rate_limit:
+  max_calls_per_minute: 10

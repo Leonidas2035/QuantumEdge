@@ -1,0 +1,114 @@
+Загальний опис проєкту QuantumEdge / ai_scalper_bot
+ai_scalper_bot — це каркас скальпінгового бота з паперовим трейдингом, збором маркет-даних, простим ML-енсемблом (XGBoost) та моковим стрімом. Архітектура поділена на шари: ядро конфігурацій і секретів, движок прийняття рішень, модуль трейдингу (паперовий), ринок даних (WS/мок/офлайн), ML-фічі та моделі, AI/LLM ризик-модератор, sandbox та допоміжні інсталятори/утиліти. Дані та моделі зберігаються у data/storage, документація — у Documentation.
+
+Архітектурна картина (шари системи)
+
+Core/config: завантаження settings.yaml, розшифрування секретів із secrets.enc (PBKDF2+Fernet), базові утиліти.
+Engine: DecisionEngine, що на основі сигналу (probabilities/edge) вирішує buy/sell/close/hold.
+Trading: PaperTrader для симуляції виконання, заготовки під executor/hedging/order manager.
+Market data: WebSocket менеджер для Binance (публічний), моковий генератор тіку, офлайн симулятор, DataManager для збереження тіку/ордбуків.
+ML: Побудова фіч (dataset_builder, online_features), XGBoost SignalModel, ансамбль по різних горизонтах, тренувальний скрипт.
+AI/LLM: LLMRiskModerator — детерміністичний ризик-фільтр з промптом та кешем.
+Sandbox: офлайн цикл прогону стратегії на CSV або синтетичних тіках.
+Backtester/Monitoring: місця під розвиток (поки порожні/заглушки).
+Інсталятор/утиліти: PowerShell-скрипти для інсталяції, збірки exe, Inno Setup сценарій, init_secrets CLI.
+Огляд верхнього рівня (root)
+run_bot.py — верхньорівневий launcher, викликає asyncio.run(bot.run_bot.main()).
+run_dry.py — порожній placeholder для dry-run.
+test_features.py — короткий тест побудови фіч через FeatureBuilder із локальних даних.
+init.py — маркер пакету.
+requirements.txt — залежності: YAML/env/ws (pyyaml, websockets, python-dotenv, aiohttp), чисельні (numpy, pandas), трейдинг/crypto (python-binance), ML (xgboost, scikit-learn, pyarrow), утиліти (requests, pydantic, psutil), криптографія (cryptography).
+installer.ps1 — офлайновий інсталятор: шукає/ставить Python 3.12, створює venv, ставить залежності, генерує run_bot.cmd і ярлик.
+setup_bot.ps1 — скрипт налаштування в існуючій папці: створює venv, ставить пакети, перевіряє імпорти.
+build_installer.bat — запускає Inno Setup Compiler (ISCC) для збирання інсталятора ai_scalper_bot.iss.
+build_runbot_exe.ps1 — будує консольний run_bot.exe через PyInstaller, попередньо створює launcher run_bot.py.
+ai_scalper_bot.iss — сценарій Inno Setup: пакує bot/, config/, data/, storage/, Documentation/, додає offline python інсталятор, викликає installer.ps1 після розгортання.
+run_bot.cmd — бат-файл для запуску WS менеджера у venv.
+start_bot.cmd — бат-файл-лаунчер: активує venv, показує python -V, інструкція запуску ws_manager.
+bot_icon.ico — іконка для інсталятора/ярлика.
+python-3.12.10-amd64.exe — офлайн дистрибутив Python (для інсталятора).
+README.md — порожній.
+Детальний опис bot/
+4.1. main / entrypoints
+bot/run_bot.py — основний асинхронний цикл: бере події з мок-стріму, будує онлайн-фічі, застосовує EnsembleSignalModel, LLMRiskModerator, DecisionEngine, викликає PaperTrader, друкує статистику.
+bot/run_dry.py — заглушка.
+bot/main.py — заглушка.
+4.2. core
+
+bot/core/config_loader.py — завантажує settings.yaml, запитує/читає пароль (env SCALPER_SECRETS_PASSPHRASE або getpass), розшифровує secrets.enc через load_secrets, заповнює os.environ і self.secrets; надає get(path) та secret(key).
+bot/core/secret_store.py — PBKDF2-HMAC-SHA256 (200k ітерацій) + Fernet; encrypt_secrets/ load_secrets; зберігання у config/secrets.enc (salt + token); власні винятки для відсутності/цілісності; шлях root/config.
+bot/core/constants.py, exceptions.py, state.py, utils.py — заглушки під майбутній функціонал.
+4.3. engine
+
+bot/engine/decision_engine.py — клас DecisionEngine із порогами min_confidence/min_edge та RiskParams; повертає Decision (action, size, stop_loss/take_profit опційно); логіка: buy/sell за порогами, close при протилежному сигналу; розмір = max_risk_per_trade * leverage.
+4.4. trading
+
+bot/trading/paper_trader.py — асинхронний симулятор виконання: latency, fee, позиція/entry_price/PnL, закриття протилежними сигналами, summary/open_pnl; process_sync для не-async.
+bot/trading/executor.py, hedging.py, order_manager.py, position_manager.py, risk_engine.py — заглушки під реальний трейдинг/хедж/ризики.
+4.5. market_data
+
+bot/market_data/ws_manager.py — публічний Binance WS клієнт: формує streams (trade + depth20@100ms), підключається через websockets, класифікує trade/depth, передає в DataManager (save_trade/save_orderbook), reconnection loop.
+bot/market_data/mock_ws_manager.py — генератор мокових Binance trade events з випадковим дрейфом ціни/обсягів, асинхронний stream().
+bot/market_data/data_manager.py — зберігає події: trades/orderbooks у JSON (по файлу на подію, опціонально), додає тики у CSV (ticks/{symbol}_stream.csv) з header timestamp,price,qty,side.
+bot/market_data/offline_simulator.py — OfflineSimulator: читає offline CSV (data/offline/{symbol}_ticks.csv), нормалізує тики, записує у data/trades і data/orderbooks у WS-стилі; опційний replay speed; Tick dataclass; CLI main().
+bot/market_data/binance_ws.py, bingx_ws.py — заглушки.
+bot/market_data/mock_ws_manager.py, ws_manager.py, offline_simulator.py — формують основний шлях даних для runtime/офлайн.
+4.6. ml
+
+bot/ml/ensemble.py — EnsembleSignalModel: завантажує SignalModel для різних горизонтів (1/3/10), комбінує edges із вагами, повертає EnsembleOutput; filter_blocks блокує події за простими фільтрами волатильності/шоку/активності.
+bot/ml/signal_model/dataset_builder.py — DatasetBuilder: читає tick CSV (data/ticks або data/offline), нормалізує схему, обчислює фічі (ret_1, ret_log_1, rolling mean/std, vol_sum), таргет — future_price>price; повертає X, y, featured.
+bot/ml/signal_model/online_features.py — OnlineFeatureBuilder: інкрементально обчислює ті самі фічі з deque цін/обсягів (вікно 10).
+bot/ml/signal_model/dataset.py — альтернативний dataset builder на базі FeatureBuilder (OHLCV з trades JSON).
+bot/ml/signal_model/model.py — SignalModel: обгортка XGBoost, завантажує модель із storage/models/signal_xgb_{symbol}_h{horizon}.json, predict_proba → SignalOutput(p_up/p_down/edge/direction).
+bot/ml/signal_model/train.py — CLI для тренування XGBoost: будує dataset, перевіряє min_rows і target diversity, тренує, зберігає модель і датасет (parquet/csv).
+bot/ml/ensemble.py — комбінує моделі, handle missing models із WARN.
+bot/ml/ (init, confidence_model, execution_model) — заглушки для інших моделей.
+4.7. ai / ai_llm
+
+bot/ai/risk_moderator.py — LLMRiskModerator: детерміністична евристика з кешем; prompt_template для LLM; evaluate() хешує фічі, мінімальний інтервал, використання require_edge/max_dd/max_exposure/shock/vol; повертає approve/risk_score/reason; не викликає зовнішнє API.
+bot/ai/init.py — маркер.
+bot/ai_llm/llm_cache.py, llm_client.py, llm_prompt_builder.py — заглушки під LLM інфраструктуру.
+4.8. backtester
+
+bot/backtester/backtest_model.py, metrics.py, simulator.py, tick_replay.py — заглушки для майбутнього бектесту.
+4.9. monitoring
+
+bot/monitoring/ — папка порожня (під метрики/логи в майбутньому).
+4.10. sandbox
+
+bot/sandbox/offline_loop.py — офлайн прогін: читає ticks CSV, будує онлайн-фічі, EnsembleSignalModel → DecisionEngine → PaperTrader, виводить підсумок; CLI аргументи ticks-path/symbol.
+bot/sandbox/generate_synthetic_ticks.py — генерує синтетичні тики (n=5000) з нормальним шумом, пише в data/ticks/BTCUSDT_synthetic.csv.
+bot/sandbox/init.py — маркер.
+Детальний опис config/
+config/settings.yaml — головний конфіг: app (mode, websocket, log_level, llm_enabled, data_path, risk limits), binance (URLs, symbols), ai (llm model/temperature/api_url), risk (max_daily_loss/position/slippage), storage flags, backtester options.
+config/pairs.yaml — списки торгових пар для spot і futures.
+config/secrets.enc — зашифрований контейнер секретів (ключі Binance/OpenAI тощо); створюється через tools/init_secrets.py, читається secret_store.py.
+Детальний опис data/ та storage/
+data/ — робочі дані (ігнорується git): trades/orderbooks JSON (по події) та ticks CSV, offline CSV для симуляцій; записує DataManager і OfflineSimulator, читають FeatureBuilder/ DatasetBuilder/ sandbox offline_loop.
+storage/ — сховище моделей і датасетів (storage/models, storage/datasets); моделі зберігає train.py, завантажує SignalModel; можуть бути кеші/БД (storage/db, cache згадані в .gitignore).
+Інші директорії (build/dist/Output) ігноруються за умовою.
+Документація (Documentation/)
+Documentation/bot_structure.txt — текстовий листинг дерева bot/.
+Documentation/structure.txt — великий файл (ймовірно автогенерація дерева, 8+ MB).
+Documentation/create_structure.ps1 — PowerShell для створення структури/документації.
+Documentation/PowerShell-скрипт .docx — документ з описом скриптів (двійковий).
+Documentation/Етап створення 1-3.docx — документ етапів створення (двійковий).
+Documentation/Audit_ai_scalper_bot.txt — (створений раніше) аудит безпеки/ризиків (якщо існує в робочому дереві).
+Додаткові утиліти/скрипти
+tools/init_secrets.py — CLI ініціалізації secrets.enc: запитує пароль (двічі), секрети (BINANCE_API_KEY/SECRET, OPENAI_API_KEY), викликає encrypt_secrets.
+build_runbot_exe.ps1 — збірка run_bot.exe через PyInstaller.
+build_installer.bat — компілює Inno Setup інсталятор.
+installer.ps1 / setup_bot.ps1 — інсталяція/настройка залежностей і venv.
+run_bot.cmd / start_bot.cmd — бат-файли для запуску/активації середовища.
+run_bot.exe, run_bot.exe.spec — артефакти збірки (ігноровані за умовою огляду).
+test_features.py — швидкий тест фіч.
+README.md — пустий (немає опису).
+Путівник для розробника
+Почати з bot/run_bot.py, щоб зрозуміти основний цикл (джерело даних → фічі → ансамбль → ризик-модерація → DecisionEngine → PaperTrader).
+Переглянути bot/core/config_loader.py і bot/core/secret_store.py для розуміння конфігів і секретів.
+Далі bot/ml/signal_model/* та bot/ml/ensemble.py — як будується і застосовується модель.
+Ознайомитися з bot/market_data/ws_manager.py і mock_ws_manager.py — джерела подій; DataManager — куди пишуться дані.
+Переглянути bot/trading/paper_trader.py — виконання рішень і PnL.
+Для офлайнових тестів — bot/sandbox/offline_loop.py і sandbox/generate_synthetic_ticks.py.
+Конфігураційні файли — config/settings.yaml і config/pairs.yaml; секрети — через tools/init_secrets.py → config/secrets.enc.
+Інсталятори/збірка — installer.ps1, setup_bot.ps1, ai_scalper_bot.iss (для деплою/пакування).

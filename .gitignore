@@ -1,0 +1,27 @@
+# Virtual envs
+**/venv/
+**/.venv/
+**/env/
+
+# Python caches
+__pycache__/
+*.pyc
+
+# Logs/runtime/data outputs
+/logs/
+/runtime/
+/data/
+*.log
+
+# Secrets and encrypted files
+**/secrets.env
+**/.env
+**/*.env
+**/*.enc
+**/backup_secrets/
+**/secrets/
+**/config/secrets*
+
+# IDE
+.vscode/
+.idea/

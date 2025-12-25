@@ -1,0 +1,33 @@
+# Virtual environments
+venv/
+.venv/
+
+# IDE
+.vscode/
+.idea/
+__pycache__/
+
+# Data / binaries
+data/
+storage/db/
+storage/cache/
+storage/models/
+storage/datasets/
+state/
+logs/
+*.log
+build/
+dist/
+run_bot.exe
+run_bot.exe.spec
+*.exe
+
+# Secrets
+config/secrets.env
+backup_secrets/secrets.env
+config/secrets.enc
+backup_secrets/
+config/secrets*.yaml
+*.key
+*.pem
+*.enc

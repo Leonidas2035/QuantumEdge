@@ -1,0 +1,195 @@
+app:
+  mode: "demo"    # paper / demo
+  websocket: "mock"  # mock / binance
+  log_level: "INFO"
+  llm_enabled: false
+  llm_model: "gpt-5.1"
+  use_llm: false
+  use_futures: false
+  use_redis: false
+  data_save: true
+  data_path: "./data"
+  risk:
+    max_daily_dd: 0.03
+    max_exposure: 2.0
+    llm_require_edge: 0.015
+  warmup_seconds: 300
+  warmup_seconds: 300
+
+binance:
+  base_url: "https://api.binance.com"
+  ws_spot_base: "wss://stream.binance.com:9443"
+  recv_window: 5000
+  symbols: ["BTCUSDT", "ETHUSDT"]
+
+binance_demo:
+  enabled: true
+  exchange: "futures"  # futures | spot
+  testnet: true        # hard-require testnet only
+  base_url: "https://testnet.binancefuture.com/fapi"
+  ws_base_url: "wss://testnet.binancefuture.com/ws-fapi/v1"
+  default_symbol: "BTCUSDT"
+  symbols: ["BTCUSDT", "ETHUSDT"]
+  default_order_type: "MARKET"
+  max_notional_per_trade: 50      # in quote currency (e.g., USDT)
+  max_open_positions: 1
+  recv_window: 5000
+  taker_fee_bps: 5.0
+  healthcheck_only: false
+  position_pct: 0.02        # fraction of equity per trade
+  fee_rate: 0.0005          # per-side taker fee estimate
+  equity_override: 0        # if >0 use this value instead of live balance
+  symbols: ["BTCUSDT", "ETHUSDT"]
+
+ai:
+  llm_model: "gpt-5.1"
+  temperature: 0.2
+  max_tokens: 300
+  api_url: "https://api.openai.com/v1/chat/completions"
+
+risk:
+  max_daily_loss: 30        # $
+  max_position_risk: 0.5    # %
+  limit_slippage: 0.08      # 0.08% max
+  disable_on_error: true
+  session:
+    max_trades_per_hour: 20
+    max_daily_loss_abs: 50
+    max_daily_loss_pct: 0.05
+    cooling_off_minutes: 10
+  sizing:
+    base_size: 1.0
+    min_size: 0.001
+    max_size: 5.0
+  tp_sl:
+    sl_vol_multiplier: 1.5
+    tp_rr: 1.5
+  session:
+    max_trades_per_hour: 20
+    max_daily_loss_abs: 50
+    max_daily_loss_pct: 0.05
+    cooling_off_minutes: 10
+  sizing:
+    base_size: 1.0
+    min_size: 0.001
+    max_size: 5.0
+  tp_sl:
+    sl_vol_multiplier: 1.5
+    tp_rr: 1.5
+
+supervisor:
+  enabled: true                # turn SupervisorAgent integration on/off
+  base_url: "http://127.0.0.1:8765"  # SupervisorAgent API base
+  api_token: ""                # optional shared secret (X-API-TOKEN)
+  heartbeat_interval_s: 5      # minimum seconds between heartbeats
+  timeout_s: 1.0               # HTTP timeout for SupervisorAgent calls
+  on_error: "log_and_continue" # behavior when API is unreachable
+  risk_enabled: true           # turn Supervisor risk gateway on/off
+  risk_on_error: "bypass"      # "bypass" (fail-open) | "block" (fail-closed)
+  risk_log_level: "info"       # info | debug | warning
+
+supervisor_snapshots:
+  enabled: false
+  supervisor_url: "http://localhost:8000"
+  endpoint: "/api/v1/supervisor/snapshot"
+  timeout_ms: 500
+  poll_interval_seconds: 60
+  log_to_console: false
+  log_to_file: true
+  log_file: "logs/supervisor_snapshots.log"
+
+ops:
+  status_file: "state/bot_status.json"
+  write_interval_seconds: 2
+
+execution:
+  mode: "normal"                # "normal" | "scalp"
+  default_time_in_force_ms: 3000
+
+  scalp:
+    enabled: true
+    min_prob_up: 0.55
+    min_edge: 0.0
+
+    max_spread_bps: 2.0
+    min_orderbook_depth_usd: 5000.0
+
+    tp_rr: 0.4
+    sl_rr: 0.6
+    min_stop_distance_bps: 2.0
+    max_stop_distance_bps: 15.0
+
+    max_position_hold_seconds: 60
+
+    order_policy:
+      prefer_limit: true
+      post_only: false
+      near_touch_offset_bps: 1.0
+      cancel_timeout_ms: 1500
+      max_partial_fill_time_ms: 2000
+      min_fill_ratio_before_cancel: 0.25
+
+    risk_guards:
+      max_open_scalp_positions: 2
+      max_daily_scalp_trades: 200
+      max_daily_scalp_loss_pct: 3.0
+
+storage:
+  save_orderbook: true
+  save_trades: true
+  save_oi: false
+  save_funding: false
+  # JSONL logging is disabled by default to prevent millions of small files.
+  save_orderbook_json: true
+  max_jsonl_size_mb: 5
+  max_jsonl_minutes: 60
+  retention_days: 3
+  flush_batch: 200
+  flush_interval_seconds: 1.0
+
+backtester:
+  use: false
+  replay_speed: "realtime"   # or fast
+
+ml:
+  require_models: false
+  horizons: [1, 5, 30]
+  default_horizon: 1
+  warmup_seconds: 600
+  warmup_bars_min: 300
+
+decision:
+  filters:
+    min_confidence: 0.55
+    min_edge: 0.02
+    horizon_agreement: true
+    loss_streak_trades: 3
+    loss_streak_window_minutes: 30
+    cooloff_minutes: 5
+
+trading:
+  mode: "normal"  # normal | scalp
+  scalp:
+    min_confidence: 0.6
+    min_edge: 0.03
+    max_hold_seconds: 30
+    max_spread_bps: 5
+    min_depth_quote: 500
+
+decision:
+  filters:
+    min_confidence: 0.55
+    min_edge: 0.02
+    horizon_agreement: true
+    loss_streak_trades: 3
+    loss_streak_window_minutes: 30
+    cooloff_minutes: 5
+
+trading:
+  mode: "normal"  # normal | scalp
+  scalp:
+    min_confidence: 0.6
+    min_edge: 0.03
+    max_hold_seconds: 30
+    max_spread_bps: 5
+    min_depth_quote: 500

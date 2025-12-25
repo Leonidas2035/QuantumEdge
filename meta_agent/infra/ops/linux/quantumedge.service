@@ -1,0 +1,14 @@
+[Unit]
+Description=QuantumEdge Trading Bot
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/ai_scalper_bot
+EnvironmentFile=/etc/quantumedge/quantumedge.env
+ExecStart=/usr/bin/env python3 $BOT_ENTRYPOINT
+Restart=on-failure
+RestartSec=3
+
+[Install]
+WantedBy=multi-user.target

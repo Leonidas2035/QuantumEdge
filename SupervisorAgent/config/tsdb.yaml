@@ -1,0 +1,29 @@
+enabled: true
+backend: "none"  # "none" | "clickhouse" | "questdb" | "timescale"
+flush_interval_seconds: 2
+batch_size: 500
+
+retry:
+  max_retries: 5
+  base_backoff_ms: 200
+  max_backoff_ms: 5000
+
+backfill:
+  enabled: false
+  from_days: 1
+
+tables:
+  prefix: "qe_"
+
+clickhouse:
+  url: "http://localhost:8123"
+  database: "quantumedge"
+  user: "default"
+  password: ""
+
+timescale:
+  dsn: "postgresql://user:pass@localhost:5432/quantumedge"
+  schema: "public"
+
+questdb:
+  ilp_http_url: "http://localhost:9000/imp"

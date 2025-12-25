@@ -1,0 +1,19 @@
+﻿# Supervisor runtime configuration.
+
+mode: "paper"  # paper | demo | off
+exchange: bingx_swap   # optional: set to "bingx_swap" to pass EXCHANGE env to QuantumEdge
+heartbeat_port: 8765
+heartbeat_timeout_s: 15
+restart_max_attempts: 3
+restart_backoff_s: 5
+
+# HTTP API settings (SupervisorAgent ⇄ QuantumEdge)
+api_enabled: true
+api_host: "127.0.0.1"
+# API listens on heartbeat_port
+api_auth_token: ""  # optional shared secret; empty disables auth
+
+snapshots:
+  enabled: true
+  interval_minutes: 5
+  history_window_minutes: 15

@@ -1,0 +1,10 @@
+# Global risk configuration for SupervisorAgent.
+
+currency: "USDT"
+max_daily_loss_abs: 200.0     # absolute daily loss limit in currency
+max_daily_loss_pct: 0.05      # optional, as a fraction of equity (5%)
+max_drawdown_abs: 500.0       # optional absolute drawdown limit
+max_drawdown_pct: 0.1         # optional drawdown percentage (10%)
+max_notional_per_symbol: 10000.0
+max_leverage: 5.0
+

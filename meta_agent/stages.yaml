@@ -1,0 +1,6 @@
+﻿- name: multiple projects
+  prompt: prompts/stage_01_multiple_projects.md
+  project: ai_scalper_bot
+- name: Meta-Agent audit & technical docs
+  prompt: prompts/stage_02_Meta-Agent_audit_&_technical_docs.md
+  project: meta_agent

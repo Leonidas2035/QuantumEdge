@@ -1,0 +1,18 @@
+enabled: true
+
+window:
+  start_hour_utc: 0   # inclusive
+  end_hour_utc: 6     # exclusive
+
+days:
+  allow_weekdays: true
+  allow_weekends: true
+
+max_runs_per_day: 3
+
+require_bot_idle: true
+bot_status_file: "C:/ai_scalper_bot/state/bot_status.json"  # expected keys: is_trading (bool), open_positions (int)
+
+backlog:
+  max_items_per_run: 5
+  min_severity: "normal"   # low | normal | high

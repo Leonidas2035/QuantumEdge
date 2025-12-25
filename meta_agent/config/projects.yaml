@@ -1,0 +1,14 @@
+﻿default: ai_scalper_bot
+
+projects:
+  ai_scalper_bot:
+    path: "C:/ai_scalper_bot"
+    description: "QuantumEdge trading engine"
+
+  supervisor_agent:
+    path: "C:/SupervisorAgent"
+    description: "Supervisor control plane"
+
+  meta_agent:
+    path: "C:/meta_agent"
+    description: "Meta-Agent orchestrator"

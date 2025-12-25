@@ -1,0 +1,11 @@
+- name: data_pipeline
+  prompt: prompts/stage_1_data_pipeline.md
+
+- name: online_features
+  prompt: prompts/stage_2_online_features.md
+
+- name: ml_training
+  prompt: prompts/stage_3_ml_training.md
+
+- name: risk_engine
+  prompt: prompts/stage_4_risk_engine.md

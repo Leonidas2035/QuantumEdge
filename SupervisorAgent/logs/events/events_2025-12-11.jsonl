@@ -1,0 +1,4 @@
+{"ts": "2025-12-11T21:03:47.630426+00:00", "type": "BOT_START", "source": "ProcessManager", "data": {"mode": "paper", "pid": 57308, "start_time": "2025-12-11T21:03:47.127397+00:00"}}
+{"ts": "2025-12-11T21:12:48.815301+00:00", "type": "BOT_STOP", "source": "ProcessManager", "data": {"reason": "graceful-stop", "pid": 57308, "start_time": "2025-12-11T21:03:47.127397+00:00", "exit_code": 1, "exit_time": "2025-12-11T21:12:48.814300+00:00"}}
+{"ts": "2025-12-11T21:23:49.658727+00:00", "type": "BOT_START", "source": "ProcessManager", "data": {"mode": "paper", "pid": 29752, "start_time": "2025-12-11T21:23:49.156942+00:00"}}
+{"ts": "2025-12-11T21:25:37.280148+00:00", "type": "BOT_STOP", "source": "ProcessManager", "data": {"reason": "graceful-stop", "pid": 29752, "start_time": "2025-12-11T21:23:49.156942+00:00", "exit_code": 1, "exit_time": "2025-12-11T21:25:37.280148+00:00"}}

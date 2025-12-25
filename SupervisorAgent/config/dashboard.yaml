@@ -1,0 +1,18 @@
+enabled: true
+
+# Maximum events returned by dashboard events endpoint
+max_events: 200
+events_types:
+  - ORDER_DECISION
+  - ORDER_RESULT
+  - RISK_LIMIT_BREACH
+  - SUPERVISOR_SNAPSHOT
+  - STRATEGY_UPDATE
+
+overview:
+  pnl_window_minutes: 60
+  max_snapshots: 12
+
+health:
+  require_snapshot_recent_minutes: 10
+  require_heartbeat_recent_seconds: 60

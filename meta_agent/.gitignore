@@ -1,0 +1,11 @@
+.env
+output/
+logs/
+reports/
+prompts/archive/
+patches/
+state/
+*.key
+*.pem
+infra/tsdb/.env
+infra/ops/**/*.env

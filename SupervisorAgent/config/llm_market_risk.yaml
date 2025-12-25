@@ -1,0 +1,17 @@
+﻿enabled: true
+model: "gpt-4.1-mini"
+temperature: 0.1
+timeout_ms: 1200
+
+risk_scale:
+  LOW: 0
+  MEDIUM: 1
+  HIGH: 2
+
+inputs:
+  history_window_minutes: 15
+  include_liquidations: false
+  include_orderbook_imbalance: true
+
+rate_limit:
+  max_calls_per_minute: 20

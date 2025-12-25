@@ -1,0 +1,13 @@
+spot:
+  - BTCUSDT
+  - ETHUSDT
+  - XRPUSDT
+
+futures:
+  - BTCUSDT
+  - ETHUSDT
+  - SOLUSDT
+  - BNBUSDT
+
+futures_demo:
+  - BTCUSDT

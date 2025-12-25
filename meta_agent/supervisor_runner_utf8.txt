@@ -1,0 +1,359 @@
+import json
+import os
+from dataclasses import dataclass, field
+from datetime import datetime
+from typing import Any, Dict, List, Optional
+
+from codex_client import CodexClient
+from meta_core import run_task
+from report_schema import REPORTS_DIR
+from task_manager import create_task
+from task_schema import Task
+
+BASE_DIR = os.path.abspath(os.path.dirname(__file__))
+SUPERVISOR_REPORT_DIR = os.path.join(REPORTS_DIR, "supervisor")
+
+
+@dataclass
+class PlannedTask:
+    """
+    Planned task produced by the Supervisor planner before materialization.
+    """
+    task_type: str
+    title: str
+    priority: str
+    description: str
+    details: str
+    metadata: Dict[str, Any] = field(default_factory=dict)
+
+
+def _ensure_supervisor_dir() -> None:
+    os.makedirs(SUPERVISOR_REPORT_DIR, exist_ok=True)
+
+
+def _extract_json_array(text: str) -> Optional[str]:
+    """
+    Finds the first JSON array in text; returns None if not found.
+    """
+    start = text.find("[")
+    end = text.rfind("]")
+    if start == -1 or end == -1 or end <= start:
+        return None
+    return text[start:end + 1]
+
+
+def _llm_client() -> CodexClient:
+    return CodexClient()
+
+
+def generate_planned_tasks_via_llm(goal: str, mode: str = "daily", project: str = "ai_scalper_bot") -> List[PlannedTask]:
+    """
+    Uses LLM to convert a high-level goal into 1â?"3 concrete PlannedTask objects.
+    Fallbacks to heuristic plan on errors.
+    """
+    system_message = (
+        "You are a Supervisor planner for Meta-Agent. "
+        "Given a high-level goal, produce 1-3 maintenance tasks for a trading bot project. "
+        "Return ONLY a JSON array with objects containing: task_type, title, priority, description, details. "
+        "Supported task_type values: audit_code, risk_review, retrain_model, propose_features. "
+        "Priorities: low | normal | high."
+    )
+    user_message = (
+        f"Goal: {goal}\n"
+        f"Mode: {mode}\n"
+        f"Project: {project}\n"
+        "Context: off-market maintenance; do not run live trading. "
+        "Make tasks concise and actionable. Include brief details as markdown (Objective/Tasks)."
+    )
+
+    try:
+        client = _llm_client()
+        response = client.client.chat.completions.create(
+            model=client.model,
+            messages=[
+                {"role": "system", "content": system_message},
+                {"role": "user", "content": user_message},
+            ],
+            max_tokens=800,
+            temperature=0,
+        )
+        content = response.choices[0].message.content or ""
+        json_block = _extract_json_array(content) or content
+        parsed = json.loads(json_block)
+        if not isinstance(parsed, list) or not parsed:
+            raise ValueError("Empty or invalid plan.")
+        planned: List[PlannedTask] = []
+        for item in parsed:
+            if not isinstance(item, dict):
+                continue
+            task_type = item.get("task_type") or "propose_features"
+            title = item.get("title") or f"{task_type} for {project}"
+            priority = item.get("priority") or "normal"
+            description = item.get("description") or f"Task for goal: {goal}"
+            details = item.get("details") or "# Objective\nDescribe the task.\n"
+            planned.append(
+                PlannedTask(
+                    task_type=task_type,
+                    title=title,
+                    priority=priority,
+                    description=description,
+                    details=details,
+                    metadata=item,
+                )
+            )
+        if planned:
+            return planned[:3]
+        raise ValueError("Plan parsing yielded no tasks.")
+    except Exception:
+        # Fallback heuristic plan
+        goal_lower = goal.lower()
+        fallback: List[PlannedTask] = []
+        if "audit" in goal_lower:
+            fallback.append(
+                PlannedTask(
+                    task_type="audit_code",
+                    title=f"Audit code for {project}",
+                    priority="normal",
+                    description="Quick audit of execution and risk code paths.",
+                    details="# Objective\nAudit code for regressions.\n# Tasks\n- Review core execution\n- Check risk rules\n",
+                )
+            )
+        if "retrain" in goal_lower or "train" in goal_lower:
+            fallback.append(
+                PlannedTask(
+                    task_type="retrain_model",
+                    title=f"Retrain model for {project}",
+                    priority="high",
+                    description="Retrain signal/model on latest data.",
+                    details="# Objective\nRetrain ML model.\n# Tasks\n- Load latest data\n- Train and evaluate\n- Compare to baseline\n",
+                )
+            )
+        if not fallback:
+            fallback.append(
+                PlannedTask(
+                    task_type="propose_features",
+                    title=f"Feature ideas for {project}",
+                    priority="normal",
+                    description="Brainstorm new features/experiments.",
+                    details="# Objective\nPropose features.\n# Tasks\n- List ideas with priority\n",
+                )
+            )
+        return fallback[:3]
+
+
+def materialize_planned_tasks(
+    planned_tasks: List[PlannedTask],
+    goal: str,
+    mode: str,
+    project: str = "ai_scalper_bot",
+    source: str = "supervisor",
+) -> List[Task]:
+    """
+    Converts PlannedTask objects into real Task files via task_manager.create_task.
+    """
+    tasks: List[Task] = []
+    for planned in planned_tasks:
+        body = (
+            "# Supervisor Goal\n"
+            f"{goal}\n\n"
+            f"Mode: {mode}\n"
+            f"Project: {project}\n\n"
+            "---\n\n"
+            "# Description\n"
+            f"{planned.description}\n\n"
+            f"{planned.details}\n"
+        )
+        task = create_task(
+            project=project,
+            task_type=planned.task_type,
+            title=planned.title,
+            body_markdown=body,
+            priority=planned.priority,
+            source=source,
+        )
+        tasks.append(task)
+    return tasks
+
+
+def _aggregate_status(results: List[Dict[str, Any]]) -> str:
+    statuses = [r.get("status") for r in results]
+    if not statuses:
+        return "error"
+    if all(s == "ok" for s in statuses):
+        return "ok"
+    if any(s == "ok" for s in statuses) and any(s == "error" for s in statuses):
+        return "partial"
+    if any(s == "partial" for s in statuses):
+        return "partial"
+    return "error"
+
+
+def _build_candidate_changes(task_results: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """
+    Groups file changes across tasks and assigns a simple risk level.
+    """
+    file_map: Dict[str, Dict[str, Any]] = {}
+    for res in task_results:
+        task_id = res.get("task_id")
+        risks = res.get("risks") or []
+        risk_level = "low"
+        if risks:
+            risk_level = "medium"
+        files = (res.get("changed_files") or []) + (res.get("created_files") or [])
+        for path in files:
+            entry = file_map.setdefault(path, {"tasks": [], "risk_level": risk_level})
+            if task_id and task_id not in entry["tasks"]:
+                entry["tasks"].append(task_id)
+            if risk_level == "medium":
+                entry["risk_level"] = "medium"
+    candidate_changes = []
+    for path, info in file_map.items():
+        candidate_changes.append(
+            {
+                "file_path": path,
+                "tasks": info["tasks"],
+                "risk_level": info["risk_level"],
+                "reason": f"Modified in tasks: {', '.join(info['tasks'])}" if info["tasks"] else "Modified by supervisor tasks",
+            }
+        )
+    return candidate_changes
+
+
+def _compose_overall_summary(task_results: List[Dict[str, Any]], candidate_changes: List[Dict[str, Any]]) -> str:
+    total = len(task_results)
+    ok = sum(1 for r in task_results if r.get("status") == "ok")
+    err = sum(1 for r in task_results if r.get("status") == "error")
+    partial = sum(1 for r in task_results if r.get("status") == "partial")
+    files_changed = set()
+    for r in task_results:
+        files_changed.update(r.get("changed_files") or [])
+        files_changed.update(r.get("created_files") or [])
+    high_risk = sum(1 for c in candidate_changes if c.get("risk_level") in {"medium", "high"})
+    return (
+        f"{total} tasks executed: {ok} ok, {partial} partial, {err} error. "
+        f"{len(files_changed)} files changed. "
+        f"{high_risk} medium/high-risk changes identified."
+    )
+
+
+def write_supervisor_summary_md(summary: Dict[str, Any]) -> str:
+    """
+    Writes a Markdown supervisor summary to reports/supervisor/.
+    """
+    _ensure_supervisor_dir()
+    timestamp = summary["finished_at"].replace(":", "").replace("-", "")
+    filename = f"{summary['project']}_{summary['goal']}_{timestamp}.md"
+    path = os.path.join(SUPERVISOR_REPORT_DIR, filename)
+
+    lines: List[str] = [
+        "# Supervisor Cycle Summary",
+        "",
+        f"- Goal: {summary['goal']}",
+        f"- Mode: {summary['mode']}",
+        f"- Project: {summary['project']}",
+        f"- Status: {summary['status']}",
+        f"- Started at: {summary['started_at']}",
+        f"- Finished at: {summary['finished_at']}",
+        f"- Duration: {summary.get('duration_sec', 0)} seconds",
+        f"- Total tasks: {len(summary.get('tasks', []))}",
+        "",
+        "## Tasks",
+        "",
+    ]
+
+    for idx, task in enumerate(summary.get("tasks", []), start=1):
+        lines.append(f"{idx}. **{task.get('task_id', 'unknown')}**")
+        lines.append(f"   - Title: {task.get('title', '')}")
+        lines.append(f"   - Type: {task.get('task_type', '')}")
+        lines.append(f"   - Priority: {task.get('priority', '')}")
+        lines.append(f"   - Status: {task.get('status')}")
+        lines.append(f"   - Changed files: {len(task.get('changed_files') or [])}")
+        if task.get("risks"):
+            lines.append(f"   - Risks: {len(task.get('risks'))} item(s)")
+        if task.get("report_md_path"):
+            lines.append(f"   - Report (MD): {task.get('report_md_path')}")
+        lines.append("")
+
+    lines.append("## Candidate Changes")
+    lines.append("")
+    if summary.get("candidate_changes"):
+        for change in summary["candidate_changes"]:
+            tasks_str = ", ".join(change.get("tasks") or [])
+            lines.append(
+                f"- `{change.get('file_path')}` â?" modified in {tasks_str or 'tasks'} (risk: {change.get('risk_level')})"
+            )
+            if change.get("reason"):
+                lines.append(f"  Reason: {change.get('reason')}")
+        lines.append("")
+    else:
+        lines.append("- None")
+        lines.append("")
+
+    lines.append("## Overall Summary")
+    lines.append(summary.get("overall_summary", ""))
+    lines.append("")
+
+    with open(path, "w", encoding="utf-8") as handle:
+        handle.write("\n".join(lines))
+    return path
+
+
+def write_supervisor_summary_json(summary: Dict[str, Any]) -> str:
+    """
+    Writes a JSON supervisor summary to reports/supervisor/.
+    """
+    _ensure_supervisor_dir()
+    timestamp = summary["finished_at"].replace(":", "").replace("-", "")
+    filename = f"{summary['project']}_{summary['goal']}_{timestamp}.json"
+    path = os.path.join(SUPERVISOR_REPORT_DIR, filename)
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump(summary, handle, ensure_ascii=True, indent=2)
+    return path
+
+
+def run_supervisor_cycle(goal: str, mode: str = "daily", project: str = "ai_scalper_bot") -> Dict[str, Any]:
+    """
+    High-level entry point for a Supervisor cycle.
+
+    1) Plan tasks via LLM (with fallbacks).
+    2) Materialize tasks into tasks/ directory.
+    3) Execute each task via meta_core.run_task.
+    4) Aggregate results and candidate changes.
+    5) Write supervisor summary (MD + JSON) and return the summary dict.
+    """
+    started_at = datetime.utcnow().isoformat() + "Z"
+    planned = generate_planned_tasks_via_llm(goal=goal, mode=mode, project=project)
+    tasks = materialize_planned_tasks(planned, goal=goal, mode=mode, project=project)
+
+    results: List[Dict[str, Any]] = []
+    for task in tasks:
+        res = run_task(task.task_id)
+        results.append(res)
+
+    finished_at = datetime.utcnow().isoformat() + "Z"
+    status = _aggregate_status(results)
+    candidate_changes = _build_candidate_changes(results)
+    overall_summary = _compose_overall_summary(results, candidate_changes)
+
+    summary: Dict[str, Any] = {
+        "goal": goal,
+        "mode": mode,
+        "project": project,
+        "started_at": started_at,
+        "finished_at": finished_at,
+        "duration_sec": max(
+            (datetime.fromisoformat(finished_at.replace("Z", "+00:00")) - datetime.fromisoformat(started_at.replace("Z", "+00:00"))).total_seconds(),
+            0,
+        ),
+        "status": status,
+        "tasks": results,
+        "candidate_changes": candidate_changes,
+        "overall_summary": overall_summary,
+        "supervisor_md_path": None,
+        "supervisor_json_path": None,
+    }
+
+    summary["supervisor_md_path"] = write_supervisor_summary_md(summary)
+    summary["supervisor_json_path"] = write_supervisor_summary_json(summary)
+    return summary
+

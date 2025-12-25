@@ -1,0 +1,8 @@
+-- QuestDB typically creates ILP tables automatically.
+-- Suggested explicit table (optional):
+-- CREATE TABLE tsdb_points (
+--   measurement SYMBOL,
+--   ts TIMESTAMP,
+--   tags STRING,
+--   fields STRING
+-- ) TIMESTAMP(ts) PARTITION BY DAY;
