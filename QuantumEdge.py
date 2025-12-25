@@ -16,7 +16,9 @@ from typing import Iterable, Optional
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-from tools.qe_config import get_qe_paths, load_config_file
+from tools.qe_config import load_config_file
+from tools.qe_doctor import run_doctor
+from tools.qe_paths import ensure_dirs, get_paths
 
 
 def _now_iso() -> str:
@@ -24,8 +26,7 @@ def _now_iso() -> str:
 
 
 def _ensure_dirs(paths: dict) -> None:
-    for key in ("runtime_dir", "logs_dir"):
-        Path(paths[key]).mkdir(parents=True, exist_ok=True)
+    ensure_dirs(paths)
 
 
 def _pid_path(paths: dict, name: str) -> Path:
@@ -254,6 +255,7 @@ def _build_env(paths: dict, supervisor_settings: dict, config_paths: dict) -> di
     env.setdefault("QE_RUNTIME_DIR", str(paths["runtime_dir"]))
     env.setdefault("QE_LOGS_DIR", str(paths["logs_dir"]))
     env.setdefault("QE_DATA_DIR", str(paths["data_dir"]))
+    env.setdefault("QE_ARTIFACTS_DIR", str(paths.get("artifacts_dir", Path(paths["qe_root"]) / "artifacts")))
     env.setdefault("SUPERVISOR_HOST", supervisor_settings["host"])
     env.setdefault("SUPERVISOR_PORT", str(supervisor_settings["port"]))
     env.setdefault("SUPERVISOR_URL", supervisor_settings["url"])
@@ -475,44 +477,7 @@ def _run_diag(
 ) -> int:
     print("QuantumEdge diag")
     print("===============")
-    print(f"QE_ROOT: {paths['qe_root']}")
-    print(f"QE_CONFIG_DIR: {paths['config_dir']}")
-    print(f"QE_RUNTIME_DIR: {paths['runtime_dir']}")
-    print(f"QE_LOGS_DIR: {paths['logs_dir']}")
-    print(f"QE_DATA_DIR: {paths['data_dir']}")
-    print(f"Supervisor URL: {supervisor_settings['url']}")
-    print(f"Supervisor health path: {orchestrator_settings['health_path']}")
-    managed_by_supervisor = _resolve_bot_management(supervisor_config, orchestrator_settings)
-    print(f"Bot managed_by_supervisor: {managed_by_supervisor}")
-    if managed_by_supervisor:
-        state, pid = _get_supervisor_bot_state(supervisor_settings["url"], logging.getLogger("quantumedge"))
-        pid_note = f" pid={pid}" if pid else ""
-        print(f"Supervisor bot state: {state}{pid_note}")
-
-    failures = 0
-    for name, path in config_paths.items():
-        if Path(path).exists():
-            print(f"[OK] {name}: {path}")
-        else:
-            print(f"[FAIL] Missing config: {path}")
-            failures += 1
-
-    port_ok = _port_available(supervisor_settings["host"], supervisor_settings["port"])
-    status = "available" if port_ok else "in use"
-    print(f"[CHECK] Port {supervisor_settings['host']}:{supervisor_settings['port']} is {status}")
-    if not port_ok:
-        failures += 1
-
-    secrets = _scan_for_secret_files(Path(paths["qe_root"]))
-    if secrets:
-        print("[FAIL] Suspicious secret files found:")
-        for path in secrets:
-            print(f"  - {path}")
-        failures += 1
-    else:
-        print("[OK] No secret files found by name scan.")
-
-    return 0 if failures == 0 else 1
+    return run_doctor(json_output=False)
 
 
 def _stop_all(
@@ -690,14 +655,15 @@ def main() -> int:
         help="Spawn bot directly instead of Supervisor spawning it.",
     )
     subparsers.add_parser("status")
-    subparsers.add_parser("diag")
+    diag_parser = subparsers.add_parser("diag")
+    diag_parser.add_argument("--json", action="store_true", help="Emit JSON output.")
     logs_parser = subparsers.add_parser("logs")
     logs_parser.add_argument("--name", choices=["supervisor", "bot", "meta", "quantumedge"], help="Log name.")
     logs_parser.add_argument("--lines", type=int, default=200, help="Lines to tail.")
 
     args = parser.parse_args()
 
-    paths = get_qe_paths()
+    paths = get_paths()
     _ensure_dirs(paths)
 
     qe_root = Path(paths["qe_root"])
@@ -720,6 +686,8 @@ def main() -> int:
     )
 
     if args.command == "diag":
+        if args.json:
+            return run_doctor(json_output=True)
         return _run_diag(paths, config_paths, supervisor_settings, orchestrator_settings, supervisor_config)
 
     if args.command == "status":

@@ -7,12 +7,10 @@ from typing import Any, Dict, Optional
 
 import yaml
 
+from tools.qe_paths import find_repo_root, get_paths
 
 def _find_qe_root() -> Path:
-    env_root = os.getenv("QE_ROOT")
-    if env_root:
-        return Path(env_root).expanduser().resolve()
-    return Path(__file__).resolve().parents[1]
+    return find_repo_root()
 
 
 def _load_yaml(path: Path) -> Dict[str, Any]:
@@ -51,46 +49,7 @@ def _resolve_env_path(env_value: Optional[str], base: Path) -> Optional[Path]:
 
 
 def get_qe_paths() -> Dict[str, Path]:
-    qe_root = _find_qe_root()
-    defaults: Dict[str, Path] = {
-        "qe_root": qe_root,
-        "config_dir": qe_root / "config",
-        "runtime_dir": qe_root / "runtime",
-        "logs_dir": qe_root / "logs",
-        "data_dir": qe_root / "data",
-        "bot_dir": qe_root / "ai_scalper_bot",
-        "supervisor_dir": qe_root / "SupervisorAgent",
-        "meta_agent_dir": qe_root / "meta_agent",
-        "bot_config_dir": qe_root / "ai_scalper_bot" / "config",
-        "supervisor_config_dir": qe_root / "SupervisorAgent" / "config",
-        "meta_agent_config_dir": qe_root / "meta_agent" / "config",
-    }
-
-    env_overrides = {
-        "config_dir": os.getenv("QE_CONFIG_DIR"),
-        "runtime_dir": os.getenv("QE_RUNTIME_DIR"),
-        "logs_dir": os.getenv("QE_LOGS_DIR"),
-        "data_dir": os.getenv("QE_DATA_DIR"),
-    }
-    for key, value in env_overrides.items():
-        resolved = _resolve_env_path(value, qe_root)
-        if resolved:
-            defaults[key] = resolved
-
-    paths_file = defaults["config_dir"] / "paths.yaml"
-    if paths_file.exists():
-        raw = _load_yaml(paths_file)
-        if isinstance(raw.get("paths"), dict):
-            raw = raw["paths"]
-        for key, default in list(defaults.items()):
-            if key not in raw:
-                continue
-            resolved = _resolve_path(raw.get(key), qe_root)
-            if resolved:
-                defaults[key] = resolved
-
-    defaults["paths_file"] = paths_file
-    return defaults
+    return get_paths()
 
 
 def get_qe_config() -> Dict[str, Any]:

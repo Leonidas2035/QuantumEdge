@@ -835,9 +835,15 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
             "tsdb-migrate",
             "tsdb-maintain",
             "ml",
+            "telemetry",
             "research",
         ],
         help="Command to execute",
+    )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Emit JSON output for diag.",
     )
     parser.add_argument(
         "--date",
@@ -969,7 +975,9 @@ def main(argv: Optional[list[str]] = None) -> None:
         elif args.command == "snapshot":
             app.run_snapshot_once(verbose=True)
         elif args.command == "diag":
-            code = app.run_diag()
+            from tools.qe_doctor import run_doctor
+
+            code = run_doctor(json_output=args.json)
             sys.exit(code)
         elif args.command == "tsdb-migrate":
             from supervisor.tsdb.migrations import run_tsdb_migrations
@@ -998,6 +1006,12 @@ def main(argv: Optional[list[str]] = None) -> None:
 
             ml_args = parse_ml_args(args.ml_args)
             code = run_ml_command(ml_args)
+            sys.exit(code)
+        elif args.command == "telemetry":
+            from SupervisorAgent.monitoring.cli import parse_telemetry_args, run_telemetry_command
+
+            telemetry_args = parse_telemetry_args(args.ml_args)
+            code = run_telemetry_command(app, telemetry_args)
             sys.exit(code)
         elif args.command == "research":
             try:

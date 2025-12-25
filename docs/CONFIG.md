@@ -123,6 +123,27 @@ Endpoints:
 - `GET /api/v1/telemetry/events?limit=200`
 - `GET /api/v1/telemetry/alerts`
 
+## Ops & doctor/diag
+Unified ops entrypoints:
+- `python QuantumEdge.py start|stop|restart|status|diag`
+- `python SupervisorAgent/supervisor.py start|stop|restart|status|diag`
+
+Runtime layout:
+- `runtime/`: `policy.json`, `models/`, `telemetry.jsonl`, PID/state files
+- `artifacts/`: model training outputs, research reports, telemetry archives
+
+Doctor/diag checks:
+- config files present
+- runtime/artifacts writable
+- Supervisor health reachable
+- policy freshness
+- runtime model manifests + sha
+- telemetry summary reachable
+- required env var names present (values not printed)
+
+Optional JSON output:
+- `python QuantumEdge.py diag --json`
+
 ### Policy engine (SupervisorAgent)
 Policy is computed on a schedule using deterministic heuristics and optional LLM moderation.
 Key settings live in `config/supervisor.yaml`:

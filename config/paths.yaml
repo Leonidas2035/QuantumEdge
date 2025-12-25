@@ -5,6 +5,7 @@ paths:
   runtime_dir: "runtime"
   logs_dir: "logs"
   data_dir: "data"
+  artifacts_dir: "artifacts"
   bot_dir: "ai_scalper_bot"
   supervisor_dir: "SupervisorAgent"
   meta_agent_dir: "meta_agent"

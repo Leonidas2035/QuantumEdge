@@ -37,6 +37,14 @@ Telemetry (bot -> SupervisorAgent):
 - Events: `GET /api/v1/telemetry/events?limit=200`
 - Alerts: `GET /api/v1/telemetry/alerts`
 
+Ops entrypoints:
+- `python QuantumEdge.py start|stop|restart|status|diag`
+- `python SupervisorAgent/supervisor.py start|stop|restart|status|diag`
+
+Cross-platform scripts:
+- `scripts/windows/qe_start.ps1`, `scripts/windows/qe_stop.ps1`, `scripts/windows/qe_diag.ps1`
+- `scripts/linux/qe_start.sh`, `scripts/linux/qe_stop.sh`, `scripts/linux/qe_diag.sh`
+
 Runtime vs research:
 - Live trading runtime remains under `ai_scalper_bot/bot`.
 - Offline/backtest tooling moved to `SupervisorAgent/research/` (compat wrappers remain under `ai_scalper_bot` for one stage).
