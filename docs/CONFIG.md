@@ -48,4 +48,40 @@ Supervisor API endpoints (local, no secrets):
 - `POST /api/v1/bot/stop`: stop the bot.
 - `POST /api/v1/bot/restart`: restart the bot.
 
+## Secrets (local only, BingX demo)
+Secrets are loaded locally and never committed.
+
+Recommended workflow:
+1) Copy `config/secrets.local.env.example` to `config/secrets.local.env` (untracked).
+2) Fill in demo keys:
+   - `BINGX_ENV=demo`
+   - `BINGX_DEMO_API_KEY`
+   - `BINGX_DEMO_API_SECRET`
+   - optional `BINGX_RECV_WINDOW`
+   - optional `SCALPER_SECRETS_PASSPHRASE` (only if using encrypted store)
+3) Supervisor injects this env file into the bot when `bot.env_file` is set in `config/supervisor.yaml` (e.g. `config/secrets.local.env` or `runtime/secrets.env`).
+
+Helpers:
+- `scripts/secrets.ps1` and `scripts/secrets.sh` load the env file into the current shell (no files are written).
+
+Demo order safety switches (default OFF):
+- `config/bot.yaml` → `bingx_demo.allow_trading_demo: false`
+- `config/bot.yaml` → `bingx_demo.allow_place_test_order: false`
+- optional env: `QE_DEMO_PLACE_TEST_ORDER=1` (enables a one-off demo test order path)
+
+To run BingX demo:
+- Set `app.mode: demo`
+- Set `app.exchange: bingx_swap`
+- Keep trading disabled unless you explicitly enable it
+
+Validation (manual):
+1) Create `config/secrets.local.env` (ignored by git).
+2) Start: `python QuantumEdge.py start`
+3) Check bot status: `GET http://127.0.0.1:8765/api/v1/bot/status`
+4) Tail logs: `logs/bot.log`
+
+Optional demo test order:
+- Set `bingx_demo.allow_place_test_order: true` or `QE_DEMO_PLACE_TEST_ORDER=1`
+- Restart bot: `POST http://127.0.0.1:8765/api/v1/bot/restart`
+
 All commands assume a single root `.venv` and use `QE_ROOT` for resolution.

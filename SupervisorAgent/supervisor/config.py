@@ -41,6 +41,7 @@ class SupervisorConfig:
     bot_entrypoint: str = "ai_scalper_bot/run_bot.py"
     bot_workdir: str = "ai_scalper_bot"
     bot_config: str = "config/bot.yaml"
+    bot_env_file: str = ""
     bot_auto_start: bool = True
     bot_restart_enabled: bool = True
     bot_restart_max_retries: int = 5
@@ -287,6 +288,7 @@ def load_supervisor_config(path: Path) -> SupervisorConfig:
     bot_workdir = str(raw.get("bot_workdir", "ai_scalper_bot"))
     bot_config = str(raw.get("bot_config", "config/bot.yaml"))
     bot_section = raw.get("bot", {}) or {}
+    bot_env_file = str(bot_section.get("env_file", "")) if isinstance(bot_section, dict) else ""
     bot_auto_start = bool(bot_section.get("auto_start", True))
     restart_section = bot_section.get("restart", {}) or {}
     bot_restart_enabled = bool(restart_section.get("enabled", True))
@@ -320,6 +322,7 @@ def load_supervisor_config(path: Path) -> SupervisorConfig:
         bot_entrypoint=bot_entrypoint,
         bot_workdir=bot_workdir,
         bot_config=bot_config,
+        bot_env_file=bot_env_file,
         bot_auto_start=bot_auto_start,
         bot_restart_enabled=bot_restart_enabled,
         bot_restart_max_retries=bot_restart_max_retries,

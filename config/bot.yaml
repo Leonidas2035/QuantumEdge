@@ -24,6 +24,12 @@ binance_demo:
 bingx_demo:
   enabled: true
   symbols: ["BTC-USDT"]
+  allow_trading_demo: false
+  allow_place_test_order: false
+  healthcheck_only: false
+  recv_window: 5000
+  max_notional_per_trade: 50
+  max_open_positions: 1
 
 ml:
   require_models: false

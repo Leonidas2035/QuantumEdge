@@ -19,6 +19,7 @@ bot_workdir: "ai_scalper_bot"
 bot_config: "config/bot.yaml"
 
 bot:
+  env_file: "config/secrets.local.env"
   auto_start: true
   restart:
     enabled: true

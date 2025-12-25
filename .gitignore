@@ -22,6 +22,9 @@ __pycache__/
 **/secrets/
 **/config/secrets*
 
+# Allow tracked secrets templates
+!config/secrets.local.env.example
+
 # IDE
 .vscode/
 .idea/

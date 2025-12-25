@@ -13,6 +13,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
+import yaml
+
 from supervisor.config import PathsConfig, SupervisorConfig
 from supervisor import state as state_utils
 from supervisor.events import EventLogger
@@ -99,6 +101,79 @@ class ProcessManager:
             "last_exit_time": last_exit_time,
         }
 
+    def _load_env_file(self, env: dict) -> list[str]:
+        env_file = self.config.bot_env_file
+        if not env_file:
+            return []
+        path = Path(env_file)
+        if not path.is_absolute():
+            path = (self.paths.qe_root / path).resolve()
+        if not path.exists():
+            self.logger.warning("Bot env_file missing: %s", path)
+            return []
+
+        loaded: list[str] = []
+        try:
+            for line in path.read_text(encoding="utf-8").splitlines():
+                line = line.strip()
+                if not line or line.startswith("#"):
+                    continue
+                if line.lower().startswith("export "):
+                    line = line[7:].strip()
+                if "=" not in line:
+                    continue
+                key, value = line.split("=", 1)
+                key = key.strip()
+                value = value.strip()
+                if not key:
+                    continue
+                if (value.startswith('"') and value.endswith('"')) or (value.startswith("'") and value.endswith("'")):
+                    value = value[1:-1]
+                env[key] = value
+                loaded.append(key)
+        except OSError as exc:
+            self.logger.warning("Failed to read env_file %s: %s", path, exc)
+            return []
+
+        if loaded:
+            self.logger.info("Loaded %s keys from env_file: %s", len(loaded), ", ".join(sorted(loaded)))
+        return loaded
+
+    def _load_bot_config(self) -> dict:
+        bot_config = self.config.bot_config
+        if not bot_config:
+            return {}
+        path = Path(bot_config)
+        if not path.is_absolute():
+            path = (self.paths.qe_root / path).resolve()
+        if not path.exists():
+            return {}
+        try:
+            data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+        except Exception as exc:  # noqa: BLE001
+            self.logger.debug("Failed to parse bot config %s: %s", path, exc)
+            return {}
+        return data if isinstance(data, dict) else {}
+
+    def _env_truthy(self, value: Optional[str]) -> bool:
+        if value is None:
+            return False
+        return str(value).strip().lower() in {"1", "true", "yes", "on"}
+
+    def _require_bingx_keys(self, env: dict) -> Optional[list[str]]:
+        bot_cfg = self._load_bot_config()
+        exchange = (self.config.exchange or bot_cfg.get("app", {}).get("exchange") or bot_cfg.get("exchange") or "").lower()
+        if exchange != "bingx_swap":
+            return None
+        demo_cfg = bot_cfg.get("bingx_demo", {}) or {}
+        allow_trading = bool(demo_cfg.get("allow_trading_demo", False))
+        allow_place_test = bool(demo_cfg.get("allow_place_test_order", False)) or self._env_truthy(env.get("QE_DEMO_PLACE_TEST_ORDER"))
+        if not (allow_trading or allow_place_test):
+            return None
+        required = ["BINGX_DEMO_API_KEY", "BINGX_DEMO_API_SECRET"]
+        missing = [key for key in required if not env.get(key)]
+        return missing or None
+
     def tick(self, mode: str) -> None:
         """Poll process status and apply restart policy."""
 
@@ -141,7 +216,16 @@ class ProcessManager:
         self._stop_requested = False
         self._auto_start_suspended = False
         self._set_state(BotState.STARTING)
-        info = self._spawn_process(mode)
+        env = os.environ.copy()
+        self._load_env_file(env)
+        missing = self._require_bingx_keys(env)
+        if missing:
+            self.logger.error("Missing required BingX demo keys: %s", ", ".join(missing))
+            self._set_state(BotState.FAILED)
+            self._auto_start_suspended = True
+            raise RuntimeError("Missing BingX demo credentials.")
+
+        info = self._spawn_process(mode, env)
         time.sleep(0.5)
         if self._process and self._process.poll() is None:
             self._set_state(BotState.RUNNING)
@@ -211,7 +295,7 @@ class ProcessManager:
         return self.start(mode)
 
     # Internal helpers
-    def _spawn_process(self, mode: str) -> ProcessInfo:
+    def _spawn_process(self, mode: str, env: dict) -> ProcessInfo:
         qe_root = self.paths.qe_root
         run_bot = Path(self.config.bot_entrypoint)
         if not run_bot.is_absolute():
@@ -233,7 +317,6 @@ class ProcessManager:
         if os.name == "nt" and hasattr(subprocess, "CREATE_NEW_PROCESS_GROUP"):
             creationflags = subprocess.CREATE_NEW_PROCESS_GROUP
 
-        env = os.environ.copy()
         env.setdefault("QE_ROOT", str(qe_root))
         env.setdefault("QE_CONFIG_DIR", str(qe_root / "config"))
         env.setdefault("QE_RUNTIME_DIR", str(qe_root / "runtime"))

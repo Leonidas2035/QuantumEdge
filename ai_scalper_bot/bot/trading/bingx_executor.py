@@ -47,6 +47,11 @@ class BingXDemoExecutor:
         self.position_pct = float(self.demo_cfg.get("position_pct", 0.02))
         self.equity_override = float(self.demo_cfg.get("equity_override", 0))
         self.healthcheck_only = bool(self.demo_cfg.get("healthcheck_only", False))
+        self.allow_trading_demo = bool(self.demo_cfg.get("allow_trading_demo", False))
+        self.allow_place_test_order = bool(self.demo_cfg.get("allow_place_test_order", False)) or self._env_truthy(
+            os.getenv("QE_DEMO_PLACE_TEST_ORDER")
+        )
+        self._test_order_done = False
 
         self.client: Optional[BingXClient] = None
         self.exchange: Optional[BingXSwapExchange] = None
@@ -84,6 +89,11 @@ class BingXDemoExecutor:
             return sorted(self.allowed_symbols)[0]
         symbols_cfg = config.get("binance.symbols", [])
         return normalize_symbol(symbols_cfg[0]) if symbols_cfg else None
+
+    def _env_truthy(self, value: Optional[str]) -> bool:
+        if value is None:
+            return False
+        return str(value).strip().lower() in {"1", "true", "yes", "on"}
 
     async def _to_thread(self, fn, *args, **kwargs):
         loop = asyncio.get_running_loop()
@@ -167,6 +177,10 @@ class BingXDemoExecutor:
         try:
             await self._to_thread(self.client.request, "GET", "/openApi/swap/v2/server/time", None, False)
             self._log("[DEMO] BingX ping OK.")
+            if self.allow_place_test_order and not self._test_order_done:
+                self._test_order_done = True
+                if not await self._place_test_order():
+                    self._log("[WARN] Demo test order failed; continuing without crash.", level="WARN")
             return True
         except Exception as exc:
             self._log(f"[DEMO] Healthcheck failed: {exc}", level="ERROR")
@@ -317,6 +331,9 @@ class BingXDemoExecutor:
         sl_price = getattr(decision, "sl_price", None)
 
         if decision.action in ("buy", "sell"):
+            if not self.allow_trading_demo:
+                self._log("[DEMO] Trading disabled (allow_trading_demo=false).", level="WARN")
+                return
             if self._open_positions() >= self.max_open_positions:
                 self._log("[DEMO] Max open positions reached; not opening new trade.", level="WARN")
                 return
@@ -346,6 +363,9 @@ class BingXDemoExecutor:
             return
 
         if decision.action == "close":
+            if not self.allow_trading_demo:
+                self._log("[DEMO] Trading disabled (allow_trading_demo=false).", level="WARN")
+                return
             if self.position == 0:
                 self._log("[DEMO] No open position to close.")
                 return
@@ -472,3 +492,52 @@ class BingXDemoExecutor:
                 self.trade_stats.record(pnl, time.time(), symbol=self.symbol, side=side)
             except Exception:
                 pass
+
+    async def _place_test_order(self) -> bool:
+        if not self.exchange:
+            return False
+        try:
+            symbol = normalize_symbol(self.symbol)
+            filters = await self._to_thread(self.exchange.get_symbol_filters, symbol)
+            last_price = await self._to_thread(self.exchange.get_last_price, symbol)
+            price = last_price * 0.5 if last_price else 0.0
+            if filters.tick_size and price > 0:
+                price = round_price_to_tick(price, filters.tick_size)
+            if price <= 0:
+                self._log("[DEMO] Unable to compute valid test order price.", level="WARN")
+                return False
+
+            qty = max(filters.min_qty, filters.step_size)
+            if filters.min_notional:
+                qty = max(qty, filters.min_notional / price)
+            qty = round_qty_to_step(qty, filters.step_size) if filters.step_size else qty
+            if qty <= 0:
+                self._log("[DEMO] Unable to compute valid test order quantity.", level="WARN")
+                return False
+
+            client_id = self._client_order_id(symbol, "test")
+            req = OrderRequest(
+                symbol=symbol,
+                side="BUY",
+                position_side="LONG",
+                order_type="LIMIT",
+                qty=qty,
+                price=price,
+                reduce_only=False,
+                client_order_id=client_id,
+                time_in_force="GTC",
+            )
+            result = await self._to_thread(self.exchange.place_order, req)
+            if not result:
+                self._log("[DEMO] Test order placement returned no result.", level="WARN")
+                return False
+            order_id = result.order_id or ""
+            self._log(f"[DEMO] Test order placed id={order_id}.")
+            await self._to_thread(self.exchange.cancel_order, symbol, order_id=order_id, client_order_id=result.client_order_id)
+            self._log(f"[DEMO] Test order cancel requested id={order_id}.")
+            return True
+        except BingXAPIError as exc:
+            self._log(f"[DEMO] Test order failed: {exc}", level="ERROR")
+        except Exception as exc:
+            self._log(f"[DEMO] Test order error: {exc}", level="ERROR")
+        return False
