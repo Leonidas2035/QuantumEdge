@@ -292,23 +292,26 @@ class SupervisorApp:
         return self.telemetry.alerts_payload()
 
     def _publish_policy(self) -> None:
-        policy = self.policy_engine.evaluate()
-        if not self.policy_publisher.publish(policy):
-            return
-        self._current_policy = policy
-        self.telemetry.record_policy(policy.to_dict())
-        fingerprint = policy_fingerprint(policy)
-        if fingerprint != self._last_policy_fingerprint:
-            self.logger.info(
-                "Policy updated: mode=%s allow_trading=%s ttl=%s size_multiplier=%.3f reason=%s hash=%s",
-                policy.mode,
-                policy.allow_trading,
-                policy.ttl_sec,
-                policy.size_multiplier,
-                policy.reason,
-                fingerprint[:12],
-            )
+        try:
+            policy = self.policy_engine.evaluate()
+            if not self.policy_publisher.publish(policy):
+                return
+            self._current_policy = policy
+            self.telemetry.record_policy(policy.to_dict())
+            fingerprint = policy_fingerprint(policy)
+            if fingerprint != self._last_policy_fingerprint:
+                self.logger.info(
+                    "Policy updated: mode=%s allow_trading=%s ttl=%s size_multiplier=%.3f reason=%s hash=%s",
+                    policy.mode,
+                    policy.allow_trading,
+                    policy.ttl_sec,
+                    policy.size_multiplier,
+                    policy.reason,
+                    fingerprint[:12],
+                )
                 self._last_policy_fingerprint = fingerprint
+        except Exception:  # noqa: BLE001
+            self.logger.exception("Policy publish failed")
 
     def start_bot(self) -> Dict[str, Any]:
         try:
@@ -368,6 +371,9 @@ class SupervisorApp:
                 time.sleep(2.0)
         except KeyboardInterrupt:
             self.logger.info("Received interrupt; stopping.")
+        except Exception:  # noqa: BLE001
+            self.logger.exception("Supervisor loop crashed")
+            raise
         finally:
             if self.api_server:
                 self.api_server.stop()

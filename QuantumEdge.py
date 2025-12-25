@@ -560,6 +560,11 @@ def _start_services(
     )
     if not ready_path:
         logger.error("Supervisor health check timed out")
+        log_tail = _tail_file(_log_path(paths, "supervisor"), 80)
+        if log_tail:
+            logger.error("Supervisor log tail:\n%s", log_tail)
+        else:
+            logger.error("No supervisor log data. Try: python SupervisorAgent/supervisor.py run-foreground")
         if supervisor_started:
             pid = _read_pid(supervisor_pid_file)
             if pid:
