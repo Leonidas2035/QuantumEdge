@@ -19,4 +19,10 @@ echo "[setup] Installing runtime dependencies"
 echo "[setup] Installing dev/test dependencies"
 "$PYTHON_BIN" -m pip install -r "$ROOT_DIR/requirements/requirements-dev.txt"
 
+echo "[setup] Smoke test (PyYAML import)"
+"$PYTHON_BIN" -c "import yaml; print('yaml ok')" || {
+  echo "[setup] PyYAML import failed; verify requirements are installed."
+  exit 1
+}
+
 echo "[setup] Done. Next: use scripts/run.sh to launch components."

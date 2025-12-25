@@ -21,4 +21,11 @@ Write-Host "[setup] Installing runtime dependencies"
 Write-Host "[setup] Installing dev/test dependencies"
 & $python -m pip install -r (Join-Path $root "requirements\requirements-dev.txt")
 
+Write-Host "[setup] Smoke test (PyYAML import)"
+& $python -c "import yaml; print('yaml ok')"
+if ($LASTEXITCODE -ne 0) {
+    Write-Error "[setup] PyYAML import failed; verify requirements are installed."
+    exit 1
+}
+
 Write-Host "[setup] Done. Next: use scripts\run.ps1 to launch components."

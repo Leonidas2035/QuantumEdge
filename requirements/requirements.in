@@ -1,7 +1,7 @@
 # Core runtime dependencies shared across the monorepo.
 # Keep this list minimal and derived from actual imports.
 
-pyyaml>=6.0
+PyYAML>=6.0
 requests
 websockets>=11.0
 numpy
