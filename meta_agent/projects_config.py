@@ -39,15 +39,15 @@ def _ensure_default_config(path: str = DEFAULT_PROJECTS_PATH) -> None:
         "default": "ai_scalper_bot",
         "projects": {
             "ai_scalper_bot": {
-                "path": "C:/ai_scalper_bot",
+                "path": "C:/QuantumEdge/ai_scalper_bot",
                 "description": "QuantumEdge trading engine",
             },
             "supervisor_agent": {
-                "path": "C:/SupervisorAgent",
+                "path": "C:/QuantumEdge/SupervisorAgent",
                 "description": "Supervisor control plane",
             },
             "meta_agent": {
-                "path": "C:/meta_agent",
+                "path": "C:/QuantumEdge/meta_agent",
                 "description": "Meta-Agent orchestrator",
             },
         },

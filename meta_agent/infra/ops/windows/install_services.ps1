@@ -22,12 +22,12 @@ $envPath = Join-Path $PSScriptRoot "windows.env"
 $cfg = Load-Env $envPath
 
 $python = Get-Cfg $cfg "PYTHON_EXE" "python.exe"
-$botDir = Get-Cfg $cfg "AI_SCALPER_BOT_DIR" "C:\ai_scalper_bot"
-$supDir = Get-Cfg $cfg "SUPERVISOR_AGENT_DIR" "C:\SupervisorAgent"
+$botDir = Get-Cfg $cfg "AI_SCALPER_BOT_DIR" "C:\QuantumEdge\ai_scalper_bot"
+$supDir = Get-Cfg $cfg "SUPERVISOR_AGENT_DIR" "C:\QuantumEdge\SupervisorAgent"
 $botEntry = Get-Cfg $cfg "BOT_ENTRYPOINT" "run_bot.py --mode paper"
 $supEntry = Get-Cfg $cfg "SUP_ENTRYPOINT" "supervisor.py run-foreground"
 $nssm = Get-Cfg $cfg "NSSM_EXE" "nssm.exe"
-$logDir = Get-Cfg $cfg "LOG_DIR" "C:\logs\QuantumEdge"
+$logDir = Get-Cfg $cfg "LOG_DIR" "C:\QuantumEdge\logs"
 
 New-Item -ItemType Directory -Force -Path $logDir | Out-Null
 

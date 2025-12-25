@@ -1,0 +1,4 @@
+# Generated manually (pip-tools not run in this stage).
+# Keep in sync with requirements-dev.in.
+
+pytest

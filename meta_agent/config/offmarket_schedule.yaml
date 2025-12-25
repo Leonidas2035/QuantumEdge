@@ -11,7 +11,7 @@ days:
 max_runs_per_day: 3
 
 require_bot_idle: true
-bot_status_file: "C:/ai_scalper_bot/state/bot_status.json"  # expected keys: is_trading (bool), open_positions (int)
+bot_status_file: "C:/QuantumEdge/ai_scalper_bot/state/bot_status.json"  # expected keys: is_trading (bool), open_positions (int)
 
 backlog:
   max_items_per_run: 5
