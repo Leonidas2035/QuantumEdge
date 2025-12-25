@@ -1,0 +1,23 @@
+{
+  "version": "2.0.0",
+  "tasks": [
+    {
+      "label": "Repo: Git Status",
+      "type": "shell",
+      "command": "git status",
+      "problemMatcher": []
+    },
+    {
+      "label": "Repo: Ripgrep secrets scan",
+      "type": "shell",
+      "command": "rg --hidden --no-ignore -n \"(OPENAI|BINANCE|BINGX).*KEY|SCALPER_SECRETS_PASSPHRASE|secrets\\.env|\\.env|\\.enc\" .",
+      "problemMatcher": []
+    },
+    {
+      "label": "Run: Supervisor (foreground)",
+      "type": "shell",
+      "command": "powershell -NoProfile -Command \"if (Test-Path '.venv\\\\Scripts\\\\python.exe') { Write-Host 'Activate .venv and run: python SupervisorAgent\\\\supervisor.py' } else { Write-Host 'Create .venv: python -m venv .venv'; Write-Host 'Install deps: pip install -r SupervisorAgent\\\\requirements.txt'; Write-Host 'Then run: python SupervisorAgent\\\\supervisor.py' }\"",
+      "problemMatcher": []
+    }
+  ]
+}

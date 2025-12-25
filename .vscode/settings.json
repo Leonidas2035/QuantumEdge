@@ -1,0 +1,8 @@
+{
+  "files.eol": "\n",
+  "editor.formatOnSave": true,
+  "python.analysis.typeCheckingMode": "basic",
+  "python.linting.enabled": true,
+  "python.defaultInterpreterPath": "${workspaceFolder}/.venv/Scripts/python.exe",
+  "terminal.integrated.cwd": "${workspaceFolder}"
+}

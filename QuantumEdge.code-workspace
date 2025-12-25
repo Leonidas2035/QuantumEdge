@@ -1,0 +1,20 @@
+{
+  "folders": [
+    {
+      "name": "ai_scalper_bot",
+      "path": "ai_scalper_bot"
+    },
+    {
+      "name": "SupervisorAgent",
+      "path": "SupervisorAgent"
+    },
+    {
+      "name": "meta_agent",
+      "path": "meta_agent"
+    }
+  ],
+  "settings": {
+    "python.defaultInterpreterPath": "${workspaceFolder}/.venv/Scripts/python.exe",
+    "terminal.integrated.defaultProfile.windows": "PowerShell"
+  }
+}

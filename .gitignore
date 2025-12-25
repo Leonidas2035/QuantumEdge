@@ -25,3 +25,7 @@ __pycache__/
 # IDE
 .vscode/
 .idea/
+
+# Allow repo-scoped VS Code settings
+!/.vscode/
+!/.vscode/*.json
