@@ -45,6 +45,10 @@ Cross-platform scripts:
 - `scripts/windows/qe_start.ps1`, `scripts/windows/qe_stop.ps1`, `scripts/windows/qe_diag.ps1`
 - `scripts/linux/qe_start.sh`, `scripts/linux/qe_stop.sh`, `scripts/linux/qe_diag.sh`
 
+Runtime dependencies:
+- Bot-only runtime: `requirements/requirements-runtime.txt`
+- Full stack (Supervisor + research + meta-agent): `requirements/requirements.txt`
+
 Runtime vs research:
 - Live trading runtime remains under `ai_scalper_bot/bot`.
 - Offline/backtest tooling moved to `SupervisorAgent/research/` (compat wrappers remain under `ai_scalper_bot` for one stage).

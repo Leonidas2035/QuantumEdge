@@ -18,6 +18,9 @@ def test_manifest_roundtrip(tmp_path: Path):
         training_data={"source": "ticks", "rows": 10},
         metrics={"accuracy": 0.5},
         thresholds={"p_up": 0.55},
+        model_format="xgboost_json",
+        model_api="predict_proba",
+        artifact={"python": "3.11.0", "platform": "win32", "serializer": "xgboost_json", "lib_versions": {"xgboost": "2.0.0"}},
     )
     manifest_path = tmp_path / "manifest.json"
     manifest.write(manifest_path)
@@ -25,6 +28,9 @@ def test_manifest_roundtrip(tmp_path: Path):
     assert loaded.symbol == "BTCUSDT"
     assert loaded.manifest_version == MANIFEST_VERSION
     assert loaded.files["model"]["sha256"]
+    assert loaded.model_format == "xgboost_json"
+    assert loaded.model_api == "predict_proba"
+    assert loaded.artifact.get("python")
 
 
 def test_publish_atomic(tmp_path: Path):
@@ -40,6 +46,8 @@ def test_publish_atomic(tmp_path: Path):
         model_path=model_path.name,
         model_sha=sha256_file(model_path),
         training_data={"source": "ticks", "rows": 10},
+        model_format="xgboost_json",
+        model_api="predict_proba",
     )
     manifest.write(artifact_dir / "manifest.json")
     runtime_root = tmp_path / "runtime"
@@ -57,5 +65,8 @@ def test_manifest_validation():
         "created_at": 1,
         "features_version": "feat.v1",
         "files": {"model": {"path": "model.pkl", "sha256": "abc"}},
+        "model_format": "xgboost_json",
+        "model_api": "predict_proba",
+        "artifact": {"python": "3.11.0", "platform": "win32", "serializer": "xgboost_json"},
     }
     assert validate_manifest(good)["symbol"] == "BTCUSDT"

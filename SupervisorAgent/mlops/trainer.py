@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import platform
+import sys
 import time
 from pathlib import Path
 from typing import Dict, List, Optional
@@ -9,10 +11,21 @@ from typing import Dict, List, Optional
 from SupervisorAgent.mlops.manifest import ModelManifest
 from SupervisorAgent.mlops.registry import sha256_file
 from SupervisorAgent.research.offline.signal_model.train import train_model
+from importlib import metadata as importlib_metadata
 
 
 def _version_tag() -> str:
     return time.strftime("%Y%m%d-%H%M%S")
+
+
+def _collect_lib_versions(names: List[str]) -> Dict[str, str]:
+    versions: Dict[str, str] = {}
+    for name in names:
+        try:
+            versions[name] = importlib_metadata.version(name)
+        except importlib_metadata.PackageNotFoundError:
+            continue
+    return versions
 
 
 def train_horizons(
@@ -51,6 +64,12 @@ def train_horizons(
 
         model_path = Path(info["model_path"])
         model_sha = sha256_file(model_path)
+        artifact_meta = {
+            "python": platform.python_version(),
+            "platform": sys.platform,
+            "serializer": "xgboost_json",
+            "lib_versions": _collect_lib_versions(["numpy", "pandas", "xgboost"]),
+        }
         manifest = ModelManifest.new(
             symbol=symbol,
             horizon=int(horizon),
@@ -67,10 +86,12 @@ def train_horizons(
             metrics=info.get("metrics") or {},
             thresholds=thresholds,
             created_at=int(time.time()),
+            model_format="xgboost_json",
+            model_api="predict_proba",
+            artifact=artifact_meta,
         )
         manifest_path = artifact_dir / "manifest.json"
         manifest.write(manifest_path)
         manifests.append(manifest_path)
 
     return manifests
-

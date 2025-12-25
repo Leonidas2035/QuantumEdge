@@ -4,7 +4,10 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import os
+import sys
+from importlib import metadata as importlib_metadata
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Optional, Tuple
@@ -12,6 +15,8 @@ from typing import Dict, Optional, Tuple
 from bot.ml.signal_model.model import SignalModel
 
 MANIFEST_VERSION = "model.v1"
+_LOG = logging.getLogger("runtime_models")
+_SUPPORTED_MODEL_FORMATS = {"xgboost_json"}
 
 
 def _sha256_file(path: Path) -> str:
@@ -39,6 +44,92 @@ def _load_manifest(path: Path) -> Dict[str, object]:
     return raw
 
 
+def _version_tuple(raw: str) -> Optional[Tuple[int, int]]:
+    try:
+        parts = str(raw).split(".")
+        return int(parts[0]), int(parts[1])
+    except Exception:
+        return None
+
+
+def _compat_check(manifest: Dict[str, object], strict: bool) -> Optional[str]:
+    errors = []
+    warnings = []
+
+    model_format = manifest.get("model_format")
+    if model_format:
+        fmt = str(model_format).lower()
+        if fmt not in _SUPPORTED_MODEL_FORMATS:
+            msg = f"unsupported model_format={model_format}"
+            if strict:
+                errors.append(msg)
+            else:
+                warnings.append(msg)
+
+    model_api = manifest.get("model_api")
+    if model_api:
+        api_name = str(model_api).lower()
+        if api_name != "predict_proba":
+            msg = f"unsupported model_api={model_api}"
+            if strict:
+                errors.append(msg)
+            else:
+                warnings.append(msg)
+
+    artifact = manifest.get("artifact") or {}
+    if isinstance(artifact, dict):
+        py_version = artifact.get("python")
+        if py_version:
+            want = _version_tuple(str(py_version))
+            have = (sys.version_info.major, sys.version_info.minor)
+            if want and want != have:
+                msg = f"python_mismatch artifact={py_version} runtime={have[0]}.{have[1]}"
+                if strict:
+                    errors.append(msg)
+                else:
+                    warnings.append(msg)
+        platform_tag = artifact.get("platform")
+        if platform_tag:
+            current = sys.platform
+            if str(platform_tag).lower() != current.lower():
+                msg = f"platform_mismatch artifact={platform_tag} runtime={current}"
+                if strict:
+                    errors.append(msg)
+                else:
+                    warnings.append(msg)
+        serializer = artifact.get("serializer")
+        if serializer:
+            fmt = str(serializer).lower()
+            if fmt not in _SUPPORTED_MODEL_FORMATS:
+                msg = f"serializer_unsupported={serializer}"
+                if strict:
+                    errors.append(msg)
+                else:
+                    warnings.append(msg)
+        lib_versions = artifact.get("lib_versions") or {}
+        if isinstance(lib_versions, dict):
+            for name, expected in lib_versions.items():
+                try:
+                    current = importlib_metadata.version(str(name))
+                except importlib_metadata.PackageNotFoundError:
+                    continue
+                want = _version_tuple(str(expected))
+                have = _version_tuple(str(current))
+                if want and have and want[0] != have[0]:
+                    msg = f"lib_major_mismatch {name} expected={expected} runtime={current}"
+                    if strict:
+                        errors.append(msg)
+                    else:
+                        warnings.append(msg)
+
+    for warning in warnings:
+        _LOG.warning("Model compatibility warning: %s", warning)
+
+    if errors:
+        return ";".join(errors)
+    return None
+
+
 @dataclass
 class RuntimeModelInfo:
     model: SignalModel
@@ -51,6 +142,7 @@ def load_runtime_models(
     horizons: list[int],
     models_root: Path,
     threshold_default: float = 0.55,
+    compat_strict: bool = False,
 ) -> Tuple[Dict[int, RuntimeModelInfo], Dict[int, str]]:
     symbol = symbol.upper()
     models_root = models_root.resolve()
@@ -66,6 +158,10 @@ def load_runtime_models(
             manifest = _load_manifest(manifest_path)
             if manifest.get("symbol") != symbol or int(manifest.get("horizon")) != int(horizon):
                 errors[horizon] = "symbol_or_horizon_mismatch"
+                continue
+            compat_error = _compat_check(manifest, compat_strict)
+            if compat_error:
+                errors[horizon] = f"compat_mismatch:{compat_error}"
                 continue
             model_rel = Path(str(manifest["files"]["model"]["path"]))
             model_path = manifest_path.parent / model_rel

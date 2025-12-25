@@ -34,6 +34,7 @@ bingx_demo:
 ml:
   require_models: false
   ml_required: false
+  ml_compat_strict: false
   model_source: "runtime"   # runtime | legacy
   runtime_models_dir: "runtime/models"
   thresholds:

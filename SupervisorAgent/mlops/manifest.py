@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import time
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Optional
 
@@ -51,6 +51,32 @@ def validate_manifest(data: Dict[str, Any]) -> Dict[str, Any]:
     model_path = _require_str(model.get("path"), "files.model.path")
     model_sha = _require_str(model.get("sha256"), "files.model.sha256")
 
+    model_format = data.get("model_format")
+    if model_format is not None:
+        model_format = _require_str(model_format, "model_format")
+    model_api = data.get("model_api")
+    if model_api is not None:
+        model_api = _require_str(model_api, "model_api")
+
+    artifact = data.get("artifact") or {}
+    if artifact and not isinstance(artifact, dict):
+        raise ValueError("artifact must be an object")
+    artifact_out: Dict[str, Any] = {}
+    if "python" in artifact:
+        artifact_out["python"] = _require_str(artifact.get("python"), "artifact.python")
+    if "platform" in artifact:
+        artifact_out["platform"] = _require_str(artifact.get("platform"), "artifact.platform")
+    if "serializer" in artifact:
+        artifact_out["serializer"] = _require_str(artifact.get("serializer"), "artifact.serializer")
+    if "lib_versions" in artifact:
+        lib_versions = artifact.get("lib_versions")
+        if not isinstance(lib_versions, dict):
+            raise ValueError("artifact.lib_versions must be an object")
+        cleaned = {}
+        for key, value in lib_versions.items():
+            cleaned[str(key)] = _require_str(value, f"artifact.lib_versions.{key}")
+        artifact_out["lib_versions"] = cleaned
+
     return {
         "manifest_version": manifest_version,
         "symbol": symbol,
@@ -62,6 +88,9 @@ def validate_manifest(data: Dict[str, Any]) -> Dict[str, Any]:
         "metrics": data.get("metrics") or {},
         "thresholds": data.get("thresholds") or {},
         "files": {"model": {"path": model_path, "sha256": model_sha}},
+        "model_format": model_format,
+        "model_api": model_api,
+        "artifact": artifact_out,
     }
 
 
@@ -77,6 +106,9 @@ class ModelManifest:
     metrics: Dict[str, Any]
     thresholds: Dict[str, Any]
     files: Dict[str, Dict[str, str]]
+    model_format: Optional[str] = None
+    model_api: Optional[str] = None
+    artifact: Dict[str, Any] = field(default_factory=dict)
 
     @classmethod
     def new(
@@ -91,6 +123,9 @@ class ModelManifest:
         metrics: Optional[Dict[str, Any]] = None,
         thresholds: Optional[Dict[str, Any]] = None,
         created_at: Optional[int] = None,
+        model_format: Optional[str] = None,
+        model_api: Optional[str] = None,
+        artifact: Optional[Dict[str, Any]] = None,
     ) -> "ModelManifest":
         payload = {
             "manifest_version": MANIFEST_VERSION,
@@ -103,6 +138,9 @@ class ModelManifest:
             "metrics": metrics or {},
             "thresholds": thresholds or {},
             "files": {"model": {"path": model_path, "sha256": model_sha}},
+            "model_format": model_format,
+            "model_api": model_api,
+            "artifact": artifact or {},
         }
         validated = validate_manifest(payload)
         return cls(**validated)
@@ -114,7 +152,7 @@ class ModelManifest:
         return cls(**validated)
 
     def to_dict(self) -> Dict[str, Any]:
-        return {
+        payload = {
             "manifest_version": self.manifest_version,
             "symbol": self.symbol,
             "horizon": self.horizon,
@@ -126,8 +164,14 @@ class ModelManifest:
             "thresholds": self.thresholds,
             "files": self.files,
         }
+        if self.model_format:
+            payload["model_format"] = self.model_format
+        if self.model_api:
+            payload["model_api"] = self.model_api
+        if self.artifact is not None:
+            payload["artifact"] = self.artifact
+        return payload
 
     def write(self, path: Path) -> None:
         path.parent.mkdir(parents=True, exist_ok=True)
         path.write_text(json.dumps(self.to_dict(), indent=2), encoding="utf-8")
-

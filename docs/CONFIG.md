@@ -53,6 +53,7 @@ Supervisor owns model training and publishing under `SupervisorAgent/mlops/`:
 - Artifacts: `artifacts/models/<symbol>/<horizon>/<version>/`
 - Published runtime: `runtime/models/<symbol>/<horizon>/current/`
 - Manifest: `runtime/models/.../manifest.json` (version `model.v1`)
+  - Optional compatibility metadata: `model_format`, `model_api`, `artifact.{python,platform,serializer,lib_versions}`
 
 Example commands:
 - Dataset: `python SupervisorAgent/supervisor.py ml dataset --symbol BTCUSDT --source ticks --input-dir data/ticks`
@@ -64,6 +65,7 @@ Bot loading (from `config/bot.yaml`):
 - `ml.model_source`: `runtime` (default) or `legacy`
 - `ml.runtime_models_dir`: default `runtime/models`
 - `ml.ml_required`: if true, missing/invalid models disable trading
+- `ml.ml_compat_strict`: if true, incompatible model metadata disables ML (default false)
 
 ## Research suite (SupervisorAgent)
 Offline research runs live under `SupervisorAgent/research/` and write outputs to `artifacts/research/<run_id>/`.
@@ -131,6 +133,13 @@ Unified ops entrypoints:
 Runtime layout:
 - `runtime/`: `policy.json`, `models/`, `telemetry.jsonl`, PID/state files
 - `artifacts/`: model training outputs, research reports, telemetry archives
+
+## Runtime dependencies
+For a lean bot-only install, use:
+- `requirements/requirements-runtime.txt` (bot runtime only)
+
+The full stack install (Supervisor + research + meta-agent) remains in:
+- `requirements/requirements.txt`
 
 Doctor/diag checks:
 - config files present

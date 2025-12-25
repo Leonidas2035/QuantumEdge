@@ -142,8 +142,9 @@ def _required_envs(bot_cfg: Dict[str, Any], supervisor_cfg: Dict[str, Any]) -> L
     return sorted(set(required))
 
 
-def _check_models(runtime_models_dir: Path, symbols: List[str], horizons: List[int]) -> List[str]:
+def _check_models(runtime_models_dir: Path, symbols: List[str], horizons: List[int]) -> tuple[List[str], List[str]]:
     failures: List[str] = []
+    warnings: List[str] = []
     for symbol in symbols:
         for horizon in horizons:
             manifest = runtime_models_dir / symbol / str(horizon) / "current" / "manifest.json"
@@ -169,9 +170,23 @@ def _check_models(runtime_models_dir: Path, symbols: List[str], horizons: List[i
                 sha_actual = _sha256_file(model_path)
                 if sha_actual != sha_expected:
                     failures.append(f"{symbol} h{horizon}: sha_mismatch")
+                artifact = data.get("artifact")
+                if not isinstance(artifact, dict):
+                    warnings.append(f"{symbol} h{horizon}: compat_metadata_missing")
+                else:
+                    missing = [key for key in ("python", "platform", "serializer") if not artifact.get(key)]
+                    if missing:
+                        warnings.append(f"{symbol} h{horizon}: compat_metadata_incomplete({','.join(missing)})")
+                    lib_versions = artifact.get("lib_versions")
+                    if lib_versions is None:
+                        warnings.append(f"{symbol} h{horizon}: compat_lib_versions_missing")
+                if not data.get("model_format"):
+                    warnings.append(f"{symbol} h{horizon}: model_format_missing")
+                if not data.get("model_api"):
+                    warnings.append(f"{symbol} h{horizon}: model_api_missing")
             except Exception as exc:  # noqa: BLE001
                 failures.append(f"{symbol} h{horizon}: manifest_invalid ({exc})")
-    return failures
+    return failures, warnings
 
 
 def run_doctor(json_output: bool = False) -> int:
@@ -255,11 +270,13 @@ def run_doctor(json_output: bool = False) -> int:
     if not symbols:
         _add(results, "WARN", "No symbols configured for model check")
     else:
-        model_failures = _check_models(paths["runtime_dir"] / "models", symbols, horizons_list)
+        model_failures, model_warnings = _check_models(paths["runtime_dir"] / "models", symbols, horizons_list)
         if model_failures:
             _add(results, "FAIL", f"Model validation failures: {', '.join(model_failures)}")
         else:
             _add(results, "PASS", "Runtime models present and valid")
+        if model_warnings:
+            _add(results, "WARN", f"Model compatibility metadata warnings: {', '.join(model_warnings)}")
 
     telemetry_url = f"{supervisor_url.rstrip('/')}/api/v1/telemetry/summary"
     telemetry_status = _probe_url(telemetry_url)

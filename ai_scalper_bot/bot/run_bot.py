@@ -33,6 +33,7 @@ from bot.monitoring.supervisor_snapshot_monitor import run_supervisor_snapshot_m
 from bot.risk.scalp_guards import ScalpGuard
 from bot.ops.status_writer import BotStatusWriter
 from bot.policy.policy_client import PolicyClient
+from bot.policy.policy_gate import policy_allows_entry
 from telemetry.emitter import TelemetryEmitter, TelemetryConfig
 
 _kill_cache = {"ts": 0.0, "active": False, "reason": None}
@@ -194,6 +195,7 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
     ml_cfg = config.get("ml", {}) or {}
     require_models = bool(config.get("ml.require_models", True))
     ml_required = bool(ml_cfg.get("ml_required", ml_cfg.get("required", require_models)))
+    ml_compat_strict = bool(ml_cfg.get("ml_compat_strict", False))
     observer_mode = not require_models
     observer_notice_logged = False
     missing_required_models = False
@@ -295,6 +297,7 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
                 horizons=config.get("ml.horizons", [1, 5, 30]),
                 models_root=Path(runtime_models_dir),
                 threshold_default=threshold_default,
+                compat_strict=ml_compat_strict,
             )
             if errors:
                 print(f"[WARN] Runtime models missing/invalid for {sym}: {errors}")
@@ -529,9 +532,6 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
                     emit_event("error", {"code": "llm_risk_moderator", "message": str(exc), "where": "risk_moderator"}, evt_symbol)
 
             policy = policy_client.get_effective_policy()
-            policy_allows_entry = bool(policy.allow_trading) and policy.mode != "risk_off"
-            if policy.cooldown_sec > 0 and time.time() < (policy.ts + policy.cooldown_sec):
-                policy_allows_entry = False
             policy_snapshot = {"mode": policy.mode, "allow_trading": policy.allow_trading, "reason": policy.reason}
             if policy_snapshot != last_policy_snapshot:
                 emit_event("policy", policy_snapshot, evt_symbol)
@@ -547,7 +547,7 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
                     approved=approved,
                     warmup_ready=True,
                 )
-                if decision.action == DecisionAction.ENTER and not policy_allows_entry:
+                if decision.action == DecisionAction.ENTER and not policy_allows_entry(decision.action, policy):
                     logging.getLogger("policy_client").info(
                         "Policy blocks entry for %s (mode=%s allow_trading=%s reason=%s)",
                         evt_symbol,

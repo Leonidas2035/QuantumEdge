@@ -260,7 +260,7 @@ class BotStrategy:
         runtime_models = None
         thresholds = None
         try:
-            loaded, errors = load_runtime_models(symbol, [1, 5, 30], models_root=models_dir)
+            loaded, errors = load_runtime_models(symbol, [1, 5, 30], models_root=models_dir, compat_strict=False)
             if loaded:
                 runtime_models = {h: info.model for h, info in loaded.items()}
                 thresholds = {h: info.threshold for h, info in loaded.items()}

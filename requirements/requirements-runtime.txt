@@ -1,0 +1,11 @@
+# Generated manually (pip-tools not run in this stage).
+# Keep in sync with requirements-runtime.in.
+
+PyYAML>=6.0
+requests
+websockets>=11.0
+numpy
+pandas
+python-binance
+xgboost
+cryptography>=42.0.0
