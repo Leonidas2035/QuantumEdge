@@ -2,3 +2,12 @@
 supervisor:
   host: "127.0.0.1"
   port: 8765
+
+orchestrator:
+  supervisor_spawns_bot: true
+  supervisor_health_path: "/api/v1/dashboard/health"
+  supervisor_health_fallbacks:
+    - "/api/v1/status"
+    - "/"
+  startup_timeout_s: 30
+  poll_interval_s: 1

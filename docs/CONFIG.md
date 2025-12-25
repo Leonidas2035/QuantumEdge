@@ -3,7 +3,7 @@
 This monorepo uses a shared configuration contract rooted at `QE_ROOT` (defaults to the repo root).
 
 ## Core files (root `config/`)
-- `config/quantumedge.yaml`: global defaults (Supervisor host/port)
+- `config/quantumedge.yaml`: global defaults (Supervisor host/port, orchestrator settings)
 - `config/paths.yaml`: path aliases relative to `QE_ROOT`
 - `config/supervisor.yaml`: Supervisor runtime defaults + bot wiring
 - `config/bot.yaml`: bot runtime defaults (safe, no secrets)
@@ -26,10 +26,13 @@ The SupervisorAgent, bot, and Meta-Agent still keep their detailed module config
 
 See `config/env.example` for the full list.
 
-## Recommended startup (root venv)
-- Supervisor: `python tools/qe_cli.py supervisor --config config/supervisor.yaml`
-- Bot: `python tools/qe_cli.py bot --config config/bot.yaml`
-- Meta-Agent: `python tools/qe_cli.py meta --config config/meta_agent.yaml`
-- Diagnostics: `python tools/qe_cli.py diag`
+## Orchestrator (recommended)
+Use the single entrypoint from the repo root:
+- Start: `python QuantumEdge.py start --with-meta`
+- Status: `python QuantumEdge.py status`
+- Stop: `python QuantumEdge.py stop`
+- Diag: `python QuantumEdge.py diag`
+
+`config/quantumedge.yaml` includes orchestrator defaults (health probe path, startup timeout, and whether Supervisor spawns the bot).
 
 All commands assume a single root `.venv` and use `QE_ROOT` for resolution.
