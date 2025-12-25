@@ -56,6 +56,23 @@ class SupervisorConfig:
     policy_spread_max_bps: Optional[float] = None
     policy_max_daily_loss: Optional[float] = None
     policy_reason: str = "OK"
+    policy_hysteresis_enter_cycles: int = 2
+    policy_hysteresis_exit_cycles: int = 3
+    policy_restart_rate: Optional[float] = 3.0
+    policy_max_drawdown_abs: Optional[float] = None
+    policy_loss_streak: int = 3
+    policy_conservative_size_multiplier: float = 0.5
+    policy_loss_streak_mode: str = "conservative"
+    policy_volatility_hi: Optional[float] = None
+    policy_llm_enabled: bool = False
+    policy_llm_model: str = "gpt-4.1-mini"
+    policy_llm_api_url: str = "https://api.openai.com/v1/chat/completions"
+    policy_llm_api_key_env: str = "OPENAI_API_KEY_SUPERVISOR"
+    policy_llm_timeout_sec: float = 4.0
+    policy_llm_temperature: float = 0.1
+    policy_llm_cb_failures: int = 3
+    policy_llm_cb_window_sec: int = 300
+    policy_llm_cb_open_sec: int = 120
 
 
 @dataclass
@@ -320,7 +337,8 @@ def load_supervisor_config(path: Path) -> SupervisorConfig:
         bot_restart_backoff_seconds = [1, 2, 5, 10, 30]
 
     policy_section = raw.get("policy", {}) or {}
-    policy_publish_interval_s = float(policy_section.get("publish_interval_s", 5))
+    update_interval = policy_section.get("update_interval_sec", policy_section.get("publish_interval_s", 5))
+    policy_publish_interval_s = float(update_interval)
     if policy_publish_interval_s <= 0:
         policy_publish_interval_s = 5.0
     policy_ttl_sec = int(policy_section.get("ttl_sec", 30))
@@ -342,6 +360,34 @@ def load_supervisor_config(path: Path) -> SupervisorConfig:
     if policy_max_daily_loss is not None:
         policy_max_daily_loss = float(policy_max_daily_loss)
     policy_reason = str(policy_section.get("reason", "OK"))
+    hysteresis = policy_section.get("hysteresis", {}) or {}
+    policy_hysteresis_enter_cycles = int(hysteresis.get("enter_cycles", 2))
+    policy_hysteresis_exit_cycles = int(hysteresis.get("exit_cycles", 3))
+
+    thresholds = policy_section.get("thresholds", {}) or {}
+    policy_restart_rate = thresholds.get("restart_rate", 3.0)
+    policy_restart_rate = float(policy_restart_rate) if policy_restart_rate is not None else None
+    policy_max_drawdown_abs = thresholds.get("max_drawdown_abs")
+    policy_max_drawdown_abs = float(policy_max_drawdown_abs) if policy_max_drawdown_abs is not None else None
+    policy_loss_streak = int(thresholds.get("loss_streak", 3))
+    policy_conservative_size_multiplier = float(thresholds.get("conservative_size_multiplier", 0.5))
+    if policy_conservative_size_multiplier < 0:
+        policy_conservative_size_multiplier = 0.0
+    policy_loss_streak_mode = str(thresholds.get("loss_streak_mode", "conservative"))
+    policy_volatility_hi = thresholds.get("volatility_hi")
+    policy_volatility_hi = float(policy_volatility_hi) if policy_volatility_hi is not None else None
+
+    llm_section = raw.get("llm", {}) or {}
+    policy_llm_enabled = bool(llm_section.get("enabled", False))
+    policy_llm_model = str(llm_section.get("model", "gpt-4.1-mini"))
+    policy_llm_api_url = str(llm_section.get("api_url", "https://api.openai.com/v1/chat/completions"))
+    policy_llm_api_key_env = str(llm_section.get("api_key_env", "OPENAI_API_KEY_SUPERVISOR"))
+    policy_llm_timeout_sec = float(llm_section.get("timeout_sec", 4.0))
+    policy_llm_temperature = float(llm_section.get("temperature", 0.1))
+    cb = llm_section.get("circuit_breaker", {}) or {}
+    policy_llm_cb_failures = int(cb.get("failures", 3))
+    policy_llm_cb_window_sec = int(cb.get("window_sec", 300))
+    policy_llm_cb_open_sec = int(cb.get("open_sec", 120))
 
     return SupervisorConfig(
         mode=mode,
@@ -371,6 +417,23 @@ def load_supervisor_config(path: Path) -> SupervisorConfig:
         policy_spread_max_bps=policy_spread_max_bps,
         policy_max_daily_loss=policy_max_daily_loss,
         policy_reason=policy_reason,
+        policy_hysteresis_enter_cycles=policy_hysteresis_enter_cycles,
+        policy_hysteresis_exit_cycles=policy_hysteresis_exit_cycles,
+        policy_restart_rate=policy_restart_rate,
+        policy_max_drawdown_abs=policy_max_drawdown_abs,
+        policy_loss_streak=policy_loss_streak,
+        policy_conservative_size_multiplier=policy_conservative_size_multiplier,
+        policy_loss_streak_mode=policy_loss_streak_mode,
+        policy_volatility_hi=policy_volatility_hi,
+        policy_llm_enabled=policy_llm_enabled,
+        policy_llm_model=policy_llm_model,
+        policy_llm_api_url=policy_llm_api_url,
+        policy_llm_api_key_env=policy_llm_api_key_env,
+        policy_llm_timeout_sec=policy_llm_timeout_sec,
+        policy_llm_temperature=policy_llm_temperature,
+        policy_llm_cb_failures=policy_llm_cb_failures,
+        policy_llm_cb_window_sec=policy_llm_cb_window_sec,
+        policy_llm_cb_open_sec=policy_llm_cb_open_sec,
     )
 
 

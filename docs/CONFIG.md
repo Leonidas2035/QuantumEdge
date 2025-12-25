@@ -69,6 +69,7 @@ Bot loading (from `config/bot.yaml`):
 Supervisor publishes a versioned policy contract that the bot consumes:
 - File: `runtime/policy.json` (atomic write every few seconds)
 - API: `GET /api/v1/policy/current`
+- Optional debug: `GET /api/v1/policy/debug` (signals + heuristics + LLM/circuit breaker state)
 - Schema: `docs/policy_schema_v1.json`
 
 Bot defaults (from `config/bot.yaml`):
@@ -79,6 +80,20 @@ Bot defaults (from `config/bot.yaml`):
 - `policy.safe_mode_default`: default `risk_off`
 
 If no fresh policy is available, the bot enters safe mode (no new entries, exits allowed).
+
+### Policy engine (SupervisorAgent)
+Policy is computed on a schedule using deterministic heuristics and optional LLM moderation.
+Key settings live in `config/supervisor.yaml`:
+- `policy.update_interval_sec`: how often to recompute/publish policy.
+- `policy.ttl_sec`: policy freshness window.
+- `policy.hysteresis.enter_cycles` / `policy.hysteresis.exit_cycles`: anti-flap controls.
+- `policy.thresholds.*`: loss limits, restart-rate thresholds, spread/volatility gating.
+- `llm.enabled`: enable optional LLM moderation (default false).
+- `llm.api_key_env`: env var for the LLM key (local only).
+- `llm.timeout_sec`: LLM time budget (seconds).
+- `llm.circuit_breaker.failures`, `llm.circuit_breaker.window_sec`, `llm.circuit_breaker.open_sec`.
+
+If LLM is enabled but unavailable, policy falls back to heuristics with a reason suffix (`LLM_UNAVAILABLE` or `LLM_CB_OPEN`).
 
 ## Secrets (local only, BingX demo)
 Secrets are loaded locally and never committed.

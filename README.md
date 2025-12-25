@@ -29,6 +29,7 @@ Policy contract (Supervisor -> bot):
 - File: `runtime/policy.json`
 - API: `GET /api/v1/policy/current`
 - Schema: `docs/policy_schema_v1.json`
+- Policy engine config lives in `config/supervisor.yaml` (heuristics + optional LLM moderation).
 
 Runtime vs research:
 - Live trading runtime remains under `ai_scalper_bot/bot`.

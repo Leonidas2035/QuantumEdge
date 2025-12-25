@@ -33,7 +33,7 @@ snapshots:
 
 # Policy publishing (Supervisor -> bot)
 policy:
-  publish_interval_s: 5
+  update_interval_sec: 5
   ttl_sec: 30
   file_path: "runtime/policy.json"
   allow_trading: true
@@ -43,3 +43,27 @@ policy:
   spread_max_bps: null
   max_daily_loss: null
   reason: "OK"
+  hysteresis:
+    enter_cycles: 2
+    exit_cycles: 3
+  thresholds:
+    max_daily_loss: null
+    max_drawdown_abs: null
+    loss_streak: 3
+    spread_max_bps: null
+    volatility_hi: null
+    restart_rate: 3.0
+    conservative_size_multiplier: 0.5
+    loss_streak_mode: "conservative"
+
+llm:
+  enabled: false
+  model: "gpt-4.1-mini"
+  api_url: "https://api.openai.com/v1/chat/completions"
+  api_key_env: "OPENAI_API_KEY_SUPERVISOR"
+  timeout_sec: 4
+  temperature: 0.1
+  circuit_breaker:
+    failures: 3
+    window_sec: 300
+    open_sec: 120

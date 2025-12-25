@@ -58,8 +58,9 @@ from supervisor.dashboard.service import DashboardService
 from supervisor.tsdb import NoopTimeseriesStore, ClickHouseTimeseriesStore, QuestDbTimeseriesStore, TsdbWriter
 from supervisor.tsdb.maintenance import apply_retention_and_rollups
 from policy.policy_contract import policy_fingerprint
-from policy.policy_store import PolicyStore
 from policy.policy_publisher import PolicyPublisher
+from policy.policy_engine import PolicyEngine, PolicyEngineConfig, HysteresisConfig
+from policy.heuristics import HeuristicThresholds
 
 try:
     from tools.qe_config import get_qe_paths
@@ -165,19 +166,41 @@ class SupervisorApp:
         policy_file = Path(config.policy_file_path)
         if not policy_file.is_absolute():
             policy_file = self.paths.qe_root / policy_file
-        self.policy_store = PolicyStore(
-            ttl_sec=config.policy_ttl_sec,
-            allow_trading=config.policy_allow_trading,
-            mode=config.policy_mode,
-            size_multiplier=config.policy_size_multiplier,
-            cooldown_sec=config.policy_cooldown_sec,
-            spread_max_bps=config.policy_spread_max_bps,
+        thresholds = HeuristicThresholds(
             max_daily_loss=config.policy_max_daily_loss,
-            reason=config.policy_reason,
+            max_drawdown_abs=config.policy_max_drawdown_abs,
+            loss_streak=config.policy_loss_streak,
+            spread_max_bps=config.policy_spread_max_bps,
+            volatility_hi=config.policy_volatility_hi,
+            restart_rate=config.policy_restart_rate,
+            conservative_size_multiplier=config.policy_conservative_size_multiplier,
+            loss_streak_mode=config.policy_loss_streak_mode,
         )
+        engine_cfg = PolicyEngineConfig(
+            update_interval_sec=float(config.policy_publish_interval_s),
+            ttl_sec=config.policy_ttl_sec,
+            cooldown_sec=config.policy_cooldown_sec,
+            thresholds=thresholds,
+            hysteresis=HysteresisConfig(
+                enter_cycles=config.policy_hysteresis_enter_cycles,
+                exit_cycles=config.policy_hysteresis_exit_cycles,
+            ),
+            llm_enabled=config.policy_llm_enabled,
+            llm_model=config.policy_llm_model,
+            llm_api_url=config.policy_llm_api_url,
+            llm_api_key_env=config.policy_llm_api_key_env,
+            llm_timeout_sec=config.policy_llm_timeout_sec,
+            llm_temperature=config.policy_llm_temperature,
+            cb_failures=config.policy_llm_cb_failures,
+            cb_window_sec=config.policy_llm_cb_window_sec,
+            cb_open_sec=config.policy_llm_cb_open_sec,
+            policy_state_path=self.paths.runtime_dir / "policy_state.json",
+        )
+        self.policy_engine = PolicyEngine(engine_cfg, self.paths, self.process_manager, self.risk_engine, self.logger)
         self.policy_publisher = PolicyPublisher(policy_file, self.logger)
         self.policy_publish_interval_s = float(config.policy_publish_interval_s)
         self._last_policy_fingerprint: Optional[str] = None
+        self._current_policy = None
 
     def _build_tsdb_writer(self, tsdb_config: TsdbConfig) -> Optional[TsdbWriter]:
         self.tsdb_backend = "none"
@@ -238,13 +261,17 @@ class SupervisorApp:
         return self.process_manager.get_status_payload()
 
     def get_policy_payload(self) -> Dict[str, Any]:
-        policy = self.policy_store.get_current_policy()
+        policy = self._current_policy or self.policy_engine.current_policy()
         return policy.to_dict()
 
+    def get_policy_debug(self) -> Dict[str, Any]:
+        return self.policy_engine.debug_payload()
+
     def _publish_policy(self) -> None:
-        policy = self.policy_store.get_current_policy()
+        policy = self.policy_engine.evaluate()
         if not self.policy_publisher.publish(policy):
             return
+        self._current_policy = policy
         fingerprint = policy_fingerprint(policy)
         if fingerprint != self._last_policy_fingerprint:
             self.logger.info(
