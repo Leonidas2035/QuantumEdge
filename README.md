@@ -22,3 +22,5 @@ Recommended entrypoint:
 - `python QuantumEdge.py start --with-meta`
 - `python QuantumEdge.py status`
 - `python QuantumEdge.py stop`
+
+Supervisor health endpoint: `/api/v1/dashboard/health` (configurable via `config/supervisor.yaml` `health_path`).

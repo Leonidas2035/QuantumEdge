@@ -217,17 +217,34 @@ def _extract_orchestrator_config(global_config: dict) -> dict:
     }
 
 
-def _read_supervisor_spawn_flag(config_path: Path, logger: logging.Logger) -> Optional[bool]:
+def _load_optional_config(config_path: Path, logger: logging.Logger) -> dict:
     if not config_path.exists():
-        return None
+        return {}
     try:
         raw = load_config_file(config_path)
     except Exception as exc:  # noqa: BLE001
-        logger.debug("Failed to read supervisor config %s: %s", config_path, exc)
-        return None
-    if isinstance(raw, dict) and "supervisor_spawns_bot" in raw:
-        return bool(raw["supervisor_spawns_bot"])
+        logger.debug("Failed to read config %s: %s", config_path, exc)
+        return {}
+    return raw if isinstance(raw, dict) else {}
+
+
+def _get_supervisor_health_path(supervisor_config: dict, default_path: str) -> str:
+    value = supervisor_config.get("health_path") if isinstance(supervisor_config, dict) else None
+    return str(value) if value else default_path
+
+
+def _get_supervisor_spawn_flag(supervisor_config: dict) -> Optional[bool]:
+    if isinstance(supervisor_config, dict) and "supervisor_spawns_bot" in supervisor_config:
+        return bool(supervisor_config["supervisor_spawns_bot"])
     return None
+
+
+def _resolve_bot_management(supervisor_config: dict, orchestrator_settings: dict) -> bool:
+    managed = bool(orchestrator_settings.get("supervisor_spawns_bot", True))
+    supervisor_flag = _get_supervisor_spawn_flag(supervisor_config)
+    if supervisor_flag is not None:
+        managed = supervisor_flag
+    return managed
 
 
 def _build_env(paths: dict, supervisor_settings: dict, config_paths: dict) -> dict:
@@ -272,6 +289,21 @@ def _probe_url(url: str, timeout: float = 3.0) -> Optional[int]:
         return None
 
 
+def _fetch_json(url: str, logger: logging.Logger, timeout: float = 3.0) -> Optional[dict]:
+    req = Request(url, method="GET")
+    try:
+        with urlopen(req, timeout=timeout) as resp:
+            if resp.status < 200 or resp.status >= 300:
+                return None
+            payload = resp.read()
+            if not payload:
+                return None
+            return json.loads(payload.decode("utf-8"))
+    except (HTTPError, URLError, ValueError) as exc:
+        logger.debug("Failed to fetch %s: %s", url, exc)
+    return None
+
+
 def _wait_for_http_ready(
     base_url: str,
     paths: Iterable[str],
@@ -290,6 +322,21 @@ def _wait_for_http_ready(
                 return path
         time.sleep(interval)
     return None
+
+
+def _get_supervisor_bot_state(supervisor_url: str, logger: logging.Logger) -> tuple[str, Optional[int]]:
+    status_url = _join_url(supervisor_url, "/api/v1/status")
+    payload = _fetch_json(status_url, logger)
+    if not payload or not isinstance(payload.get("bot"), dict):
+        return "UNKNOWN", None
+    bot_info = payload["bot"]
+    running = bot_info.get("running")
+    pid = bot_info.get("pid") if isinstance(bot_info.get("pid"), int) else None
+    if running is True:
+        return "RUNNING", pid
+    if running is False:
+        return "STOPPED", pid
+    return "UNKNOWN", pid
 
 
 def _port_available(host: str, port: int) -> bool:
@@ -373,10 +420,18 @@ def _tail_file(path: Path, lines: int) -> str:
     return "".join(buffer)
 
 
-def _print_status(paths: dict, config_paths: dict, supervisor_settings: dict) -> int:
+def _print_status(
+    paths: dict,
+    config_paths: dict,
+    supervisor_settings: dict,
+    orchestrator_settings: dict,
+    supervisor_config: dict,
+    logger: logging.Logger,
+) -> int:
     supervisor_pid = _read_pid(_pid_path(paths, "supervisor"))
     bot_pid = _read_pid(_pid_path(paths, "bot"))
     meta_pid = _read_pid(_pid_path(paths, "meta"))
+    managed_by_supervisor = _resolve_bot_management(supervisor_config, orchestrator_settings)
 
     print("QuantumEdge status")
     print("==================")
@@ -386,13 +441,32 @@ def _print_status(paths: dict, config_paths: dict, supervisor_settings: dict) ->
     for name, path in config_paths.items():
         print(f"  - {name}: {path}")
     print("Processes:")
-    for name, pid in (("supervisor", supervisor_pid), ("bot", bot_pid), ("meta", meta_pid)):
-        status = _status_from_pid(pid)
-        print(f"  - {name}: pid={status['pid']} running={status['running']}")
+    supervisor_status = _status_from_pid(supervisor_pid)
+    print(f"  - supervisor: pid={supervisor_status['pid']} running={supervisor_status['running']}")
+
+    if managed_by_supervisor:
+        if supervisor_status["running"]:
+            state, remote_pid = _get_supervisor_bot_state(supervisor_settings["url"], logger)
+        else:
+            state, remote_pid = "UNKNOWN", None
+        pid_note = f" pid={remote_pid}" if remote_pid else ""
+        print(f"  - bot: managed_by_supervisor=True state={state}{pid_note}")
+    else:
+        bot_status = _status_from_pid(bot_pid)
+        print(f"  - bot: managed_by_supervisor=False pid={bot_status['pid']} running={bot_status['running']}")
+
+    meta_status = _status_from_pid(meta_pid)
+    print(f"  - meta: pid={meta_status['pid']} running={meta_status['running']}")
     return 0
 
 
-def _run_diag(paths: dict, config_paths: dict, supervisor_settings: dict) -> int:
+def _run_diag(
+    paths: dict,
+    config_paths: dict,
+    supervisor_settings: dict,
+    orchestrator_settings: dict,
+    supervisor_config: dict,
+) -> int:
     print("QuantumEdge diag")
     print("===============")
     print(f"QE_ROOT: {paths['qe_root']}")
@@ -401,6 +475,9 @@ def _run_diag(paths: dict, config_paths: dict, supervisor_settings: dict) -> int
     print(f"QE_LOGS_DIR: {paths['logs_dir']}")
     print(f"QE_DATA_DIR: {paths['data_dir']}")
     print(f"Supervisor URL: {supervisor_settings['url']}")
+    print(f"Supervisor health path: {orchestrator_settings['health_path']}")
+    managed_by_supervisor = _resolve_bot_management(supervisor_config, orchestrator_settings)
+    print(f"Bot managed_by_supervisor: {managed_by_supervisor}")
 
     failures = 0
     for name, path in config_paths.items():
@@ -456,6 +533,7 @@ def _start_services(
     config_paths: dict,
     supervisor_settings: dict,
     orchestrator_settings: dict,
+    supervisor_config: dict,
     with_meta: bool,
     supervisor_spawns_bot_override: Optional[bool],
     logger: logging.Logger,
@@ -493,6 +571,11 @@ def _start_services(
         orchestrator_settings["health_path"],
         *orchestrator_settings["health_fallbacks"],
     ]
+    primary_health_url = _join_url(supervisor_settings["url"], health_paths[0])
+    logger.info("Waiting for supervisor health: %s", primary_health_url)
+    if len(health_paths) > 1:
+        fallback_urls = [_join_url(supervisor_settings["url"], path) for path in health_paths[1:]]
+        logger.info("Health fallbacks: %s", ", ".join(fallback_urls))
     ready_path = _wait_for_http_ready(
         supervisor_settings["url"],
         health_paths,
@@ -510,7 +593,7 @@ def _start_services(
         return 1
 
     supervisor_spawns_bot = orchestrator_settings["supervisor_spawns_bot"]
-    supervisor_flag = _read_supervisor_spawn_flag(Path(config_paths["supervisor"]), logger)
+    supervisor_flag = _get_supervisor_spawn_flag(supervisor_config)
     if supervisor_flag is not None:
         supervisor_spawns_bot = supervisor_flag
     if supervisor_spawns_bot_override is not None:
@@ -620,12 +703,17 @@ def main() -> int:
     global_config = _load_global_config(global_config_path, logger)
     supervisor_settings = _extract_supervisor_settings(global_config)
     orchestrator_settings = _extract_orchestrator_config(global_config)
+    supervisor_config = _load_optional_config(Path(config_paths["supervisor"]), logger)
+    orchestrator_settings["health_path"] = _get_supervisor_health_path(
+        supervisor_config,
+        orchestrator_settings["health_path"],
+    )
 
     if args.command == "diag":
-        return _run_diag(paths, config_paths, supervisor_settings)
+        return _run_diag(paths, config_paths, supervisor_settings, orchestrator_settings, supervisor_config)
 
     if args.command == "status":
-        return _print_status(paths, config_paths, supervisor_settings)
+        return _print_status(paths, config_paths, supervisor_settings, orchestrator_settings, supervisor_config, logger)
 
     if args.command == "logs":
         name = args.name or "quantumedge"
@@ -654,6 +742,7 @@ def main() -> int:
             config_paths,
             supervisor_settings,
             orchestrator_settings,
+            supervisor_config,
             args.with_meta,
             False if args.no_supervisor_bot else None,
             logger,
@@ -665,6 +754,7 @@ def main() -> int:
             config_paths,
             supervisor_settings,
             orchestrator_settings,
+            supervisor_config,
             args.with_meta,
             False if args.no_supervisor_bot else None,
             logger,

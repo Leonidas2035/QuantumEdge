@@ -34,5 +34,6 @@ Use the single entrypoint from the repo root:
 - Diag: `python QuantumEdge.py diag`
 
 `config/quantumedge.yaml` includes orchestrator defaults (health probe path, startup timeout, and whether Supervisor spawns the bot).
+The Supervisor health endpoint defaults to `/api/v1/dashboard/health` and can be overridden via `config/supervisor.yaml` (`health_path`).
 
 All commands assume a single root `.venv` and use `QE_ROOT` for resolution.

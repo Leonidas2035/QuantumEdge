@@ -11,6 +11,7 @@ restart_backoff_s: 5
 api_enabled: true
 api_host: "127.0.0.1"
 api_auth_token: ""  # optional shared secret; empty disables auth
+health_path: "/api/v1/dashboard/health"
 
 # Bot process wiring (relative to QE_ROOT)
 bot_entrypoint: "ai_scalper_bot/run_bot.py"
