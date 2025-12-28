@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import logging
 import os
+import signal
 import sys
 import time
 from datetime import datetime, date, timezone
@@ -62,6 +63,7 @@ from policy.policy_publisher import PolicyPublisher
 from policy.policy_engine import PolicyEngine, PolicyEngineConfig, HysteresisConfig
 from policy.heuristics import HeuristicThresholds
 from monitoring.api import TelemetryManager, TelemetryConfig
+from supervisor.stats import StatsAggregator
 from supervisor.run_context import RunContext
 
 try:
@@ -216,6 +218,9 @@ class SupervisorApp:
         self._last_policy_fingerprint: Optional[str] = None
         self._current_policy = None
         self.run_context: Optional[RunContext] = None
+        self.stats: Optional[StatsAggregator] = None
+        self._stop_requested = False
+        self._stop_reason: Optional[str] = None
 
     def _build_tsdb_writer(self, tsdb_config: TsdbConfig) -> Optional[TsdbWriter]:
         self.tsdb_backend = "none"
@@ -346,20 +351,48 @@ class SupervisorApp:
         snapshot_interval = self.snapshot_config.interval_minutes * 60 if self.snapshot_config.enabled else None
         next_snapshot_at = time.time() + snapshot_interval if snapshot_interval else float("inf")
         next_policy_publish_at = 0.0
-        heartbeat_interval = 60.0
-        next_heartbeat_at = time.time() + heartbeat_interval
+        stats_interval = int(self.config.telemetry_stats_snapshot_interval_s or 30)
+        if stats_interval <= 0:
+            stats_interval = 30
+        next_stats_at = time.time() + stats_interval
+        episode_tags = getattr(self, "_episode_tags", {}) if hasattr(self, "_episode_tags") else {}
         self.run_context = RunContext.create(
             project_root=self.project_root,
             policy_version=POLICY_VERSION,
             model_version="none",
+            episode_set=episode_tags.get("episode_set"),
+            episode_id=episode_tags.get("episode_id"),
+            scenario_id=episode_tags.get("scenario_id"),
+            note=episode_tags.get("note"),
         )
         self.run_context.write_config_snapshot(self._build_config_snapshot())
-        self.run_context.log_event("RUN_START", {"mode": self.config.mode})
+        recovery = self.run_context.find_incomplete_previous_run()
+        if recovery:
+            self.run_context.log_event("RECOVERY_NOTE", {"previous_run": recovery})
+        self.run_context.log_event("RUN_START", {"mode": self.config.mode, "episode": episode_tags})
+        if any(episode_tags.values()):
+            self.run_context.log_event("SESSION_MARK", {"episode": episode_tags})
         run_start_ts = time.time()
+        self.stats = StatsAggregator(start_ts=run_start_ts)
+        current_regime = self._get_strategy_mode()
+        if current_regime:
+            self.stats.on_regime_change(current_regime, now_ts=run_start_ts)
+        self._stop_requested = False
+        self._stop_reason = None
+
+        def _request_stop(signum: int, _frame) -> None:
+            self._stop_requested = True
+            self._stop_reason = f"signal_{signum}"
+
+        for sig in (signal.SIGINT, signal.SIGTERM):
+            try:
+                signal.signal(sig, _request_stop)
+            except Exception:
+                continue
         if self.api_server:
             self.api_server.start()
         try:
-            while True:
+            while not self._stop_requested:
                 self.process_manager.tick(self.config.mode)
                 self.telemetry.update_process_state(self.process_manager.get_status_payload())
                 if time.time() >= next_policy_publish_at:
@@ -381,27 +414,38 @@ class SupervisorApp:
                     except Exception as exc:
                         self.logger.error("Snapshot generation failed: %s", exc)
                     next_snapshot_at = time.time() + snapshot_interval
-                if time.time() >= next_heartbeat_at:
-                    if self.run_context:
-                        payload = {
-                            "uptime_s": int(time.time() - run_start_ts),
-                            "bot_state": self.process_manager.get_state(),
-                        }
-                        self.run_context.log_event("DECISION", payload)
-                    next_heartbeat_at = time.time() + heartbeat_interval
+                if time.time() >= next_stats_at:
+                    if self.stats and self.run_context:
+                        strategy_mode = self._get_strategy_mode()
+                        if strategy_mode and strategy_mode != self.stats.current_regime:
+                            self.stats.on_regime_change(strategy_mode)
+                            self.run_context.log_event("REGIME_CHANGE", {"mode": strategy_mode})
+                        snapshot = self.stats.snapshot()
+                        snapshot["strategy_mode"] = strategy_mode
+                        self.run_context.log_event("STAT_SNAPSHOT", snapshot)
+                    next_stats_at = time.time() + stats_interval
                 time.sleep(2.0)
         except KeyboardInterrupt:
+            self._stop_requested = True
+            self._stop_reason = "keyboard_interrupt"
             self.logger.info("Received interrupt; stopping.")
         except Exception:  # noqa: BLE001
             if self.run_context:
                 self.run_context.log_error(sys.exc_info()[1] or Exception("unknown"))
+            if self.stats:
+                self.stats.on_error()
             self.logger.exception("Supervisor loop crashed")
             raise
         finally:
             if self.run_context:
                 duration = int(time.time() - run_start_ts)
-                self.run_context.log_event("RUN_END", {"duration_s": duration})
-                self.run_context.write_summary(self._build_summary(run_start_ts))
+                end_payload = {"duration_s": duration, "stop_reason": self._stop_reason}
+                self.run_context.log_event("RUN_END", end_payload)
+                summary = self._build_summary(run_start_ts)
+                if self.stats:
+                    summary.update(self.stats.finalize())
+                self.run_context.write_summary(summary)
+                self.run_context.write_artifacts_manifest()
             if self.api_server:
                 self.api_server.stop()
             self.process_manager.stop()
@@ -496,6 +540,7 @@ class SupervisorApp:
         decision = self.risk_engine.evaluate_order(order)
         if not decision.allowed:
             self.logger.warning("Order blocked: %s - %s", decision.code, decision.reason)
+            self._record_block(decision.code, {"symbol": order.symbol, "reason": decision.reason})
         return decision
 
     def audit(self, target_date: date) -> None:
@@ -548,6 +593,31 @@ class SupervisorApp:
 
         self.risk_engine.apply_llm_advice(advice)
         self.risk_engine.persist(self.state_dir)
+
+    def ingest_trade_result(self, payload: Mapping[str, Any]) -> Dict[str, Any]:
+        data = dict(payload)
+        if self.run_context:
+            self.run_context.log_event("TRADE_RESULT", data)
+        if self.stats:
+            self.stats.on_trade_result(data)
+        return {"status": "ok"}
+
+    def _record_block(self, reason_code: str, details: Optional[Dict[str, Any]] = None) -> None:
+        if self.stats:
+            self.stats.on_block(reason_code, details)
+        if self.run_context:
+            payload = {"reason_code": reason_code}
+            if details:
+                payload.update(details)
+            self.run_context.log_event("BLOCK_REASON", payload)
+
+    def _get_strategy_mode(self) -> Optional[str]:
+        try:
+            overview = self.dashboard_overview()
+            mode = overview.get("strategy_mode")
+            return str(mode) if mode else None
+        except Exception:
+            return None
 
     def _build_config_snapshot(self) -> Dict[str, Any]:
         return {
@@ -657,6 +727,8 @@ class SupervisorApp:
             decision = self.risk_engine.evaluate_order(order_request)
             snapshot = self.risk_engine.get_state()
             self.risk_engine.persist(self.state_dir)
+            if not decision.allowed:
+                self._record_block(decision.code, {"symbol": order_request.symbol, "reason": decision.reason})
 
         return {
             "allowed": decision.allowed,
@@ -940,6 +1012,10 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         dest="config_path",
         help="Path to supervisor config YAML (defaults to QE_ROOT/config/supervisor.yaml).",
     )
+    parser.add_argument("--episode-set", dest="episode_set", help="Episode set tag for this run.")
+    parser.add_argument("--episode-id", dest="episode_id", help="Episode id tag for this run.")
+    parser.add_argument("--scenario-id", dest="scenario_id", help="Scenario id tag for this run.")
+    parser.add_argument("--note", dest="note", help="Optional note for this run.")
     parser.add_argument(
         "ml_args",
         nargs=argparse.REMAINDER,
@@ -1033,6 +1109,12 @@ def main(argv: Optional[list[str]] = None) -> None:
         elif args.command == "risk-status":
             app.risk_status()
         elif args.command == "run-foreground":
+            app._episode_tags = {
+                "episode_set": args.episode_set,
+                "episode_id": args.episode_id,
+                "scenario_id": args.scenario_id,
+                "note": args.note,
+            }
             app.run_foreground()
         elif args.command == "audit":
             target_date = date.today()

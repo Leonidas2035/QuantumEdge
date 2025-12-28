@@ -5,7 +5,6 @@ from __future__ import annotations
 import dataclasses
 import hashlib
 import json
-import os
 import socket
 import subprocess
 import sys
@@ -99,6 +98,14 @@ def _stable_hash(payload: Dict[str, Any]) -> str:
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
+def _sha256_file(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
 class EventsWriter:
     def __init__(self, path: Path) -> None:
         self.path = path
@@ -119,6 +126,10 @@ class RunContext:
     policy_version: str
     model_version: str
     supervisor_version: str
+    episode_set: Optional[str]
+    episode_id: Optional[str]
+    scenario_id: Optional[str]
+    note: Optional[str]
     host: str
     platform: str
     start_ts_utc: str
@@ -133,6 +144,10 @@ class RunContext:
         policy_version: str,
         model_version: str,
         supervisor_version: Optional[str] = None,
+        episode_set: Optional[str] = None,
+        episode_id: Optional[str] = None,
+        scenario_id: Optional[str] = None,
+        note: Optional[str] = None,
     ) -> "RunContext":
         now = _utc_now()
         git_commit = _git_commit(project_root)
@@ -149,6 +164,10 @@ class RunContext:
             policy_version=policy_version,
             model_version=model_version,
             supervisor_version=supervisor_version,
+            episode_set=episode_set,
+            episode_id=episode_id,
+            scenario_id=scenario_id,
+            note=note,
             host=socket.gethostname(),
             platform=sys.platform,
             start_ts_utc=_iso_utc(now),
@@ -166,6 +185,10 @@ class RunContext:
             "policy_version": self.policy_version,
             "model_version": self.model_version,
             "supervisor_version": self.supervisor_version,
+            "episode_set": self.episode_set,
+            "episode_id": self.episode_id,
+            "scenario_id": self.scenario_id,
+            "note": self.note,
             "host": self.host,
             "platform": self.platform,
         }
@@ -208,4 +231,39 @@ class RunContext:
             **_json_safe(summary_payload),
         }
         path = self.run_dir / "summary.json"
+        path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+
+    def find_incomplete_previous_run(self) -> Optional[Dict[str, Any]]:
+        parent = self.run_dir.parent
+        if not parent.exists():
+            return None
+        candidates = sorted([p for p in parent.iterdir() if p.is_dir()], reverse=True)
+        for path in candidates:
+            if path.name == self.run_id:
+                continue
+            summary_path = path / "summary.json"
+            if not summary_path.exists():
+                return {"run_id": path.name, "path": str(path)}
+            break
+        return None
+
+    def write_artifacts_manifest(self) -> None:
+        entries = []
+        for item in sorted(self.run_dir.iterdir()):
+            if item.name == "artifacts.json" or item.is_dir():
+                continue
+            stat = item.stat()
+            entry = {
+                "name": item.name,
+                "size_bytes": stat.st_size,
+                "mtime_utc": _iso_utc(datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc)),
+            }
+            if item.name in {"summary.json", "config_snapshot.json"}:
+                entry["sha256"] = _sha256_file(item)
+            entries.append(entry)
+        payload = {
+            **self._breadcrumbs(),
+            "artifacts": entries,
+        }
+        path = self.run_dir / "artifacts.json"
         path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")

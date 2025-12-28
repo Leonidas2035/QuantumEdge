@@ -74,6 +74,8 @@ telemetry:
   store:
     max_events_in_memory: 5000
     persist_path: "runtime/telemetry_store.jsonl"
+  stats:
+    snapshot_interval_s: 30
   alerts:
     cooldown_sec: 120
     thresholds:

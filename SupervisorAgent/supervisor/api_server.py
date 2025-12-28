@@ -155,6 +155,21 @@ class ApiServer:
                         self._send_json(500, {"error": "internal_error"})
                     return
 
+                if self.path == "/api/v1/telemetry/trade_result":
+                    payload = self._parse_json_limit(app.config.telemetry_max_event_size_kb * 1024)
+                    if payload is None:
+                        return
+                    if not isinstance(payload, dict):
+                        self._send_json(400, {"error": "bad_json"})
+                        return
+                    try:
+                        response = app.ingest_trade_result(payload)
+                        self._send_json(200, response)
+                    except Exception as exc:  # pylint: disable=broad-except
+                        logger.exception("Error ingesting trade result: %s", exc)
+                        self._send_json(500, {"error": "internal_error"})
+                    return
+
                 if self.path == "/api/v1/risk/evaluate":
                     payload = self._parse_json()
                     if payload is None:

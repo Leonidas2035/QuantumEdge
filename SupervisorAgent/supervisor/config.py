@@ -76,6 +76,7 @@ class SupervisorConfig:
     telemetry_max_event_size_kb: int = 32
     telemetry_max_events_in_memory: int = 5000
     telemetry_persist_path: str = "runtime/telemetry_store.jsonl"
+    telemetry_stats_snapshot_interval_s: int = 30
     telemetry_alerts_cooldown_sec: int = 120
     telemetry_alerts_thresholds: Dict[str, Optional[float]] = field(
         default_factory=lambda: {
@@ -414,11 +415,13 @@ def load_supervisor_config(path: Path) -> SupervisorConfig:
     telemetry_section = raw.get("telemetry", {}) or {}
     ingest_section = telemetry_section.get("ingest", {}) or {}
     store_section = telemetry_section.get("store", {}) or {}
+    stats_section = telemetry_section.get("stats", {}) or {}
     alerts_section = telemetry_section.get("alerts", {}) or {}
     thresholds_raw = alerts_section.get("thresholds", {}) or {}
     telemetry_max_event_size_kb = int(ingest_section.get("max_event_size_kb", 32))
     telemetry_max_events_in_memory = int(store_section.get("max_events_in_memory", 5000))
     telemetry_persist_path = str(store_section.get("persist_path", "runtime/telemetry_store.jsonl"))
+    telemetry_stats_snapshot_interval_s = int(stats_section.get("snapshot_interval_s", 30))
     telemetry_alerts_cooldown_sec = int(alerts_section.get("cooldown_sec", 120))
     telemetry_alerts_thresholds = {
         "error_rate_1m": _coerce_optional_float(thresholds_raw.get("error_rate_1m", 5.0)),
@@ -476,6 +479,7 @@ def load_supervisor_config(path: Path) -> SupervisorConfig:
         telemetry_max_event_size_kb=telemetry_max_event_size_kb,
         telemetry_max_events_in_memory=telemetry_max_events_in_memory,
         telemetry_persist_path=telemetry_persist_path,
+        telemetry_stats_snapshot_interval_s=telemetry_stats_snapshot_interval_s,
         telemetry_alerts_cooldown_sec=telemetry_alerts_cooldown_sec,
         telemetry_alerts_thresholds=telemetry_alerts_thresholds,
     )
