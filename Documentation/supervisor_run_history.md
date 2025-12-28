@@ -8,6 +8,8 @@ SupervisorAgent/runtime/runs/<run_id>/
   summary.json
   config_snapshot.json
   artifacts.json
+  action_ledger.jsonl
+  directives.json
   errors.log
 ```
 
@@ -20,9 +22,13 @@ SupervisorAgent/runtime/runs/<run_id>/
 - `TRADE_RESULT`: trade outcome events (if sent via API).
 - `BLOCK_REASON`: risk guard block reasons.
 - `SESSION_MARK`: episode/scenario tags.
+- `ACTION_PROPOSED` / `ACTION_APPLIED` / `ACTION_REJECTED`: directive ledger entries.
+- `DIRECTIVES_UPDATED`: directives snapshot changed.
 - `summary.json`: run metrics scaffold + breadcrumbs.
 - `config_snapshot.json`: redacted effective config snapshot + hash.
 - `artifacts.json`: list of run artifacts + sizes.
+- `action_ledger.jsonl`: append-only Supervisor directives + outcomes.
+- `directives.json`: latest bot-control directives for this run.
 - `errors.log`: crash/error breadcrumbs (if any).
 
 ## Breadcrumb fields (present in all files)

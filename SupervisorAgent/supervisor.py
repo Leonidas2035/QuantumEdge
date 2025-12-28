@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import argparse
+import hashlib
+import json
 import logging
 import os
 import signal
@@ -65,6 +67,9 @@ from policy.heuristics import HeuristicThresholds
 from monitoring.api import TelemetryManager, TelemetryConfig
 from supervisor.stats import StatsAggregator
 from supervisor.run_context import RunContext
+from supervisor.regime_sm import RegimeStateMachine, RegimeConfig, DirectivesConfig, load_regime_config, load_directives_config
+from supervisor.guards import GuardEvaluator, GuardResult, GuardConfig, load_guard_config
+from supervisor.action_ledger import ActionLedger
 
 try:
     from tools.qe_config import get_qe_paths
@@ -89,6 +94,9 @@ class SupervisorApp:
         dashboard_config: DashboardConfig,
         tsdb_config: TsdbConfig,
         tsdb_retention: TsdbRetentionConfig,
+        regime_cfg: RegimeConfig,
+        guard_cfg: GuardConfig,
+        directives_cfg: DirectivesConfig,
         project_root: Path,
         logger: Optional[logging.Logger] = None,
     ) -> None:
@@ -221,6 +229,13 @@ class SupervisorApp:
         self.stats: Optional[StatsAggregator] = None
         self._stop_requested = False
         self._stop_reason: Optional[str] = None
+        self.regime_sm = RegimeStateMachine(regime_cfg)
+        self.guard_evaluator = GuardEvaluator(guard_cfg)
+        self.regime_cfg = regime_cfg
+        self.guard_cfg = guard_cfg
+        self.directives_cfg = directives_cfg
+        self.action_ledger: Optional[ActionLedger] = None
+        self._directives_last_hash: Optional[str] = None
 
     def _build_tsdb_writer(self, tsdb_config: TsdbConfig) -> Optional[TsdbWriter]:
         self.tsdb_backend = "none"
@@ -355,6 +370,10 @@ class SupervisorApp:
         if stats_interval <= 0:
             stats_interval = 30
         next_stats_at = time.time() + stats_interval
+        directives_interval = int(getattr(self.directives_cfg, "update_interval_s", 10))
+        if directives_interval <= 0:
+            directives_interval = 10
+        next_directives_at = time.time()
         episode_tags = getattr(self, "_episode_tags", {}) if hasattr(self, "_episode_tags") else {}
         self.run_context = RunContext.create(
             project_root=self.project_root,
@@ -374,6 +393,7 @@ class SupervisorApp:
             self.run_context.log_event("SESSION_MARK", {"episode": episode_tags})
         run_start_ts = time.time()
         self.stats = StatsAggregator(start_ts=run_start_ts)
+        self.action_ledger = ActionLedger(self.run_context.run_dir / "action_ledger.jsonl", self.run_context)
         current_regime = self._get_strategy_mode()
         if current_regime:
             self.stats.on_regime_change(current_regime, now_ts=run_start_ts)
@@ -416,14 +436,56 @@ class SupervisorApp:
                     next_snapshot_at = time.time() + snapshot_interval
                 if time.time() >= next_stats_at:
                     if self.stats and self.run_context:
-                        strategy_mode = self._get_strategy_mode()
-                        if strategy_mode and strategy_mode != self.stats.current_regime:
-                            self.stats.on_regime_change(strategy_mode)
-                            self.run_context.log_event("REGIME_CHANGE", {"mode": strategy_mode})
+                        telemetry_summary = self.telemetry.summary()
+                        guard_context = self._build_guard_context(telemetry_summary)
+                        guard_result = self.guard_evaluator.evaluate(guard_context)
+                        self.run_context.log_event("GUARD_EVALUATION", guard_result.to_dict())
+                        if not guard_result.allowed:
+                            for reason in guard_result.reason_codes:
+                                self._record_block(reason, {"details": guard_result.details})
+
+                        signals = self._build_regime_signals(telemetry_summary)
+                        decision = self.regime_sm.evaluate(signals, guard_result.critical)
+                        if decision.changed:
+                            self.stats.on_regime_change(decision.current_state)
+                            self.run_context.log_event(
+                                "REGIME_CHANGE",
+                                {
+                                    "state": decision.current_state,
+                                    "reasons": decision.reason_codes,
+                                    "scores": decision.scores,
+                                },
+                            )
+                        elif decision.proposed_state and decision.blocked_reason and self.action_ledger:
+                            self.action_ledger.append(
+                                "ACTION_REJECTED",
+                                action_type="SET_REGIME",
+                                target="Supervisor",
+                                payload={
+                                    "proposed_state": decision.proposed_state,
+                                    "blocked_reason": decision.blocked_reason,
+                                },
+                                reason_codes=decision.reason_codes,
+                                status="REJECTED",
+                            )
+                            self.stats.on_action("REJECTED")
+
                         snapshot = self.stats.snapshot()
-                        snapshot["strategy_mode"] = strategy_mode
+                        snapshot["strategy_mode"] = decision.current_state
+                        snapshot["guard_allowed"] = guard_result.allowed
                         self.run_context.log_event("STAT_SNAPSHOT", snapshot)
                     next_stats_at = time.time() + stats_interval
+                if time.time() >= next_directives_at:
+                    if self.run_context and self.stats:
+                        telemetry_summary = self.telemetry.summary()
+                        guard_context = self._build_guard_context(telemetry_summary)
+                        guard_result = self.guard_evaluator.evaluate(guard_context)
+                        signals = self._build_regime_signals(telemetry_summary)
+                        decision = self.regime_sm.evaluate(signals, guard_result.critical)
+                        directives = self._build_directives(decision.current_state, guard_result, episode_tags)
+                        if self._update_directives(directives):
+                            self.run_context.log_event("DIRECTIVES_UPDATED", {"regime": decision.current_state})
+                    next_directives_at = time.time() + directives_interval
                 time.sleep(2.0)
         except KeyboardInterrupt:
             self._stop_requested = True
@@ -443,6 +505,8 @@ class SupervisorApp:
                 self.run_context.log_event("RUN_END", end_payload)
                 summary = self._build_summary(run_start_ts)
                 if self.stats:
+                    if self.stats.pnl_realized_total is None:
+                        self.stats.pnl_realized_total = summary.get("pnl_total")
                     summary.update(self.stats.finalize())
                 self.run_context.write_summary(summary)
                 self.run_context.write_artifacts_manifest()
@@ -611,13 +675,85 @@ class SupervisorApp:
                 payload.update(details)
             self.run_context.log_event("BLOCK_REASON", payload)
 
-    def _get_strategy_mode(self) -> Optional[str]:
-        try:
-            overview = self.dashboard_overview()
-            mode = overview.get("strategy_mode")
-            return str(mode) if mode else None
-        except Exception:
-            return None
+    def _build_guard_context(self, telemetry_summary: Dict[str, object]) -> Dict[str, Optional[float]]:
+        drawdown_pct = None
+        risk_state = self.risk_engine.get_state()
+        if risk_state.equity_start and risk_state.equity_now is not None:
+            try:
+                drawdown_pct = (risk_state.equity_start - risk_state.equity_now) / max(risk_state.equity_start, 1e-9)
+            except Exception:
+                drawdown_pct = None
+        return {
+            "spread_bps": _coerce_float(telemetry_summary.get("spread_bps")),
+            "depth_usd": _coerce_float(telemetry_summary.get("depth_usd")),
+            "margin_used_pct": _coerce_float(telemetry_summary.get("margin_used_pct")),
+            "liq_distance_pct": _coerce_float(telemetry_summary.get("liq_distance_pct")),
+            "drawdown_pct": drawdown_pct,
+            "loss_streak": _coerce_float(telemetry_summary.get("loss_streak")),
+            "trades_per_hour": _coerce_float(telemetry_summary.get("trades_1h")),
+        }
+
+    def _build_regime_signals(self, telemetry_summary: Dict[str, object]) -> Dict[str, Optional[float]]:
+        trend_score = _coerce_float(telemetry_summary.get("trend_score"))
+        volatility = _coerce_float(telemetry_summary.get("volatility"))
+        spread_bps = _coerce_float(telemetry_summary.get("spread_bps"))
+        return {
+            "trend_score": trend_score,
+            "volatility": volatility,
+            "spread_bps": spread_bps,
+        }
+
+    def _build_directives(self, regime_state: str, guard_result: GuardResult, episode_tags: Dict[str, Any]) -> Dict[str, Any]:
+        allow_scalp = guard_result.allowed and regime_state in {"RANGE", "TREND"}
+        directives = {
+            "ts_utc": datetime.now(timezone.utc).isoformat(),
+            "run_id": self.run_context.run_id if self.run_context else None,
+            "regime": regime_state,
+            "allow": {
+                "scalp_enter": bool(allow_scalp),
+                "scalp_increase": bool(allow_scalp),
+                "lock_freeze": regime_state in {"PANIC", "FREEZE"},
+                "lock_unwind": regime_state == "UNWIND",
+            },
+            "blocked_reasons": list(guard_result.reason_codes),
+            "guard_summary": guard_result.to_dict(),
+            "episode_tags": episode_tags,
+        }
+        return directives
+
+    def _update_directives(self, directives: Dict[str, Any]) -> bool:
+        if not self.run_context:
+            return False
+        payload = {k: directives.get(k) for k in sorted(directives)}
+        payload_json = json.dumps(payload, sort_keys=True, default=str)
+        new_hash = hashlib.sha256(payload_json.encode("utf-8")).hexdigest()
+        if new_hash == self._directives_last_hash:
+            return False
+        self._directives_last_hash = new_hash
+        if self.action_ledger:
+            action_id = self.action_ledger.append(
+                "ACTION_PROPOSED",
+                action_type="UPDATE_DIRECTIVES",
+                target="AllBots",
+                payload=directives,
+                reason_codes=directives.get("blocked_reasons", []),
+                status="PROPOSED",
+            )
+            if self.stats:
+                self.stats.on_action("PROPOSED")
+            self.action_ledger.append(
+                "ACTION_APPLIED",
+                action_type="UPDATE_DIRECTIVES",
+                target="AllBots",
+                payload=directives,
+                reason_codes=directives.get("blocked_reasons", []),
+                action_id=action_id,
+                status="APPLIED",
+            )
+            if self.stats:
+                self.stats.on_action("APPLIED")
+        self.run_context.update_directives(directives, self.project_root / "runtime")
+        return True
 
     def _build_config_snapshot(self) -> Dict[str, Any]:
         return {
@@ -633,6 +769,11 @@ class SupervisorApp:
             "dashboard": self.dashboard_config,
             "tsdb": self.tsdb_config,
             "tsdb_retention": self.tsdb_retention,
+            "control_policy": {
+                "regime_sm": self.regime_cfg,
+                "guards": self.guard_cfg,
+                "directives": self.directives_cfg,
+            },
             "project_root": self.project_root,
         }
 
@@ -659,7 +800,14 @@ class SupervisorApp:
             "blocked_actions_count": 0,  # TODO(stage1): count risk blocks
             "errors_count": self.run_context.errors_count if self.run_context else 0,
         }
-        print("Advice applied to risk state.")
+
+    def _get_strategy_mode(self) -> Optional[str]:
+        try:
+            overview = self.dashboard_overview()
+            mode = overview.get("strategy_mode")
+            return str(mode) if mode else None
+        except Exception:
+            return None
 
     def run_snapshot_once(self, verbose: bool = True) -> Optional[SnapshotReport]:
         """Generate a supervisor snapshot immediately."""
@@ -1044,6 +1192,10 @@ def build_app(
     dashboard_config = load_dashboard_config(supervisor_config_dir / "dashboard.yaml")
     tsdb_config = load_tsdb_config(supervisor_config_dir / "tsdb.yaml")
     tsdb_retention = load_tsdb_retention_config(supervisor_config_dir / "tsdb_retention.yaml")
+    control_policy_path = supervisor_config_dir / "policy.yaml"
+    regime_cfg = load_regime_config(control_policy_path)
+    guard_cfg = load_guard_config(control_policy_path)
+    directives_cfg = load_directives_config(control_policy_path)
     return SupervisorApp(
         paths_config,
         supervisor_config,
@@ -1057,6 +1209,9 @@ def build_app(
         dashboard_config,
         tsdb_config,
         tsdb_retention,
+        regime_cfg,
+        guard_cfg,
+        directives_cfg,
         project_root,
         logging.getLogger(__name__),
     )
@@ -1182,6 +1337,15 @@ def main(argv: Optional[list[str]] = None) -> None:
     except Exception as exc:
         logging.getLogger(__name__).exception("Command '%s' failed: %s", args.command, exc)
         sys.exit(1)
+
+
+def _coerce_float(value: object) -> Optional[float]:
+    if value is None:
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 if __name__ == "__main__":

@@ -247,6 +247,19 @@ class RunContext:
             break
         return None
 
+    def update_directives(self, directives: Dict[str, Any], runtime_root: Path) -> None:
+        content = {
+            **self._breadcrumbs(),
+            **_json_safe(directives),
+        }
+        run_path = self.run_dir / "directives.json"
+        _atomic_write_json(run_path, content)
+
+        stable_dir = runtime_root / "directives"
+        stable_dir.mkdir(parents=True, exist_ok=True)
+        stable_path = stable_dir / "latest.json"
+        _atomic_write_json(stable_path, content)
+
     def write_artifacts_manifest(self) -> None:
         entries = []
         for item in sorted(self.run_dir.iterdir()):
@@ -267,3 +280,10 @@ class RunContext:
         }
         path = self.run_dir / "artifacts.json"
         path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+
+
+def _atomic_write_json(path: Path, payload: Dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp_path = path.with_suffix(path.suffix + ".tmp")
+    tmp_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+    tmp_path.replace(path)

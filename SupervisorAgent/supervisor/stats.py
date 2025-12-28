@@ -21,6 +21,9 @@ class StatsAggregator:
     block_reasons: Dict[str, int] = field(default_factory=dict)
     regime_time_share: Dict[str, float] = field(default_factory=dict)
     errors_count: int = 0
+    actions_proposed_count: int = 0
+    actions_applied_count: int = 0
+    actions_rejected_count: int = 0
 
     def __post_init__(self) -> None:
         self._lock = threading.Lock()
@@ -69,6 +72,16 @@ class StatsAggregator:
         with self._lock:
             self.errors_count += 1
 
+    def on_action(self, status: str) -> None:
+        with self._lock:
+            status_upper = status.upper()
+            if status_upper == "PROPOSED":
+                self.actions_proposed_count += 1
+            elif status_upper == "APPLIED":
+                self.actions_applied_count += 1
+            elif status_upper == "REJECTED":
+                self.actions_rejected_count += 1
+
     def snapshot(self, now_ts: Optional[float] = None) -> Dict[str, Any]:
         now = now_ts or time.time()
         with self._lock:
@@ -88,6 +101,9 @@ class StatsAggregator:
                 "blocked_actions_count": self.blocked_actions_count,
                 "block_reasons_top": {k: v for k, v in top_reasons},
                 "errors_count": self.errors_count,
+                "actions_proposed_count": self.actions_proposed_count,
+                "actions_applied_count": self.actions_applied_count,
+                "actions_rejected_count": self.actions_rejected_count,
             }
 
     def finalize(self, now_ts: Optional[float] = None) -> Dict[str, Any]:
@@ -96,4 +112,5 @@ class StatsAggregator:
         summary = self.snapshot(now_ts=now)
         summary["regime_time_share"] = dict(self.regime_time_share)
         summary["block_reasons"] = dict(self.block_reasons)
+        summary["top_block_reasons"] = summary.get("block_reasons_top", {})
         return summary
