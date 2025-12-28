@@ -85,8 +85,13 @@ class RegimeStateMachine:
         self._pending_state: Optional[str] = None
         self._pending_count = 0
 
-    def evaluate(self, signals: Dict[str, Optional[float]], guard_critical: bool) -> RegimeDecision:
-        now = time.time()
+    def evaluate(
+        self,
+        signals: Dict[str, Optional[float]],
+        guard_critical: bool,
+        now_ts: Optional[float] = None,
+    ) -> RegimeDecision:
+        now = now_ts if now_ts is not None else time.time()
         reason_codes: list[str] = []
         scores = {
             "trend_score": signals.get("trend_score"),

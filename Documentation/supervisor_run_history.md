@@ -60,3 +60,24 @@ Body example:
 ```
 {"symbol":"BTCUSDT","side":"BUY","qty":0.1,"entry_price":100,"exit_price":101,"pnl_realized":0.1,"fees":0.0,"reason_close":"TP"}
 ```
+
+## Offline Episode Engine
+Offline episode tooling replays tick scenarios through the Supervisor decision core.
+
+Scenario library:
+- `SupervisorAgent/episodes/scenarios_v1.yaml`
+
+Commands:
+1) Cut episodes:
+   - `python SupervisorAgent/supervisor.py episodes-cut --episode-set smoke_v1 --ticks-path data/ticks --format jsonl`
+   - If no tick file exists yet: add `--synthetic` to generate a tiny JSONL sample.
+2) Run episodes:
+   - `python SupervisorAgent/supervisor.py episodes-run --episode-set smoke_v1 --episodes-manifest SupervisorAgent/runtime/episodes/smoke_v1/episodes_manifest.json`
+3) Report:
+   - `python SupervisorAgent/supervisor.py episodes-report --episode-set smoke_v1`
+
+Artifacts:
+- Episodes: `SupervisorAgent/runtime/episodes/<episode_set>/<scenario_id>/<episode_id>.jsonl`
+- Manifest: `SupervisorAgent/runtime/episodes/<episode_set>/episodes_manifest.json`
+- Run folders: `SupervisorAgent/runtime/runs/<run_id>/` (with episode tags)
+- Report: `SupervisorAgent/runtime/reports/<episode_set>/report.json` and `report.md`

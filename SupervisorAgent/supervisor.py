@@ -1129,9 +1129,12 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
             "tsdb-migrate",
             "tsdb-maintain",
             "ml",
-            "telemetry",
-            "research",
-        ],
+        "telemetry",
+        "research",
+        "episodes-cut",
+        "episodes-run",
+        "episodes-report",
+    ],
         help="Command to execute",
     )
     parser.add_argument(
@@ -1333,6 +1336,12 @@ def main(argv: Optional[list[str]] = None) -> None:
 
             research_args = parse_research_args(args.ml_args)
             code = run_research_command(research_args)
+            sys.exit(code)
+        elif args.command in {"episodes-cut", "episodes-run", "episodes-report"}:
+            from supervisor.episodes.cli import parse_episodes_args, run_episodes_command
+
+            episodes_args = parse_episodes_args(args.command, args.ml_args)
+            code = run_episodes_command(args.command, episodes_args)
             sys.exit(code)
     except Exception as exc:
         logging.getLogger(__name__).exception("Command '%s' failed: %s", args.command, exc)
