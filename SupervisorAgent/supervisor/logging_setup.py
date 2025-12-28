@@ -24,7 +24,7 @@ def setup_logging(logs_dir: Path) -> logging.Logger:
 
     if not any(isinstance(h, logging.handlers.RotatingFileHandler) for h in logger.handlers):
         file_handler = logging.handlers.RotatingFileHandler(
-            log_path, maxBytes=5 * 1024 * 1024, backupCount=5, encoding="utf-8"
+            log_path, maxBytes=50 * 1024 * 1024, backupCount=10, encoding="utf-8"
         )
         file_handler.setFormatter(formatter)
         logger.addHandler(file_handler)
@@ -35,4 +35,3 @@ def setup_logging(logs_dir: Path) -> logging.Logger:
         logger.addHandler(console_handler)
 
     return logger
-

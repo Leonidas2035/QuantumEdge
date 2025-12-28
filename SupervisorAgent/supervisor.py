@@ -57,11 +57,12 @@ from supervisor.tasks.snapshot_scheduler import SnapshotScheduler
 from supervisor.dashboard.service import DashboardService
 from supervisor.tsdb import NoopTimeseriesStore, ClickHouseTimeseriesStore, QuestDbTimeseriesStore, TsdbWriter
 from supervisor.tsdb.maintenance import apply_retention_and_rollups
-from policy.policy_contract import policy_fingerprint
+from policy.policy_contract import policy_fingerprint, POLICY_VERSION
 from policy.policy_publisher import PolicyPublisher
 from policy.policy_engine import PolicyEngine, PolicyEngineConfig, HysteresisConfig
 from policy.heuristics import HeuristicThresholds
 from monitoring.api import TelemetryManager, TelemetryConfig
+from supervisor.run_context import RunContext
 
 try:
     from tools.qe_config import get_qe_paths
@@ -100,6 +101,7 @@ class SupervisorApp:
         self.meta_config = meta_config
         self.project_root = project_root
         self.tsdb_config = tsdb_config
+        self.dashboard_config = dashboard_config
         self.logger = logger or logging.getLogger(__name__)
         self.state_dir = paths.runtime_dir / "supervisor"
         self.state_dir.mkdir(parents=True, exist_ok=True)
@@ -213,6 +215,7 @@ class SupervisorApp:
         self.policy_publish_interval_s = float(config.policy_publish_interval_s)
         self._last_policy_fingerprint: Optional[str] = None
         self._current_policy = None
+        self.run_context: Optional[RunContext] = None
 
     def _build_tsdb_writer(self, tsdb_config: TsdbConfig) -> Optional[TsdbWriter]:
         self.tsdb_backend = "none"
@@ -343,6 +346,16 @@ class SupervisorApp:
         snapshot_interval = self.snapshot_config.interval_minutes * 60 if self.snapshot_config.enabled else None
         next_snapshot_at = time.time() + snapshot_interval if snapshot_interval else float("inf")
         next_policy_publish_at = 0.0
+        heartbeat_interval = 60.0
+        next_heartbeat_at = time.time() + heartbeat_interval
+        self.run_context = RunContext.create(
+            project_root=self.project_root,
+            policy_version=POLICY_VERSION,
+            model_version="none",
+        )
+        self.run_context.write_config_snapshot(self._build_config_snapshot())
+        self.run_context.log_event("RUN_START", {"mode": self.config.mode})
+        run_start_ts = time.time()
         if self.api_server:
             self.api_server.start()
         try:
@@ -368,13 +381,27 @@ class SupervisorApp:
                     except Exception as exc:
                         self.logger.error("Snapshot generation failed: %s", exc)
                     next_snapshot_at = time.time() + snapshot_interval
+                if time.time() >= next_heartbeat_at:
+                    if self.run_context:
+                        payload = {
+                            "uptime_s": int(time.time() - run_start_ts),
+                            "bot_state": self.process_manager.get_state(),
+                        }
+                        self.run_context.log_event("DECISION", payload)
+                    next_heartbeat_at = time.time() + heartbeat_interval
                 time.sleep(2.0)
         except KeyboardInterrupt:
             self.logger.info("Received interrupt; stopping.")
         except Exception:  # noqa: BLE001
+            if self.run_context:
+                self.run_context.log_error(sys.exc_info()[1] or Exception("unknown"))
             self.logger.exception("Supervisor loop crashed")
             raise
         finally:
+            if self.run_context:
+                duration = int(time.time() - run_start_ts)
+                self.run_context.log_event("RUN_END", {"duration_s": duration})
+                self.run_context.write_summary(self._build_summary(run_start_ts))
             if self.api_server:
                 self.api_server.stop()
             self.process_manager.stop()
@@ -521,6 +548,47 @@ class SupervisorApp:
 
         self.risk_engine.apply_llm_advice(advice)
         self.risk_engine.persist(self.state_dir)
+
+    def _build_config_snapshot(self) -> Dict[str, Any]:
+        return {
+            "paths": self.paths,
+            "supervisor": self.config,
+            "risk": self.risk_config,
+            "llm_supervisor": self.llm_config,
+            "trend_evaluator": self.trend_config,
+            "market_risk_monitor": self.market_risk_config,
+            "trading_behavior": self.behavior_config,
+            "snapshot_scheduler": self.snapshot_config,
+            "meta_supervisor": self.meta_config,
+            "dashboard": self.dashboard_config,
+            "tsdb": self.tsdb_config,
+            "tsdb_retention": self.tsdb_retention,
+            "project_root": self.project_root,
+        }
+
+    def _build_summary(self, start_ts: float) -> Dict[str, Any]:
+        now = time.time()
+        risk_state = self.risk_engine.get_state()
+        max_drawdown = None
+        if risk_state.equity_start is not None and risk_state.min_equity_intraday is not None:
+            max_drawdown = risk_state.equity_start - risk_state.min_equity_intraday
+        return {
+            "start_ts_utc": datetime.fromtimestamp(start_ts, tz=timezone.utc).isoformat(),
+            "end_ts_utc": datetime.now(timezone.utc).isoformat(),
+            "duration_s": int(now - start_ts),
+            "pnl_total": risk_state.realized_pnl_today,
+            "wins": None,  # TODO(stage1): wire trade outcomes into summary
+            "losses": None,  # TODO(stage1): wire trade outcomes into summary
+            "trades": None,  # TODO(stage1): wire trade count into summary
+            "max_drawdown": max_drawdown,
+            "max_margin_used": None,  # TODO(stage1): add margin tracking
+            "min_liq_distance": None,  # TODO(stage1): add liquidation distance tracking
+            "fees_paid": None,  # TODO(stage1): add fee tracking
+            "funding_paid": None,  # TODO(stage1): add funding tracking
+            "regime_time_share": {},  # TODO(stage1): add regime tracking
+            "blocked_actions_count": 0,  # TODO(stage1): count risk blocks
+            "errors_count": self.run_context.errors_count if self.run_context else 0,
+        }
         print("Advice applied to risk state.")
 
     def run_snapshot_once(self, verbose: bool = True) -> Optional[SnapshotReport]:
@@ -887,7 +955,8 @@ def build_app(
     supervisor_config_dir: Path,
 ) -> SupervisorApp:
     paths_config = load_paths_config(paths_config_path)
-    setup_logging(paths_config.logs_dir)
+    runtime_logs_dir = project_root / "runtime" / "logs"
+    setup_logging(runtime_logs_dir)
     supervisor_config = load_supervisor_config(supervisor_config_path)
     risk_config = load_risk_config(supervisor_config_dir / "risk.yaml")
     llm_config = load_llm_supervisor_config(supervisor_config_dir / "llm_supervisor.yaml")
