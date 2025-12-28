@@ -17,6 +17,8 @@ class PolicyOverride:
     policy_type: str
     path: Path
     schema_hash: Optional[str]
+    weights: Optional[Dict[int, float]] = None
+    score_threshold: Optional[float] = None
 
 
 def load_policy(path: Path) -> Optional[PolicyOverride]:
@@ -37,12 +39,26 @@ def load_policy(path: Path) -> Optional[PolicyOverride]:
                 thresholds[int(key_str)] = float(value)
             except (TypeError, ValueError):
                 continue
+    weights_raw = raw.get("weights") or {}
+    weights: Optional[Dict[int, float]] = None
+    if isinstance(weights_raw, dict):
+        weights = {}
+        for key, value in weights_raw.items():
+            key_str = str(key)
+            if key_str.startswith("h"):
+                key_str = key_str[1:]
+            try:
+                weights[int(key_str)] = float(value)
+            except (TypeError, ValueError):
+                continue
     return PolicyOverride(
         horizons=horizons,
         thresholds=thresholds,
         policy_type=str(raw.get("policy_type", "and_gate")),
         path=path,
         schema_hash=raw.get("schema_hash"),
+        weights=weights,
+        score_threshold=raw.get("score_threshold"),
     )
 
 

@@ -102,9 +102,38 @@ ops:
   status_file: "state/bot_status.json"
   write_interval_seconds: 2
 
+ml:
+  enabled: true
+  require_models: false
+  ml_required: false
+  ml_compat_strict: false
+  horizons: [1, 5, 30]
+  policy: "and_gate"
+  policy_path: null
+  thresholds:
+    h1: 0.55
+    h5: 0.55
+    h30: 0.55
+  weights:
+    h1: 1.0
+    h5: 1.0
+    h30: 1.0
+  score_threshold: 0.0
+  min_confidence_gap: 0.0
+  cooldown_ms: 0
+  model_source: "runtime"  # runtime | artifacts
+  runtime_models_dir: "runtime/models"
+  reload_interval_sec: 30
+  fail_mode: "block"
+  snapshot_interval_sec: 30
+  drift:
+    window: 300
+    z_threshold: 3.0
+
 execution:
   mode: "normal"                # "normal" | "scalp"
   default_time_in_force_ms: 3000
+  shadow: false
 
   scalp:
     enabled: true

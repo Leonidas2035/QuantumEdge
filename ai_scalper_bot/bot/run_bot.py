@@ -15,14 +15,15 @@ from bot.engine.decision_engine import DecisionEngine
 from bot.engine.decision_types import DecisionAction
 from bot.market_data.mock_ws_manager import MockWSManager
 from bot.market_data.ws_manager import WSManager
-from bot.ml.ensemble import EnsembleSignalModel, EnsembleOutput
+from bot.ml.ensemble import EnsembleOutput
 from bot.ml.signal_model.model import SignalOutput
 from bot.ml.signal_model.online_features import OnlineFeatureBuilder
-from bot.ml.signal_model.registry import load_registry, find_entry, feature_schema_hash
-from bot.ml.runtime_models import load_runtime_models, resolve_models_root
+from bot.ml.runtime_models import resolve_models_root
 from bot.ml.runtime.policy_loader import load_policy, load_policy_override, resolve_policy_path
 from bot.ml.features.builder import schema_hash as ml_schema_hash, schema_version as ml_schema_version, feature_names as ml_feature_names
 from bot.ml.drift_monitor import DriftMonitor
+from bot.ml.runtime.model_manager import ModelManager
+from bot.ml.runtime.aggregator import MultiHorizonAggregator, build_ensemble_output
 from bot.trading.executor import BinanceDemoExecutor
 from bot.trading.bingx_executor import BingXDemoExecutor
 from bot.trading.paper_trader import PaperTrader
@@ -64,29 +65,6 @@ def _kill_switch_active() -> Dict[str, Any]:
     return _kill_cache
 
 
-def _model_readiness(symbols, horizons, model_dir: Path, require_models: bool) -> Dict[str, Dict[int, Dict[str, str]]]:
-    registry = load_registry(model_dir)
-    feature_hash = feature_schema_hash()
-    readiness: Dict[str, Dict[int, Dict[str, str]]] = {}
-    for sym in symbols:
-        readiness[sym] = {}
-        for h in horizons:
-            entry = find_entry(registry, sym, h)
-            expected_path = model_dir / f"signal_xgb_{sym}_h{h}.json"
-            ok = expected_path.exists() and entry is not None
-            reason = "ok"
-            if not expected_path.exists():
-                reason = "model_file_missing"
-                ok = False
-            elif entry is None:
-                reason = "registry_missing"
-                ok = False
-            elif entry.get("feature_schema_hash") != feature_hash:
-                reason = "feature_schema_mismatch"
-                ok = False if require_models else reason
-            readiness[sym][h] = {"ok": ok, "reason": reason, "path": str(expected_path)}
-    return readiness
-
 
 def _resolve_data_source() -> str:
     websocket_cfg = config.get("app.websocket", {})
@@ -123,6 +101,40 @@ def _parse_ml_thresholds(ml_cfg: Dict[str, Any], horizons: list[int]) -> Dict[in
     if not thresholds and default is not None:
         thresholds = {int(h): float(default) for h in horizons}
     return thresholds
+
+
+def _parse_ml_weights(ml_cfg: Dict[str, Any], horizons: list[int]) -> Dict[int, float]:
+    raw = ml_cfg.get("weights") or {}
+    weights: Dict[int, float] = {int(h): 1.0 for h in horizons}
+    if isinstance(raw, dict):
+        for key, value in raw.items():
+            key_str = str(key)
+            if key_str.startswith("h"):
+                key_str = key_str[1:]
+            try:
+                horizon = int(key_str)
+                weights[horizon] = float(value)
+            except (TypeError, ValueError):
+                continue
+    return weights
+
+
+def _model_error_reasons(errors: Dict[int, str]) -> List[str]:
+    reasons: List[str] = []
+    for horizon, reason in errors.items():
+        if reason in {"SCHEMA_HASH_MISMATCH", "FEATURE_NAMES_MISMATCH"}:
+            reasons.append(reason)
+        elif reason.startswith("MODEL") or "MISSING" in reason:
+            reasons.append(f"MODEL_MISSING_H{horizon}")
+        else:
+            reasons.append(f"MODEL_INVALID_H{horizon}")
+    return reasons
+
+
+def _shadow_skip(shadow_mode: bool, decision) -> bool:
+    if not shadow_mode or decision is None:
+        return False
+    return decision.action in {DecisionAction.ENTER, DecisionAction.EXIT}
 
 
 async def _event_stream(symbols):
@@ -231,6 +243,11 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
         ml_snapshot_interval = 30.0
     ml_horizons = list(ml_cfg.get("horizons", [1, 5, 15]))
     ml_thresholds_cfg = _parse_ml_thresholds(ml_cfg, ml_horizons)
+    ml_weights_cfg = _parse_ml_weights(ml_cfg, ml_horizons)
+    ml_policy_type = str(ml_cfg.get("policy", "and_gate")).lower()
+    ml_score_threshold = float(ml_cfg.get("score_threshold", 0.0))
+    ml_min_gap = float(ml_cfg.get("min_confidence_gap", 0.0))
+    ml_cooldown_ms = int(ml_cfg.get("cooldown_ms", 0))
     policy_path = resolve_policy_path(ml_cfg, Path(config.qe_root))
     if policy_path:
         raw_policy = load_policy(policy_path)
@@ -245,6 +262,14 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
                     ml_horizons = policy_override.horizons
                 if policy_override.thresholds:
                     ml_thresholds_cfg = policy_override.thresholds
+                if policy_override.weights:
+                    ml_weights_cfg = policy_override.weights
+                if policy_override.policy_type:
+                    ml_policy_type = str(policy_override.policy_type).lower()
+                if policy_override.score_threshold is not None:
+                    ml_score_threshold = float(policy_override.score_threshold)
+                if not policy_override.weights:
+                    ml_weights_cfg = _parse_ml_weights(ml_cfg, ml_horizons)
                 print(f"[INFO] ML policy override loaded: {policy_override.path}")
     ml_feature_list = ml_feature_names()
     observer_mode = not require_models
@@ -301,6 +326,7 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
     execution_cfg = config.get("execution", {}) or {}
     exec_mode_name = str(execution_cfg.get("mode", "normal")).lower()
     scalp_cfg = execution_cfg.get("scalp", {}) or {}
+    shadow_mode = bool(execution_cfg.get("shadow", False))
     scalp_enabled = exec_mode_name == "scalp" and bool(scalp_cfg.get("enabled", False))
     if scalp_enabled and data_source != "ws":
         print("[WARN] Disabling scalp mode because live depth is not available (data_source != ws).")
@@ -321,53 +347,48 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
     if scalp_enabled and data_source != "ws":
         print("[WARN] Scalp mode enabled without live depth; using mock/estimated depth only.")
 
-    runtime_models_dir = Path(ml_cfg.get("runtime_models_dir", resolve_models_root()))
-    if not runtime_models_dir.is_absolute():
-        runtime_models_dir = (Path(config.qe_root) / runtime_models_dir).resolve()
     model_source = str(ml_cfg.get("model_source", "runtime")).lower()
-    threshold_default = float((ml_cfg.get("thresholds") or {}).get("p_up", 0.55))
+    models_root = None
+    if model_source == "artifacts":
+        models_root = Path(ml_cfg.get("models_root", Path(config.qe_root) / "artifacts" / "models"))
+    else:
+        models_root = Path(ml_cfg.get("runtime_models_dir", resolve_models_root()))
+    if not models_root.is_absolute():
+        models_root = (Path(config.qe_root) / models_root).resolve()
+    reload_interval = float(ml_cfg.get("reload_interval_sec", 30))
     engines = {}
     if observer_mode and not observer_notice_logged:
         print("[WARN] Observer mode enabled (ml.require_models=false); trading disabled.")
         observer_notice_logged = True
-    model_dir = Path(__file__).resolve().parents[2] / "storage" / "models"
-    model_dir.mkdir(parents=True, exist_ok=True)
-    readiness = _model_readiness(symbols, ml_horizons, model_dir, require_models)
-    print("\n[MODEL READINESS]")
     for sym in symbols:
-        for h in ml_horizons:
-            info = readiness.get(sym, {}).get(h, {"ok": False, "reason": "missing"})
-            status = "OK" if info["ok"] else f"MISSING ({info['reason']})"
-            print(f"  {sym} h={h}: {status}")
-    for sym in symbols:
-        runtime_models = None
-        thresholds = None
         model_versions = {}
         feature_stats = {}
         drift_monitor = None
-        if model_source == "runtime":
-            loaded, errors = load_runtime_models(
-                symbol=sym,
-                horizons=ml_horizons,
-                models_root=Path(runtime_models_dir),
-                threshold_default=threshold_default,
-                compat_strict=ml_compat_strict,
-            )
-            if errors:
-                print(f"[WARN] Runtime models missing/invalid for {sym}: {errors}")
-                if ml_required:
-                    observer_mode = True
-            if loaded:
-                runtime_models = {h: info.model for h, info in loaded.items()}
-                thresholds = {h: info.threshold for h, info in loaded.items()}
-                model_versions = {h: info.manifest_hash for h, info in loaded.items()}
-                for info in loaded.values():
-                    if info.feature_stats:
-                        feature_stats = info.feature_stats
-                        break
 
-        if thresholds is None:
-            thresholds = ml_thresholds_cfg
+        model_manager = ModelManager(
+            symbol=sym,
+            horizons=ml_horizons,
+            models_root=models_root,
+            source=model_source,
+            reload_interval_s=reload_interval,
+        )
+        model_manager.load()
+        if model_manager.errors:
+            print(f"[WARN] Model manager errors for {sym}: {model_manager.errors}")
+
+        thresholds = dict(ml_thresholds_cfg) if ml_thresholds_cfg else model_manager.thresholds()
+        weights = dict(ml_weights_cfg) if ml_weights_cfg else {h: 1.0 for h in ml_horizons}
+        aggregator = MultiHorizonAggregator(
+            policy=ml_policy_type,
+            thresholds=thresholds,
+            weights=weights,
+            score_threshold=ml_score_threshold,
+            min_gap=ml_min_gap,
+            cooldown_ms=ml_cooldown_ms,
+        )
+
+        model_versions = dict(model_manager.model_versions)
+        feature_stats = dict(model_manager.feature_stats or {})
 
         drift_cfg = (ml_cfg.get("drift") or {})
         drift_window = int(drift_cfg.get("window", 300))
@@ -379,26 +400,13 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
                 window=drift_window,
                 z_threshold=drift_z,
             )
-
-        ensemble = EnsembleSignalModel(symbol=sym, horizons=ml_horizons, runtime_models=runtime_models, thresholds=thresholds)
-        loaded_horizons = sorted(list(ensemble.models.keys()))
-        expected_horizons = ensemble.horizons
-        missing_h = [h for h in expected_horizons if not readiness.get(sym, {}).get(h, {}).get("ok")]
-        if missing_h:
-            print(f"[WARN] Models missing for {sym}: horizons {missing_h}.")
-        if (require_models and missing_h) or not ensemble.models:
-            if require_models:
-                print(f"[ERROR] Required models missing for {sym}; skipping trading for this symbol.")
-                missing_required_models = True
-                continue
-            else:
-                observer_mode = True
-                if not missing_models_notice_logged:
-                    print("[WARN] Observer mode: models missing, trading disabled.")
-                    missing_models_notice_logged = True
-                if not observer_notice_logged:
-                    print("[WARN] Observer mode enabled (ml.require_models=false); trading disabled.")
-                    observer_notice_logged = True
+        if model_manager.errors and ml_required:
+            print(f"[ERROR] Required models missing for {sym}; errors={model_manager.errors}")
+            missing_required_models = True
+            continue
+        if model_manager.errors and not missing_models_notice_logged:
+            print(f"[WARN] Models missing/invalid for {sym}; entries will be blocked. errors={model_manager.errors}")
+            missing_models_notice_logged = True
         warmup = config.get("ml.warmup_seconds", 600)
         feature_builder = OnlineFeatureBuilder(warmup_seconds=warmup)
         engine = DecisionEngine()
@@ -426,7 +434,9 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
             trader.trade_stats = stats_obj
         engine.trade_stats[sym] = stats_obj
         engines[sym] = {
-            "ensemble": ensemble,
+            "model_manager": model_manager,
+            "aggregator": aggregator,
+            "ml_weights": weights,
             "feature_builder": feature_builder,
             "engine": engine,
             "trader": trader,
@@ -441,6 +451,7 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
             "ml_enabled": ml_enabled,
             "ml_fail_mode": ml_fail_mode,
             "ml_thresholds": thresholds,
+            "ml_policy": ml_policy_type,
             "ml_state": {
                 "sum_p_up": {h: 0.0 for h in ml_horizons},
                 "count": {h: 0 for h in ml_horizons},
@@ -448,6 +459,8 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
                 "last_snapshot": time.time(),
             },
             "ml_versions": model_versions,
+            "ml_gate_counts": {},
+            "last_trade_ms": None,
             "drift_monitor": drift_monitor,
             "last_entry": None,
         }
@@ -460,8 +473,10 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
         return 1
     else:
         for sym, ctx in engines.items():
-            horizons_loaded = sorted(ctx["ensemble"].models.keys())
-            print(f"[INFO] Model readiness [{sym}]: horizons loaded={horizons_loaded or 'none'} (require_models={require_models})")
+            mgr = ctx.get("model_manager")
+            loaded = sorted(list(mgr.entries.keys())) if mgr else []
+            errors = mgr.errors if mgr else {}
+            print(f"[INFO] Model readiness [{sym}]: horizons loaded={loaded or 'none'} errors={errors}")
 
     sup_settings = load_supervisor_settings(config)
     supervisor_client: Optional[SupervisorClient] = None
@@ -548,7 +563,9 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
 
             ctx = engines[evt_symbol]
             feature_builder = ctx["feature_builder"]
-            ensemble = ctx["ensemble"]
+            model_manager = ctx["model_manager"]
+            aggregator = ctx["aggregator"]
+            ml_weights = ctx.get("ml_weights", {})
             engine = ctx["engine"]
             trader = ctx["trader"]
             risk_mod = ctx["risk_mod"]
@@ -595,20 +612,45 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
                 if block:
                     skip_trading = True
                 else:
-                    meta = ensemble.predict(features)
+                    model_manager.maybe_reload()
+                    prediction = model_manager.predict(features)
+                    meta = build_ensemble_output(prediction.outputs, ml_weights)
                     pseudo_signal = _build_signal_from_meta(meta)
-                    if not meta.components:
-                        skip_trading = True
-                    else:
-                        ml_state = ctx.get("ml_state")
-                        if isinstance(ml_state, dict):
-                            for h, sig in meta.components.items():
-                                if h in ml_state.get("sum_p_up", {}):
-                                    ml_state["sum_p_up"][h] += float(sig.p_up)
-                                    ml_state["count"][h] += 1
-                            drift_monitor = ctx.get("drift_monitor")
-                            if drift_monitor:
-                                drift_monitor.update(ml_feature_list, list(features))
+                    if telemetry_emitter:
+                        emit_event(
+                            "ml_prediction",
+                            {
+                                "schema_hash": ml_schema_hash(),
+                                "latency_ms": prediction.latency_ms,
+                                "probs": {h: {"p_up": sig.p_up, "p_down": sig.p_down} for h, sig in prediction.outputs.items()},
+                                "model_versions": ctx.get("ml_versions", {}),
+                            },
+                            evt_symbol,
+                        )
+                    if (model_manager.errors or not prediction.outputs) and not ctx.get("ml_gate_warned"):
+                        reasons = _model_error_reasons(model_manager.errors) if model_manager.errors else ["MODEL_MISSING"]
+                        if telemetry_emitter:
+                            emit_event(
+                                "ml_gate",
+                                {
+                                    "policy": ctx.get("ml_policy"),
+                                    "allow": False,
+                                    "reasons": reasons,
+                                    "thresholds": ctx.get("ml_thresholds"),
+                                    "probs": {},
+                                },
+                                evt_symbol,
+                            )
+                        ctx["ml_gate_warned"] = True
+                    ml_state = ctx.get("ml_state")
+                    if isinstance(ml_state, dict):
+                        for h, sig in meta.components.items():
+                            if h in ml_state.get("sum_p_up", {}):
+                                ml_state["sum_p_up"][h] += float(sig.p_up)
+                                ml_state["count"][h] += 1
+                        drift_monitor = ctx.get("drift_monitor")
+                        if drift_monitor:
+                            drift_monitor.update(ml_feature_list, list(features))
 
             approved = True
             if trading_enabled and not skip_trading and llm_enabled and pseudo_signal is not None:
@@ -633,7 +675,7 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
                 last_policy_snapshot = policy_snapshot
 
             position_state = 1 if trader.position > 0 else (-1 if trader.position < 0 else 0)
-            if trading_enabled and not skip_trading and meta.components:
+            if trading_enabled and not skip_trading:
                 decision = engine.decide(
                     symbol=evt_symbol,
                     ensemble=meta,
@@ -653,120 +695,221 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
                     decision = None
                 elif decision.action == DecisionAction.ENTER:
                     ml_state = ctx.get("ml_state", {})
-                    ml_gate_enabled = bool(ctx.get("ml_enabled", True)) and bool(ensemble.models)
-                    if not ml_gate_enabled and ctx.get("ml_fail_mode") == "block":
-                        if not ctx.get("ml_gate_warned"):
-                            print(f"[WARN] ML gating active but models missing for {evt_symbol}; entry blocked.")
-                            ctx["ml_gate_warned"] = True
-                        ml_state["blocked"] = int(ml_state.get("blocked", 0)) + 1
-                        decision = None
-                    elif ml_gate_enabled and not ensemble.entry_gate(meta.components, decision.direction):
+                    ml_gate_enabled = bool(ctx.get("ml_enabled", True))
+                    model_errors = model_manager.errors if model_manager else {}
+                    error_reasons = _model_error_reasons(model_errors) if model_errors else []
+                    gate = aggregator.evaluate(
+                        meta.components,
+                        decision.direction,
+                        ts,
+                        ctx.get("last_trade_ms"),
+                    ) if ml_gate_enabled else None
+                    if error_reasons and gate is None:
+                        gate = aggregator.evaluate({}, decision.direction, ts, ctx.get("last_trade_ms"))
+                        gate.reasons = error_reasons
+                        gate.allow = False
+                    elif gate and error_reasons:
+                        gate.reasons = error_reasons + gate.reasons
+                        gate.allow = False
+                    if gate and not gate.allow:
                         if not ctx.get("threshold_warned"):
-                            print(f"[WARN] ML thresholds not met for {evt_symbol}; entry blocked.")
+                            print(f"[WARN] ML gate blocked entry for {evt_symbol}: {gate.reasons}")
                             ctx["threshold_warned"] = True
                         ml_state["blocked"] = int(ml_state.get("blocked", 0)) + 1
+                        counts = ctx.get("ml_gate_counts", {})
+                        for reason in gate.reasons or ["ML_GATE_BLOCK"]:
+                            counts[reason] = int(counts.get(reason, 0)) + 1
+                        ctx["ml_gate_counts"] = counts
+                        if telemetry_emitter:
+                            emit_event(
+                                "ml_gate",
+                                {
+                                    "policy": ctx.get("ml_policy"),
+                                    "allow": False,
+                                    "reasons": gate.reasons,
+                                    "thresholds": ctx.get("ml_thresholds"),
+                                    "probs": gate.raw,
+                                },
+                                evt_symbol,
+                            )
                         decision = None
+                    elif gate and telemetry_emitter:
+                        emit_event(
+                            "ml_gate",
+                            {
+                                "policy": ctx.get("ml_policy"),
+                                "allow": True,
+                                "reasons": [],
+                                "thresholds": ctx.get("ml_thresholds"),
+                                "probs": gate.raw,
+                            },
+                            evt_symbol,
+                        )
                 elif decision.action == DecisionAction.ENTER and policy.size_multiplier != 1.0:
                     decision.size = max(0.0, decision.size * policy.size_multiplier)
                 if decision and decision.action not in (DecisionAction.NO_TRADE, DecisionAction.HOLD):
                     # Map decision to existing trader actions
-                    async def _supervisor_allows(action: str, size: float, reduce_only: bool) -> bool:
-                        if supervisor_client is None:
-                            return True
-                        size_val = float(size or 0.0)
-                        side = "BUY"
-                        if action == "sell":
-                            side = "SELL"
-                        elif action == "close":
-                            side = "SELL" if trader.position > 0 else "BUY"
-                        payload = {
-                            "symbol": evt_symbol,
-                            "side": side,
-                            "order_type": "MARKET",
-                            "quantity": size_val,
-                            "price": float(price),
-                            "notional": float(price * size_val) if size_val else None,
-                            "leverage": None,
-                            "is_reduce_only": bool(reduce_only),
-                        }
-                        decision_resp = await supervisor_client.evaluate_order(payload)
-                        if decision_resp is None:
-                            return True
-                        if decision_resp.get("allowed", False):
-                            return True
-                        logging.getLogger("supervisor_client").warning(
-                            "Order blocked by Supervisor: code=%s reason=%s",
-                            decision_resp.get("code"),
-                            decision_resp.get("reason"),
-                        )
-                        return False
-
                     execution_mode = ctx["execution_mode"]
-                    result = await execution_mode.execute_trade(
-                        decision,
-                        price,
-                        ts,
-                        evt_symbol,
-                        trader,
-                        allow_fn=_supervisor_allows,
-                        signal=pseudo_signal,
-                        last_event=event,
-                    )
-                    if result.skipped and result.reason not in {"noop"}:
-                        logging.getLogger("execution").debug("Execution skipped (%s)", result.reason)
-                    if result.executed:
-                        emit_event(
-                            "order",
-                            {
-                                "side": result.action,
-                                "qty": result.size,
-                                "price": price,
-                                "order_type": "market",
-                                "client_order_id": None,
-                            },
+                    if decision.action == DecisionAction.ENTER and isinstance(execution_mode, ScalpExecutionMode):
+                        gate_info = execution_mode.evaluate_entry(
+                            decision,
+                            price,
                             evt_symbol,
+                            signal=pseudo_signal,
+                            last_event=event,
                         )
-                        emit_event(
-                            "fill",
-                            {
-                                "side": result.action,
-                                "qty": result.size,
-                                "price": price,
-                                "fee": None,
-                                "order_id": None,
-                            },
-                            evt_symbol,
-                        )
-                        if result.action in {"buy", "sell"}:
-                            ctx["last_entry"] = {
-                                "entry_ts": ts,
-                                "entry_price": price,
-                                "side": result.action,
-                                "qty": result.size,
-                                "probs": {h: {"p_up": sig.p_up, "p_down": sig.p_down} for h, sig in meta.components.items()},
+                        if telemetry_emitter:
+                            emit_event(
+                                "scalp_gate",
+                                {
+                                    "allow": bool(gate_info.get("ok")),
+                                    "reason": gate_info.get("reason"),
+                                    "spread_bps": gate_info.get("spread_bps"),
+                                    "depth_usd": gate_info.get("depth_usd"),
+                                },
+                                evt_symbol,
+                            )
+                        if not gate_info.get("ok"):
+                            decision = None
+                    if _shadow_skip(shadow_mode, decision):
+                        if telemetry_emitter:
+                            emit_event(
+                                "execution_intent",
+                                {
+                                    "shadow": True,
+                                    "action": decision.action,
+                                    "direction": decision.direction,
+                                    "size": decision.size,
+                                    "order_type": decision.order_type,
+                                },
+                                evt_symbol,
+                            )
+                        decision = None
+                        # Skip execution but continue telemetry/monitoring.
+                    if decision:
+                        async def _supervisor_allows(action: str, size: float, reduce_only: bool) -> bool:
+                            if supervisor_client is None:
+                                return True
+                            size_val = float(size or 0.0)
+                            side = "BUY"
+                            if action == "sell":
+                                side = "SELL"
+                            elif action == "close":
+                                side = "SELL" if trader.position > 0 else "BUY"
+                            payload = {
+                                "symbol": evt_symbol,
+                                "side": side,
+                                "order_type": "MARKET",
+                                "quantity": size_val,
+                                "price": float(price),
+                                "notional": float(price * size_val) if size_val else None,
+                                "leverage": None,
+                                "is_reduce_only": bool(reduce_only),
                             }
-                        elif result.action == "close":
-                            entry = ctx.pop("last_entry", None)
-                            if entry and supervisor_client is not None:
-                                direction = 1 if entry.get("side") == "buy" else -1
-                                pnl = (price - entry.get("entry_price", price)) * float(entry.get("qty", 0.0)) * direction
-                                payload = {
-                                    "symbol": evt_symbol,
-                                    "side": entry.get("side"),
-                                    "qty": entry.get("qty"),
-                                    "entry_ts": entry.get("entry_ts"),
-                                    "exit_ts": ts,
-                                    "entry_price": entry.get("entry_price"),
-                                    "exit_price": price,
-                                    "pnl_realized": pnl,
-                                    "fees": None,
-                                    "reason_close": result.reason,
-                                    "ml_probs": entry.get("probs"),
-                                }
-                                await supervisor_client.send_trade_result(payload)
+                            decision_resp = await supervisor_client.evaluate_order(payload)
+                            if decision_resp is None:
+                                return True
+                            if decision_resp.get("allowed", False):
+                                return True
+                            logging.getLogger("supervisor_client").warning(
+                                "Order blocked by Supervisor: code=%s reason=%s",
+                                decision_resp.get("code"),
+                                decision_resp.get("reason"),
+                            )
+                            return False
 
-                    # Time-based exit for scalp mode (no-op for normal)
-                    await execution_mode.enforce_time_stop(trader, price, ts, evt_symbol, allow_fn=_supervisor_allows)
+                        if telemetry_emitter:
+                            emit_event(
+                                "execution_intent",
+                                {
+                                    "shadow": False,
+                                    "action": decision.action,
+                                    "direction": decision.direction,
+                                    "size": decision.size,
+                                    "order_type": decision.order_type,
+                                },
+                                evt_symbol,
+                            )
+                        result = await execution_mode.execute_trade(
+                            decision,
+                            price,
+                            ts,
+                            evt_symbol,
+                            trader,
+                            allow_fn=_supervisor_allows,
+                            signal=pseudo_signal,
+                            last_event=event,
+                        )
+                        if result.skipped and result.reason not in {"noop"}:
+                            logging.getLogger("execution").debug("Execution skipped (%s)", result.reason)
+                        if result.executed:
+                            emit_event(
+                                "order",
+                                {
+                                    "side": result.action,
+                                    "qty": result.size,
+                                    "price": price,
+                                    "order_type": "market",
+                                    "client_order_id": None,
+                                },
+                                evt_symbol,
+                            )
+                            emit_event(
+                                "fill",
+                                {
+                                    "side": result.action,
+                                    "qty": result.size,
+                                    "price": price,
+                                    "fee": None,
+                                    "order_id": None,
+                                },
+                                evt_symbol,
+                            )
+                            if result.action in {"buy", "sell"}:
+                                ctx["last_entry"] = {
+                                    "entry_ts": ts,
+                                    "entry_price": price,
+                                    "side": result.action,
+                                    "qty": result.size,
+                                    "probs": {h: {"p_up": sig.p_up, "p_down": sig.p_down} for h, sig in meta.components.items()},
+                                }
+                            elif result.action == "close":
+                                entry = ctx.pop("last_entry", None)
+                                if entry and supervisor_client is not None:
+                                    direction = 1 if entry.get("side") == "buy" else -1
+                                    pnl = (price - entry.get("entry_price", price)) * float(entry.get("qty", 0.0)) * direction
+                                    payload = {
+                                        "symbol": evt_symbol,
+                                        "side": entry.get("side"),
+                                        "qty": entry.get("qty"),
+                                        "entry_ts": entry.get("entry_ts"),
+                                        "exit_ts": ts,
+                                        "entry_price": entry.get("entry_price"),
+                                        "exit_price": price,
+                                        "pnl_realized": pnl,
+                                        "fees": None,
+                                        "reason_close": result.reason,
+                                        "ml_probs": entry.get("probs"),
+                                    }
+                                    await supervisor_client.send_trade_result(payload)
+
+                        if telemetry_emitter:
+                            emit_event(
+                                "execution_result",
+                                {
+                                    "executed": bool(result.executed),
+                                    "reason": result.reason,
+                                    "action": result.action,
+                                    "size": result.size,
+                                    "skipped": result.skipped,
+                                },
+                                evt_symbol,
+                            )
+                        if result.executed and result.action in {"buy", "sell"}:
+                            ctx["last_trade_ms"] = ts
+
+                        # Time-based exit for scalp mode (no-op for normal)
+                        await execution_mode.enforce_time_stop(trader, price, ts, evt_symbol, allow_fn=_supervisor_allows)
 
             ml_state = ctx.get("ml_state") if isinstance(ctx, dict) else None
             if telemetry_emitter and ml_state:
@@ -863,19 +1006,22 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
                 ctx["circuit_reason"] = triggered
                 print(f"[WARN] Circuit breaker triggered for {evt_symbol}: {triggered}; cooldown {cooldown}s")
 
-            status_extra = {
-                "circuit_paused": bool(ctx.get("circuit_pause_until", 0) and time.time() < ctx.get("circuit_pause_until", 0)),
-                "circuit_reason": ctx.get("circuit_reason"),
-                "trades_last_hour": stats.trades_last_hour(),
-                "total_pnl": stats.total_pnl(),
-                "max_drawdown_abs": stats.max_drawdown_abs(),
-                "risk_block": engine.last_risk_state.get(evt_symbol, ""),
-                "kill_switch": bool(_kill_switch_active().get("active")),
-                "kill_reason": _kill_switch_active().get("reason"),
-                "policy_mode": policy.mode,
-                "policy_allow_trading": policy.allow_trading,
-                "policy_reason": policy.reason,
-            }
+              status_extra = {
+                  "circuit_paused": bool(ctx.get("circuit_pause_until", 0) and time.time() < ctx.get("circuit_pause_until", 0)),
+                  "circuit_reason": ctx.get("circuit_reason"),
+                  "trades_last_hour": stats.trades_last_hour(),
+                  "total_pnl": stats.total_pnl(),
+                  "max_drawdown_abs": stats.max_drawdown_abs(),
+                  "risk_block": engine.last_risk_state.get(evt_symbol, ""),
+                  "kill_switch": bool(_kill_switch_active().get("active")),
+                  "kill_reason": _kill_switch_active().get("reason"),
+                  "policy_mode": policy.mode,
+                  "policy_allow_trading": policy.allow_trading,
+                  "policy_reason": policy.reason,
+                  "ml_policy": ctx.get("ml_policy"),
+                  "ml_gate_counts": ctx.get("ml_gate_counts"),
+                  "shadow_mode": shadow_mode,
+              }
 
             write_status(status_extra)
 

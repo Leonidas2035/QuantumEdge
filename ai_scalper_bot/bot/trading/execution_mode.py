@@ -148,6 +148,42 @@ class ScalpExecutionMode:
             tp_price = price * (1 - tp_bps / 10_000)
         return {"sl_price": sl_price, "tp_price": tp_price, "sl_bps": sl_bps, "tp_bps": tp_bps}
 
+    def evaluate_entry(
+        self,
+        decision,
+        price: float,
+        symbol: str,
+        signal: Optional[Any] = None,
+        last_event: Optional[Dict[str, Any]] = None,
+    ) -> Dict[str, Any]:
+        ok, guard_reason = self.guard.can_enter()
+        if not ok:
+            return {"ok": False, "reason": "RISK_GUARD_BLOCK"}
+
+        prob_ok = True
+        edge_ok = True
+        if signal is not None:
+            if decision.direction == "long":
+                prob_ok = bool(getattr(signal, "p_up", 0.0) >= self.min_prob_up)
+            else:
+                prob_ok = bool(getattr(signal, "p_down", 0.0) >= self.min_prob_up)
+            edge_ok = bool(abs(getattr(signal, "edge", 0.0)) >= self.min_edge)
+        if not prob_ok:
+            return {"ok": False, "reason": "PROBABILITY_BELOW_THRESHOLD"}
+        if not edge_ok:
+            return {"ok": False, "reason": "EDGE_BELOW_THRESHOLD"}
+
+        spread_bps = self._spread_bps(last_event, price)
+        if spread_bps > self.max_spread_bps:
+            return {"ok": False, "reason": "SPREAD_TOO_WIDE", "spread_bps": spread_bps}
+
+        qty = float(last_event.get("q", 0.0)) if last_event else 0.0
+        depth_usd = self._depth_usd(last_event, price, qty)
+        if depth_usd < self.min_depth_usd:
+            return {"ok": False, "reason": "DEPTH_TOO_THIN", "depth_usd": depth_usd}
+
+        return {"ok": True, "reason": "OK", "spread_bps": spread_bps, "depth_usd": depth_usd}
+
     async def execute_trade(
         self,
         decision,
@@ -172,36 +208,10 @@ class ScalpExecutionMode:
         if decision.action != DecisionAction.ENTER:
             return ExecutionResult(executed=False, reason="noop", skipped=True)
 
-        ok, guard_reason = self.guard.can_enter()
-        if not ok:
-            self.logger.info("Scalp entry blocked by guard: %s", guard_reason)
-            return ExecutionResult(executed=False, reason=guard_reason, skipped=True)
-
-        # Signal quality checks
-        prob_ok = True
-        edge_ok = True
-        if signal is not None:
-            if decision.direction == "long":
-                prob_ok = bool(getattr(signal, "p_up", 0.0) >= self.min_prob_up)
-            else:
-                prob_ok = bool(getattr(signal, "p_down", 0.0) >= self.min_prob_up)
-            edge_ok = bool(abs(getattr(signal, "edge", 0.0)) >= self.min_edge)
-        if not prob_ok:
-            return ExecutionResult(executed=False, reason="probability_below_threshold", skipped=True)
-        if not edge_ok:
-            return ExecutionResult(executed=False, reason="edge_below_threshold", skipped=True)
-
-        spread_bps = self._spread_bps(last_event, price)
-        if spread_bps > self.max_spread_bps:
-            return ExecutionResult(executed=False, reason="spread_too_wide", skipped=True)
-
-        qty = float(last_event.get("q", 0.0)) if last_event else 0.0
-        depth_usd = self._depth_usd(last_event, price, qty)
-        if depth_usd < self.min_depth_usd:
-            if self._disable_if_no_depth:
-                self.logger.warning("Scalp disabled due to insufficient depth (%.2f < %.2f).", depth_usd, self.min_depth_usd)
-                return ExecutionResult(executed=False, reason="insufficient_depth", skipped=True)
-            return ExecutionResult(executed=False, reason="insufficient_depth", skipped=True)
+        gate = self.evaluate_entry(decision, price, symbol, signal=signal, last_event=last_event)
+        if not gate.get("ok"):
+            self.logger.info("Scalp entry blocked: %s", gate.get("reason"))
+            return ExecutionResult(executed=False, reason=str(gate.get("reason")), skipped=True)
 
         action = "buy" if decision.direction == "long" else "sell"
         size = decision.size
