@@ -1,15 +1,12 @@
-import hashlib
-import json
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from bot.ml.feature_schema import FEATURE_NAMES
+from bot.ml.features.builder import schema_hash
 
 
 def feature_schema_hash() -> str:
-    payload = json.dumps(FEATURE_NAMES, separators=(",", ":"))
-    return hashlib.sha256(payload.encode()).hexdigest()
+    return schema_hash()
 
 
 def load_registry(model_dir: Path) -> List[Dict]:

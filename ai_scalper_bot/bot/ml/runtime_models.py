@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Optional, Tuple
 
+from bot.ml.features.builder import feature_names as _feature_names, schema_version as _schema_version
 from bot.ml.signal_model.model import SignalModel
 
 MANIFEST_VERSION = "model.v1"
@@ -130,11 +131,33 @@ def _compat_check(manifest: Dict[str, object], strict: bool) -> Optional[str]:
     return None
 
 
+def _schema_check(manifest: Dict[str, object]) -> Optional[str]:
+    expected_version = _schema_version()
+    expected_names = _feature_names()
+    version = manifest.get("feature_schema_version")
+    if version and str(version) != expected_version:
+        return f"schema_version_mismatch manifest={version} runtime={expected_version}"
+    names = manifest.get("feature_names")
+    if names:
+        try:
+            names_list = list(names)
+        except Exception:
+            return "feature_names_invalid"
+        if names_list != expected_names:
+            return "feature_names_mismatch"
+    return None
+
+
 @dataclass
 class RuntimeModelInfo:
     model: SignalModel
     threshold: float
     manifest_path: Path
+    manifest_hash: str
+    feature_schema_version: Optional[str]
+    feature_names: Optional[list[str]]
+    feature_stats: Dict[str, object]
+    calibration: Dict[str, object]
 
 
 def load_runtime_models(
@@ -163,6 +186,10 @@ def load_runtime_models(
             if compat_error:
                 errors[horizon] = f"compat_mismatch:{compat_error}"
                 continue
+            schema_error = _schema_check(manifest)
+            if schema_error:
+                errors[horizon] = f"schema_mismatch:{schema_error}"
+                continue
             model_rel = Path(str(manifest["files"]["model"]["path"]))
             model_path = manifest_path.parent / model_rel
             if not model_path.exists():
@@ -174,8 +201,25 @@ def load_runtime_models(
                 errors[horizon] = "sha_mismatch"
                 continue
             threshold = float((manifest.get("thresholds") or {}).get("p_up", threshold_default))
-            model = SignalModel(symbol=symbol, horizon=int(horizon), model_path=model_path)
-            models[int(horizon)] = RuntimeModelInfo(model=model, threshold=threshold, manifest_path=manifest_path)
+            calibration = manifest.get("calibration") or {}
+            feature_stats = manifest.get("feature_stats") or {}
+            model = SignalModel(
+                symbol=symbol,
+                horizon=int(horizon),
+                model_path=model_path,
+                calibration=calibration if isinstance(calibration, dict) else None,
+            )
+            manifest_hash = _sha256_file(manifest_path)
+            models[int(horizon)] = RuntimeModelInfo(
+                model=model,
+                threshold=threshold,
+                manifest_path=manifest_path,
+                manifest_hash=manifest_hash,
+                feature_schema_version=manifest.get("feature_schema_version"),
+                feature_names=list(manifest.get("feature_names") or []) if manifest.get("feature_names") else None,
+                feature_stats=feature_stats if isinstance(feature_stats, dict) else {},
+                calibration=calibration if isinstance(calibration, dict) else {},
+            )
         except Exception as exc:
             errors[horizon] = f"manifest_invalid:{exc}"
 

@@ -17,7 +17,7 @@ class DecisionEngine:
         filters = self.cfg.get("filters", {}) or {}
         self.min_confidence = filters.get("min_confidence", 0.55)
         self.min_edge = filters.get("min_edge", 0.02)
-        self.hz_cfg = self.cfg.get("horizons", {}) or {"primary": [1, 5], "anchor": 30}
+        self.hz_cfg = self.cfg.get("horizons", {}) or {"primary": [1, 5], "anchor": 15}
         self.thresholds = self.cfg.get("thresholds", {}) or {
             "min_conf_primary": 0.52,
             "strong_conf_anchor": 0.6,

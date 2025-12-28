@@ -32,15 +32,23 @@ bingx_demo:
   max_open_positions: 1
 
 ml:
+  enabled: true
   require_models: false
   ml_required: false
   ml_compat_strict: false
+  fail_mode: "disable"   # disable | block
   model_source: "runtime"   # runtime | legacy
   runtime_models_dir: "runtime/models"
   thresholds:
-    p_up: 0.55
-  horizons: [1, 5, 30]
+    h1: 0.55
+    h5: 0.55
+    h15: 0.55
+  horizons: [1, 5, 15]
   warmup_seconds: 600
+  snapshot_interval_sec: 30
+  drift:
+    window: 300
+    z_threshold: 3.0
 
 supervisor:
   enabled: true

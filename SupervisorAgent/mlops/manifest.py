@@ -41,6 +41,20 @@ def validate_manifest(data: Dict[str, Any]) -> Dict[str, Any]:
     model_type = _require_str(data.get("model_type"), "model_type")
     created_at = _require_int(data.get("created_at"), "created_at", minimum=0)
     features_version = _require_str(data.get("features_version"), "features_version")
+    feature_schema_version = data.get("feature_schema_version")
+    if feature_schema_version is not None:
+        feature_schema_version = _require_str(feature_schema_version, "feature_schema_version")
+    feature_names = data.get("feature_names")
+    if feature_names is not None:
+        if not isinstance(feature_names, list) or not feature_names:
+            raise ValueError("feature_names must be a non-empty list")
+        feature_names = [str(name) for name in feature_names]
+    feature_stats = data.get("feature_stats")
+    if feature_stats is not None and not isinstance(feature_stats, dict):
+        raise ValueError("feature_stats must be an object")
+    calibration = data.get("calibration")
+    if calibration is not None and not isinstance(calibration, dict):
+        raise ValueError("calibration must be an object")
 
     files = data.get("files") or {}
     if not isinstance(files, dict):
@@ -84,6 +98,10 @@ def validate_manifest(data: Dict[str, Any]) -> Dict[str, Any]:
         "model_type": model_type,
         "created_at": created_at,
         "features_version": features_version,
+        "feature_schema_version": feature_schema_version,
+        "feature_names": feature_names,
+        "feature_stats": feature_stats or {},
+        "calibration": calibration or {},
         "training_data": data.get("training_data") or {},
         "metrics": data.get("metrics") or {},
         "thresholds": data.get("thresholds") or {},
@@ -102,6 +120,10 @@ class ModelManifest:
     model_type: str
     created_at: int
     features_version: str
+    feature_schema_version: Optional[str]
+    feature_names: Optional[list[str]]
+    feature_stats: Dict[str, Any]
+    calibration: Dict[str, Any]
     training_data: Dict[str, Any]
     metrics: Dict[str, Any]
     thresholds: Dict[str, Any]
@@ -122,6 +144,10 @@ class ModelManifest:
         training_data: Optional[Dict[str, Any]] = None,
         metrics: Optional[Dict[str, Any]] = None,
         thresholds: Optional[Dict[str, Any]] = None,
+        feature_schema_version: Optional[str] = None,
+        feature_names: Optional[list[str]] = None,
+        feature_stats: Optional[Dict[str, Any]] = None,
+        calibration: Optional[Dict[str, Any]] = None,
         created_at: Optional[int] = None,
         model_format: Optional[str] = None,
         model_api: Optional[str] = None,
@@ -134,6 +160,10 @@ class ModelManifest:
             "model_type": model_type,
             "created_at": int(created_at or time.time()),
             "features_version": features_version,
+            "feature_schema_version": feature_schema_version,
+            "feature_names": feature_names,
+            "feature_stats": feature_stats or {},
+            "calibration": calibration or {},
             "training_data": training_data or {},
             "metrics": metrics or {},
             "thresholds": thresholds or {},
@@ -159,6 +189,10 @@ class ModelManifest:
             "model_type": self.model_type,
             "created_at": self.created_at,
             "features_version": self.features_version,
+            "feature_schema_version": self.feature_schema_version,
+            "feature_names": self.feature_names,
+            "feature_stats": self.feature_stats,
+            "calibration": self.calibration,
             "training_data": self.training_data,
             "metrics": self.metrics,
             "thresholds": self.thresholds,

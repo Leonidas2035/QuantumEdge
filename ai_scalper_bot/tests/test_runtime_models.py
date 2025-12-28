@@ -16,6 +16,7 @@ if "xgboost" not in sys.modules:
     sys.modules["xgboost"] = stub
 
 import bot.ml.runtime_models as rm  # noqa: E402
+from bot.ml.features.builder import feature_names, schema_version
 
 
 class DummySignalModel:
@@ -43,6 +44,8 @@ def test_runtime_models_valid(monkeypatch, tmp_path: Path):
         "model_type": "signal_model",
         "created_at": 1,
         "features_version": "feat.v1",
+        "feature_schema_version": schema_version(),
+        "feature_names": feature_names(),
         "files": {"model": {"path": "model.pkl", "sha256": _sha256(b"dummy")}},
         "thresholds": {"p_up": 0.55},
     }
@@ -66,6 +69,8 @@ def test_runtime_models_sha_mismatch(monkeypatch, tmp_path: Path):
         "model_type": "signal_model",
         "created_at": 1,
         "features_version": "feat.v1",
+        "feature_schema_version": schema_version(),
+        "feature_names": feature_names(),
         "files": {"model": {"path": "model.pkl", "sha256": "bad"}},
     }
     (manifest_dir / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
@@ -87,6 +92,8 @@ def test_runtime_models_compat_strict_blocks(monkeypatch, tmp_path: Path):
         "model_type": "signal_model",
         "created_at": 1,
         "features_version": "feat.v1",
+        "feature_schema_version": schema_version(),
+        "feature_names": feature_names(),
         "files": {"model": {"path": "model.pkl", "sha256": _sha256(b"dummy")}},
         "model_format": "xgboost_json",
         "model_api": "predict_proba",

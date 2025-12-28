@@ -77,14 +77,25 @@ class EnsembleSignalModel:
         return outputs
 
     def thresholds_met(self, outputs: Dict[int, SignalOutput]) -> bool:
+        return self.entry_gate(outputs, direction=None)
+
+    def entry_gate(self, outputs: Dict[int, SignalOutput], direction: Optional[str]) -> bool:
         if not self.thresholds:
             return True
         for horizon, threshold in self.thresholds.items():
             sig = outputs.get(horizon)
             if sig is None:
                 return False
-            if sig.p_up < threshold and sig.p_down < threshold:
-                return False
+            if direction is None:
+                if sig.p_up < threshold and sig.p_down < threshold:
+                    return False
+                continue
+            if direction == "long":
+                if sig.p_up < threshold:
+                    return False
+            elif direction == "short":
+                if sig.p_down < threshold:
+                    return False
         return True
 
     @staticmethod

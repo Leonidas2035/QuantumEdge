@@ -6,6 +6,7 @@ import numpy as np
 import xgboost as xgb
 
 from bot.ml.feature_schema import FEATURE_NAMES
+from bot.ml.calibration import apply_calibration
 
 
 @dataclass
@@ -21,7 +22,14 @@ class SignalModel:
     Thin wrapper around an XGBoost binary classifier for signal generation.
     """
 
-    def __init__(self, symbol: str = "BTCUSDT", horizon: int = 1, model_dir: Optional[Path] = None, model_path: Optional[Path] = None):
+    def __init__(
+        self,
+        symbol: str = "BTCUSDT",
+        horizon: int = 1,
+        model_dir: Optional[Path] = None,
+        model_path: Optional[Path] = None,
+        calibration: Optional[dict] = None,
+    ):
         root = Path(__file__).resolve().parents[3]
         self.model_dir = model_dir or (root / "storage" / "models")
         self.model_dir.mkdir(parents=True, exist_ok=True)
@@ -30,6 +38,7 @@ class SignalModel:
         else:
             self.model_path = self.model_dir / f"signal_xgb_{symbol}_h{horizon}.json"
         self.model = self._load_model()
+        self.calibration = calibration or {}
 
     def _load_model(self) -> xgb.XGBClassifier:
         if not self.model_path.exists():
@@ -50,6 +59,9 @@ class SignalModel:
         probs = self.model.predict_proba(arr)[0]
         p_down = float(probs[0])
         p_up = float(probs[1])
+        p_up = apply_calibration(p_up, self.calibration)
+        p_up = max(0.0, min(1.0, p_up))
+        p_down = 1.0 - p_up
         edge = p_up - 0.5
         direction = 1 if edge > 0 else (-1 if edge < 0 else 0)
         return SignalOutput(p_up=p_up, p_down=p_down, edge=edge, direction=direction)

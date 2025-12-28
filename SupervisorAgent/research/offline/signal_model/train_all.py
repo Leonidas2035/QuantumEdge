@@ -17,8 +17,8 @@ def parse_args():
     parser.add_argument(
         "--horizons",
         type=str,
-        default="1,5,30",
-        help="Comma-separated horizons (e.g., 1,5,30)",
+        default="1,5,15",
+        help="Comma-separated horizons (e.g., 1,5,15)",
     )
     parser.add_argument("--min-rows", type=int, default=1000, help="Minimum rows required to train per horizon.")
     parser.add_argument("--data", type=str, default=None, help="Path to tick CSV directory (defaults to data/ticks).")

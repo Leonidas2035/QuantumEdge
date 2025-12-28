@@ -4,6 +4,8 @@ Shared feature schema for offline and online pipelines.
 This keeps feature names consistent between dataset_builder and online_features.
 """
 
+FEATURE_SCHEMA_VERSION = "v1"
+
 FEATURE_NAMES = [
     # Returns / volatility
     "ret_1s",

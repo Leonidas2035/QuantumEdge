@@ -20,6 +20,8 @@ from bot.ml.signal_model.model import SignalOutput
 from bot.ml.signal_model.online_features import OnlineFeatureBuilder
 from bot.ml.signal_model.registry import load_registry, find_entry, feature_schema_hash
 from bot.ml.runtime_models import load_runtime_models, resolve_models_root
+from bot.ml.features.builder import schema_version as ml_schema_version, feature_names as ml_feature_names
+from bot.ml.drift_monitor import DriftMonitor
 from bot.trading.executor import BinanceDemoExecutor
 from bot.trading.bingx_executor import BingXDemoExecutor
 from bot.trading.paper_trader import PaperTrader
@@ -95,6 +97,31 @@ def _resolve_data_source() -> str:
             return "mock"
         return "ws"
     return "mock"
+
+
+def _parse_ml_thresholds(ml_cfg: Dict[str, Any], horizons: list[int]) -> Dict[int, float]:
+    raw = ml_cfg.get("thresholds") or {}
+    thresholds: Dict[int, float] = {}
+    default = None
+    if isinstance(raw, dict):
+        if "p_up" in raw:
+            try:
+                default = float(raw.get("p_up"))
+            except (TypeError, ValueError):
+                default = None
+        for key, value in raw.items():
+            if key in {"p_up", "default"}:
+                continue
+            if key.startswith("h"):
+                key = key[1:]
+            try:
+                horizon = int(key)
+                thresholds[horizon] = float(value)
+            except (TypeError, ValueError):
+                continue
+    if not thresholds and default is not None:
+        thresholds = {int(h): float(default) for h in horizons}
+    return thresholds
 
 
 async def _event_stream(symbols):
@@ -194,8 +221,16 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
     start_time = time.time()
     ml_cfg = config.get("ml", {}) or {}
     require_models = bool(config.get("ml.require_models", True))
+    ml_enabled = bool(ml_cfg.get("enabled", True))
     ml_required = bool(ml_cfg.get("ml_required", ml_cfg.get("required", require_models)))
     ml_compat_strict = bool(ml_cfg.get("ml_compat_strict", False))
+    ml_fail_mode = str(ml_cfg.get("fail_mode", "disable")).lower()
+    ml_snapshot_interval = float(ml_cfg.get("snapshot_interval_sec", 30))
+    if ml_snapshot_interval <= 0:
+        ml_snapshot_interval = 30.0
+    ml_horizons = list(ml_cfg.get("horizons", [1, 5, 15]))
+    ml_thresholds_cfg = _parse_ml_thresholds(ml_cfg, ml_horizons)
+    ml_feature_list = ml_feature_names()
     observer_mode = not require_models
     observer_notice_logged = False
     missing_required_models = False
@@ -281,20 +316,23 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
         observer_notice_logged = True
     model_dir = Path(__file__).resolve().parents[2] / "storage" / "models"
     model_dir.mkdir(parents=True, exist_ok=True)
-    readiness = _model_readiness(symbols, config.get("ml.horizons", [1, 5, 30]), model_dir, require_models)
+    readiness = _model_readiness(symbols, ml_horizons, model_dir, require_models)
     print("\n[MODEL READINESS]")
     for sym in symbols:
-        for h in config.get("ml.horizons", [1, 5, 30]):
+        for h in ml_horizons:
             info = readiness.get(sym, {}).get(h, {"ok": False, "reason": "missing"})
             status = "OK" if info["ok"] else f"MISSING ({info['reason']})"
             print(f"  {sym} h={h}: {status}")
     for sym in symbols:
         runtime_models = None
         thresholds = None
+        model_versions = {}
+        feature_stats = {}
+        drift_monitor = None
         if model_source == "runtime":
             loaded, errors = load_runtime_models(
                 symbol=sym,
-                horizons=config.get("ml.horizons", [1, 5, 30]),
+                horizons=ml_horizons,
                 models_root=Path(runtime_models_dir),
                 threshold_default=threshold_default,
                 compat_strict=ml_compat_strict,
@@ -306,8 +344,27 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
             if loaded:
                 runtime_models = {h: info.model for h, info in loaded.items()}
                 thresholds = {h: info.threshold for h, info in loaded.items()}
+                model_versions = {h: info.manifest_hash for h, info in loaded.items()}
+                for info in loaded.values():
+                    if info.feature_stats:
+                        feature_stats = info.feature_stats
+                        break
 
-        ensemble = EnsembleSignalModel(symbol=sym, horizons=[1, 5, 30], runtime_models=runtime_models, thresholds=thresholds)
+        if thresholds is None:
+            thresholds = ml_thresholds_cfg
+
+        drift_cfg = (ml_cfg.get("drift") or {})
+        drift_window = int(drift_cfg.get("window", 300))
+        drift_z = float(drift_cfg.get("z_threshold", 3.0))
+        if feature_stats.get("mean") and feature_stats.get("std"):
+            drift_monitor = DriftMonitor(
+                baseline_mean=feature_stats.get("mean") or {},
+                baseline_std=feature_stats.get("std") or {},
+                window=drift_window,
+                z_threshold=drift_z,
+            )
+
+        ensemble = EnsembleSignalModel(symbol=sym, horizons=ml_horizons, runtime_models=runtime_models, thresholds=thresholds)
         loaded_horizons = sorted(list(ensemble.models.keys()))
         expected_horizons = ensemble.horizons
         missing_h = [h for h in expected_horizons if not readiness.get(sym, {}).get(h, {}).get("ok")]
@@ -365,6 +422,18 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
             "circuit_pause_until": 0.0,
             "circuit_reason": None,
             "depth_warned": False,
+            "ml_enabled": ml_enabled,
+            "ml_fail_mode": ml_fail_mode,
+            "ml_thresholds": thresholds,
+            "ml_state": {
+                "sum_p_up": {h: 0.0 for h in ml_horizons},
+                "count": {h: 0 for h in ml_horizons},
+                "blocked": 0,
+                "last_snapshot": time.time(),
+            },
+            "ml_versions": model_versions,
+            "drift_monitor": drift_monitor,
+            "last_entry": None,
         }
 
     if not engines:
@@ -514,6 +583,16 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
                     pseudo_signal = _build_signal_from_meta(meta)
                     if not meta.components:
                         skip_trading = True
+                    else:
+                        ml_state = ctx.get("ml_state")
+                        if isinstance(ml_state, dict):
+                            for h, sig in meta.components.items():
+                                if h in ml_state.get("sum_p_up", {}):
+                                    ml_state["sum_p_up"][h] += float(sig.p_up)
+                                    ml_state["count"][h] += 1
+                            drift_monitor = ctx.get("drift_monitor")
+                            if drift_monitor:
+                                drift_monitor.update(ml_feature_list, list(features))
 
             approved = True
             if trading_enabled and not skip_trading and llm_enabled and pseudo_signal is not None:
@@ -556,11 +635,21 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
                         policy.reason,
                     )
                     decision = None
-                elif decision.action == DecisionAction.ENTER and not ensemble.thresholds_met(meta.components):
-                    if not ctx.get("threshold_warned"):
-                        print(f"[WARN] Model thresholds not met for {evt_symbol}; entry blocked.")
-                        ctx["threshold_warned"] = True
-                    decision = None
+                elif decision.action == DecisionAction.ENTER:
+                    ml_state = ctx.get("ml_state", {})
+                    ml_gate_enabled = bool(ctx.get("ml_enabled", True)) and bool(ensemble.models)
+                    if not ml_gate_enabled and ctx.get("ml_fail_mode") == "block":
+                        if not ctx.get("ml_gate_warned"):
+                            print(f"[WARN] ML gating active but models missing for {evt_symbol}; entry blocked.")
+                            ctx["ml_gate_warned"] = True
+                        ml_state["blocked"] = int(ml_state.get("blocked", 0)) + 1
+                        decision = None
+                    elif ml_gate_enabled and not ensemble.entry_gate(meta.components, decision.direction):
+                        if not ctx.get("threshold_warned"):
+                            print(f"[WARN] ML thresholds not met for {evt_symbol}; entry blocked.")
+                            ctx["threshold_warned"] = True
+                        ml_state["blocked"] = int(ml_state.get("blocked", 0)) + 1
+                        decision = None
                 elif decision.action == DecisionAction.ENTER and policy.size_multiplier != 1.0:
                     decision.size = max(0.0, decision.size * policy.size_multiplier)
                 if decision and decision.action not in (DecisionAction.NO_TRADE, DecisionAction.HOLD):
@@ -632,9 +721,68 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
                             },
                             evt_symbol,
                         )
+                        if result.action in {"buy", "sell"}:
+                            ctx["last_entry"] = {
+                                "entry_ts": ts,
+                                "entry_price": price,
+                                "side": result.action,
+                                "qty": result.size,
+                                "probs": {h: {"p_up": sig.p_up, "p_down": sig.p_down} for h, sig in meta.components.items()},
+                            }
+                        elif result.action == "close":
+                            entry = ctx.pop("last_entry", None)
+                            if entry and supervisor_client is not None:
+                                direction = 1 if entry.get("side") == "buy" else -1
+                                pnl = (price - entry.get("entry_price", price)) * float(entry.get("qty", 0.0)) * direction
+                                payload = {
+                                    "symbol": evt_symbol,
+                                    "side": entry.get("side"),
+                                    "qty": entry.get("qty"),
+                                    "entry_ts": entry.get("entry_ts"),
+                                    "exit_ts": ts,
+                                    "entry_price": entry.get("entry_price"),
+                                    "exit_price": price,
+                                    "pnl_realized": pnl,
+                                    "fees": None,
+                                    "reason_close": result.reason,
+                                    "ml_probs": entry.get("probs"),
+                                }
+                                await supervisor_client.send_trade_result(payload)
 
                     # Time-based exit for scalp mode (no-op for normal)
                     await execution_mode.enforce_time_stop(trader, price, ts, evt_symbol, allow_fn=_supervisor_allows)
+
+            ml_state = ctx.get("ml_state") if isinstance(ctx, dict) else None
+            if telemetry_emitter and ml_state:
+                now_snap = time.time()
+                last_snap = float(ml_state.get("last_snapshot", 0.0) or 0.0)
+                if now_snap - last_snap >= ml_snapshot_interval:
+                    avg_p_up = {}
+                    for h in ml_horizons:
+                        count = int(ml_state.get("count", {}).get(h, 0))
+                        total = float(ml_state.get("sum_p_up", {}).get(h, 0.0))
+                        avg_p_up[h] = (total / count) if count else None
+                    drift_monitor = ctx.get("drift_monitor")
+                    drift_snapshot = drift_monitor.snapshot() if drift_monitor else None
+                    emit_event(
+                        "ml_snapshot",
+                        {
+                            "schema_version": ml_schema_version(),
+                            "model_versions": ctx.get("ml_versions", {}),
+                            "avg_p_up": avg_p_up,
+                            "blocked_entries": int(ml_state.get("blocked", 0)),
+                            "drift": {
+                                "score": drift_snapshot.drift_score,
+                                "exceed_rate": drift_snapshot.exceed_rate,
+                                "top_features": drift_snapshot.top_features,
+                            } if drift_snapshot else None,
+                        },
+                        evt_symbol,
+                    )
+                    ml_state["sum_p_up"] = {h: 0.0 for h in ml_horizons}
+                    ml_state["count"] = {h: 0 for h in ml_horizons}
+                    ml_state["blocked"] = 0
+                    ml_state["last_snapshot"] = now_snap
 
             stats = engine.trade_stats.setdefault(evt_symbol, TradeStats())
             now = time.time()

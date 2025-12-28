@@ -8,6 +8,7 @@ import numpy as np
 import xgboost as xgb
 
 from bot.ml.feature_schema import FEATURE_NAMES
+from bot.ml.features.builder import schema_version, feature_names
 from .dataset_builder import DatasetBuilder
 from bot.ml.signal_model.registry import feature_schema_hash, update_registry
 
@@ -34,6 +35,26 @@ def _metrics(y_true: np.ndarray, probs: np.ndarray) -> dict:
         "fp": fp,
         "fn": fn,
     }
+
+
+def _fit_calibrator(y_true: np.ndarray, probs: np.ndarray) -> Optional[dict]:
+    try:
+        from sklearn.linear_model import LogisticRegression
+    except Exception:
+        print("[WARN] sklearn not available; skipping calibration.")
+        return None
+    try:
+        X = np.clip(probs, 1e-6, 1 - 1e-6).reshape(-1, 1)
+        model = LogisticRegression(solver="lbfgs")
+        model.fit(X, y_true.astype(int))
+        return {
+            "type": "platt",
+            "coef": float(model.coef_[0][0]),
+            "intercept": float(model.intercept_[0]),
+        }
+    except Exception as exc:
+        print(f"[WARN] Calibration failed: {exc}")
+        return None
 
 
 def train_model(
@@ -89,12 +110,21 @@ def train_model(
         print(f"[WARN] Could not save parquet ({exc}). Saved CSV instead: {fallback_path}")
     probs = model.predict_proba(X)[:, 1]
     metrics = _metrics(y.to_numpy(), probs)
+    calibrator = _fit_calibrator(y.to_numpy(), probs)
     balance = y.value_counts(normalize=True).to_dict()
+    feature_stats = {
+        "mean": {name: float(X[name].mean()) for name in FEATURE_NAMES},
+        "std": {name: float(X[name].std(ddof=0)) for name in FEATURE_NAMES},
+    }
     print(f"[DONE] Training complete. Metrics: {metrics}")
     return True, {
         "rows": len(X),
         "class_balance": balance,
         "metrics": metrics,
+        "calibration": calibrator,
+        "feature_stats": feature_stats,
+        "feature_schema_version": schema_version(),
+        "feature_names": feature_names(),
         "model_path": str(model_path),
     }
 
@@ -102,7 +132,7 @@ def train_model(
 def parse_args():
     parser = argparse.ArgumentParser(description="Train signal model offline.")
     parser.add_argument("--symbol", type=str, default="BTCUSDT", help="Symbol to train on (e.g., BTCUSDT)")
-    parser.add_argument("--horizons", type=str, default="1,5,30", help="Comma-separated horizons to train")
+    parser.add_argument("--horizons", type=str, default="1,5,15", help="Comma-separated horizons to train")
     parser.add_argument("--min-rows", type=int, default=1000, help="Minimum rows required to train")
     parser.add_argument(
         "--data",

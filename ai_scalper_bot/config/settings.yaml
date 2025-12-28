@@ -152,11 +152,21 @@ backtester:
   replay_speed: "realtime"   # or fast
 
 ml:
+  enabled: true
   require_models: false
-  horizons: [1, 5, 30]
+  horizons: [1, 5, 15]
   default_horizon: 1
   warmup_seconds: 600
   warmup_bars_min: 300
+  thresholds:
+    h1: 0.55
+    h5: 0.55
+    h15: 0.55
+  fail_mode: "disable"
+  snapshot_interval_sec: 30
+  drift:
+    window: 300
+    z_threshold: 3.0
 
 decision:
   filters:

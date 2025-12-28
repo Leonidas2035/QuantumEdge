@@ -100,3 +100,14 @@ class SupervisorClient:
             self.logger.info(msg)
 
         return response
+
+    async def send_trade_result(self, payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+        """Send trade result payload to Supervisor telemetry endpoint."""
+
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(
+            None,
+            self._post_json,
+            "/api/v1/telemetry/trade_result",
+            payload,
+        )
