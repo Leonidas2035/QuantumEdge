@@ -81,3 +81,28 @@ Artifacts:
 - Manifest: `SupervisorAgent/runtime/episodes/<episode_set>/episodes_manifest.json`
 - Run folders: `SupervisorAgent/runtime/runs/<run_id>/` (with episode tags)
 - Report: `SupervisorAgent/runtime/reports/<episode_set>/report.json` and `report.md`
+
+## Ops Brain v1 (auto-tuning + regression gates)
+Ops automation produces policy versions and gate reports under runtime:
+
+```
+SupervisorAgent/runtime/policy_versions/
+  policy_vNNN.yaml
+  policy_vNNN_manifest.json
+  active_policy.yaml
+  active_policy_manifest.json
+
+SupervisorAgent/runtime/regression/<policy_version>/
+  gate_report.json
+```
+
+Commands:
+1) Autotune (dry-run default):
+   - `python SupervisorAgent/supervisor.py ops-autotune --episode-set tick_scenarios_v1`
+   - Add `--apply` to activate if gates pass.
+2) Regression gate on a version:
+   - `python SupervisorAgent/supervisor.py ops-regression-gate --policy-version v001 --episode-set tick_scenarios_v1`
+3) Daily report:
+   - `python SupervisorAgent/supervisor.py ops-daily-report --date YYYY-MM-DD`
+4) Rollback:
+   - `python SupervisorAgent/supervisor.py ops-rollback --policy-version v001`

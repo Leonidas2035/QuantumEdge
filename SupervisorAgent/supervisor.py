@@ -70,6 +70,7 @@ from supervisor.run_context import RunContext
 from supervisor.regime_sm import RegimeStateMachine, RegimeConfig, DirectivesConfig, load_regime_config, load_directives_config
 from supervisor.guards import GuardEvaluator, GuardResult, GuardConfig, load_guard_config
 from supervisor.action_ledger import ActionLedger
+from supervisor.policy_store import resolve_active_policy_path
 
 try:
     from tools.qe_config import get_qe_paths
@@ -1129,12 +1130,16 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
             "tsdb-migrate",
             "tsdb-maintain",
             "ml",
-        "telemetry",
-        "research",
-        "episodes-cut",
-        "episodes-run",
-        "episodes-report",
-    ],
+            "telemetry",
+            "research",
+            "episodes-cut",
+            "episodes-run",
+            "episodes-report",
+            "ops-autotune",
+            "ops-regression-gate",
+            "ops-daily-report",
+            "ops-rollback",
+        ],
         help="Command to execute",
     )
     parser.add_argument(
@@ -1162,6 +1167,32 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         "--config",
         dest="config_path",
         help="Path to supervisor config YAML (defaults to QE_ROOT/config/supervisor.yaml).",
+    )
+    parser.add_argument(
+        "--apply",
+        action="store_true",
+        help="Apply policy changes (ops-autotune).",
+    )
+    parser.add_argument(
+        "--gate-suite",
+        dest="gate_suite",
+        default="smoke",
+        help="Regression gate suite: smoke | core | panic.",
+    )
+    parser.add_argument(
+        "--policy-version",
+        dest="policy_version",
+        help="Policy version id (vNNN) for ops-regression-gate/ops-rollback.",
+    )
+    parser.add_argument(
+        "--policy-path",
+        dest="policy_path",
+        help="Explicit policy path for ops-regression-gate.",
+    )
+    parser.add_argument(
+        "--runs-path",
+        dest="runs_path",
+        help="Override runs directory for ops reports.",
     )
     parser.add_argument("--episode-set", dest="episode_set", help="Episode set tag for this run.")
     parser.add_argument("--episode-id", dest="episode_id", help="Episode id tag for this run.")
@@ -1195,7 +1226,7 @@ def build_app(
     dashboard_config = load_dashboard_config(supervisor_config_dir / "dashboard.yaml")
     tsdb_config = load_tsdb_config(supervisor_config_dir / "tsdb.yaml")
     tsdb_retention = load_tsdb_retention_config(supervisor_config_dir / "tsdb_retention.yaml")
-    control_policy_path = supervisor_config_dir / "policy.yaml"
+    control_policy_path = resolve_active_policy_path(paths_config.runtime_dir, supervisor_config_dir / "policy.yaml")
     regime_cfg = load_regime_config(control_policy_path)
     guard_cfg = load_guard_config(control_policy_path)
     directives_cfg = load_directives_config(control_policy_path)
@@ -1343,6 +1374,170 @@ def main(argv: Optional[list[str]] = None) -> None:
             episodes_args = parse_episodes_args(args.command, args.ml_args)
             code = run_episodes_command(args.command, episodes_args)
             sys.exit(code)
+        elif args.command == "ops-autotune":
+            from supervisor.policy_store import load_active_policy, save_new_policy, activate_policy
+            from supervisor.ops.autotuner import load_policy_bundle, collect_metrics, propose_tuning
+            from supervisor.ops.config import load_ops_config
+            from supervisor.ops.regression_gates import run_regression_gates
+
+            runtime_dir = app.paths.runtime_dir
+            runs_dir = Path(args.runs_path) if args.runs_path else runtime_dir / "runs"
+            ops_cfg = load_ops_config(supervisor_config_dir)
+            telemetry_path = None
+            if app.config.telemetry_persist_path:
+                telemetry_path = Path(app.config.telemetry_persist_path)
+                if not telemetry_path.is_absolute():
+                    telemetry_path = (app.paths.qe_root / telemetry_path).resolve()
+            active_policy, active_version, active_path = load_active_policy(runtime_dir, supervisor_config_dir / "policy.yaml")
+            policy_bundle = load_policy_bundle(active_policy)
+            metrics = collect_metrics(runs_dir, telemetry_path, ops_cfg)
+
+            candidate, changes, notes = propose_tuning(policy_bundle, metrics, ops_cfg)
+            ctx, ledger, start_ts = _init_ops_context(
+                project_root,
+                policy_version=active_version,
+                note="ops_autotune",
+                config_snapshot={"metrics": metrics, "ops_notes": notes},
+            )
+            try:
+                if not changes:
+                    ctx.log_event("ACTION_REJECTED", {"reason": "no_changes"})
+                    _finalize_ops_context(ctx, start_ts, {"status": "no_changes"})
+                    print(json.dumps({"status": "no_changes", "metrics": metrics, "notes": notes}, indent=2))
+                    sys.exit(0)
+
+                if _last_run_has_critical_events(runs_dir):
+                    ctx.log_event("ACTION_REJECTED", {"reason": "critical_events"})
+                    _finalize_ops_context(ctx, start_ts, {"status": "blocked", "reason": "critical_events"})
+                    print(json.dumps({"status": "blocked", "reason": "critical_events"}, indent=2))
+                    sys.exit(1)
+
+                version = save_new_policy(
+                    candidate,
+                    runtime_dir,
+                    project_root,
+                    reason="autotune",
+                    source_run_id=ctx.run_id,
+                    previous_policy=active_policy,
+                    previous_version_id=active_version,
+                )
+                ledger.append(
+                    "ACTION_PROPOSED",
+                    action_type="POLICY_UPDATE",
+                    target="Supervisor",
+                    payload={"version_id": version.version_id, "changes": changes, "notes": notes},
+                    reason_codes=["AUTOTUNE"],
+                    status="PROPOSED",
+                )
+
+                gate_result = run_regression_gates(
+                    episode_set=args.episode_set or "tick_scenarios_v1",
+                    runtime_dir=runtime_dir,
+                    candidate_policy_path=version.policy_path,
+                    baseline_policy_path=active_path,
+                    gate_suite=args.gate_suite,
+                )
+                ledger.append(
+                    "ACTION_RESULT",
+                    action_type="REGRESSION_GATE",
+                    target="Supervisor",
+                    payload=gate_result,
+                    reason_codes=["GATE_CHECK"],
+                    status="RESULT",
+                )
+                out_dir = runtime_dir / "regression" / version.version_id
+                out_dir.mkdir(parents=True, exist_ok=True)
+                (out_dir / "gate_report.json").write_text(json.dumps(gate_result, indent=2), encoding="utf-8")
+                (out_dir / "gate_report.md").write_text(_render_gate_report_md(gate_result), encoding="utf-8")
+
+                if args.apply and gate_result.get("passed"):
+                    activate_policy(runtime_dir, version.version_id, source="autotune")
+                    ledger.append(
+                        "ACTION_APPLIED",
+                        action_type="POLICY_UPDATE",
+                        target="Supervisor",
+                        payload={"version_id": version.version_id},
+                        reason_codes=["AUTOTUNE"],
+                        status="APPLIED",
+                    )
+                    result = {"status": "applied", "policy_version": version.version_id, "gates": gate_result}
+                    _finalize_ops_context(ctx, start_ts, result)
+                    print(json.dumps(result, indent=2))
+                    sys.exit(0)
+
+                ledger.append(
+                    "ACTION_REJECTED",
+                    action_type="POLICY_UPDATE",
+                    target="Supervisor",
+                    payload={"version_id": version.version_id, "reason": "gates_failed_or_dry_run"},
+                    reason_codes=["AUTOTUNE"],
+                    status="REJECTED",
+                )
+                result = {
+                    "status": "dry_run" if not args.apply else "gates_failed",
+                    "policy_version": version.version_id,
+                    "changes": changes,
+                    "gates": gate_result,
+                }
+                _finalize_ops_context(ctx, start_ts, result)
+                print(json.dumps(result, indent=2))
+                sys.exit(0 if gate_result.get("passed") else 1)
+            finally:
+                _finalize_ops_context(ctx, start_ts, {"status": "completed"}, finalize_only=True)
+        elif args.command == "ops-regression-gate":
+            from supervisor.policy_store import load_active_policy
+            from supervisor.ops.regression_gates import run_regression_gates
+
+            runtime_dir = app.paths.runtime_dir
+            candidate_path = Path(args.policy_path) if args.policy_path else None
+            if candidate_path is None and args.policy_version:
+                candidate_path = runtime_dir / "policy_versions" / f"policy_{args.policy_version}.yaml"
+            if candidate_path is None:
+                print("Missing --policy-version or --policy-path for ops-regression-gate.", file=sys.stderr)
+                sys.exit(1)
+            _, _, active_path = load_active_policy(runtime_dir, supervisor_config_dir / "policy.yaml")
+            result = run_regression_gates(
+                episode_set=args.episode_set or "tick_scenarios_v1",
+                runtime_dir=runtime_dir,
+                candidate_policy_path=candidate_path,
+                baseline_policy_path=active_path,
+                gate_suite=args.gate_suite,
+            )
+            if args.policy_version:
+                out_dir = runtime_dir / "regression" / args.policy_version
+                out_dir.mkdir(parents=True, exist_ok=True)
+                (out_dir / "gate_report.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
+                (out_dir / "gate_report.md").write_text(_render_gate_report_md(result), encoding="utf-8")
+            print(json.dumps(result, indent=2))
+            sys.exit(0 if result.get("passed") else 1)
+        elif args.command == "ops-daily-report":
+            from supervisor.ops.daily_report import generate_daily_report
+
+            target_date = date.today()
+            if args.date:
+                try:
+                    target_date = date.fromisoformat(args.date)
+                except ValueError:
+                    print("Invalid date format. Use YYYY-MM-DD.", file=sys.stderr)
+                    sys.exit(1)
+            runtime_dir = app.paths.runtime_dir
+            telemetry_path = None
+            if app.config.telemetry_persist_path:
+                telemetry_path = Path(app.config.telemetry_persist_path)
+                if not telemetry_path.is_absolute():
+                    telemetry_path = (app.paths.qe_root / telemetry_path).resolve()
+            report_dir = runtime_dir / "reports" / "daily"
+            report_path = generate_daily_report(target_date, runtime_dir, report_dir, telemetry_path=telemetry_path)
+            print(f"Daily report written to: {report_path}")
+        elif args.command == "ops-rollback":
+            from supervisor.policy_store import rollback_to
+
+            if not args.policy_version:
+                print("Missing --policy-version for ops-rollback.", file=sys.stderr)
+                sys.exit(1)
+            runtime_dir = app.paths.runtime_dir
+            path = rollback_to(runtime_dir, args.policy_version)
+            print(f"Active policy set to {path}")
     except Exception as exc:
         logging.getLogger(__name__).exception("Command '%s' failed: %s", args.command, exc)
         sys.exit(1)
@@ -1355,6 +1550,94 @@ def _coerce_float(value: object) -> Optional[float]:
         return float(value)
     except (TypeError, ValueError):
         return None
+
+
+def _init_ops_context(
+    project_root: Path,
+    policy_version: str,
+    note: str,
+    config_snapshot: Dict[str, Any],
+) -> tuple[RunContext, ActionLedger, float]:
+    ctx = RunContext.create(
+        project_root=project_root,
+        policy_version=policy_version,
+        model_version="none",
+        note=note,
+    )
+    ctx.write_config_snapshot({"ops_command": note, "payload": config_snapshot})
+    ctx.log_event("RUN_START", {"command": note})
+    ledger = ActionLedger(ctx.run_dir / "action_ledger.jsonl", ctx)
+    return ctx, ledger, time.time()
+
+
+def _finalize_ops_context(
+    ctx: RunContext,
+    start_ts: float,
+    result: Dict[str, Any],
+    finalize_only: bool = False,
+) -> None:
+    if getattr(ctx, "_ops_finalized", False):
+        return
+    if finalize_only and (ctx.run_dir / "summary.json").exists():
+        return
+    duration = int(time.time() - start_ts)
+    ctx.log_event("RUN_END", {"duration_s": duration, "result": result})
+    summary = {
+        "start_ts_utc": datetime.fromtimestamp(start_ts, tz=timezone.utc).isoformat(),
+        "end_ts_utc": datetime.now(timezone.utc).isoformat(),
+        "duration_s": duration,
+        "errors_count": ctx.errors_count,
+        "result": result,
+    }
+    ctx.write_summary(summary)
+    ctx.write_artifacts_manifest()
+    setattr(ctx, "_ops_finalized", True)
+
+
+def _last_run_has_critical_events(runs_dir: Path) -> bool:
+    critical_types = {"ERROR", "KILL_SWITCH", "RISK_LIMIT_BREACH", "HALT"}
+    if not runs_dir.exists():
+        return False
+    run_dirs = sorted([p for p in runs_dir.iterdir() if p.is_dir()], key=lambda p: p.stat().st_mtime, reverse=True)
+    for run_dir in run_dirs:
+        summary_path = run_dir / "summary.json"
+        if summary_path.exists():
+            try:
+                summary = json.loads(summary_path.read_text(encoding="utf-8"))
+            except json.JSONDecodeError:
+                summary = {}
+            if int(summary.get("errors_count") or 0) > 0:
+                return True
+            events_path = run_dir / "events.jsonl"
+            if events_path.exists():
+                try:
+                    for line in events_path.read_text(encoding="utf-8").splitlines():
+                        if not line.strip():
+                            continue
+                        payload = json.loads(line)
+                        if str(payload.get("type")) in critical_types:
+                            return True
+                except json.JSONDecodeError:
+                    return True
+            break
+    return False
+
+
+def _render_gate_report_md(result: Dict[str, Any]) -> str:
+    lines = [
+        "# Regression Gate Report",
+        "",
+        f"Passed: {bool(result.get('passed'))}",
+        f"Gate suite: {result.get('gate_suite')}",
+        "",
+        "## Checks",
+    ]
+    for check in result.get("checks", []):
+        status = "PASS" if check.get("passed") else "FAIL"
+        lines.append(
+            f"- [{status}] {check.get('name')}: actual={check.get('actual')} limit={check.get('limit')}"
+        )
+    return "\n".join(lines) + "\n"
 
 
 if __name__ == "__main__":
