@@ -1,0 +1,53 @@
+# Scenario thresholds + cutter defaults (safe, deterministic).
+
+defaults:
+  window_ticks: 2000
+  pre_roll_ticks: 300
+  post_roll_ticks: 300
+  min_event_ticks: 500
+  warmup_ticks: 300
+  stride_ticks: 200
+  max_episodes_per_scenario: 50
+  label_horizons: [1, 5, 15]
+  depth_max_age_ms: 3000
+  output_format: "csv"  # csv | parquet
+  split_train_pct: 0.7
+  split_val_pct: 0.15
+  split_test_pct: 0.15
+  holdout_scenarios: ["S20", "S21", "S22", "S23", "S24"]
+
+symbol_classes:
+  btc: ["BTCUSDT", "BTC-USDT"]
+
+thresholds:
+  default:
+    strong_trend_bps_per_min: 30
+    mild_trend_bps_per_min: 10
+    trend_r2_min: 0.7
+    mild_r2_min: 0.4
+    range_slope_bps_per_min: 5
+    range_tight_bps: 20
+    range_wide_bps: 80
+    vol_low_bps: 1.0
+    vol_high_bps: 5.0
+    vol_spike_bps: 10.0
+    spread_tight_bps: 1.0
+    spread_wide_bps: 5.0
+    depth_deep_usd: 10000
+    depth_thin_usd: 2000
+    imbalance_strong: 0.25
+    imbalance_flip_max: 0.1
+    alternation_high: 0.6
+    alternation_low: 0.3
+    tick_rate_high: 5.0
+    tick_rate_low: 0.5
+    burstiness_high: 3.0
+    gap_bps: 20
+    breakout_bps: 30
+    fakeout_revert_bps: 10
+
+  btc:
+    range_tight_bps: 15
+    range_wide_bps: 60
+    vol_low_bps: 0.8
+    vol_high_bps: 4.0
