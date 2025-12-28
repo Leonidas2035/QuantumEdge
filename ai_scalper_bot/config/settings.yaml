@@ -16,6 +16,10 @@ app:
   warmup_seconds: 300
   warmup_seconds: 300
 
+data:
+  max_tick_staleness_ms: 5000
+  max_book_staleness_ms: 5000
+
 binance:
   base_url: "https://api.binance.com"
   ws_spot_base: "wss://stream.binance.com:9443"
@@ -52,6 +56,33 @@ risk:
   max_position_risk: 0.5    # %
   limit_slippage: 0.08      # 0.08% max
   disable_on_error: true
+  max_position_notional: 0
+  max_position_pct_equity: 0.1
+  max_leverage: 2.0
+  max_orders_per_min: 30
+  max_trades_per_hour: 60
+  max_daily_loss_pct: 0.05
+  max_drawdown_pct: 0.1
+  max_slippage_bps: 20.0
+  max_spread_bps: 5.0
+  min_depth: 1000.0
+  cooldown_ms_after_fill: 500
+  allow_exit_on_block: true
+  circuit_breakers:
+    cooldown_sec: 30
+    exchange_errors_max: 5
+    exchange_errors_window_sec: 60
+    spread_bps: 5.0
+    spread_wide_max: 3
+    spread_wide_window_sec: 30
+    latency_ms: 1500
+    latency_high_max: 5
+    latency_high_window_sec: 60
+    slippage_bps: 20.0
+    data_stale_max: 3
+    data_stale_window_sec: 60
+    max_drawdown_pct: 0.1
+    max_daily_loss_pct: 0.05
   session:
     max_trades_per_hour: 20
     max_daily_loss_abs: 50
@@ -101,6 +132,24 @@ supervisor_snapshots:
 ops:
   status_file: "state/bot_status.json"
   write_interval_seconds: 2
+  metrics_file: "runtime/status/metrics.json"
+  metrics_interval_seconds: 5
+  state_dir: "runtime/state"
+
+telemetry:
+  enabled: true
+  sink: "http"
+  http_url: "http://127.0.0.1:8765/api/v1/telemetry/ingest"
+  file_path: "runtime/telemetry.jsonl"
+  flush_interval_sec: 1
+  max_queue: 1000
+  http_timeout_s: 0.3
+  max_event_size_kb: 32
+  events_path: "runtime/events/events.jsonl"
+  events_max_mb: 5
+  events_backups: 3
+  sample:
+    latency_every_n: 10
 
 ml:
   enabled: true

@@ -3,9 +3,10 @@ import time
 import logging
 import json
 import os
+from collections import deque
 from pathlib import Path
 from datetime import datetime, timezone
-from typing import Optional, Dict, Any
+from typing import Optional, Dict, Any, List
 
 import yaml
 
@@ -35,9 +36,15 @@ from bot.supervisor_client import SupervisorClient, SupervisorClientConfig
 from bot.integrations.supervisor_snapshot_client import SupervisorSnapshotClient
 from bot.monitoring.supervisor_snapshot_monitor import run_supervisor_snapshot_monitor
 from bot.risk.scalp_guards import ScalpGuard
+from bot.risk.safety_gate import SafetyGate, DataFreshnessMonitor
+from bot.risk.circuit_breakers import CircuitBreakerManager
 from bot.ops.status_writer import BotStatusWriter
+from bot.ops.metrics import MetricsTracker
+from bot.state.store import StateStore, OrderRecord
+from bot.state.recovery import recover_state
 from bot.policy.policy_client import PolicyClient
 from bot.policy.policy_gate import policy_allows_entry
+from bot.telemetry.event_writer import EventWriter
 from telemetry.emitter import TelemetryEmitter, TelemetryConfig
 
 _kill_cache = {"ts": 0.0, "active": False, "reason": None}
@@ -224,10 +231,25 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
             max_event_kb=telemetry_max_kb,
         )
     ) if telemetry_enabled else None
+    events_path = Path(telemetry_cfg.get("events_path", "runtime/events/events.jsonl"))
+    if not events_path.is_absolute():
+        events_path = (Path(config.qe_root) / events_path).resolve()
+    events_max_mb = int(telemetry_cfg.get("events_max_mb", 5))
+    events_backups = int(telemetry_cfg.get("events_backups", 3))
+    event_writer = EventWriter(events_path, max_size_mb=events_max_mb, backup_count=events_backups)
 
-    def emit_event(event_type: str, data: Dict[str, Any], symbol_override: Optional[str] = None) -> None:
+    def emit_event(event_type: str, data: Dict[str, Any], symbol_override: Optional[str] = None, component: str = "bot") -> None:
         if telemetry_emitter:
             telemetry_emitter.emit_event(event_type, data, symbol_override)
+        event_writer.write(
+            {
+                "type": event_type,
+                "component": component,
+                "symbol": symbol_override,
+                "data": data,
+                "mode": str(config.get("app.mode", "paper")).lower(),
+            }
+        )
     mode = str(config.get("app.mode", "paper")).lower()
     demo_mode = mode == "demo"
     data_source = _resolve_data_source()
@@ -277,11 +299,22 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
     missing_required_models = False
     missing_models_notice_logged = False
 
+    ops_cfg = config.get("ops", {}) or {}
     if status_writer is None:
-        ops_cfg = config.get("ops", {}) or {}
         status_file = Path(ops_cfg.get("status_file", "state/bot_status.json"))
         write_interval = float(ops_cfg.get("write_interval_seconds", 2))
         status_writer = BotStatusWriter(status_file, interval_seconds=write_interval)
+    metrics_file = Path(ops_cfg.get("metrics_file", "runtime/status/metrics.json"))
+    if not metrics_file.is_absolute():
+        metrics_file = (Path(config.qe_root) / metrics_file).resolve()
+    metrics_interval = float(ops_cfg.get("metrics_interval_seconds", 5) or 5)
+    metrics_writer = BotStatusWriter(metrics_file, interval_seconds=metrics_interval)
+    metrics_tracker = MetricsTracker()
+    state_dir = Path(ops_cfg.get("state_dir", "runtime/state"))
+    if not state_dir.is_absolute():
+        state_dir = (Path(config.qe_root) / state_dir).resolve()
+    state_store = StateStore(state_dir)
+    recover_state(state_dir)
 
     exchange_name = str(os.getenv("EXCHANGE") or config.get("app.exchange") or config.get("exchange") or "binance_demo").lower()
     demo_cfg_key = "bingx_demo" if exchange_name == "bingx_swap" else "binance_demo"
@@ -331,9 +364,14 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
     if scalp_enabled and data_source != "ws":
         print("[WARN] Disabling scalp mode because live depth is not available (data_source != ws).")
         scalp_enabled = False
-    circuit_cfg = (config.get("decision", {}) or {}).get("circuit_breakers", {}) or {}
-    max_daily_loss = float(circuit_cfg.get("max_daily_loss", 0.0) or 0.0)
-    max_drawdown_abs = float(circuit_cfg.get("max_drawdown_abs", 0.0) or 0.0)
+    risk_cfg = config.get("risk", {}) or {}
+    data_cfg = config.get("data", {}) or {}
+    freshness = DataFreshnessMonitor(
+        max_tick_ms=int(data_cfg.get("max_tick_staleness_ms", 0) or 0),
+        max_book_ms=int(data_cfg.get("max_book_staleness_ms", 0) or 0),
+    )
+    circuit_breakers = CircuitBreakerManager(risk_cfg.get("circuit_breakers", {}) or {})
+    safety_gate = SafetyGate(risk_cfg)
     scalp_guard: Optional[ScalpGuard] = None
     order_policy: Optional[OrderPolicy] = None
     if scalp_enabled:
@@ -445,8 +483,7 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
             "execution_mode": execution_mode,
             "trading_enabled": not observer_mode,
             "last_realized": 0.0,
-            "circuit_pause_until": 0.0,
-            "circuit_reason": None,
+            "breaker_reason": None,
             "depth_warned": False,
             "ml_enabled": ml_enabled,
             "ml_fail_mode": ml_fail_mode,
@@ -463,6 +500,8 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
             "last_trade_ms": None,
             "drift_monitor": drift_monitor,
             "last_entry": None,
+            "orders_window": deque(),
+            "stale_warned": False,
         }
 
     if not engines:
@@ -555,10 +594,14 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
                 evt_symbol = event.get("s", symbol)
             except Exception:
                 emit_event("error", {"code": "event_parse", "message": "Failed to parse market event", "where": "event_stream"}, symbol)
+                metrics_tracker.record_error("event_parse")
                 continue
             if evt_symbol not in engines:
                 continue
 
+            freshness.update_tick(ts)
+            if event.get("b") is not None and event.get("a") is not None:
+                freshness.update_book(ts)
             await data_manager.save_trade(event)
 
             ctx = engines[evt_symbol]
@@ -571,17 +614,37 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
             risk_mod = ctx["risk_mod"]
             llm_enabled = ctx["llm_enabled"]
             trading_enabled = ctx["trading_enabled"]
-            circuit_pause_until = ctx.get("circuit_pause_until", 0.0)
-            circuit_reason = ctx.get("circuit_reason")
             now_s = time.time()
-            skip_trading = bool(circuit_pause_until and now_s < circuit_pause_until)
-            if circuit_pause_until and now_s >= circuit_pause_until:
-                ctx["circuit_pause_until"] = 0.0
-                ctx["circuit_reason"] = None
+            breaker_status = circuit_breakers.status(now_s)
+            now_ms = int(now_s * 1000)
+            data_stale = freshness.is_stale(now_ms)
+            circuit_breakers.record_data_stale(data_stale, now_s)
+            skip_reason = None
+            skip_trading = bool(breaker_status.active or data_stale)
             kill = _kill_switch_active()
             if kill.get("active"):
                 skip_trading = True
-                ctx["circuit_reason"] = kill.get("reason") or "kill_switch"
+                skip_reason = "KILL_SWITCH_ACTIVE"
+            elif breaker_status.active:
+                skip_reason = f"CIRCUIT_BREAKER_ACTIVE:{breaker_status.reason}"
+            elif data_stale:
+                skip_reason = "DATA_STALE"
+            if breaker_status.active and breaker_status.reason != ctx.get("breaker_reason"):
+                ctx["breaker_reason"] = breaker_status.reason
+                metrics_tracker.record_breaker(str(breaker_status.reason))
+                emit_event(
+                    "breaker_trip",
+                    {"reason": breaker_status.reason, "cooldown_remaining_s": breaker_status.cooldown_remaining},
+                    evt_symbol,
+                    component="risk",
+                )
+            if not breaker_status.active and ctx.get("breaker_reason"):
+                ctx["breaker_reason"] = None
+            if data_stale and not ctx.get("stale_warned"):
+                emit_event("data_stale", freshness.snapshot(now_ms), evt_symbol, component="risk")
+                ctx["stale_warned"] = True
+            if not data_stale:
+                ctx["stale_warned"] = False
 
             if hasattr(trader, "check_brackets"):
                 try:
@@ -667,6 +730,7 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
                     approved = True
                     print(f"[WARN] LLM risk moderator failed; falling back to rules. err={exc}")
                     emit_event("error", {"code": "llm_risk_moderator", "message": str(exc), "where": "risk_moderator"}, evt_symbol)
+                    metrics_tracker.record_error("llm_risk_moderator")
 
             policy = policy_client.get_effective_policy()
             policy_snapshot = {"mode": policy.mode, "allow_trading": policy.allow_trading, "reason": policy.reason}
@@ -675,7 +739,8 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
                 last_policy_snapshot = policy_snapshot
 
             position_state = 1 if trader.position > 0 else (-1 if trader.position < 0 else 0)
-            if trading_enabled and not skip_trading:
+            stats = engine.trade_stats.setdefault(evt_symbol, TradeStats())
+            if trading_enabled:
                 decision = engine.decide(
                     symbol=evt_symbol,
                     ensemble=meta,
@@ -684,6 +749,15 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
                     approved=approved,
                     warmup_ready=True,
                 )
+                if skip_trading and decision.action == DecisionAction.ENTER:
+                    metrics_tracker.record_reject(skip_reason or "RISK_GATE_DENY")
+                    emit_event(
+                        "safety_gate",
+                        {"allow": False, "reason": skip_reason or "RISK_GATE_DENY"},
+                        evt_symbol,
+                        component="risk",
+                    )
+                    decision = None
                 if decision.action == DecisionAction.ENTER and not policy_allows_entry(decision.action, policy):
                     logging.getLogger("policy_client").info(
                         "Policy blocks entry for %s (mode=%s allow_trading=%s reason=%s)",
@@ -692,6 +766,7 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
                         policy.allow_trading,
                         policy.reason,
                     )
+                    metrics_tracker.record_reject("POLICY_BLOCK")
                     decision = None
                 elif decision.action == DecisionAction.ENTER:
                     ml_state = ctx.get("ml_state", {})
@@ -719,6 +794,7 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
                         counts = ctx.get("ml_gate_counts", {})
                         for reason in gate.reasons or ["ML_GATE_BLOCK"]:
                             counts[reason] = int(counts.get(reason, 0)) + 1
+                            metrics_tracker.record_reject(reason)
                         ctx["ml_gate_counts"] = counts
                         if telemetry_emitter:
                             emit_event(
@@ -750,6 +826,7 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
                 if decision and decision.action not in (DecisionAction.NO_TRADE, DecisionAction.HOLD):
                     # Map decision to existing trader actions
                     execution_mode = ctx["execution_mode"]
+                    gate_info = None
                     if decision.action == DecisionAction.ENTER and isinstance(execution_mode, ScalpExecutionMode):
                         gate_info = execution_mode.evaluate_entry(
                             decision,
@@ -758,6 +835,8 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
                             signal=pseudo_signal,
                             last_event=event,
                         )
+                        if isinstance(gate_info, dict):
+                            circuit_breakers.record_spread(gate_info.get("spread_bps"), now_s)
                         if telemetry_emitter:
                             emit_event(
                                 "scalp_gate",
@@ -770,7 +849,61 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
                                 evt_symbol,
                             )
                         if not gate_info.get("ok"):
+                            metrics_tracker.record_reject(str(gate_info.get("reason")))
                             decision = None
+                    if decision:
+                        summary = trader.summary()
+                        equity_start = float(demo_cfg.get("equity_override", 0) or 0)
+                        realized = float(summary.get("realized_pnl", 0.0))
+                        unrealized = float(summary.get("open_pnl", 0.0))
+                        equity_val = equity_start + realized + unrealized
+                        equity_val = equity_val if equity_val > 0 else None
+                        orders_window = ctx.get("orders_window")
+                        if isinstance(orders_window, deque):
+                            while orders_window and (now_s - orders_window[0]) > 60:
+                                orders_window.popleft()
+                            orders_last_min = len(orders_window)
+                        else:
+                            orders_last_min = 0
+                        action = "close" if decision.action == DecisionAction.EXIT else ("buy" if decision.direction == "long" else "sell")
+                        reduce_only = decision.action == DecisionAction.EXIT
+                        position_notional = abs(float(summary.get("position", 0.0)) * price)
+                        daily_pnl = stats.total_pnl_window(86400)
+                        daily_loss_pct = (abs(min(daily_pnl, 0.0)) / equity_val) if equity_val else None
+                        drawdown_pct = (stats.max_drawdown_abs() / equity_val) if equity_val else None
+                        intent = {
+                            "action": action,
+                            "reduce_only": reduce_only,
+                            "size": float(decision.size or 0.0),
+                            "price": float(price),
+                            "notional": float(price * float(decision.size or 0.0)),
+                            "equity": equity_val,
+                            "position_notional": position_notional,
+                            "orders_last_min": orders_last_min,
+                            "trades_last_hour": stats.trades_last_hour(),
+                            "daily_loss_pct": daily_loss_pct,
+                            "drawdown_pct": drawdown_pct,
+                            "spread_bps": gate_info.get("spread_bps") if isinstance(gate_info, dict) else None,
+                            "depth_usd": gate_info.get("depth_usd") if isinstance(gate_info, dict) else None,
+                        }
+                        safety = safety_gate.evaluate(
+                            intent,
+                            breaker_reason=breaker_status.reason if breaker_status.active else None,
+                            data_stale=data_stale,
+                            kill_switch=bool(kill.get("active")),
+                        )
+                        if not safety.allow and decision.action == DecisionAction.ENTER:
+                            metrics_tracker.record_reject(safety.reason)
+                            emit_event("safety_gate", {"allow": False, "reason": safety.reason, "details": safety.details}, evt_symbol, component="risk")
+                            decision = None
+                        if decision:
+                            client_order_id = state_store.generate_client_order_id(evt_symbol, action, action, ts, float(decision.size or 0.0))
+                            if decision.action == DecisionAction.ENTER and state_store.is_duplicate(client_order_id):
+                                metrics_tracker.record_reject("IDEMPOTENT_DUPLICATE")
+                                emit_event("safety_gate", {"allow": False, "reason": "IDEMPOTENT_DUPLICATE"}, evt_symbol, component="risk")
+                                decision = None
+                            else:
+                                ctx["client_order_id"] = client_order_id
                     if _shadow_skip(shadow_mode, decision):
                         if telemetry_emitter:
                             emit_event(
@@ -816,8 +949,16 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
                                 decision_resp.get("code"),
                                 decision_resp.get("reason"),
                             )
+                            metrics_tracker.record_reject("SUPERVISOR_BLOCK")
+                            emit_event(
+                                "safety_gate",
+                                {"allow": False, "reason": "SUPERVISOR_BLOCK", "details": decision_resp},
+                                evt_symbol,
+                                component="supervisor",
+                            )
                             return False
 
+                        client_order_id = ctx.get("client_order_id")
                         if telemetry_emitter:
                             emit_event(
                                 "execution_intent",
@@ -827,19 +968,59 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
                                     "direction": decision.direction,
                                     "size": decision.size,
                                     "order_type": decision.order_type,
+                                    "client_order_id": client_order_id,
                                 },
                                 evt_symbol,
                             )
-                        result = await execution_mode.execute_trade(
-                            decision,
-                            price,
-                            ts,
-                            evt_symbol,
-                            trader,
-                            allow_fn=_supervisor_allows,
-                            signal=pseudo_signal,
-                            last_event=event,
-                        )
+                        if client_order_id:
+                            state_store.record_order(
+                                OrderRecord(
+                                    client_order_id=client_order_id,
+                                    symbol=evt_symbol,
+                                    side="BUY" if decision.direction == "long" else "SELL",
+                                    size=float(decision.size or 0.0),
+                                    price=float(price),
+                                    status="sent",
+                                    created_ts=int(ts),
+                                )
+                            )
+                            state_store.append_ledger(
+                                {
+                                    "type": "order_intent",
+                                    "symbol": evt_symbol,
+                                    "client_order_id": client_order_id,
+                                    "action": decision.action,
+                                    "direction": decision.direction,
+                                    "size": float(decision.size or 0.0),
+                                    "price": float(price),
+                                    "ts": int(ts),
+                                }
+                            )
+                            orders_window = ctx.get("orders_window")
+                            if isinstance(orders_window, deque):
+                                orders_window.append(now_s)
+                            metrics_tracker.incr("orders")
+                        try:
+                            result = await execution_mode.execute_trade(
+                                decision,
+                                price,
+                                ts,
+                                evt_symbol,
+                                trader,
+                                allow_fn=_supervisor_allows,
+                                signal=pseudo_signal,
+                                last_event=event,
+                            )
+                        except Exception as exc:
+                            metrics_tracker.record_error("execution_error")
+                            circuit_breakers.record_exchange_error(now_s)
+                            emit_event(
+                                "error",
+                                {"code": "execution_error", "message": str(exc), "where": "execution_mode"},
+                                evt_symbol,
+                                component="execution",
+                            )
+                            continue
                         if result.skipped and result.reason not in {"noop"}:
                             logging.getLogger("execution").debug("Execution skipped (%s)", result.reason)
                         if result.executed:
@@ -850,7 +1031,7 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
                                     "qty": result.size,
                                     "price": price,
                                     "order_type": "market",
-                                    "client_order_id": None,
+                                    "client_order_id": client_order_id,
                                 },
                                 evt_symbol,
                             )
@@ -861,10 +1042,33 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
                                     "qty": result.size,
                                     "price": price,
                                     "fee": None,
-                                    "order_id": None,
+                                    "order_id": client_order_id,
                                 },
                                 evt_symbol,
                             )
+                            if client_order_id:
+                                state_store.record_order(
+                                    OrderRecord(
+                                        client_order_id=client_order_id,
+                                        symbol=evt_symbol,
+                                        side="BUY" if result.action == "buy" else "SELL",
+                                        size=float(result.size or 0.0),
+                                        price=float(price),
+                                        status="filled",
+                                        created_ts=int(ts),
+                                    )
+                                )
+                                state_store.append_ledger(
+                                    {
+                                        "type": "order_fill",
+                                        "symbol": evt_symbol,
+                                        "client_order_id": client_order_id,
+                                        "action": result.action,
+                                        "size": float(result.size or 0.0),
+                                        "price": float(price),
+                                        "ts": int(ts),
+                                    }
+                                )
                             if result.action in {"buy", "sell"}:
                                 ctx["last_entry"] = {
                                     "entry_ts": ts,
@@ -893,6 +1097,20 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
                                     }
                                     await supervisor_client.send_trade_result(payload)
 
+                            summary_after = trader.summary()
+                            state_store.save_position_state(
+                                {
+                                    "symbol": evt_symbol,
+                                    "position": summary_after.get("position", 0.0),
+                                    "entry_price": summary_after.get("entry_price"),
+                                    "realized_pnl": summary_after.get("realized_pnl", 0.0),
+                                    "open_pnl": summary_after.get("open_pnl", 0.0),
+                                }
+                            )
+                            metrics_tracker.incr("fills")
+                            if result.action in {"buy", "sell"}:
+                                metrics_tracker.incr("trades")
+
                         if telemetry_emitter:
                             emit_event(
                                 "execution_result",
@@ -905,6 +1123,8 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
                                 },
                                 evt_symbol,
                             )
+                        if not result.executed and result.reason and result.reason not in {"noop"}:
+                            metrics_tracker.record_reject(result.reason)
                         if result.executed and result.action in {"buy", "sell"}:
                             ctx["last_trade_ms"] = ts
 
@@ -985,45 +1205,57 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
 
                 await supervisor_client.send_heartbeat_if_due(build_payload)
 
-            # trade stats + circuit breakers
-            losses = stats.loss_streak(engine.loss_cfg.get("window_trades", 10), engine.loss_cfg.get("max_losses", 3))
-            overtrading = stats.trades_last_hour() >= engine.over_cfg.get("max_trades_per_hour", 60)
-            daily_pnl = stats.total_pnl()
+            # trade stats + circuit breakers + metrics snapshot
+            daily_pnl = stats.total_pnl_window(86400)
             dd_abs = stats.max_drawdown_abs()
-            triggered = None
-            if losses >= engine.loss_cfg.get("max_losses", 3):
-                triggered = "loss_streak"
-            if overtrading:
-                triggered = triggered or "max_trades_per_hour"
-            if max_daily_loss > 0 and daily_pnl <= -abs(max_daily_loss):
-                triggered = triggered or "max_daily_loss"
-            if max_drawdown_abs > 0 and dd_abs >= max_drawdown_abs:
-                triggered = triggered or "max_drawdown_abs"
+            summary_now = trader.summary()
+            equity_start = float(demo_cfg.get("equity_override", 0) or 0)
+            equity_now = equity_start + float(summary_now.get("realized_pnl", 0.0)) + float(summary_now.get("open_pnl", 0.0))
+            equity_now = equity_now if equity_now > 0 else None
+            daily_loss_pct = (abs(min(daily_pnl, 0.0)) / equity_now) if equity_now else None
+            drawdown_pct = (dd_abs / equity_now) if equity_now else None
+            circuit_breakers.record_daily_loss(daily_loss_pct, now_s)
+            circuit_breakers.record_drawdown(drawdown_pct, now_s)
 
-            if triggered and not ctx.get("circuit_pause_until"):
-                cooldown = engine.loss_cfg.get("cooldown_seconds", 600)
-                ctx["circuit_pause_until"] = time.time() + cooldown
-                ctx["circuit_reason"] = triggered
-                print(f"[WARN] Circuit breaker triggered for {evt_symbol}: {triggered}; cooldown {cooldown}s")
-
-              status_extra = {
-                  "circuit_paused": bool(ctx.get("circuit_pause_until", 0) and time.time() < ctx.get("circuit_pause_until", 0)),
-                  "circuit_reason": ctx.get("circuit_reason"),
-                  "trades_last_hour": stats.trades_last_hour(),
-                  "total_pnl": stats.total_pnl(),
-                  "max_drawdown_abs": stats.max_drawdown_abs(),
-                  "risk_block": engine.last_risk_state.get(evt_symbol, ""),
-                  "kill_switch": bool(_kill_switch_active().get("active")),
-                  "kill_reason": _kill_switch_active().get("reason"),
-                  "policy_mode": policy.mode,
-                  "policy_allow_trading": policy.allow_trading,
-                  "policy_reason": policy.reason,
-                  "ml_policy": ctx.get("ml_policy"),
-                  "ml_gate_counts": ctx.get("ml_gate_counts"),
-                  "shadow_mode": shadow_mode,
-              }
+            breaker_snapshot = circuit_breakers.snapshot()
+            freshness_snapshot = freshness.snapshot(now_ms)
+            reject_counts = {k.replace("reject:", ""): v for k, v in metrics_tracker.counters.items() if str(k).startswith("reject:")}
+            top_rejects = sorted(reject_counts.items(), key=lambda item: item[1], reverse=True)[:5]
+            status_extra = {
+                "circuit_active": breaker_snapshot.get("active"),
+                "circuit_reason": breaker_snapshot.get("reason"),
+                "circuit_cooldown_s": breaker_snapshot.get("cooldown_remaining_s"),
+                "trades_last_hour": stats.trades_last_hour(),
+                "total_pnl": stats.total_pnl(),
+                "max_drawdown_abs": stats.max_drawdown_abs(),
+                "risk_block": engine.last_risk_state.get(evt_symbol, ""),
+                "kill_switch": bool(_kill_switch_active().get("active")),
+                "kill_reason": _kill_switch_active().get("reason"),
+                "policy_mode": policy.mode,
+                "policy_allow_trading": policy.allow_trading,
+                "policy_reason": policy.reason,
+                "ml_policy": ctx.get("ml_policy"),
+                "ml_gate_counts": ctx.get("ml_gate_counts"),
+                "shadow_mode": shadow_mode,
+                "tick_age_ms": freshness_snapshot.get("tick_age_ms"),
+                "book_age_ms": freshness_snapshot.get("book_age_ms"),
+                "reject_top": top_rejects,
+            }
 
             write_status(status_extra)
+            metrics_writer.update(
+                metrics_tracker.snapshot(
+                    {
+                        "symbol": evt_symbol,
+                        "mode": mode,
+                        "policy_mode": policy.mode,
+                        "policy_allow_trading": policy.allow_trading,
+                        "tick_age_ms": freshness_snapshot.get("tick_age_ms"),
+                        "book_age_ms": freshness_snapshot.get("book_age_ms"),
+                        "breaker": breaker_snapshot,
+                    }
+                )
+            )
 
             if once:
                 break
@@ -1031,6 +1263,7 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
             if telemetry_emitter and latency_every_n > 0 and latency_counter % latency_every_n == 0:
                 loop_ms = (time.perf_counter() - loop_start) * 1000.0
                 emit_event("latency", {"loop_ms": loop_ms}, evt_symbol)
+                circuit_breakers.record_latency(loop_ms, now_s)
             await asyncio.sleep(0.02)
     finally:
         if snapshot_monitor_task:
@@ -1044,6 +1277,10 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
         except Exception:
             pass
         write_status({"is_running": False})
+        try:
+            metrics_writer.flush(metrics_tracker.snapshot({"state": "stopped"}))
+        except Exception:
+            pass
 
 
 if __name__ == "__main__":

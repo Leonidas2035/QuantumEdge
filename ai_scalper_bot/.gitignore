@@ -15,12 +15,17 @@ storage/models/
 storage/datasets/
 state/
 logs/
+runtime/
 *.log
 build/
 dist/
 run_bot.exe
 run_bot.exe.spec
 *.exe
+
+# Allow code under bot/state (runtime state files still ignored above)
+!bot/state/
+!bot/state/**
 
 # Secrets
 config/secrets.env
