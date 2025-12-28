@@ -20,7 +20,8 @@ from bot.ml.signal_model.model import SignalOutput
 from bot.ml.signal_model.online_features import OnlineFeatureBuilder
 from bot.ml.signal_model.registry import load_registry, find_entry, feature_schema_hash
 from bot.ml.runtime_models import load_runtime_models, resolve_models_root
-from bot.ml.features.builder import schema_version as ml_schema_version, feature_names as ml_feature_names
+from bot.ml.runtime.policy_loader import load_policy, load_policy_override, resolve_policy_path
+from bot.ml.features.builder import schema_hash as ml_schema_hash, schema_version as ml_schema_version, feature_names as ml_feature_names
 from bot.ml.drift_monitor import DriftMonitor
 from bot.trading.executor import BinanceDemoExecutor
 from bot.trading.bingx_executor import BingXDemoExecutor
@@ -230,6 +231,21 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
         ml_snapshot_interval = 30.0
     ml_horizons = list(ml_cfg.get("horizons", [1, 5, 15]))
     ml_thresholds_cfg = _parse_ml_thresholds(ml_cfg, ml_horizons)
+    policy_path = resolve_policy_path(ml_cfg, Path(config.qe_root))
+    if policy_path:
+        raw_policy = load_policy(policy_path)
+        if not raw_policy:
+            print(f"[WARN] ML policy path set but could not load: {policy_path}")
+        elif raw_policy.schema_hash and raw_policy.schema_hash != ml_schema_hash():
+            print(f"[WARN] ML policy schema mismatch; ignoring policy at {policy_path}")
+        else:
+            policy_override = load_policy_override(ml_cfg, Path(config.qe_root))
+            if policy_override:
+                if policy_override.horizons:
+                    ml_horizons = policy_override.horizons
+                if policy_override.thresholds:
+                    ml_thresholds_cfg = policy_override.thresholds
+                print(f"[INFO] ML policy override loaded: {policy_override.path}")
     ml_feature_list = ml_feature_names()
     observer_mode = not require_models
     observer_notice_logged = False
