@@ -1,0 +1,45 @@
+autopilot:
+  enabled: false
+  target_state: "SHADOW"
+  allowed_states:
+    - "OFF"
+    - "SHADOW"
+    - "LIVE_DEMO"
+    - "LIVE"
+    - "DEGRADED"
+    - "HALTED"
+  min_dwell_sec: 300
+  max_transitions_per_hour: 6
+  max_actions_per_hour: 12
+  check_interval_sec: 10
+  safe_hours: []
+
+  metrics:
+    url: ""
+    path: "ai_scalper_bot/runtime/status/metrics.json"
+    events_path: "ai_scalper_bot/runtime/events/events.jsonl"
+
+  quality:
+    breaker_storm_threshold: 3
+    breaker_storm_window_sec: 300
+    coverage_min: 0.2
+    coverage_window_sec: 300
+    latency_p95_ms: 1500
+    data_stale_ms: 5000
+    data_stale_window_sec: 300
+    policy_mismatch_reject_ratio: 0.3
+
+  remediation:
+    restart_max_per_hour: 2
+    restart_cooldown_sec: 300
+    disable_entries_on_degrade: true
+
+  policy:
+    symbol: "BTCUSDT"
+    artifacts_dir: "ai_scalper_bot/artifacts/policy"
+    runtime_dir: "ai_scalper_bot/runtime/policy"
+    history_keep: 5
+    shadow_burnin_min_sec: 1800
+    accept_max_breaker_storms: 0
+    accept_max_data_stale_sec: 0
+    accept_min_coverage: 0.2

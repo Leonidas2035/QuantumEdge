@@ -19,6 +19,7 @@ from supervisor.config import (
     load_paths_config,
     load_supervisor_config,
     load_risk_config,
+    load_autopilot_config,
     load_llm_supervisor_config,
     load_meta_supervisor_config,
     load_trend_evaluator_config,
@@ -40,6 +41,7 @@ from supervisor.config import (
     DashboardConfig,
     TsdbConfig,
     TsdbRetentionConfig,
+    AutopilotConfig,
 )
 from supervisor.heartbeat import HeartbeatServer, HeartbeatPayload
 from supervisor.logging_setup import setup_logging
@@ -71,6 +73,8 @@ from supervisor.regime_sm import RegimeStateMachine, RegimeConfig, DirectivesCon
 from supervisor.guards import GuardEvaluator, GuardResult, GuardConfig, load_guard_config
 from supervisor.action_ledger import ActionLedger
 from supervisor.policy_store import resolve_active_policy_path
+from supervisor.autopilot.cli import build_controller, autopilot_enable, autopilot_status, policy_list, policy_rollout, policy_rollback
+from supervisor.autopilot.policy_manager import PolicyManager
 
 try:
     from tools.qe_config import get_qe_paths
@@ -98,6 +102,7 @@ class SupervisorApp:
         regime_cfg: RegimeConfig,
         guard_cfg: GuardConfig,
         directives_cfg: DirectivesConfig,
+        autopilot_cfg: AutopilotConfig,
         project_root: Path,
         logger: Optional[logging.Logger] = None,
     ) -> None:
@@ -114,6 +119,7 @@ class SupervisorApp:
         self.tsdb_config = tsdb_config
         self.dashboard_config = dashboard_config
         self.logger = logger or logging.getLogger(__name__)
+        self.autopilot_cfg = autopilot_cfg
         self.state_dir = paths.runtime_dir / "supervisor"
         self.state_dir.mkdir(parents=True, exist_ok=True)
 
@@ -235,6 +241,7 @@ class SupervisorApp:
         self.regime_cfg = regime_cfg
         self.guard_cfg = guard_cfg
         self.directives_cfg = directives_cfg
+        self.autopilot = build_controller(self, autopilot_cfg, paths)
         self.action_ledger: Optional[ActionLedger] = None
         self._directives_last_hash: Optional[str] = None
 
@@ -355,6 +362,26 @@ class SupervisorApp:
             self.logger.error("Bot restart failed: %s", exc)
         return self.get_bot_status()
 
+    def autopilot_status(self) -> Dict[str, Any]:
+        return self.autopilot.status()
+
+    def autopilot_set_enabled(self, enabled: bool) -> Dict[str, Any]:
+        override_path = self.paths.runtime_dir / "autopilot" / "override.json"
+        return autopilot_enable(override_path, enabled, audit=self.autopilot.audit)
+
+    def policy_manager_for(self, symbol: Optional[str] = None):
+        symbol = symbol or self.autopilot_cfg.policy_symbol
+        artifacts_dir = Path(self.autopilot_cfg.policy_artifacts_dir)
+        if not artifacts_dir.is_absolute():
+            artifacts_dir = (self.paths.qe_root / artifacts_dir).resolve()
+        if symbol:
+            artifacts_dir = artifacts_dir / symbol
+        runtime_dir = Path(self.autopilot_cfg.policy_runtime_dir)
+        if not runtime_dir.is_absolute():
+            runtime_dir = (self.paths.qe_root / runtime_dir).resolve()
+        history_dir = self.paths.runtime_dir / "policy_rollouts" / symbol
+        return PolicyManager(artifacts_dir, runtime_dir, history_dir, self.autopilot_cfg.policy_history_keep)
+
     def status(self) -> None:
         running = self.process_manager.is_running()
         info = self.process_manager.get_info()
@@ -375,6 +402,10 @@ class SupervisorApp:
         if directives_interval <= 0:
             directives_interval = 10
         next_directives_at = time.time()
+        autopilot_interval = int(getattr(self.autopilot_cfg, "check_interval_sec", 10) or 10)
+        if autopilot_interval <= 0:
+            autopilot_interval = 10
+        next_autopilot_at = time.time() + autopilot_interval
         episode_tags = getattr(self, "_episode_tags", {}) if hasattr(self, "_episode_tags") else {}
         self.run_context = RunContext.create(
             project_root=self.project_root,
@@ -487,6 +518,21 @@ class SupervisorApp:
                         if self._update_directives(directives):
                             self.run_context.log_event("DIRECTIVES_UPDATED", {"regime": decision.current_state})
                     next_directives_at = time.time() + directives_interval
+                if time.time() >= next_autopilot_at:
+                    try:
+                        autopilot_status = self.autopilot.tick()
+                        if self.run_context:
+                            self.run_context.log_event(
+                                "AUTOPILOT_STATUS",
+                                {
+                                    "state": autopilot_status.get("state"),
+                                    "target_state": autopilot_status.get("target_state"),
+                                    "issues": autopilot_status.get("issues"),
+                                },
+                            )
+                    except Exception as exc:
+                        self.logger.error("Autopilot tick failed: %s", exc)
+                    next_autopilot_at = time.time() + autopilot_interval
                 time.sleep(2.0)
         except KeyboardInterrupt:
             self._stop_requested = True
@@ -1139,6 +1185,12 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
             "ops-regression-gate",
             "ops-daily-report",
             "ops-rollback",
+            "autopilot-status",
+            "autopilot-enable",
+            "autopilot-disable",
+            "policy-list",
+            "policy-rollout",
+            "policy-rollback",
         ],
         help="Command to execute",
     )
@@ -1190,6 +1242,16 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         help="Explicit policy path for ops-regression-gate.",
     )
     parser.add_argument(
+        "--path",
+        dest="path",
+        help="Policy path for policy-rollout.",
+    )
+    parser.add_argument(
+        "--symbol",
+        dest="symbol",
+        help="Symbol for policy commands (default from autopilot config).",
+    )
+    parser.add_argument(
         "--runs-path",
         dest="runs_path",
         help="Override runs directory for ops reports.",
@@ -1226,6 +1288,7 @@ def build_app(
     dashboard_config = load_dashboard_config(supervisor_config_dir / "dashboard.yaml")
     tsdb_config = load_tsdb_config(supervisor_config_dir / "tsdb.yaml")
     tsdb_retention = load_tsdb_retention_config(supervisor_config_dir / "tsdb_retention.yaml")
+    autopilot_cfg = load_autopilot_config(supervisor_config_dir / "autopilot.yaml")
     control_policy_path = resolve_active_policy_path(paths_config.runtime_dir, supervisor_config_dir / "policy.yaml")
     regime_cfg = load_regime_config(control_policy_path)
     guard_cfg = load_guard_config(control_policy_path)
@@ -1246,6 +1309,7 @@ def build_app(
         regime_cfg,
         guard_cfg,
         directives_cfg,
+        autopilot_cfg,
         project_root,
         logging.getLogger(__name__),
     )
@@ -1538,6 +1602,31 @@ def main(argv: Optional[list[str]] = None) -> None:
             runtime_dir = app.paths.runtime_dir
             path = rollback_to(runtime_dir, args.policy_version)
             print(f"Active policy set to {path}")
+        elif args.command == "autopilot-status":
+            print(json.dumps(autopilot_status(app.autopilot), indent=2))
+        elif args.command == "autopilot-enable":
+            result = app.autopilot_set_enabled(True)
+            print(json.dumps(result, indent=2))
+        elif args.command == "autopilot-disable":
+            result = app.autopilot_set_enabled(False)
+            print(json.dumps(result, indent=2))
+        elif args.command == "policy-list":
+            manager = app.policy_manager_for(args.symbol)
+            print(json.dumps(policy_list(manager), indent=2))
+        elif args.command == "policy-rollout":
+            manager = app.policy_manager_for(args.symbol)
+            if not args.path:
+                print("Missing --path for policy-rollout.", file=sys.stderr)
+                sys.exit(1)
+            print(
+                json.dumps(
+                    policy_rollout(manager, Path(args.path), reason="manual_rollout", audit=app.autopilot.audit),
+                    indent=2,
+                )
+            )
+        elif args.command == "policy-rollback":
+            manager = app.policy_manager_for(args.symbol)
+            print(json.dumps(policy_rollback(manager, reason="manual_rollback", audit=app.autopilot.audit), indent=2))
     except Exception as exc:
         logging.getLogger(__name__).exception("Command '%s' failed: %s", args.command, exc)
         sys.exit(1)

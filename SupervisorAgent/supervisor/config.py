@@ -156,7 +156,7 @@ class TrendEvaluatorConfig:
     model: str
     temperature: float
     timeout_seconds: float
-    history_window_minutes: int
+    history_window_minutes: int = 60
     include_volatility: bool
     include_signal_stats: bool
     max_calls_per_minute: int
@@ -198,6 +198,42 @@ class SnapshotSchedulerConfig:
 
     enabled: bool
     interval_minutes: int
+
+
+@dataclass
+class AutopilotConfig:
+    """Configuration for Supervisor autopilot."""
+
+    enabled: bool
+    target_state: str
+    allowed_states: List[str]
+    min_dwell_sec: int
+    max_transitions_per_hour: int
+    max_actions_per_hour: int
+    check_interval_sec: int
+    safe_hours: List[str]
+    metrics_url: str
+    metrics_path: str
+    events_path: str
+    quality_breaker_storm_threshold: int
+    quality_breaker_storm_window_sec: int
+    quality_coverage_min: float
+    quality_coverage_window_sec: int
+    quality_latency_p95_ms: int
+    quality_data_stale_ms: int
+    quality_data_stale_window_sec: int
+    quality_policy_mismatch_reject_ratio: float
+    remediation_restart_max_per_hour: int
+    remediation_restart_cooldown_sec: int
+    remediation_disable_entries_on_degrade: bool
+    policy_symbol: str
+    policy_artifacts_dir: str
+    policy_runtime_dir: str
+    policy_history_keep: int
+    policy_shadow_burnin_min_sec: int
+    policy_accept_max_breaker_storms: int
+    policy_accept_max_data_stale_sec: int
+    policy_accept_min_coverage: float
     history_window_minutes: int
 
 
@@ -854,4 +890,49 @@ def load_tsdb_retention_config(path: Path) -> TsdbRetentionConfig:
         rollup_1h_days=int(retention.get("rollup_1h", 365)),
         rollups_enabled=bool(rollups.get("enabled", True)),
         rollup_intervals=intervals,
+    )
+
+
+def load_autopilot_config(path: Path) -> AutopilotConfig:
+    raw = _load_yaml(path)
+    autopilot = raw.get("autopilot") if isinstance(raw.get("autopilot"), dict) else raw
+    if not isinstance(autopilot, dict):
+        autopilot = {}
+
+    metrics_cfg = autopilot.get("metrics", {}) if isinstance(autopilot.get("metrics"), dict) else {}
+    quality_cfg = autopilot.get("quality", {}) if isinstance(autopilot.get("quality"), dict) else {}
+    remediation_cfg = autopilot.get("remediation", {}) if isinstance(autopilot.get("remediation"), dict) else {}
+    policy_cfg = autopilot.get("policy", {}) if isinstance(autopilot.get("policy"), dict) else {}
+
+    return AutopilotConfig(
+        enabled=bool(autopilot.get("enabled", False)),
+        target_state=str(autopilot.get("target_state", "SHADOW")).upper(),
+        allowed_states=[str(s).upper() for s in autopilot.get("allowed_states", ["OFF", "SHADOW", "LIVE_DEMO", "LIVE", "DEGRADED", "HALTED"])],
+        min_dwell_sec=int(autopilot.get("min_dwell_sec", 300) or 300),
+        max_transitions_per_hour=int(autopilot.get("max_transitions_per_hour", 6) or 6),
+        max_actions_per_hour=int(autopilot.get("max_actions_per_hour", 12) or 12),
+        check_interval_sec=int(autopilot.get("check_interval_sec", 10) or 10),
+        safe_hours=[str(s) for s in autopilot.get("safe_hours", [])],
+        metrics_url=str(metrics_cfg.get("url", "")),
+        metrics_path=str(metrics_cfg.get("path", "ai_scalper_bot/runtime/status/metrics.json")),
+        events_path=str(metrics_cfg.get("events_path", "ai_scalper_bot/runtime/events/events.jsonl")),
+        quality_breaker_storm_threshold=int(quality_cfg.get("breaker_storm_threshold", 3) or 3),
+        quality_breaker_storm_window_sec=int(quality_cfg.get("breaker_storm_window_sec", 300) or 300),
+        quality_coverage_min=float(quality_cfg.get("coverage_min", 0.2) or 0.2),
+        quality_coverage_window_sec=int(quality_cfg.get("coverage_window_sec", 300) or 300),
+        quality_latency_p95_ms=int(quality_cfg.get("latency_p95_ms", 1500) or 1500),
+        quality_data_stale_ms=int(quality_cfg.get("data_stale_ms", 5000) or 5000),
+        quality_data_stale_window_sec=int(quality_cfg.get("data_stale_window_sec", 300) or 300),
+        quality_policy_mismatch_reject_ratio=float(quality_cfg.get("policy_mismatch_reject_ratio", 0.3) or 0.3),
+        remediation_restart_max_per_hour=int(remediation_cfg.get("restart_max_per_hour", 2) or 2),
+        remediation_restart_cooldown_sec=int(remediation_cfg.get("restart_cooldown_sec", 300) or 300),
+        remediation_disable_entries_on_degrade=bool(remediation_cfg.get("disable_entries_on_degrade", True)),
+        policy_symbol=str(policy_cfg.get("symbol", "BTCUSDT")),
+        policy_artifacts_dir=str(policy_cfg.get("artifacts_dir", "ai_scalper_bot/artifacts/policy")),
+        policy_runtime_dir=str(policy_cfg.get("runtime_dir", "ai_scalper_bot/runtime/policy")),
+        policy_history_keep=int(policy_cfg.get("history_keep", 5) or 5),
+        policy_shadow_burnin_min_sec=int(policy_cfg.get("shadow_burnin_min_sec", 1800) or 1800),
+        policy_accept_max_breaker_storms=int(policy_cfg.get("accept_max_breaker_storms", 0) or 0),
+        policy_accept_max_data_stale_sec=int(policy_cfg.get("accept_max_data_stale_sec", 0) or 0),
+        policy_accept_min_coverage=float(policy_cfg.get("accept_min_coverage", 0.2) or 0.2),
     )

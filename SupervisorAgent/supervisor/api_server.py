@@ -254,6 +254,14 @@ class ApiServer:
                         logger.exception("Error building status: %s", exc)
                         self._send_json(500, {"error": "internal_error"})
                     return
+                if self.path == "/api/v1/autopilot/status":
+                    try:
+                        response = app.autopilot_status()
+                        self._send_json(200, response)
+                    except Exception as exc:  # pylint: disable=broad-except
+                        logger.exception("Error building autopilot status: %s", exc)
+                        self._send_json(500, {"error": "internal_error"})
+                    return
                 if self.path == "/api/v1/supervisor/snapshot":
                     try:
                         response = app.get_latest_snapshot_payload()
