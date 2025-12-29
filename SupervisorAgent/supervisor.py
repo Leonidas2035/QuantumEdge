@@ -62,6 +62,9 @@ from supervisor.tasks.snapshot_scheduler import SnapshotScheduler
 from supervisor.dashboard.service import DashboardService
 from supervisor.tsdb import NoopTimeseriesStore, ClickHouseTimeseriesStore, QuestDbTimeseriesStore, TsdbWriter
 from supervisor.tsdb.maintenance import apply_retention_and_rollups
+from supervisor.tsdb.query import build_timeseries_query, derive_questdb_query_url, questdb_query, sanitize_symbol
+from supervisor.ingest.pipeline import IngestPipeline
+from supervisor.ingest.parsers import parse_metrics_file, parse_event_line
 from policy.policy_contract import policy_fingerprint, POLICY_VERSION
 from policy.policy_publisher import PolicyPublisher
 from policy.policy_engine import PolicyEngine, PolicyEngineConfig, HysteresisConfig
@@ -1046,13 +1049,134 @@ class SupervisorApp:
         elif enabled and self.tsdb_backend == "questdb":
             # QuestDB ILP has no ping; assume reachable if writer exists
             reachable = True
+        ingest_status = self._load_ingest_status()
         return {
             "enabled": enabled,
             "backend": self.tsdb_backend,
             "reachable": reachable,
             "last_write_at": self.tsdb_writer.last_write_at.isoformat() if enabled and self.tsdb_writer.last_write_at else None,
             "queue_depth": self.tsdb_writer.queue_depth if enabled else 0,
+            "ingest": ingest_status,
         }
+
+    def get_tsdb_health(self) -> Dict[str, Any]:
+        status = self.get_tsdb_status()
+        return {
+            "backend": status.get("backend"),
+            "enabled": status.get("enabled"),
+            "reachable": status.get("reachable"),
+            "ingest": status.get("ingest"),
+        }
+
+    def tsdb_latest_metrics(self, symbol: str) -> Dict[str, Any]:
+        symbol = sanitize_symbol(symbol)
+        if self.tsdb_config.enabled and self.tsdb_backend == "questdb":
+            query_url = self._questdb_query_url()
+            if query_url:
+                rows = questdb_query(
+                    query_url,
+                    f"SELECT * FROM qe_metrics WHERE symbol='{symbol}' ORDER BY timestamp DESC LIMIT 1",
+                )
+                return {"rows": rows}
+        fallback = self._fallback_latest_metrics()
+        return {"rows": [fallback] if fallback else []}
+
+    def tsdb_recent_events(self, symbol: str, limit: int = 200) -> Dict[str, Any]:
+        symbol = sanitize_symbol(symbol)
+        limit = min(max(int(limit), 1), 1000)
+        if self.tsdb_config.enabled and self.tsdb_backend == "questdb":
+            query_url = self._questdb_query_url()
+            if query_url:
+                rows = questdb_query(
+                    query_url,
+                    f"SELECT * FROM qe_events WHERE symbol='{symbol}' ORDER BY timestamp DESC LIMIT {limit}",
+                )
+                return {"rows": rows}
+        fallback = self._fallback_recent_events(limit)
+        return {"rows": fallback}
+
+    def tsdb_timeseries(self, metric: str, symbol: str, start: str, end: str, bucket: str) -> Dict[str, Any]:
+        if not self.tsdb_config.enabled or self.tsdb_backend != "questdb":
+            return {"error": "tsdb_disabled"}
+        if not start or not end:
+            return {"error": "missing_range"}
+        query_url = self._questdb_query_url()
+        if not query_url:
+            return {"error": "questdb_query_url_missing"}
+        sql = build_timeseries_query(metric, symbol, start, end, bucket)
+        rows = questdb_query(query_url, sql)
+        return {"rows": rows}
+
+    def tsdb_query_sql(self, sql: str) -> Dict[str, Any]:
+        if not self.tsdb_config.enabled or self.tsdb_backend != "questdb":
+            return {"error": "tsdb_disabled"}
+        query_url = self._questdb_query_url()
+        if not query_url:
+            return {"error": "questdb_query_url_missing"}
+        return {"rows": questdb_query(query_url, sql)}
+
+    def _questdb_query_url(self) -> str:
+        if self.tsdb_config.questdb_query_url:
+            return self.tsdb_config.questdb_query_url
+        return derive_questdb_query_url(self.tsdb_config.questdb_ilp_http_url)
+
+    def _resolve_qe_path(self, value: str) -> Path:
+        path = Path(value)
+        if not path.is_absolute():
+            path = self.paths.qe_root / path
+        return path.resolve()
+
+    def _load_ingest_status(self) -> Dict[str, Any]:
+        state_path = self._resolve_qe_path(self.tsdb_config.ingest_state_path)
+        if not state_path.exists():
+            return {
+                "enabled": bool(self.tsdb_config.ingest_enabled),
+                "state_path": str(state_path),
+                "status": "missing",
+            }
+        try:
+            payload = json.loads(state_path.read_text(encoding="utf-8"))
+        except Exception:
+            return {"enabled": bool(self.tsdb_config.ingest_enabled), "state_path": str(state_path), "status": "bad_json"}
+        now = time.time()
+        event_lag = _compute_lag(payload.get("last_event_ts"), now)
+        metrics_lag = _compute_lag(payload.get("last_metrics_ts"), now)
+        return {
+            "enabled": bool(self.tsdb_config.ingest_enabled),
+            "state_path": str(state_path),
+            "last_event_ts": payload.get("last_event_ts"),
+            "last_metrics_ts": payload.get("last_metrics_ts"),
+            "event_lag_sec": event_lag,
+            "metrics_lag_sec": metrics_lag,
+            "malformed_events": payload.get("malformed_events"),
+            "dropped_events": payload.get("dropped_events"),
+            "last_updated": payload.get("last_updated"),
+        }
+
+    def _fallback_latest_metrics(self) -> Optional[Dict[str, Any]]:
+        path = self._resolve_qe_path(self.tsdb_config.ingest_metrics_path)
+        payload = parse_metrics_file(path)
+        return payload
+
+    def _fallback_recent_events(self, limit: int) -> List[Dict[str, Any]]:
+        path = self._resolve_qe_path(self.tsdb_config.ingest_events_path)
+        if not path.exists():
+            return []
+        from collections import deque
+
+        buffer = deque(maxlen=limit)
+        try:
+            with path.open("r", encoding="utf-8") as handle:
+                for line in handle:
+                    line = line.strip()
+                    if not line:
+                        continue
+                    payload = parse_event_line(line)
+                    if payload:
+                        buffer.append(payload)
+        except OSError:
+            return []
+        return list(buffer)
 
     def run_meta_supervisor_once(self, force: bool = False) -> None:
         """Trigger Meta-Agent supervisor cycle."""
@@ -1172,9 +1296,12 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
             "meta-supervisor",
             "snapshot",
             "diag",
+            "tsdb-status",
             "tsdb-backfill",
             "tsdb-migrate",
             "tsdb-maintain",
+            "tsdb-ingest",
+            "tsdb-query",
             "ml",
             "telemetry",
             "research",
@@ -1214,6 +1341,21 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         type=int,
         default=None,
         help="Number of days for tsdb-backfill (overrides config backfill.from_days).",
+    )
+    parser.add_argument(
+        "--from",
+        dest="from_ts",
+        help="ISO timestamp for tsdb-backfill range start (e.g. 2025-12-01T00:00:00Z).",
+    )
+    parser.add_argument(
+        "--to",
+        dest="to_ts",
+        help="ISO timestamp for tsdb-backfill range end (e.g. 2025-12-28T00:00:00Z).",
+    )
+    parser.add_argument(
+        "--sql",
+        dest="sql",
+        help="SQL for tsdb-query.",
     )
     parser.add_argument(
         "--config",
@@ -1315,6 +1457,16 @@ def build_app(
     )
 
 
+def _compute_lag(value: Optional[str], now: float) -> Optional[int]:
+    if not value:
+        return None
+    try:
+        ts = datetime.fromisoformat(value.replace("Z", "+00:00")).timestamp()
+    except ValueError:
+        return None
+    return max(0, int(now - ts))
+
+
 def main(argv: Optional[list[str]] = None) -> None:
     args = parse_args(argv)
     project_root = Path(__file__).resolve().parent
@@ -1389,6 +1541,8 @@ def main(argv: Optional[list[str]] = None) -> None:
 
             code = run_doctor(json_output=args.json)
             sys.exit(code)
+        elif args.command == "tsdb-status":
+            print(json.dumps(app.get_tsdb_status(), indent=2))
         elif args.command == "tsdb-migrate":
             from supervisor.tsdb.migrations import run_tsdb_migrations
 
@@ -1397,6 +1551,20 @@ def main(argv: Optional[list[str]] = None) -> None:
         elif args.command == "tsdb-backfill":
             if not app.tsdb_config.enabled or app.tsdb_config.backend == "none":
                 print("TSDB is disabled; backfill skipped.")
+                sys.exit(0)
+            if args.from_ts or args.to_ts:
+                if not args.from_ts or not args.to_ts:
+                    print("Both --from and --to are required for ranged backfill.", file=sys.stderr)
+                    sys.exit(1)
+                from supervisor.ingest.backfill import parse_range, run_backfill
+
+                writer = app.tsdb_writer or TsdbWriter(NoopTimeseriesStore())
+                writer.start()
+                start_ts, end_ts = parse_range(args.from_ts, args.to_ts)
+                events_path = app._resolve_qe_path(app.tsdb_config.ingest_events_path)
+                exec_path = app._resolve_qe_path(app.tsdb_config.ingest_exec_path)
+                run_backfill(events_path, exec_path, start_ts, end_ts, writer, logging.getLogger(__name__), symbol=args.symbol)
+                writer.flush()
                 sys.exit(0)
             days = args.days or app.tsdb_config.backfill_from_days
             from supervisor.tsdb.backfill import run_backfill
@@ -1411,6 +1579,45 @@ def main(argv: Optional[list[str]] = None) -> None:
         elif args.command == "tsdb-maintain":
             ok = apply_retention_and_rollups(project_root, app.tsdb_config, app.tsdb_retention, logging.getLogger(__name__))
             sys.exit(0 if ok else 1)
+        elif args.command == "tsdb-ingest":
+            action = args.ml_args[0].lower() if args.ml_args else "status"
+            state_path = app._resolve_qe_path(app.tsdb_config.ingest_state_path)
+            stop_path = state_path.with_suffix(".stop")
+            if action == "stop":
+                stop_path.write_text(json.dumps({"ts": time.time()}), encoding="utf-8")
+                print(json.dumps({"status": "stopping", "stop_path": str(stop_path)}, indent=2))
+                sys.exit(0)
+            if action == "status":
+                print(json.dumps(app.get_tsdb_status().get("ingest"), indent=2))
+                sys.exit(0)
+            if not app.tsdb_config.ingest_enabled:
+                print("TSDB ingest disabled in config/tsdb.yaml (ingest.enabled=false).")
+                sys.exit(1)
+            if stop_path.exists():
+                try:
+                    stop_path.unlink()
+                except OSError:
+                    pass
+            writer = app.tsdb_writer or TsdbWriter(NoopTimeseriesStore())
+            writer.start()
+            pipeline = IngestPipeline(
+                events_path=app._resolve_qe_path(app.tsdb_config.ingest_events_path),
+                metrics_path=app._resolve_qe_path(app.tsdb_config.ingest_metrics_path),
+                exec_path=app._resolve_qe_path(app.tsdb_config.ingest_exec_path),
+                state_path=state_path,
+                writer=writer,
+                max_line_kb=app.tsdb_config.ingest_max_line_kb,
+                dedupe_cache_size=app.tsdb_config.ingest_dedupe_cache_size,
+                logger=logging.getLogger(__name__),
+            )
+            pipeline.run_forever(app.tsdb_config.ingest_interval_sec, stop_path)
+            writer.flush()
+            sys.exit(0)
+        elif args.command == "tsdb-query":
+            if not args.sql:
+                print("Missing --sql for tsdb-query.", file=sys.stderr)
+                sys.exit(1)
+            print(json.dumps(app.tsdb_query_sql(args.sql), indent=2))
         elif args.command == "ml":
             from SupervisorAgent.mlops.cli import parse_ml_args, run_ml_command
 

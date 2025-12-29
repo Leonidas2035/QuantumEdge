@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Optional
 
 from supervisor.config import TsdbRetentionConfig, TsdbConfig
+from supervisor.tsdb.query import derive_questdb_query_url, questdb_exec
 
 
 def _post_sql(url: str, sql: str, auth: Optional[tuple[str, str]] = None) -> None:
@@ -47,11 +48,21 @@ def clickhouse_retention(project_root: Path, cfg: TsdbConfig, retention: TsdbRet
         return False
 
 
-def questdb_retention(project_root: Path, logger: logging.Logger) -> bool:
-    # QuestDB retention typically via DROP PARTITION or purge by timestamp; leave as manual/TODO
-    sql_path = project_root / "sql" / "questdb_retention.sql"
-    if sql_path.exists():
-        logger.info("QuestDB retention SQL is informational only: %s", sql_path)
+def questdb_retention(cfg: TsdbConfig, retention: TsdbRetentionConfig, logger: logging.Logger) -> bool:
+    if not retention.enabled:
+        return True
+    query_url = cfg.questdb_query_url or derive_questdb_query_url(cfg.questdb_ilp_http_url)
+    if not query_url:
+        logger.warning("QuestDB query URL missing; retention skipped.")
+        return False
+    tables = ["qe_events", "qe_metrics", "qe_exec"]
+    for table in tables:
+        sql = f"DELETE FROM {table} WHERE timestamp < dateadd('d', -{retention.raw_days}, now())"
+        try:
+            questdb_exec(query_url, sql)
+        except Exception as exc:  # pylint: disable=broad-except
+            logger.warning("QuestDB retention failed for %s: %s", table, exc)
+            return False
     return True
 
 
@@ -62,6 +73,6 @@ def apply_retention_and_rollups(project_root: Path, tsdb_cfg: TsdbConfig, retent
     if tsdb_cfg.backend == "clickhouse":
         return clickhouse_retention(project_root, tsdb_cfg, retention_cfg, logger)
     if tsdb_cfg.backend == "questdb":
-        return questdb_retention(project_root, logger)
+        return questdb_retention(tsdb_cfg, retention_cfg, logger)
     logger.info("No retention handler for backend %s", tsdb_cfg.backend)
     return True

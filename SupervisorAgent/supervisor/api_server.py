@@ -315,6 +315,77 @@ class ApiServer:
                         logger.exception("Error retrieving TSDB status: %s", exc)
                         self._send_json(500, {"error": "internal_error"})
                     return
+                if self.path == "/api/v1/tsdb/health":
+                    try:
+                        response = app.get_tsdb_health()
+                        self._send_json(200, response)
+                    except Exception as exc:  # pylint: disable=broad-except
+                        logger.exception("Error retrieving TSDB health: %s", exc)
+                        self._send_json(500, {"error": "internal_error"})
+                    return
+                if self.path.startswith("/api/v1/tsdb/metrics/latest"):
+                    import urllib.parse as _urlparse
+
+                    symbol = "BTCUSDT"
+                    if "?" in self.path:
+                        _, query = self.path.split("?", 1)
+                        for part in query.split("&"):
+                            if part.startswith("symbol="):
+                                symbol = _urlparse.unquote(part.split("=", 1)[1])
+                    try:
+                        response = app.tsdb_latest_metrics(symbol)
+                        self._send_json(200, response)
+                    except Exception as exc:  # pylint: disable=broad-except
+                        logger.exception("Error retrieving TSDB metrics: %s", exc)
+                        self._send_json(500, {"error": "internal_error"})
+                    return
+                if self.path.startswith("/api/v1/tsdb/events/recent"):
+                    import urllib.parse as _urlparse
+
+                    symbol = "BTCUSDT"
+                    limit = 200
+                    if "?" in self.path:
+                        _, query = self.path.split("?", 1)
+                        for part in query.split("&"):
+                            if part.startswith("symbol="):
+                                symbol = _urlparse.unquote(part.split("=", 1)[1])
+                            if part.startswith("limit="):
+                                try:
+                                    limit = int(part.split("=", 1)[1])
+                                except ValueError:
+                                    limit = 200
+                    try:
+                        response = app.tsdb_recent_events(symbol, limit=limit)
+                        self._send_json(200, response)
+                    except Exception as exc:  # pylint: disable=broad-except
+                        logger.exception("Error retrieving TSDB events: %s", exc)
+                        self._send_json(500, {"error": "internal_error"})
+                    return
+                if self.path.startswith("/api/v1/tsdb/timeseries"):
+                    import urllib.parse as _urlparse
+
+                    params = {"metric": "", "symbol": "BTCUSDT", "from": "", "to": "", "bucket": "10s"}
+                    if "?" in self.path:
+                        _, query = self.path.split("?", 1)
+                        for part in query.split("&"):
+                            if "=" not in part:
+                                continue
+                            key, value = part.split("=", 1)
+                            if key in params:
+                                params[key] = _urlparse.unquote(value)
+                    try:
+                        response = app.tsdb_timeseries(
+                            params["metric"],
+                            params["symbol"],
+                            params["from"],
+                            params["to"],
+                            params["bucket"],
+                        )
+                        self._send_json(200, response)
+                    except Exception as exc:  # pylint: disable=broad-except
+                        logger.exception("Error retrieving TSDB timeseries: %s", exc)
+                        self._send_json(500, {"error": "internal_error"})
+                    return
                 self._send_json(404, {"error": "not_found"})
 
         self._server = HTTPServer((config.host, config.port), Handler)

@@ -264,11 +264,20 @@ class TsdbConfig:
     clickhouse_user: str
     clickhouse_password: str
     questdb_ilp_http_url: str
+    questdb_query_url: str
     retry_max_retries: int
     retry_base_backoff_ms: int
     retry_max_backoff_ms: int
     backfill_enabled: bool
     backfill_from_days: int
+    ingest_enabled: bool
+    ingest_events_path: str
+    ingest_metrics_path: str
+    ingest_exec_path: str
+    ingest_state_path: str
+    ingest_max_line_kb: int
+    ingest_interval_sec: float
+    ingest_dedupe_cache_size: int
 
 
 @dataclass
@@ -835,11 +844,20 @@ def load_tsdb_config(path: Path) -> TsdbConfig:
             clickhouse_user="default",
             clickhouse_password="",
             questdb_ilp_http_url="http://localhost:9000/imp",
+            questdb_query_url="http://localhost:9000/exec",
             retry_max_retries=3,
             retry_base_backoff_ms=200,
             retry_max_backoff_ms=5000,
             backfill_enabled=False,
             backfill_from_days=1,
+            ingest_enabled=False,
+            ingest_events_path="ai_scalper_bot/runtime/events/events.jsonl",
+            ingest_metrics_path="ai_scalper_bot/runtime/status/metrics.json",
+            ingest_exec_path="ai_scalper_bot/runtime/state/ledger.jsonl",
+            ingest_state_path="SupervisorAgent/runtime/ingest_state.json",
+            ingest_max_line_kb=256,
+            ingest_interval_sec=2.0,
+            ingest_dedupe_cache_size=5000,
         )
 
     raw = _load_yaml(path)
@@ -847,6 +865,7 @@ def load_tsdb_config(path: Path) -> TsdbConfig:
     ch = raw.get("clickhouse", {}) or {}
     retry = raw.get("retry", {}) or {}
     backfill = raw.get("backfill", {}) or {}
+    ingest = raw.get("ingest", {}) or {}
 
     return TsdbConfig(
         enabled=bool(raw.get("enabled", False)),
@@ -859,11 +878,20 @@ def load_tsdb_config(path: Path) -> TsdbConfig:
         clickhouse_user=str(ch.get("user", "default")),
         clickhouse_password=str(ch.get("password", "")),
         questdb_ilp_http_url=str((raw.get("questdb") or {}).get("ilp_http_url", "http://localhost:9000/imp")),
+        questdb_query_url=str((raw.get("questdb") or {}).get("query_url", "http://localhost:9000/exec")),
         retry_max_retries=int(retry.get("max_retries", 3)),
         retry_base_backoff_ms=int(retry.get("base_backoff_ms", 200)),
         retry_max_backoff_ms=int(retry.get("max_backoff_ms", 5000)),
         backfill_enabled=bool(backfill.get("enabled", False)),
         backfill_from_days=int(backfill.get("from_days", 1)),
+        ingest_enabled=bool(ingest.get("enabled", False)),
+        ingest_events_path=str(ingest.get("events_path", "ai_scalper_bot/runtime/events/events.jsonl")),
+        ingest_metrics_path=str(ingest.get("metrics_path", "ai_scalper_bot/runtime/status/metrics.json")),
+        ingest_exec_path=str(ingest.get("exec_path", "ai_scalper_bot/runtime/state/ledger.jsonl")),
+        ingest_state_path=str(ingest.get("state_path", "SupervisorAgent/runtime/ingest_state.json")),
+        ingest_max_line_kb=int(ingest.get("max_line_kb", 256)),
+        ingest_interval_sec=float(ingest.get("interval_sec", 2.0)),
+        ingest_dedupe_cache_size=int(ingest.get("dedupe_cache_size", 5000)),
     )
 
 

@@ -1,5 +1,5 @@
 enabled: true
-backend: "none"  # "none" | "clickhouse" | "questdb" | "timescale"
+backend: "questdb"  # "none" | "clickhouse" | "questdb" | "timescale"
 flush_interval_seconds: 2
 batch_size: 500
 
@@ -27,3 +27,14 @@ timescale:
 
 questdb:
   ilp_http_url: "http://localhost:9000/imp"
+  query_url: "http://localhost:9000/exec"
+
+ingest:
+  enabled: true
+  events_path: "ai_scalper_bot/runtime/events/events.jsonl"
+  metrics_path: "ai_scalper_bot/runtime/status/metrics.json"
+  exec_path: "ai_scalper_bot/runtime/state/ledger.jsonl"
+  state_path: "SupervisorAgent/runtime/ingest_state.json"
+  max_line_kb: 256
+  interval_sec: 2
+  dedupe_cache_size: 5000

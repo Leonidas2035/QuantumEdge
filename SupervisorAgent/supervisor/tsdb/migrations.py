@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Optional
 
 from supervisor.config import TsdbConfig, TsdbRetentionConfig
+from supervisor.tsdb.query import derive_questdb_query_url, questdb_exec
 
 
 def apply_clickhouse(sql_path: Path, cfg: TsdbConfig, logger: logging.Logger) -> bool:
@@ -40,11 +41,23 @@ def apply_clickhouse(sql_path: Path, cfg: TsdbConfig, logger: logging.Logger) ->
         return False
 
 
-def apply_questdb(sql_path: Path, logger: logging.Logger) -> bool:
+def apply_questdb(sql_path: Path, cfg: TsdbConfig, logger: logging.Logger) -> bool:
     if not sql_path.exists():
         logger.warning("QuestDB schema file missing: %s", sql_path)
         return False
-    logger.info("QuestDB typically creates tables on insert; SQL file is informational only: %s", sql_path)
+    query_url = cfg.questdb_query_url or derive_questdb_query_url(cfg.questdb_ilp_http_url)
+    if not query_url:
+        logger.warning("QuestDB query URL missing; cannot apply schema.")
+        return False
+    sql_text = sql_path.read_text(encoding="utf-8")
+    statements = [stmt.strip() for stmt in sql_text.split(";") if stmt.strip()]
+    for stmt in statements:
+        try:
+            questdb_exec(query_url, stmt)
+        except Exception as exc:  # pylint: disable=broad-except
+            logger.warning("QuestDB migration failed: %s", exc)
+            return False
+    logger.info("QuestDB schema applied from %s", sql_path)
     return True
 
 
@@ -64,8 +77,10 @@ def run_tsdb_migrations(project_root: Path, cfg: TsdbConfig, logger: logging.Log
             if ret_path.exists():
                 apply_clickhouse(ret_path, cfg, logger)
     elif cfg.backend == "questdb":
-        sql_path = project_root / "sql" / "questdb_schema.sql"
-        ok = apply_questdb(sql_path, logger)
+        sql_path = project_root / "supervisor" / "tsdb" / "migrations" / "0001_init.sql"
+        if not sql_path.exists():
+            sql_path = project_root / "sql" / "questdb_schema.sql"
+        ok = apply_questdb(sql_path, cfg, logger)
     else:
         logger.info("No migration handler for backend %s", cfg.backend)
         ok = True
