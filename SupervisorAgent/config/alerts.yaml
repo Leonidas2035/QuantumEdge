@@ -1,0 +1,43 @@
+rules:
+  - name: "breaker_storm"
+    severity: "CRIT"
+    field: "summary.breaker_active"
+    operator: "truthy"
+    threshold: 1
+    duration_sec: 30
+    cooldown_sec: 120
+  - name: "ingest_lag_high"
+    severity: "WARN"
+    field: "ingest.event_lag_sec"
+    operator: ">="
+    threshold: 30
+    duration_sec: 60
+    cooldown_sec: 180
+  - name: "tick_stale"
+    severity: "WARN"
+    field: "summary.tick_age_ms"
+    operator: ">="
+    threshold: 5000
+    duration_sec: 30
+    cooldown_sec: 120
+  - name: "book_stale"
+    severity: "WARN"
+    field: "summary.book_age_ms"
+    operator: ">="
+    threshold: 5000
+    duration_sec: 30
+    cooldown_sec: 120
+  - name: "latency_p95"
+    severity: "WARN"
+    field: "summary.latency_p95_ms"
+    operator: ">="
+    threshold: 1500
+    duration_sec: 60
+    cooldown_sec: 180
+  - name: "policy_mismatch"
+    severity: "CRIT"
+    field: "summary.policy_mismatch"
+    operator: "truthy"
+    threshold: 1
+    duration_sec: 30
+    cooldown_sec: 120

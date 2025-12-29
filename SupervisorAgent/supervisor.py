@@ -10,6 +10,7 @@ import os
 import signal
 import sys
 import time
+import uuid
 from datetime import datetime, date, timezone
 from pathlib import Path
 from typing import Optional, Mapping, Any, Dict, List
@@ -76,8 +77,20 @@ from supervisor.regime_sm import RegimeStateMachine, RegimeConfig, DirectivesCon
 from supervisor.guards import GuardEvaluator, GuardResult, GuardConfig, load_guard_config
 from supervisor.action_ledger import ActionLedger
 from supervisor.policy_store import resolve_active_policy_path
-from supervisor.autopilot.cli import build_controller, autopilot_enable, autopilot_status, policy_list, policy_rollout, policy_rollback
+from supervisor.autopilot.cli import (
+    build_controller,
+    autopilot_enable,
+    autopilot_set_target_state,
+    autopilot_status,
+    policy_list,
+    policy_rollout,
+    policy_rollback,
+)
 from supervisor.autopilot.policy_manager import PolicyManager
+from supervisor.alerts.rules import load_alert_rules
+from supervisor.alerts.storage import AlertStorage
+from supervisor.alerts.engine import AlertEngine, AlertResult
+from supervisor.security import is_path_allowed, validate_kill_switch_challenge
 
 try:
     from tools.qe_config import get_qe_paths
@@ -247,6 +260,14 @@ class SupervisorApp:
         self.autopilot = build_controller(self, autopilot_cfg, paths)
         self.action_ledger: Optional[ActionLedger] = None
         self._directives_last_hash: Optional[str] = None
+        alerts_path = project_root / "config" / "alerts.yaml"
+        alert_rules = load_alert_rules(alerts_path)
+        self.alert_storage = AlertStorage(self.paths.runtime_dir / "alerts")
+        self.alert_engine = AlertEngine(alert_rules, self.alert_storage)
+        self._alert_eval_interval_s = 10
+        self._last_alert_eval_ts = 0.0
+        self._last_alert_result: Optional[AlertResult] = None
+        self._kill_switch_challenge: Optional[Dict[str, Any]] = None
 
     def _build_tsdb_writer(self, tsdb_config: TsdbConfig) -> Optional[TsdbWriter]:
         self.tsdb_backend = "none"
@@ -372,6 +393,10 @@ class SupervisorApp:
         override_path = self.paths.runtime_dir / "autopilot" / "override.json"
         return autopilot_enable(override_path, enabled, audit=self.autopilot.audit)
 
+    def autopilot_set_target_state(self, target_state: str) -> Dict[str, Any]:
+        override_path = self.paths.runtime_dir / "autopilot" / "override.json"
+        return autopilot_set_target_state(override_path, target_state, audit=self.autopilot.audit)
+
     def policy_manager_for(self, symbol: Optional[str] = None):
         symbol = symbol or self.autopilot_cfg.policy_symbol
         artifacts_dir = Path(self.autopilot_cfg.policy_artifacts_dir)
@@ -384,6 +409,90 @@ class SupervisorApp:
             runtime_dir = (self.paths.qe_root / runtime_dir).resolve()
         history_dir = self.paths.runtime_dir / "policy_rollouts" / symbol
         return PolicyManager(artifacts_dir, runtime_dir, history_dir, self.autopilot_cfg.policy_history_keep)
+
+    def policy_list_payload(self, symbol: Optional[str] = None) -> Dict[str, Any]:
+        manager = self.policy_manager_for(symbol)
+        return policy_list(manager)
+
+    def policy_rollout_payload(self, symbol: Optional[str], policy_path: str) -> Dict[str, Any]:
+        symbol = symbol or self.autopilot_cfg.policy_symbol
+        manager = self.policy_manager_for(symbol)
+        candidate = Path(policy_path)
+        if not candidate.is_absolute():
+            candidate = (self.paths.qe_root / candidate).resolve()
+        base_artifacts = Path(self.autopilot_cfg.policy_artifacts_dir)
+        if not base_artifacts.is_absolute():
+            base_artifacts = (self.paths.qe_root / base_artifacts).resolve()
+        if symbol:
+            base_artifacts = base_artifacts / symbol
+        base_rollouts = self.paths.runtime_dir / "policy_rollouts" / symbol
+        if not (is_path_allowed(candidate, base_artifacts) or is_path_allowed(candidate, base_rollouts)):
+            raise ValueError("policy_path_not_allowed")
+        return policy_rollout(manager, candidate, reason="manual_rollout", audit=self.autopilot.audit)
+
+    def policy_rollback_payload(self, symbol: Optional[str]) -> Dict[str, Any]:
+        manager = self.policy_manager_for(symbol)
+        return policy_rollback(manager, reason="manual_rollback", audit=self.autopilot.audit)
+
+    def get_kill_switch_challenge(self) -> Dict[str, Any]:
+        challenge_id = str(uuid.uuid4())
+        expires_at = time.time() + 120
+        self._kill_switch_challenge = {"challenge_id": challenge_id, "expires_at": expires_at}
+        return {"challenge_id": challenge_id, "expires_at": expires_at}
+
+    def apply_kill_switch(self, enabled: bool, challenge_id: str) -> Dict[str, Any]:
+        error = validate_kill_switch_challenge(self._kill_switch_challenge, challenge_id, time.time())
+        if error:
+            raise ValueError(error)
+        kill_switch_path = self.paths.quantumedge_root / "state" / "kill_switch.json"
+        kill_switch_path.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "enabled": bool(enabled),
+            "reason": "manual_dashboard",
+            "ts": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+        }
+        kill_switch_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        self.autopilot.audit.log(
+            {
+                "action": "KILL_SWITCH",
+                "applied": True,
+                "enabled": bool(enabled),
+                "correlation_id": str(uuid.uuid4()),
+            }
+        )
+        return payload
+
+    def alerts_snapshot(self) -> Dict[str, Any]:
+        now = time.time()
+        if now - self._last_alert_eval_ts >= self._alert_eval_interval_s:
+            self._evaluate_alerts()
+        if self._last_alert_result:
+            return {"active": self._last_alert_result.active, "recent": self._last_alert_result.recent}
+        return {"active": [], "recent": []}
+
+    def alerts_ack(self, alert_id: str, note: str) -> Dict[str, Any]:
+        ok = self.alert_engine.ack(alert_id, note)
+        return {"acknowledged": ok}
+
+    def alerts_silence(self, rule: str, minutes: int) -> Dict[str, Any]:
+        until = self.alert_engine.silence(rule, minutes)
+        return {"silenced_until": until}
+
+    def audit_recent(self, limit: int = 200) -> List[Dict[str, Any]]:
+        audit_path = self.paths.runtime_dir / "audit" / "autopilot_actions.jsonl"
+        if not audit_path.exists():
+            return []
+        try:
+            lines = audit_path.read_text(encoding="utf-8").splitlines()
+        except OSError:
+            return []
+        items = []
+        for line in lines[-limit:]:
+            try:
+                items.append(json.loads(line))
+            except json.JSONDecodeError:
+                continue
+        return items
 
     def status(self) -> None:
         running = self.process_manager.is_running()
@@ -409,6 +518,10 @@ class SupervisorApp:
         if autopilot_interval <= 0:
             autopilot_interval = 10
         next_autopilot_at = time.time() + autopilot_interval
+        alerts_interval = int(getattr(self, "_alert_eval_interval_s", 10) or 10)
+        if alerts_interval <= 0:
+            alerts_interval = 10
+        next_alerts_at = time.time() + alerts_interval
         episode_tags = getattr(self, "_episode_tags", {}) if hasattr(self, "_episode_tags") else {}
         self.run_context = RunContext.create(
             project_root=self.project_root,
@@ -536,6 +649,12 @@ class SupervisorApp:
                     except Exception as exc:
                         self.logger.error("Autopilot tick failed: %s", exc)
                     next_autopilot_at = time.time() + autopilot_interval
+                if time.time() >= next_alerts_at:
+                    try:
+                        self._evaluate_alerts()
+                    except Exception as exc:
+                        self.logger.error("Alerts evaluation failed: %s", exc)
+                    next_alerts_at = time.time() + alerts_interval
                 time.sleep(2.0)
         except KeyboardInterrupt:
             self._stop_requested = True
@@ -1035,6 +1154,83 @@ class SupervisorApp:
             }
             for ev in evs
         ]
+
+    def dashboard_summary(self, symbol: Optional[str] = None) -> Dict[str, Any]:
+        summary = self._build_alert_summary()
+        summary["ts"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        summary["symbol"] = symbol or self.autopilot_cfg.policy_symbol
+        summary["autopilot"] = self.autopilot.status()
+        summary["bot"] = self.get_bot_status()
+        summary["policy_current"] = self.autopilot.policy_manager.current_record()
+        summary["tsdb"] = self.get_tsdb_status()
+        summary["kill_switch"] = self._read_kill_switch_state()
+        return summary
+
+    def _build_alert_summary(self) -> Dict[str, Any]:
+        metrics = self.autopilot.collector.collect()
+        telemetry_summary = self.telemetry.summary()
+        ingest_status = self.get_tsdb_status().get("ingest", {})
+        latency_p95 = _coerce_float(metrics.raw.get("latency_p95_ms")) or _coerce_float(
+            telemetry_summary.get("latency_ms_p95")
+        )
+        summary = {
+            "mode": metrics.mode,
+            "breaker_active": metrics.breaker_active,
+            "breaker_reason": metrics.breaker_reason,
+            "tick_age_ms": metrics.tick_age_ms,
+            "book_age_ms": metrics.book_age_ms,
+            "latency_p95_ms": latency_p95,
+            "policy_mismatch": self._policy_mismatch(metrics.raw),
+            "policy_mode": metrics.policy_mode,
+            "policy_allow_trading": metrics.policy_allow_trading,
+            "reject_top": metrics.raw.get("reject_top"),
+            "last_error": metrics.last_error,
+            "last_error_ts": metrics.last_error_ts,
+        }
+        return {
+            "summary": summary,
+            "telemetry": telemetry_summary,
+            "ingest": ingest_status,
+        }
+
+    def _evaluate_alerts(self) -> None:
+        payload = self._build_alert_summary()
+        self._last_alert_result = self.alert_engine.evaluate(payload)
+        self._last_alert_eval_ts = time.time()
+
+    def _policy_mismatch(self, raw: Dict[str, Any]) -> bool:
+        if raw.get("policy_mismatch") or raw.get("schema_mismatch"):
+            return True
+        reject_candidates: List[Dict[str, Any]] = []
+        for key in ("reject_top", "rejects", "reject_counters"):
+            value = raw.get(key)
+            if isinstance(value, dict):
+                reject_candidates.append(value)
+            elif isinstance(value, list):
+                for item in value:
+                    if isinstance(item, dict):
+                        reject_candidates.append(item)
+        for bucket in reject_candidates:
+            for reason in bucket.keys():
+                reason_str = str(reason).upper()
+                if "SCHEMA" in reason_str or "POLICY" in reason_str:
+                    return True
+        return False
+
+    def _read_kill_switch_state(self) -> Dict[str, Any]:
+        path = self.paths.quantumedge_root / "state" / "kill_switch.json"
+        if not path.exists():
+            return {"enabled": False}
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            return {"enabled": False}
+        enabled = bool(payload.get("enabled", False))
+        return {
+            "enabled": enabled,
+            "reason": payload.get("reason"),
+            "ts": payload.get("ts"),
+        }
 
     def get_tsdb_status(self) -> Dict[str, Any]:
         enabled = bool(self.tsdb_writer)

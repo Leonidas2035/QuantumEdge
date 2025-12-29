@@ -93,6 +93,9 @@ class AutopilotController:
             desired_state = "OFF"
         else:
             desired_state = self.target_state
+        override_target = override.get("target_state")
+        if override_target:
+            desired_state = str(override_target).upper()
 
         if desired_state in {"LIVE", "LIVE_DEMO"} and self.safe_hours:
             if not _within_safe_hours(self.safe_hours, now):
@@ -149,10 +152,11 @@ class AutopilotController:
 
     def status(self) -> Dict[str, Any]:
         snapshot = self.collector.collect()
+        override = self._load_override()
         return {
-            "enabled": self._load_override().get("enabled", self.enabled),
+            "enabled": override.get("enabled", self.enabled),
             "state": self.state.state,
-            "target_state": self.target_state,
+            "target_state": str(override.get("target_state", self.target_state)).upper(),
             "health": snapshot.health.__dict__,
         }
 

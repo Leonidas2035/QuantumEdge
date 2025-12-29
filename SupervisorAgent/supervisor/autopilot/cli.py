@@ -74,7 +74,13 @@ def autopilot_status(controller: AutopilotController) -> Dict[str, Any]:
 
 def autopilot_enable(override_path: Path, enabled: bool, audit: AuditLogger | None = None) -> Dict[str, Any]:
     override_path.parent.mkdir(parents=True, exist_ok=True)
-    payload = {"enabled": enabled}
+    payload: Dict[str, Any] = {}
+    if override_path.exists():
+        try:
+            payload = json.loads(override_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            payload = {}
+    payload["enabled"] = enabled
     override_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
     if audit:
         audit.log(
@@ -82,6 +88,30 @@ def autopilot_enable(override_path: Path, enabled: bool, audit: AuditLogger | No
                 "action": "AUTOPILOT_OVERRIDE",
                 "applied": True,
                 "enabled": enabled,
+                "correlation_id": str(uuid.uuid4()),
+            }
+        )
+    return payload
+
+
+def autopilot_set_target_state(
+    override_path: Path, target_state: str, audit: AuditLogger | None = None
+) -> Dict[str, Any]:
+    override_path.parent.mkdir(parents=True, exist_ok=True)
+    payload: Dict[str, Any] = {}
+    if override_path.exists():
+        try:
+            payload = json.loads(override_path.read_text(encoding="utf-8"))
+        except json.JSONDecodeError:
+            payload = {}
+    payload["target_state"] = str(target_state).upper()
+    override_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    if audit:
+        audit.log(
+            {
+                "action": "AUTOPILOT_TARGET_STATE",
+                "applied": True,
+                "target_state": payload["target_state"],
                 "correlation_id": str(uuid.uuid4()),
             }
         )

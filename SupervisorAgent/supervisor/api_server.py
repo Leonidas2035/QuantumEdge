@@ -4,13 +4,17 @@ from __future__ import annotations
 
 import json
 import logging
+import mimetypes
 import threading
 from dataclasses import dataclass
 from http.server import HTTPServer, BaseHTTPRequestHandler
+from pathlib import Path
 from typing import Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from supervisor import SupervisorApp  # type: ignore
+
+from supervisor.security import check_dashboard_auth, dashboard_auth_mode, dashboard_auth_token, is_path_allowed
 
 
 @dataclass
@@ -37,6 +41,7 @@ class ApiServer:
         app = self.app
         config = self.config
         logger = self.logger
+        static_dir = Path(__file__).resolve().parent.parent / "static"
 
         class Handler(BaseHTTPRequestHandler):
             def _send_json(self, status_code: int, payload: dict) -> None:
@@ -44,7 +49,7 @@ class ApiServer:
                 self.send_response(status_code)
                 self.send_header("Content-Type", "application/json; charset=utf-8")
                 self.send_header("Access-Control-Allow-Origin", "*")
-                self.send_header("Access-Control-Allow-Headers", "Content-Type,X-API-TOKEN")
+                self.send_header("Access-Control-Allow-Headers", "Content-Type,X-API-TOKEN,Authorization")
                 self.send_header("Access-Control-Allow-Methods", "GET,POST,OPTIONS")
                 self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
@@ -53,13 +58,18 @@ class ApiServer:
             def log_message(self, format: str, *args) -> None:  # noqa: A003
                 logger.debug("API %s - %s", self.address_string(), format % args)
 
-            def _check_auth(self) -> bool:
-                if not config.auth_token:
-                    return True
-                token = self.headers.get("X-API-TOKEN", "")
-                if token != config.auth_token:
-                    self._send_json(401, {"error": "unauthorized"})
-                    return False
+            def _check_auth(self, require_dashboard_token: bool) -> bool:
+                if config.auth_token:
+                    token = self.headers.get("X-API-TOKEN", "")
+                    if token != config.auth_token:
+                        self._send_json(401, {"error": "unauthorized"})
+                        return False
+                if require_dashboard_token:
+                    mode = dashboard_auth_mode()
+                    token = dashboard_auth_token() or ""
+                    if not check_dashboard_auth(dict(self.headers), mode, token):
+                        self._send_json(401, {"error": "unauthorized"})
+                        return False
                 return True
 
             def _parse_json(self) -> Optional[dict]:
@@ -93,16 +103,34 @@ class ApiServer:
                     self._send_json(400, {"error": "bad_json"})
                     return None
 
+            def _serve_static(self, rel_path: str) -> None:
+                if not rel_path:
+                    rel_path = "index.html"
+                target = (static_dir / rel_path).resolve()
+                if not is_path_allowed(target, static_dir) or not target.exists() or not target.is_file():
+                    self.send_response(404)
+                    self.end_headers()
+                    return
+                content_type = mimetypes.guess_type(str(target))[0] or "application/octet-stream"
+                if content_type.startswith("text/") or content_type in {"application/javascript", "application/json"}:
+                    content_type = f"{content_type}; charset=utf-8"
+                body = target.read_bytes()
+                self.send_response(200)
+                self.send_header("Content-Type", content_type)
+                self.send_header("Content-Length", str(len(body)))
+                self.end_headers()
+                self.wfile.write(body)
+
             def do_OPTIONS(self) -> None:  # noqa: N802
                 # CORS preflight support
                 self.send_response(204)
                 self.send_header("Access-Control-Allow-Origin", "*")
-                self.send_header("Access-Control-Allow-Headers", "Content-Type,X-API-TOKEN")
+                self.send_header("Access-Control-Allow-Headers", "Content-Type,X-API-TOKEN,Authorization")
                 self.send_header("Access-Control-Allow-Methods", "GET,POST,OPTIONS")
                 self.end_headers()
 
             def do_POST(self) -> None:  # noqa: N802
-                if not self._check_auth():
+                if not self._check_auth(require_dashboard_token=True):
                     return
                 if self.path == "/api/v1/bot/restart":
                     try:
@@ -183,13 +211,141 @@ class ApiServer:
                         logger.exception("Error evaluating order: %s", exc)
                         self._send_json(500, {"error": "internal_error"})
                     return
+                if self.path == "/api/v1/autopilot/enable":
+                    try:
+                        response = app.autopilot_set_enabled(True)
+                        self._send_json(200, response)
+                    except Exception as exc:  # pylint: disable=broad-except
+                        logger.exception("Error enabling autopilot: %s", exc)
+                        self._send_json(500, {"error": "internal_error"})
+                    return
+                if self.path == "/api/v1/autopilot/disable":
+                    try:
+                        response = app.autopilot_set_enabled(False)
+                        self._send_json(200, response)
+                    except Exception as exc:  # pylint: disable=broad-except
+                        logger.exception("Error disabling autopilot: %s", exc)
+                        self._send_json(500, {"error": "internal_error"})
+                    return
+                if self.path == "/api/v1/autopilot/target_state":
+                    payload = self._parse_json()
+                    if payload is None:
+                        return
+                    target_state = payload.get("state") if isinstance(payload, dict) else None
+                    if not target_state:
+                        self._send_json(400, {"error": "missing_state"})
+                        return
+                    try:
+                        response = app.autopilot_set_target_state(str(target_state))
+                        self._send_json(200, response)
+                    except Exception as exc:  # pylint: disable=broad-except
+                        logger.exception("Error setting target state: %s", exc)
+                        self._send_json(500, {"error": "internal_error"})
+                    return
+                if self.path == "/api/v1/policy/rollout":
+                    payload = self._parse_json()
+                    if payload is None:
+                        return
+                    symbol = payload.get("symbol") if isinstance(payload, dict) else None
+                    path = payload.get("path") if isinstance(payload, dict) else None
+                    if not path:
+                        self._send_json(400, {"error": "missing_path"})
+                        return
+                    try:
+                        response = app.policy_rollout_payload(symbol, str(path))
+                        self._send_json(200, response)
+                    except ValueError as exc:
+                        self._send_json(400, {"error": "bad_request", "details": str(exc)})
+                    except Exception as exc:  # pylint: disable=broad-except
+                        logger.exception("Error rolling out policy: %s", exc)
+                        self._send_json(500, {"error": "internal_error"})
+                    return
+                if self.path == "/api/v1/policy/rollback":
+                    payload = self._parse_json()
+                    if payload is None:
+                        return
+                    symbol = payload.get("symbol") if isinstance(payload, dict) else None
+                    try:
+                        response = app.policy_rollback_payload(symbol)
+                        self._send_json(200, response)
+                    except Exception as exc:  # pylint: disable=broad-except
+                        logger.exception("Error rolling back policy: %s", exc)
+                        self._send_json(500, {"error": "internal_error"})
+                    return
+                if self.path == "/api/v1/alerts/ack":
+                    payload = self._parse_json()
+                    if payload is None:
+                        return
+                    alert_id = payload.get("alert_id") if isinstance(payload, dict) else None
+                    note = payload.get("note") if isinstance(payload, dict) else ""
+                    if not alert_id:
+                        self._send_json(400, {"error": "missing_alert_id"})
+                        return
+                    try:
+                        response = app.alerts_ack(str(alert_id), str(note or ""))
+                        self._send_json(200, response)
+                    except Exception as exc:  # pylint: disable=broad-except
+                        logger.exception("Error acknowledging alert: %s", exc)
+                        self._send_json(500, {"error": "internal_error"})
+                    return
+                if self.path == "/api/v1/alerts/silence":
+                    payload = self._parse_json()
+                    if payload is None:
+                        return
+                    rule = payload.get("rule") if isinstance(payload, dict) else None
+                    minutes = payload.get("minutes") if isinstance(payload, dict) else 60
+                    if not rule:
+                        self._send_json(400, {"error": "missing_rule"})
+                        return
+                    try:
+                        response = app.alerts_silence(str(rule), int(minutes))
+                        self._send_json(200, response)
+                    except Exception as exc:  # pylint: disable=broad-except
+                        logger.exception("Error silencing alert: %s", exc)
+                        self._send_json(500, {"error": "internal_error"})
+                    return
+                if self.path == "/api/v1/safety/kill_switch":
+                    payload = self._parse_json()
+                    if payload is None:
+                        return
+                    enabled = payload.get("enabled") if isinstance(payload, dict) else None
+                    challenge_id = payload.get("challenge_id") if isinstance(payload, dict) else None
+                    if challenge_id is None or enabled is None:
+                        self._send_json(400, {"error": "missing_fields"})
+                        return
+                    try:
+                        response = app.apply_kill_switch(bool(enabled), str(challenge_id))
+                        self._send_json(200, response)
+                    except ValueError as exc:
+                        self._send_json(400, {"error": "bad_request", "details": str(exc)})
+                    except Exception as exc:  # pylint: disable=broad-except
+                        logger.exception("Error applying kill switch: %s", exc)
+                        self._send_json(500, {"error": "internal_error"})
+                    return
 
                 self._send_json(404, {"error": "not_found"})
 
             def do_GET(self) -> None:  # noqa: N802
-                if not self._check_auth():
+                path = self.path.split("?", 1)[0]
+                if path in {"/", "/dashboard", "/dashboard/"}:
+                    self._serve_static("index.html")
                     return
-                if self.path == "/api/v1/policy/current":
+                if path.startswith("/static/"):
+                    self._serve_static(path[len("/static/") :])
+                    return
+                if not self._check_auth(require_dashboard_token=False):
+                    return
+                if self.path.startswith("/api/v1/policy/current"):
+                    if "scope=ml" in self.path or "type=ml" in self.path:
+                        symbol = "BTCUSDT"
+                        if "?" in self.path:
+                            _, query = self.path.split("?", 1)
+                            for part in query.split("&"):
+                                if part.startswith("symbol="):
+                                    symbol = part.split("=", 1)[1]
+                        response = app.policy_list_payload(symbol)
+                        self._send_json(200, response)
+                        return
                     try:
                         response = app.get_policy_payload()
                         self._send_json(200, response)
@@ -305,6 +461,127 @@ class ApiServer:
                         self._send_json(200, response)
                     except Exception as exc:  # pylint: disable=broad-except
                         logger.exception("Error listing events: %s", exc)
+                        self._send_json(500, {"error": "internal_error"})
+                    return
+                if self.path.startswith("/api/v1/dashboard/summary"):
+                    try:
+                        symbol = "BTCUSDT"
+                        if "?" in self.path:
+                            _, query = self.path.split("?", 1)
+                            for part in query.split("&"):
+                                if part.startswith("symbol="):
+                                    symbol = part.split("=", 1)[1]
+                        response = app.dashboard_summary(symbol)
+                        self._send_json(200, response)
+                    except Exception as exc:  # pylint: disable=broad-except
+                        logger.exception("Error building dashboard summary: %s", exc)
+                        self._send_json(500, {"error": "internal_error"})
+                    return
+                if self.path.startswith("/api/v1/dashboard/timeseries"):
+                    import urllib.parse as _urlparse
+
+                    params = {"metric": "", "symbol": "BTCUSDT", "from": "", "to": "", "bucket": "10s"}
+                    if "?" in self.path:
+                        _, query = self.path.split("?", 1)
+                        for part in query.split("&"):
+                            if "=" not in part:
+                                continue
+                            key, value = part.split("=", 1)
+                            if key in params:
+                                params[key] = _urlparse.unquote(value)
+                    try:
+                        response = app.tsdb_timeseries(
+                            params["metric"],
+                            params["symbol"],
+                            params["from"],
+                            params["to"],
+                            params["bucket"],
+                        )
+                        self._send_json(200, response)
+                    except Exception as exc:  # pylint: disable=broad-except
+                        logger.exception("Error building dashboard timeseries: %s", exc)
+                        self._send_json(500, {"error": "internal_error"})
+                    return
+                if self.path.startswith("/api/v1/dashboard/events/recent"):
+                    try:
+                        limit = 200
+                        if "?" in self.path:
+                            _, query = self.path.split("?", 1)
+                            for part in query.split("&"):
+                                if part.startswith("limit="):
+                                    try:
+                                        limit = int(part.split("=", 1)[1])
+                                    except ValueError:
+                                        limit = 200
+                        response = app.dashboard_events(limit=limit, types=None)
+                        self._send_json(200, {"events": response})
+                    except Exception as exc:  # pylint: disable=broad-except
+                        logger.exception("Error building dashboard events: %s", exc)
+                        self._send_json(500, {"error": "internal_error"})
+                    return
+                if self.path.startswith("/api/v1/dashboard/audit/recent"):
+                    try:
+                        limit = 200
+                        if "?" in self.path:
+                            _, query = self.path.split("?", 1)
+                            for part in query.split("&"):
+                                if part.startswith("limit="):
+                                    try:
+                                        limit = int(part.split("=", 1)[1])
+                                    except ValueError:
+                                        limit = 200
+                        response = app.audit_recent(limit=limit)
+                        self._send_json(200, {"items": response})
+                    except Exception as exc:  # pylint: disable=broad-except
+                        logger.exception("Error building audit list: %s", exc)
+                        self._send_json(500, {"error": "internal_error"})
+                    return
+                if self.path.startswith("/api/v1/alerts/active"):
+                    try:
+                        response = app.alerts_snapshot()
+                        self._send_json(200, {"active": response.get("active", [])})
+                    except Exception as exc:  # pylint: disable=broad-except
+                        logger.exception("Error building alerts: %s", exc)
+                        self._send_json(500, {"error": "internal_error"})
+                    return
+                if self.path.startswith("/api/v1/alerts/recent"):
+                    try:
+                        limit = 200
+                        if "?" in self.path:
+                            _, query = self.path.split("?", 1)
+                            for part in query.split("&"):
+                                if part.startswith("limit="):
+                                    try:
+                                        limit = int(part.split("=", 1)[1])
+                                    except ValueError:
+                                        limit = 200
+                        response = app.alerts_snapshot()
+                        items = response.get("recent", [])[-limit:]
+                        self._send_json(200, {"items": items})
+                    except Exception as exc:  # pylint: disable=broad-except
+                        logger.exception("Error building alerts: %s", exc)
+                        self._send_json(500, {"error": "internal_error"})
+                    return
+                if self.path.startswith("/api/v1/policy/list"):
+                    try:
+                        symbol = "BTCUSDT"
+                        if "?" in self.path:
+                            _, query = self.path.split("?", 1)
+                            for part in query.split("&"):
+                                if part.startswith("symbol="):
+                                    symbol = part.split("=", 1)[1]
+                        response = app.policy_list_payload(symbol)
+                        self._send_json(200, response)
+                    except Exception as exc:  # pylint: disable=broad-except
+                        logger.exception("Error listing policy: %s", exc)
+                        self._send_json(500, {"error": "internal_error"})
+                    return
+                if self.path == "/api/v1/safety/kill_switch":
+                    try:
+                        response = app.get_kill_switch_challenge()
+                        self._send_json(200, response)
+                    except Exception as exc:  # pylint: disable=broad-except
+                        logger.exception("Error creating kill switch challenge: %s", exc)
                         self._send_json(500, {"error": "internal_error"})
                     return
                 if self.path == "/api/v1/tsdb/status":
