@@ -34,3 +34,6 @@ jobs:
       - name: Offline smoke (research backtest)
         run: |
           python supervisor.py research backtest --data_file tests/data/ticks_small.csv --limit_rows 200 --no_equity_curve --no_trades
+      - name: TSDB benchmark (noop)
+        run: |
+          python tools/load/run_ingestion_benchmark.py --duration-sec 5 --writer-mode noop --trades-per-sec 5 --l1-per-sec 5 --no-spool

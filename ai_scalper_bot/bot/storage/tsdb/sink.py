@@ -19,7 +19,11 @@ class TsdbSink:
         self._stop = asyncio.Event()
 
     def _build_bus(self) -> EventBus:
-        return EventBus(max_events=self.cfg.queue.max_events, max_bytes=self.cfg.queue.max_bytes)
+        return EventBus(
+            max_events=self.cfg.queue.max_events,
+            max_bytes=self.cfg.queue.max_bytes,
+            drop_policy=self.cfg.queue.drop_policy,
+        )
 
     def _build_writer(self) -> QuestDbIlpWriter:
         spooler = None

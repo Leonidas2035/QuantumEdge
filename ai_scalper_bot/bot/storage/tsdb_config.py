@@ -30,6 +30,7 @@ class WriterSettings:
 class QueueSettings:
     max_events: int
     max_bytes: int
+    drop_policy: str
 
 
 @dataclass
@@ -116,9 +117,14 @@ def load_tsdb_config() -> TsdbConfig:
 
     queue_raw = raw.get("queue", {}) or {}
     memory_raw = raw.get("memory_budgets", {}) or {}
+    drop_policy = str(queue_raw.get("drop_policy", "drop_lowest")).lower()
+    if drop_policy not in {"drop_lowest", "drop_newest"}:
+        drop_policy = "drop_lowest"
+
     queue = QueueSettings(
         max_events=_int(queue_raw.get("max_events", 10000), 10000),
         max_bytes=_int(queue_raw.get("max_bytes", memory_raw.get("ingest_queue_bytes", 256 * 1024 * 1024)), 256 * 1024 * 1024),
+        drop_policy=drop_policy,
     )
 
     spool_raw = raw.get("spool", {}) or {}

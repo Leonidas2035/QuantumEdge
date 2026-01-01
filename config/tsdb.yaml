@@ -45,12 +45,14 @@ ingest:
 
 memory_budgets:
   hot_ring_bytes: 268435456
+  hot_ring_minutes: 10
   ingest_queue_bytes: 268435456
   spool_max_bytes: 1073741824
 
 queue:
   max_events: 10000
   max_bytes: 268435456
+  drop_policy: "drop_lowest"  # drop_lowest | drop_newest
 
 spool:
   enabled: true

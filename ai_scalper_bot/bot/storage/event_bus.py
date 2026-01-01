@@ -25,7 +25,12 @@ class EventBusStats:
 class EventBus:
     """Priority event bus with bounded queue + drop policy."""
 
-    def __init__(self, max_events: int = 10000, max_bytes: int = 256 * 1024 * 1024) -> None:
+    def __init__(
+        self,
+        max_events: int = 10000,
+        max_bytes: int = 256 * 1024 * 1024,
+        drop_policy: str = "drop_lowest",
+    ) -> None:
         self._queues = {
             EventPriority.HIGH: asyncio.Queue(maxsize=max_events),
             EventPriority.NORMAL: asyncio.Queue(maxsize=max_events),
@@ -33,6 +38,11 @@ class EventBus:
         }
         self._max_events = max(int(max_events), 1)
         self._max_bytes = max(int(max_bytes), 1024)
+        self._drop_policy = (
+            drop_policy
+            if drop_policy in {"drop_lowest", "drop_newest"}
+            else "drop_lowest"
+        )
         self._lock = asyncio.Lock()
         self._events = 0
         self._bytes = 0
@@ -45,6 +55,15 @@ class EventBus:
         except Exception:
             return 256
 
+    def _record_drop(self, priority: EventPriority) -> None:
+        self.stats.dropped += 1
+        if priority == EventPriority.LOW:
+            self.stats.dropped_low += 1
+        elif priority == EventPriority.NORMAL:
+            self.stats.dropped_normal += 1
+        else:
+            self.stats.dropped_high += 1
+
     def _drop_one_lowest_locked(self) -> bool:
         for priority in (EventPriority.LOW, EventPriority.NORMAL, EventPriority.HIGH):
             queue = self._queues[priority]
@@ -54,36 +73,38 @@ class EventBus:
                 continue
             self._events = max(self._events - 1, 0)
             self._bytes = max(self._bytes - size, 0)
-            self.stats.dropped += 1
-            if priority == EventPriority.LOW:
-                self.stats.dropped_low += 1
-            elif priority == EventPriority.NORMAL:
-                self.stats.dropped_normal += 1
-            else:
-                self.stats.dropped_high += 1
+            self._record_drop(priority)
             return True
         return False
 
     async def publish(self, event: Dict[str, Any], priority: EventPriority = EventPriority.NORMAL) -> bool:
         size = self._estimate_size(event)
         async with self._lock:
-            while (self._events >= self._max_events or (self._bytes + size) > self._max_bytes) and self._events > 0:
+            over_limit = self._events >= self._max_events or (self._bytes + size) > self._max_bytes
+            if over_limit and self._drop_policy == "drop_newest":
+                self._record_drop(priority)
+                return False
+            while over_limit and self._events > 0:
                 if not self._drop_one_lowest_locked():
                     break
+                over_limit = self._events >= self._max_events or (self._bytes + size) > self._max_bytes
             if self._events >= self._max_events or (self._bytes + size) > self._max_bytes:
-                self.stats.dropped += 1
+                self._record_drop(priority)
                 return False
             queue = self._queues.get(priority, self._queues[EventPriority.NORMAL])
             try:
                 queue.put_nowait((event, size))
             except asyncio.QueueFull:
+                if self._drop_policy == "drop_newest":
+                    self._record_drop(priority)
+                    return False
                 if not self._drop_one_lowest_locked():
-                    self.stats.dropped += 1
+                    self._record_drop(priority)
                     return False
                 try:
                     queue.put_nowait((event, size))
                 except asyncio.QueueFull:
-                    self.stats.dropped += 1
+                    self._record_drop(priority)
                     return False
             self._events += 1
             self._bytes += size
