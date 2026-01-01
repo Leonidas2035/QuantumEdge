@@ -1,0 +1,36 @@
+name: ci
+
+on:
+  push:
+    branches: ["main"]
+  pull_request:
+
+jobs:
+  lint-test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11"]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements/requirements.txt
+          python -m pip install -r requirements/requirements-dev.txt
+      - name: Lint (ruff)
+        run: |
+          python -m ruff check tools quantumedge SupervisorAgent/supervisor/alerts SupervisorAgent/supervisor/security.py
+      - name: Format (black)
+        run: |
+          python -m black --check tools quantumedge SupervisorAgent/supervisor/alerts SupervisorAgent/supervisor/security.py
+      - name: Unit tests
+        run: |
+          python -m pytest -q
+      - name: Offline smoke (research backtest)
+        run: |
+          python supervisor.py research backtest --data_file tests/data/ticks_small.csv --limit_rows 200 --no_equity_curve --no_trades
