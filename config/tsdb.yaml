@@ -1,0 +1,53 @@
+﻿# TSDB config (QuestDB ILP). Keep secrets out of git.
+# This file is read by SupervisorAgent via config/tsdb.yaml.
+
+enabled: false
+backend: "questdb"
+
+# Writer pacing (used by current TSDB writer)
+flush_interval_seconds: 2
+batch_size: 500
+
+# Future writer knobs (for EventBus/ILP micro-batching)
+write_batch_rows: 500
+write_flush_interval_ms: 2000
+
+questdb:
+  host: "127.0.0.1"
+  ilp_port: 9009
+  http_port: 9000
+  pg_port: 8812
+  ilp_http_url: "http://127.0.0.1:9000/imp"
+  query_url: "http://127.0.0.1:9000/exec"
+
+tables:
+  prefix: "qe_"
+
+retry:
+  max_retries: 5
+  base_backoff_ms: 200
+  max_backoff_ms: 5000
+
+backfill:
+  enabled: false
+  from_days: 1
+
+ingest:
+  enabled: false
+  events_path: "ai_scalper_bot/runtime/events/events.jsonl"
+  metrics_path: "ai_scalper_bot/runtime/status/metrics.json"
+  exec_path: "ai_scalper_bot/runtime/state/ledger.jsonl"
+  state_path: "SupervisorAgent/runtime/ingest_state.json"
+  max_line_kb: 256
+  interval_sec: 2
+  dedupe_cache_size: 5000
+
+memory_budgets:
+  hot_ring_bytes: 268435456
+  ingest_queue_bytes: 268435456
+  spool_max_bytes: 1073741824
+
+retention_days:
+  l0_raw: 14
+  l1_bars: 180
+  l2_telemetry: 180

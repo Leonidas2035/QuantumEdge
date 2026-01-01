@@ -1,0 +1,13 @@
+﻿-- QuestDB schema placeholder (Stage 1).
+-- Stage 3 will finalize DDL for ILP ingestion and reporting.
+-- Table list and columns (planned):
+-- market_trades_raw: symbol, price, qty, side, trade_id, ts
+-- market_l1: symbol, bid, ask, bid_sz, ask_sz, ts
+-- bars_1s: symbol, open, high, low, close, volume, trades, ts
+-- bars_1m: symbol, open, high, low, close, volume, trades, ts
+-- signals: bot_id, symbol, signal, score, model, ts
+-- orders: bot_id, symbol, side, type, qty, price, status, client_order_id, exchange_order_id, ts
+-- fills: bot_id, symbol, client_order_id, price, qty, fee, fee_asset, ts
+-- positions: bot_id, symbol, position, entry_price, unrealized_pnl, leverage, ts
+-- equity: bot_id, equity, balance, drawdown, ts
+-- risk_events: bot_id, symbol, level, message, ts
