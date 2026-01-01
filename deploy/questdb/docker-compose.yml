@@ -1,0 +1,28 @@
+﻿version: "3.9"
+
+services:
+  questdb:
+    image: questdb/questdb:latest
+    container_name: questdb
+    restart: unless-stopped
+    ports:
+      - "9000:9000" # HTTP console + REST
+      - "9009:9009" # ILP (TCP)
+      - "8812:8812" # Postgres wire
+    volumes:
+      - questdb_data:/var/lib/questdb
+      - ./conf/server.conf:/etc/questdb/server.conf:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:9000/health >/dev/null 2>&1 || wget -qO- http://localhost:9000/exec?query=select+1 >/dev/null 2>&1"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 15s
+    mem_limit: 16g
+    deploy:
+      resources:
+        limits:
+          memory: 16g
+
+volumes:
+  questdb_data:
