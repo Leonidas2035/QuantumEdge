@@ -11,8 +11,8 @@ __pycache__/
 /logs/
 /runtime/
 /data/
+SupervisorAgent/runtime/
 **/logs/
-**/runtime/
 **/data/
 *.log
 /artifacts/
