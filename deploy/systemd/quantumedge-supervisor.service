@@ -1,0 +1,15 @@
+[Unit]
+Description=QuantumEdge SupervisorAgent
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/quantumedge
+EnvironmentFile=-/etc/quantumedge/quantumedge.env
+ExecStart=/opt/quantumedge/.venv/bin/python -m quantumedge supervisor --config /opt/quantumedge/config/supervisor.yaml run-foreground
+Restart=always
+RestartSec=2
+LimitNOFILE=65535
+
+[Install]
+WantedBy=multi-user.target
