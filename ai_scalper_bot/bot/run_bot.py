@@ -12,6 +12,7 @@ import yaml
 
 from bot.ai.risk_moderator import LLMRiskModerator
 from bot.core.config_loader import config, load_supervisor_settings, load_supervisor_snapshot_settings
+from bot.core.cpu_affinity import apply_cpu_affinity, load_cpu_affinity_config, load_worker_limits
 from bot.engine.decision_engine import DecisionEngine
 from bot.engine.decision_types import DecisionAction
 from bot.market_data.mock_ws_manager import MockWSManager
@@ -186,6 +187,12 @@ def _build_signal_from_meta(meta: EnsembleOutput) -> SignalOutput:
 async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, status_writer: Optional[BotStatusWriter] = None, logger: Optional[logging.Logger] = None):
     if logger is None:
         logging.basicConfig(level=getattr(logging, str(config.get("app.log_level", "INFO")).upper(), logging.INFO))
+    cpu_logger = logging.getLogger("cpu_affinity")
+    cpu_cfg = load_cpu_affinity_config(config)
+    apply_cpu_affinity(cpu_cfg, cpu_logger)
+    worker_limits = load_worker_limits(config)
+    if any(value > 0 for value in worker_limits.__dict__.values()):
+        cpu_logger.info("Worker limits: %s", worker_limits.__dict__)
     supervisor_cfg = load_supervisor_settings(config)
     print(f"[INFO] Using config: {config.config_path}")
     print(f"[INFO] Supervisor URL: {supervisor_cfg.base_url}")

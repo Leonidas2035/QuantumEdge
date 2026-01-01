@@ -56,6 +56,25 @@ sudo systemctl status quantumedge-supervisor.service
 sudo journalctl -u quantumedge-supervisor.service -f
 ```
 
+## CPU affinity (optional)
+
+You can use either systemd `CPUAffinity=` or app-level pinning.
+
+Example app-level env vars in `/etc/quantumedge/quantumedge.env`:
+
+```
+CPU_PIN_ENABLE=1
+CPU_PIN_MODE=auto_pcores
+CPU_PIN_MAX_CORES=8
+```
+
+Example systemd drop-in:
+
+```
+[Service]
+CPUAffinity=0 1 2 3 4 5 6 7
+```
+
 ## Manual run (foreground)
 
 ```bash

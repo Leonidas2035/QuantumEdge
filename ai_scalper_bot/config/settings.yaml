@@ -136,6 +136,18 @@ ops:
   metrics_interval_seconds: 5
   state_dir: "runtime/state"
 
+cpu:
+  pin_enable: false
+  pin_mode: "auto_pcores"   # auto_pcores | explicit
+  pin_cpus: ""              # e.g. "0-3,8-11" when pin_mode=explicit
+  pin_max_cores: 0          # 0 = all detected p-cores
+
+workers:
+  marketdata: 0
+  feature: 0
+  execution: 0
+  supervisor_web: 0
+
 telemetry:
   enabled: true
   sink: "http"
