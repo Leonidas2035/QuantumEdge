@@ -1,5 +1,5 @@
-﻿-- QuestDB schema for ILP ingestion and reporting.
--- Apply via QuestDB UI or /exec endpoint.
+﻿-- QuestDB init script (apply on a fresh instance).
+-- Run via UI SQL console or curl /exec for each statement.
 
 CREATE TABLE IF NOT EXISTS market_trades_raw (
   symbol SYMBOL,
