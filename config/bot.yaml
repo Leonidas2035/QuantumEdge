@@ -39,6 +39,9 @@ ml:
   fail_mode: "disable"   # disable | block
   model_source: "runtime"   # runtime | legacy
   runtime_models_dir: "runtime/models"
+  inference_backend: "auto"  # auto | cpu | onnx_cuda | torch_cuda
+  inference_batch_size: 0
+  inference_batch_window_ms: 0
   thresholds:
     h1: 0.55
     h5: 0.55

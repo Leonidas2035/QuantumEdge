@@ -270,6 +270,8 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
     ml_snapshot_interval = float(ml_cfg.get("snapshot_interval_sec", 30))
     if ml_snapshot_interval <= 0:
         ml_snapshot_interval = 30.0
+    env_backend = os.getenv("INFERENCE_BACKEND")
+    ml_inference_backend = str(ml_cfg.get("inference_backend", env_backend or "auto")).lower()
     ml_horizons = list(ml_cfg.get("horizons", [1, 5, 15]))
     ml_thresholds_cfg = _parse_ml_thresholds(ml_cfg, ml_horizons)
     ml_weights_cfg = _parse_ml_weights(ml_cfg, ml_horizons)
@@ -416,6 +418,7 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
             models_root=models_root,
             source=model_source,
             reload_interval_s=reload_interval,
+            backend=ml_inference_backend,
         )
         model_manager.load()
         if model_manager.errors:

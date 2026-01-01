@@ -57,12 +57,14 @@ class ModelManager:
         models_root: Path,
         source: str = "runtime",
         reload_interval_s: float = 30.0,
+        backend: Optional[str] = None,
     ):
         self.symbol = symbol.upper()
         self.horizons = list(horizons)
         self.models_root = models_root
         self.source = source
         self.reload_interval_s = reload_interval_s
+        self.backend = backend
         self.last_load_ts = 0.0
         self.entries: Dict[int, ModelEntry] = {}
         self.errors: Dict[int, str] = {}
@@ -108,7 +110,12 @@ class ModelManager:
                 if not model_path.exists():
                     self.errors[horizon] = "MODEL_FILE_MISSING"
                     continue
-                model = SignalModel(symbol=self.symbol, horizon=int(horizon), model_path=model_path)
+                model = SignalModel(
+                    symbol=self.symbol,
+                    horizon=int(horizon),
+                    model_path=model_path,
+                    backend=self.backend,
+                )
                 threshold = float((manifest.get("thresholds") or {}).get("p_up", 0.55))
                 manifest_hash = _sha256_file(manifest_path)
                 entry = ModelEntry(

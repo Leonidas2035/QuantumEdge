@@ -75,6 +75,25 @@ Example systemd drop-in:
 CPUAffinity=0 1 2 3 4 5 6 7
 ```
 
+## GPU inference (optional)
+
+GPU inference is opt-in and requires compatible model artifacts.
+Set `ml.inference_backend` in `config/bot.yaml` or export `INFERENCE_BACKEND`.
+
+Supported values:
+- `auto` (default): picks GPU if available, otherwise CPU
+- `cpu`
+- `onnx_cuda` (requires ONNX model + onnxruntime-gpu)
+- `torch_cuda` (requires TorchScript model + torch)
+
+Install GPU runtime dependencies only if you need them (not included by default):
+
+```bash
+pip install --upgrade onnxruntime-gpu
+# or
+pip install --upgrade torch
+```
+
 ## Manual run (foreground)
 
 ```bash

@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+import os
 from typing import Dict, List, Optional, Tuple
 
 import numpy as np
@@ -29,6 +30,7 @@ class EnsembleSignalModel:
         self.symbol = symbol
         cfg_horizons = config.get("ml.horizons", [1, 5, 30])
         self.horizons = horizons or cfg_horizons
+        backend = config.get("ml.inference_backend") or os.getenv("INFERENCE_BACKEND")
         # simple equal weights by default
         self.weights = {h: 1.0 for h in self.horizons}
         self.models: Dict[int, SignalModel] = {}
@@ -38,7 +40,7 @@ class EnsembleSignalModel:
         else:
             for h in self.horizons:
                 try:
-                    self.models[h] = SignalModel(symbol=symbol, horizon=h)
+                    self.models[h] = SignalModel(symbol=symbol, horizon=h, backend=backend)
                 except FileNotFoundError:
                     print(f"[WARN] Model for horizon {h} missing. Skipping in ensemble.")
 

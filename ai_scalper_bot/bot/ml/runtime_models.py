@@ -166,6 +166,7 @@ def load_runtime_models(
     models_root: Path,
     threshold_default: float = 0.55,
     compat_strict: bool = False,
+    backend: Optional[str] = None,
 ) -> Tuple[Dict[int, RuntimeModelInfo], Dict[int, str]]:
     symbol = symbol.upper()
     models_root = models_root.resolve()
@@ -208,6 +209,7 @@ def load_runtime_models(
                 horizon=int(horizon),
                 model_path=model_path,
                 calibration=calibration if isinstance(calibration, dict) else None,
+                backend=backend,
             )
             manifest_hash = _sha256_file(manifest_path)
             models[int(horizon)] = RuntimeModelInfo(
