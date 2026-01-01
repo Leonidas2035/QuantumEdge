@@ -1,0 +1,216 @@
+ЕТАП 1 — Run History + Audit Breadcrumbs (фундамент контролю)
+
+Мета: повна прозорість рішень Supervisor.
+
+1.1 Run history (на кожен запуск)
+runtime/supervisor/runs/<run_id>/
+ ├─ events.jsonl
+ ├─ summary.json
+ ├─ config_snapshot.json
+ ├─ positions.csv (optional)
+ └─ errors.log
+
+1.2 Audit breadcrumbs (ОБОВʼЯЗКОВО)
+
+Записуються в кожен файл:
+
+run_id
+
+git_commit
+
+policy_version
+
+model_version (якщо є ML)
+
+config_hash
+
+exchange
+
+symbol
+
+👉 Без цього аналіз в майбутньому неможливий.
+
+ЕТАП 2 — Стандарти логів (events + summary)
+
+Мета: щоб лог можна було читати людиною і аналізувати автоматично.
+
+2.1 events.jsonl — подієвий таймлайн
+
+Типи подій:
+
+RUN_START / RUN_END
+
+REGIME_CHANGE
+
+DECISION
+
+RISK_GUARD_BLOCK
+
+ORDER_*
+
+FREEZE / UNFREEZE
+
+ERROR
+
+Кожен DECISION має:
+
+reason_codes[]
+
+ключові метрики (VWAP_z, ATR, spread, margin, funding)
+
+2.2 summary.json — швидка оцінка “вдало / ні”
+
+Мінімум:
+
+час старту / завершення
+
+pnl_total
+
+wins / losses / trades
+
+max_drawdown
+
+max_margin_used
+
+min_liq_distance
+
+fees + funding
+
+regime_time_share
+
+blocked_actions_count
+
+👉 Це твій головний файл, який ти мені кидаєш.
+
+ЕТАП 3 — Log Rotation + зберігання
+
+Мета: не вбити диск і зберегти історію.
+
+events.jsonl:
+
+ротація по розміру (напр. 100–200 MB)
+
+gzip/zstd після закриття run
+
+summary.json:
+
+зберігати всі (легкі)
+
+політика:
+
+сирі логи → 7–14 днів
+
+стиснуті → 3–6 місяців
+
+summary → безстроково
+
+ЕТАП 4 — Контроль Supervisor (людина в циклі)
+
+Мета: швидко розуміти — Supervisor адекватний чи ні.
+
+4.1 Регулярний review (ручний)
+
+Ти:
+
+береш summary.json
+
+дивишся:
+
+PnL vs drawdown
+
+скільки FREEZE
+
+чи не “смикає” режимами
+
+кидаєш мені summary + events
+
+Я:
+
+роблю звіт
+
+кажу:
+
+де помилки логіки
+
+де пороги завеликі/замалі
+
+чи не переобережний Supervisor
+
+ЕТАП 5 — Episode-based backtests (навчання без демо-очікування)
+
+Мета: навчати на реальних кейсах, швидко.
+
+Дані: tick
+
+Нарізка: 25 сценаріїв (флет, імпульс, фейк, ліквідації, тощо)
+
+Supervisor ганяється:
+
+FREEZE / UNFREEZE
+
+дозволи/заборони
+
+Метрики:
+
+survivability
+
+time-in-lock
+
+funding burn
+
+re-freeze rate
+
+📌 Це основа “навчання” Supervisor без ML.
+
+ЕТАП 6 — ML (тільки після стабільної логіки)
+
+Мета: підсилити, а не замінити рішення.
+
+6.1 Де ML доречний
+
+фільтр входів скальпу
+
+класифікація режимів (RANGE / TREND / PANIC)
+
+оцінка ймовірності mean-reversion
+
+6.2 Де ML заборонений
+
+пряме керування позиціями
+
+risk / liquidation рішення
+
+ML → радник, не керівник.
+
+ЕТАП 7 — Policy versioning & regression checks
+
+Мета: не ламати те, що вже працює.
+
+кожна зміна → policy_version+1
+
+обовʼязковий прогін:
+
+старі епізоди
+
+порівняння summary
+
+якщо гірше → rollback
+
+🔒 Ключовий принцип (запамʼятати)
+
+Supervisor — це не “чорна скринька”.
+Це керований, аудований, відтворюваний процес.
+
+Ти:
+
+бачиш кожне рішення
+
+знаєш чому
+
+можеш відкотити
+
+Коли будеш готовий — наступний логічний крок:
+
+або я зроблю шаблон summary.json + events.jsonl (готовий до копіпасту в код),
+
+або чек-лист “хороший / поганий run” для швидкого рішення без аналізу логів.

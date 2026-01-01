@@ -1,0 +1,253 @@
+Етап 0 — Зафіксувати контракт між сервісами
+
+Ціль: перш ніж рухати папки, домовитись “як вони говорять”.
+
+Зробити:
+
+Визначити Policy Contract (JSON):
+
+allow_trading: bool
+
+mode: "normal" | "scalp" | "risk_off" | ...
+
+size_multiplier: float
+
+max_daily_loss, cooldown_sec, spread_max_bps, тощо
+
+reason: str, ts: epoch, ttl_sec: int, version: str
+
+Визначити канал доставки policy:
+
+варіант А: Supervisor API /api/v1/policy/current
+
+варіант Б (надійний): файл runtime/policy.json (atomic write)
+
+Acceptance:
+
+scalper_bot вміє прочитати policy і застосувати TTL.
+
+Якщо policy нема/протухла — вмикається safe mode.
+
+Етап 1 — “Схуднути” scalper_bot: відділяємо runtime від R&D
+
+Ціль: scalper_bot = тільки те, що потрібно для live торгів.
+
+Рухаємо/розділяємо:
+
+Залишаємо в ai_scalper_bot:
+
+market_data/ (live)
+
+execution/
+
+decision_engine/
+
+risk/hard_rules.py
+
+ml/inference/ (лише inference + live feature calc)
+
+telemetry/emitters/ (лог/івенти назовні)
+
+Виносимо з ai_scalper_bot (поки можна просто “позначити”, потім перенести):
+
+ml/training/
+
+sandbox/
+
+backtester/
+
+heavy monitoring/analytics
+
+Тонкощі:
+
+Не ламай імпорти відразу: зроби “deprecation layer” (порожні обгортки або re-export) на 1 реліз, щоб усе збиралось.
+
+Мінімізуй залежності scalper_bot: що не треба для runtime — прибрати з requirements.
+
+Acceptance:
+
+Live запуск не змінився.
+
+scalper_bot імпортує тільки runtime-модулі.
+
+Етап 2 — ML Training/Ensemble повністю в Supervisor (ModelOps)
+
+Ціль: Supervisor тренує/валідує/публікує артефакти, бот тільки читає.
+
+Створити в Supervisor:
+
+supervisor/mlops/
+
+dataset_builder.py (збір/очистка даних)
+
+train.py (h1/h5/h30)
+
+validate.py (walk-forward, метрики)
+
+publish.py (викладка артефактів)
+
+Model Registry (структура артефактів):
+
+artifacts/models/<symbol>/<horizon>/<version>/
+
+manifest.json (версія, фічі, sha256, thresholds, created_at)
+
+Доставка в runtime:
+
+Supervisor копіює у runtime/models/... і робить atomic swap (через tmp + rename).
+
+У scalper_bot:
+
+ml/inference/model_loader.py читає runtime/models/.../manifest.json
+
+Якщо моделі немає/битий sha → переходить у safe mode або торгує без ML (якщо дозволено).
+
+Acceptance:
+
+Команда типу supervisor.py ml train --symbol BTCUSDT --horizons 1,5,30
+
+Бот підхоплює нову версію без рестарту (опційно) або з м’яким рестартом через Supervisor.
+
+Етап 3 — LLMRiskModerator в Supervisor як Policy Engine
+
+Ціль: LLM не блокує тік-шлях; Supervisor видає policy.
+
+В Supervisor:
+
+supervisor/policy/
+
+heuristics.py (детерміновані правила: вола, тренд/флет, drawdown, liquidity)
+
+llm_moderator.py (опційно, з таймаутом + circuit breaker)
+
+policy_engine.py (зводить heuristics + LLM → policy)
+
+Режим деградації:
+
+якщо LLM помилка → policy_engine видає policy на основі heuristics, з reason="LLM_UNAVAILABLE".
+
+У scalper_bot:
+
+policy/client.py:
+
+fetch (API або file)
+
+cache + TTL
+
+safe defaults
+
+Acceptance:
+
+Вимикаєш LLM ключ/мережу → бот не падає, просто переходить у conservative/risk_off згідно політики/TTL.
+
+Етап 4 — Backtester/Sandbox повністю в Supervisor (R&D контур)
+
+Ціль: усе офлайн — поза бойовим пакетом.
+
+В Supervisor:
+
+supervisor/research/
+
+backtest_runner.py
+
+scenarios/ (дамп ринку, стрес-сценарії)
+
+reports/ (html/md)
+
+Тонкощі:
+
+Дані/датасети не тягнемо в git.
+
+Параметри бектесту читаються з того ж config/bot.yaml, щоб не було “двох правд”.
+
+Acceptance:
+
+supervisor.py backtest --symbol BTCUSDT --period ... генерує репорт і не торкається runtime.
+
+Етап 5 — Monitoring: події з бота, розум — у Supervisor
+
+Ціль: бот тільки “шле”, Supervisor “думає”.
+
+У scalper_bot:
+
+telemetry/events.py (уніфіковані події: order_sent, fill, pnl_update, latency, error)
+
+emitter:
+
+або HTTP в Supervisor,
+
+або локальний файл/черга (простий JSONL).
+
+У Supervisor:
+
+supervisor/monitoring/
+
+інжест подій
+
+агрегації
+
+алерти
+
+TSDB writer (якщо вже є)
+
+Acceptance:
+
+Дашборд/health бачить: latency, trade rate, errors, policy reason, model version.
+
+Етап 6 — Entry points, конфіги, сумісність Windows/Linux
+
+Ціль: усе запускається однаково, без “магії”.
+
+Зробити:
+
+Єдині команди:
+
+QuantumEdge.py start|stop|status|diag
+
+supervisor.py start ...
+
+bot.py run ... (якщо є)
+
+Конфіг-схеми:
+
+чітко розділити: bot.yaml (runtime), supervisor.yaml (ops), meta_agent.yaml
+
+Secrets:
+
+тільки env/secrets.enc — не в git
+
+Таймаути:
+
+policy fetch timeout: 50–200ms
+
+LLM timeout: 2–5s (в Supervisor), з circuit breaker
+
+Acceptance:
+
+На AlmaLinux і Windows однаково стартує і коректно деградує.
+
+Етап 7 — Прибирання, залежності, “тонкі місця”
+
+Ціль: мінімальний runtime, максимальна передбачуваність.
+
+Зробити:
+
+В ai_scalper_bot прибрати важкі залежності (pandas/sklearn якщо не треба для inference; або винести inference в легший формат).
+
+Забезпечити сумісність артефактів (версія python, серіалізація).
+
+Тести:
+
+unit: policy TTL, safe mode, model manifest verify
+
+integration: Supervisor publish → bot reload
+
+Acceptance:
+
+Розмір runtime менший, старт швидший, менше “падає від усього”.
+
+Два важливі рішення, які треба прийняти одразу (я приймаю “кращий дефолт”)
+
+Fallback режим: я б ставив дефолт risk_off при протухлій policy (тобто нові входи заборонені), але дозволити “керування/вихід”. Це найбезпечніше.
+
+Канал policy: для стабільності найкраще файл + atomic write, API можна як додатковий.

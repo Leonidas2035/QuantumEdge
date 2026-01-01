@@ -1,0 +1,217 @@
+Етап 1. Зафіксувати “контракт” між Supervisor ↔ Meta-Agent
+
+Що зробити:
+
+Визначити формат task-файлу для Supervisor, напр. S1_ai_scalper_bot.md:
+
+PROJECT: ai_scalper_bot
+
+OBJECTIVE: ...
+
+SCOPE: які файли/каталоги можна чіпати
+
+TASKS: список конкретних підзадач
+
+OUTPUT: що очікується (патчі, звіт, TODO)
+
+Домовитися, де вони лежать, напр.
+meta_agent/tasks/S1_ai_scalper_bot.md.
+
+Визначити формат output:
+
+текстовий звіт (reports/S1_ai_scalper_bot_report.md)
+
+опціонально машинний формат (reports/S1_ai_scalper_bot.json)
+з полями: status, summary, patch_files, risks, next_actions.
+
+Після цього Supervisor знатиме: “як сформувати задачу” і “де шукати результат”.
+
+Етап 2. Додати CLI/API-режим для одиночного task-файлу
+
+Зараз Meta-Agent працює по stages.yaml. Додай режим:
+
+python meta_agent.py --task tasks/S1_ai_scalper_bot.md
+# або
+python meta_agent.py --task-id S1_ai_scalper_bot
+
+
+Що потрібно змінити:
+
+Всередині meta_agent.py:
+
+якщо є --task, обходити stages.yaml і не чіпати його;
+
+прочитати один .md, зібрати з нього промпт для Codex;
+
+відпрацювати “один прогін” і зберегти звіт/патчі.
+
+Виділити ядро в окремий модуль, наприклад meta_core.py:
+
+# meta_core.py
+def run_task(task_path: str) -> dict:
+    """
+    Читає .md, шле запит в Codex, зберігає результати.
+    Повертає dict з підсумком:
+    {
+      "task_id": "...",
+      "status": "ok"/"error",
+      "report_path": "...",
+      "patch_files": [...],
+      ...
+    }
+    """
+
+
+meta_agent.py перетворити на тонкий CLI-шар, який викликає run_task.
+
+Це дасть Supervisor-агенту можливість викликати Meta-Agent як функцію або як CLI.
+
+Етап 3. Узгодити GUI та Supervisor на спільній API
+
+Твій GUI вже вміє:
+
+створювати .md у prompts/;
+
+дописувати stages.yaml.
+
+Зроби невеликий шар task_manager.py, який буде єдиною точкою для створення задач:
+
+# task_manager.py
+def create_task(name: str, body: str, source: str) -> str:
+    """
+    source: 'gui' або 'supervisor'
+    Створює .md в потрібній папці (prompts/ або tasks/),
+    повертає шлях до файлу/ID.
+    """
+
+
+Далі:
+
+GUI викликає create_task(..., source="gui")
+
+Supervisor-скрипт викликає create_task(..., source="supervisor")
+
+Обидва інтерфейси працюють через один і той самий код — менше шансів роз’їхатися у форматах.
+
+Етап 4. “Supervisor runner” навколо Meta-Agent
+
+Створити supervisor_runner.py, який буде стандартним входом для Supervisor:
+
+def run_supervisor_cycle(goal: str, mode: str = "daily") -> dict:
+    """
+    1) Генерує task-файл(и) через LLM (audit, retrain, features).
+    2) Викликає meta_core.run_task(...) для кожного.
+    3) Збирає всі звіти, робить короткий summary.
+    4) Повертає структуру з пропозиціями змін (для тебе).
+    """
+
+
+Типовий цикл:
+
+Supervisor генерує high-level ціль:
+
+“Щоденний audit коду ai_scalper_bot”
+
+“Ре-трейн моделі на нових даних за останній тиждень”
+
+supervisor_runner.py:
+
+формує 1–3 task-файли S1_...md, S2_...md (audit, tests, retrain);
+
+запускає Meta-Agent (через run_task або CLI);
+
+читає reports/*.json / .md;
+
+будує один агрегований звіт для тебе:
+
+короткий summary
+
+список кандидатних змін (файли, патчі, ризики).
+
+Етап 5. Автоматизація off-market режиму
+
+Ціль: щоб це працювало “само” раз на день / тиждень.
+
+Окремий скрипт schedule_supervisor.py:
+
+для крипти можна просто ставити час, коли ти не торгуєш (наприклад, ніч за Києвом);
+
+викликає run_supervisor_cycle(goal="daily_maintenance").
+
+Запуск через:
+
+Windows Task Scheduler (якщо все на Windows),
+
+або cron (якщо винесеш Supervisor+Meta-Agent на Linux-сервер).
+
+Логування:
+
+logs/supervisor_YYYY-MM-DD.log
+
+записувати:
+
+які task-и запускались,
+
+статуси,
+
+посилання на звіти.
+
+Етап 6. Контроль якості та безпеки
+
+Щоб Supervisor не “зламав” бота:
+
+Read-only + patch-mode:
+
+Meta-Agent ніколи не пушить сам, тільки:
+
+створює .patch / .diff файли,
+
+або окремі .py.new.
+
+Supervisor у json-репорті позначає:
+
+patch_files,
+
+risk_level (low/medium/high).
+
+Людський approve:
+
+окремий скрипт/утиліта:
+
+показує список кандидатних патчів;
+
+ти вибираєш “apply / reject”;
+
+тільки після цього йде реальний git apply + commit.
+
+Тестовий шар:
+
+Meta-Agent після змін обовʼязково запускає:
+
+pytest / мінімальні тести;
+
+dry-run бота (без реальної торгівлі).
+
+Результати тестів теж у report.json.
+
+Етап 7. Розширення функцій Meta-Agent під стратегічні задачі
+
+Коли базова інтеграція працює:
+
+Додати окремі “типи задач”:
+
+audit_code
+
+propose_features
+
+retrain_model
+
+risk_review
+
+Для кожного типу — свій шаблон .md (Meta-проект):
+
+Supervisor тільки підставляє контекст за тиждень (нові логи, PnL, ризики).
+
+Meta-Agent під кожен тип має свій pipeline:
+
+для retrain_model — стандартний ланцюжок: збір даних → train → eval → звіт.

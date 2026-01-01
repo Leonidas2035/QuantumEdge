@@ -2,6 +2,10 @@
 
 This repository combines multiple projects under a single root for coordinated development.
 
+Linux-first note:
+- Primary target OS: AlmaLinux.
+- Windows-only artifacts live under `legacy/windows/` (optional/legacy).
+
 Projects:
 - ai_scalper_bot/
 - SupervisorAgent/
@@ -42,8 +46,8 @@ Ops entrypoints:
 - `python SupervisorAgent/supervisor.py start|stop|restart|status|diag`
 
 Cross-platform scripts:
-- `scripts/windows/qe_start.ps1`, `scripts/windows/qe_stop.ps1`, `scripts/windows/qe_diag.ps1`
 - `scripts/linux/qe_start.sh`, `scripts/linux/qe_stop.sh`, `scripts/linux/qe_diag.sh`
+- `legacy/windows/scripts/qe_start.ps1`, `legacy/windows/scripts/qe_stop.ps1`, `legacy/windows/scripts/qe_diag.ps1`
 
 Runtime dependencies:
 - Bot-only runtime: `requirements/requirements-runtime.txt`

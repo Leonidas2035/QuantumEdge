@@ -1,0 +1,226 @@
+Етап 1 — “Чистка Windows-специфіки” (але без зламу запуску)
+
+У тебе явно є Windows-обв’язка: .ps1, .cmd, .exe, інсталятори .iss, локальний інсталятор Python тощо【
+
+structure
+
+】.
+
+Дії
+
+Винести все Windows у scripts/windows/ (або legacy/windows/) і прибрати з основного шляху запуску:
+
+*.ps1, *.cmd, *.iss, run_bot.exe*, python-*.exe, build-папки.
+
+Залишити “ядро” Python-модулів (папки bot/, SupervisorAgent/, meta_agent/, tools/, config/), як у твоїй схемі монорепо【
+
+Що таке QuantumEdge
+
+】.
+
+Оновити README: “Windows legacy — опційно, основний шлях Linux”.
+
+Готово, якщо: репо не містить сміття в корені, Linux-шлях стане “першим класом”.
+
+Codex-задача: “реорганізувати дерево: перенести windows-скрипти/бінарі в legacy, оновити посилання в README, перевірити імпорти/entrypoints”.
+
+Етап 2 — Linux-старт: один стандартний спосіб запуску
+
+Ціль: замінити *.cmd/*.ps1 на bash + systemd (для 24/7).
+
+Дії
+
+Додати:
+
+scripts/linux/setup.sh (інсталяція залежностей, створення venv)
+
+scripts/linux/run_supervisor.sh (запуск Supervisor)
+
+scripts/linux/run_bot.sh (опційно, якщо треба окремо)
+
+Нормалізувати entrypoints (щоб не було “10 способів старту”): один python -m ... або один launcher (QuantumEdge.py) як у концепті【
+
+Що таке QuantumEdge
+
+】.
+
+Готово, якщо: на чистій Alma машина піднімає Supervisor і бот одним сценарієм.
+
+Codex-задача: “додати bash-скрипти, привести запуск до одного entrypoint, прибрати хардкод шляхів C:\…”.
+
+Етап 3 — GitHub-first процес: CI, тести, які не чіпають біржу
+
+Ціль: кожен push дає тобі впевненість, що нічого не зламали.
+
+Дії
+
+Додати GitHub Actions:
+
+lint (ruff/flake8), format (black), typecheck (mypy — опційно)
+
+unit tests + offline simulation (tick replay / sandbox) — без біржових ключів.
+
+Створити “smoke-сценарій”: запуск offline_loop.py/симулятора з невеликим датасетом.
+
+Вивести артефакти в CI: логи, короткий perf-репорт.
+
+Готово, якщо: PR не мерджиться без зеленого CI.
+
+Codex-задача: “створити workflow yml + мінімальні тести (offline)”.
+
+Етап 4 — AlmaLinux деплой як сервіс (systemd)
+
+Ціль: щоб воно працювало як сервіс і перезапускалося правильно.
+
+Дії
+
+Створити systemd unit для Supervisor:
+
+Restart=always, RestartSec=..., LimitNOFILE=...
+
+WorkingDirectory=..., EnvironmentFile=/etc/quantumedge/env (без секретів у git)
+
+Логи через journald або в logs/ (але logs/ не в git).
+
+Готово, якщо: systemctl status quantumedge показує стабільний сервіс, рестарт працює.
+
+Етап 5 — CPU-план під i7-14700: P-cores, без HT, лише потрібна кількість
+
+Ціль: мінімальна латентність + контроль ресурсів, без “розмазування” по E-ядрах і HT.
+
+5.1. Вимкнути HT “по-справжньому”
+
+Найкраще: вимкнути Hyper-Threading у BIOS (щоб ОС навіть не бачила sibling threads).
+
+Якщо HT поки лишається: не використовувати sibling threads (вибір CPU по topology).
+
+5.2. Розділити потоки на ролі
+
+Рекомендований розподіл:
+
+Критичний шлях (market data → decision → execution): 2–4 P-cores
+
+ML/feature builder/backtest/лог-аналітика: решта (може навіть частина E-cores)
+
+Supervisor API/monitoring: 1 P-core або E-core
+
+5.3. Реалізація (без “магії”)
+
+systemd:
+
+CPUAffinity= або AllowedCPUs= (cgroups v2)
+
+приклад ручного запуску:
+
+taskset -c 0-3 python QuantumEdge.py start
+
+
+Для точного відбору P-cores: зчитати /sys/devices/system/cpu/cpu*/topology/* і побудувати мапу.
+
+Готово, якщо: процеси стабільно “сидять” на вибраних CPU, а p99 latency по циклу рішення знижується.
+
+Codex-задача: “додати cpu_affinity в конфіг + реалізацію pinning для Supervisor/бота (Linux only), без поломки Windows-legacy”.
+
+Етап 6 — GPU-план під RTX 4060: що реально варто переносити
+
+Ключова ідея: GPU має сенс там, де є важка математика або батчі. Для tick-by-tick маленьких операцій overhead PCIe може з’їдати вигоду.
+
+Переносимо на GPU (високий профіт)
+
+ML inference, якщо це нейромережа/torch/onnx і модель не мікроскопічна.
+
+ML training (тут виграш майже завжди).
+
+Бектести/симуляції, якщо можна батчити (векторизовано, великий масив даних).
+
+Лишаємо на CPU (критично по latency/IO)
+
+WebSocket/мережа, order placement/cancel, risk-engine, state machine — це I/O та бізнес-логіка.
+
+Стек (практично)
+
+Torch CUDA або ONNX Runtime (CUDA) — для inference.
+
+За потреби: TensorRT (але це окремий рівень складності).
+
+Готово, якщо: GPU завантажується тільки там, де це дає приріст, і не додає затримки в критичному циклі.
+
+Codex-задача: “додати абстракцію InferenceBackend (cpu/onnx_cuda/torch_cuda), автодетект GPU, конфіг перемикач”.
+
+Етап 7 — “Мікрооптимізації Python”, які реально відчутні 24/7
+
+Дії
+
+Швидкий JSON: orjson (де є серіалізація).
+
+Менше алокацій: повторне використання буферів/структур, уникати списків у гарячих циклах.
+
+Правильна багатопоточність:
+
+для I/O — asyncio
+
+для CPU-bound — multiprocessing (але з урахуванням pinning)
+
+Профілювання: py-spy, cProfile, flamegraph.
+
+Готово, якщо: є профіль, і топ-3 вузьких місця або оптимізовані, або винесені на GPU.
+
+Етап 8 — Дані/артефакти: прибрати зайве з Git, зробити “чистий runtime”
+
+З твого дерева видно, що дані/трейди можуть бути великими【
+
+structure
+
+】.
+
+Дії
+
+data/, runtime/, logs/, storage/models/ — за замовчуванням поза git.
+
+Для датасетів: або окреме сховище, або Git LFS (якщо треба саме в Git).
+
+Готово, якщо: репо легке, клон швидкий, CI не тягне сміття.
+
+Етап 9 — Фіналізація: runbook + “як запускати на Alma”
+
+Спираємось на твою концепцію єдиної точки запуску і ролей модулів【
+
+Що таке QuantumEdge
+
+】.
+
+Дії
+
+docs/runbook_almalinux.md:
+
+установка залежностей
+
+запуск сервісу
+
+оновлення (git pull + restart)
+
+діагностика (health endpoints, логи, CPU pinning check)
+
+“Операційний чек” (старт/стоп/статус/діаг) у стилі production.
+
+Готово, якщо: ти можеш відтворити розгортання з нуля за 10–15 хв без здогадок.
+
+Короткий “порядок робіт” (як би я робив прямо зараз)
+
+Backup push + тег (Етап 0)
+
+Вичистити Windows-артефакти з кореня (Етап 1)
+
+Linux scripts + один entrypoint (Етап 2)
+
+GitHub Actions + offline smoke (Етап 3)
+
+systemd (Етап 4)
+
+CPU pinning (P-cores only, N cores) (Етап 5)
+
+GPU backend для ML (Етап 6)
+
+Профіль → точкові оптимізації (Етап 7)
+
+Документація/руанбук (Етап 9)

@@ -26,6 +26,8 @@ run_bot.exe.spec
 # Allow code under bot/state (runtime state files still ignored above)
 !bot/state/
 !bot/state/**
+bot/state/**/__pycache__/
+bot/state/**/__pycache__/**
 
 # Secrets
 config/secrets.env
