@@ -867,9 +867,12 @@ def load_tsdb_config(path: Path) -> TsdbConfig:
     backfill = raw.get("backfill", {}) or {}
     ingest = raw.get("ingest", {}) or {}
 
+    backend_raw = str(raw.get("backend", "none")).lower()
+    if backend_raw == "questdb_ilp":
+        backend_raw = "questdb"
     return TsdbConfig(
         enabled=bool(raw.get("enabled", False)),
-        backend=str(raw.get("backend", "none")).lower(),
+        backend=backend_raw,
         flush_interval_seconds=int(raw.get("flush_interval_seconds", 2)),
         batch_size=int(raw.get("batch_size", 500)),
         table_prefix=str(tables.get("prefix", "qe_")),

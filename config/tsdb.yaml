@@ -2,7 +2,7 @@
 # This file is read by SupervisorAgent via config/tsdb.yaml.
 
 enabled: false
-backend: "questdb"
+backend: "questdb_ilp"  # alias supported: questdb
 
 # Writer pacing (used by current TSDB writer)
 flush_interval_seconds: 2
@@ -19,6 +19,7 @@ questdb:
   pg_port: 8812
   ilp_http_url: "http://127.0.0.1:9000/imp"
   query_url: "http://127.0.0.1:9000/exec"
+  health_url: "http://127.0.0.1:9003/health"
 
 tables:
   prefix: "qe_"
@@ -46,6 +47,23 @@ memory_budgets:
   hot_ring_bytes: 268435456
   ingest_queue_bytes: 268435456
   spool_max_bytes: 1073741824
+
+queue:
+  max_events: 10000
+  max_bytes: 268435456
+
+spool:
+  enabled: true
+  path: "runtime/spool"
+  max_bytes: 1073741824
+  retention_days: 3
+  max_file_bytes: 10485760
+  rotation_minutes: 5
+
+events:
+  raw_trades: false
+  market_l1: true
+  bars_1s: true
 
 retention_days:
   l0_raw: 14

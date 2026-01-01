@@ -1,170 +1,156 @@
-import json
-import threading
+import asyncio
 import time
-from datetime import datetime
-from pathlib import Path
-from queue import Queue, Empty
-from typing import Dict, List, Optional, Tuple
+from dataclasses import dataclass
+from typing import Dict, Optional
 
-from bot.core.config_loader import config
-
-
-class _FileState:
-    def __init__(self, path: Path):
-        self.path = path
-        self.started_at = time.time()
+from bot.storage.event_bus import EventPriority
+from bot.storage.tsdb.sink import get_tsdb_sink
+from bot.storage.tsdb_config import load_tsdb_config
 
 
 class DataManager:
     """
-    Buffered persistence for trades/orderbooks and tick CSVs.
+    Buffered market data publishing for TSDB ingestion.
 
-    - Trades/orderbooks: JSONL with rotation.
-    - Ticks: CSV stream per symbol (rotated).
-    - All writes go through a background worker to avoid blocking the hot loop.
+    - market_trades_raw: optional, behind config flag.
+    - market_l1: best bid/ask + sizes.
+    - bars_1s: aggregated from trades.
     """
 
     def __init__(self):
-        storage = config.get("storage", {}) or {}
-        self.base = Path(config.get("app.data_path", "./data"))
-        self.base.mkdir(exist_ok=True)
-        (self.base / "ticks").mkdir(parents=True, exist_ok=True)
-        self.write_json_trades = bool(storage.get("save_trades", False))
-        self.write_orderbook = bool(storage.get("save_orderbook", False))
-        self.write_json_orderbook = bool(storage.get("save_orderbook_json", True))
-        self.write_tick_csv = True
-
-        self.max_bytes = int(storage.get("max_jsonl_size_mb", 5) * 1024 * 1024)
-        self.max_age_sec = int(storage.get("max_jsonl_minutes", 60) * 60)
-        self.retention_days = int(storage.get("retention_days", 3))
-        self.batch_size = int(storage.get("flush_batch", 200))
-        self.flush_interval = float(storage.get("flush_interval_seconds", 1.0))
-
-        self._queue: "Queue[Tuple[str, dict]]" = Queue()
-        self._stop = threading.Event()
-        self._files: Dict[Tuple[str, Optional[str]], _FileState] = {}
-        self._worker = threading.Thread(target=self._run, daemon=True)
-        self._worker.start()
+        self._cfg = load_tsdb_config()
+        self._enabled = bool(self._cfg.enabled and self._cfg.backend == "questdb")
+        self._events_cfg = self._cfg.events
+        self._sink = get_tsdb_sink()
+        self._bars = _Bars1sAggregator()
 
     # Public API
     async def save_trade(self, data: dict):
-        if self.write_json_trades:
-            self._queue.put(("trade_jsonl", data))
+        if not self._enabled:
+            return
         try:
-            ts = int(data.get("T") or data.get("E") or datetime.utcnow().timestamp() * 1000)
-            price = float(data.get("p"))
-            qty = float(data.get("q"))
+            ts_ms = int(data.get("T") or data.get("E") or (time.time() * 1000))
+            symbol = str(data.get("s", "UNKNOWN")).upper()
+            price = float(data.get("p") or data.get("price") or 0.0)
+            qty = float(data.get("q") or data.get("qty") or 0.0)
             side = "sell" if data.get("m") else "buy"
-            line = f"{ts},{price},{qty},{side}\n"
-            self._queue.put(("tick_csv", {"symbol": data.get("s", "UNKNOWN"), "line": line}))
         except Exception:
-            pass
+            return
+
+        if self._events_cfg.raw_trades:
+            await self._sink.publish(
+                {
+                    "table": "market_trades_raw",
+                    "symbol": symbol,
+                    "price": price,
+                    "qty": qty,
+                    "side": side,
+                    "trade_id": data.get("t") or data.get("tradeId"),
+                    "ts": ts_ms,
+                },
+                priority=EventPriority.LOW,
+            )
+
+        if self._events_cfg.bars_1s:
+            bar = self._bars.add_trade(symbol, ts_ms, price, qty)
+            if bar:
+                await self._sink.publish(bar, priority=EventPriority.NORMAL)
 
     async def save_orderbook(self, data: dict):
-        if self.write_orderbook and self.write_json_orderbook:
-            self._queue.put(("orderbook_jsonl", data))
+        if not self._enabled or not self._events_cfg.market_l1:
+            return
+        try:
+            ts_ms = int(data.get("T") or data.get("E") or (time.time() * 1000))
+            symbol = str(data.get("s", "UNKNOWN")).upper()
+            bids = data.get("bids") or data.get("b") or []
+            asks = data.get("asks") or data.get("a") or []
+            best_bid = float(bids[0][0]) if bids else None
+            best_ask = float(asks[0][0]) if asks else None
+            bid_sz = float(bids[0][1]) if bids else None
+            ask_sz = float(asks[0][1]) if asks else None
+        except Exception:
+            return
+        await self._sink.publish(
+            {
+                "table": "market_l1",
+                "symbol": symbol,
+                "bid": best_bid,
+                "ask": best_ask,
+                "bid_sz": bid_sz,
+                "ask_sz": ask_sz,
+                "ts": ts_ms,
+            },
+            priority=EventPriority.NORMAL,
+        )
 
     def close(self):
-        self._stop.set()
-        self._queue.put(("__stop__", {}))
-        self._worker.join(timeout=2.0)
-
-    # Internal worker
-    def _run(self):
-        buffers: Dict[str, List[dict]] = {"trade_jsonl": [], "orderbook_jsonl": [], "tick_csv": []}
-        last_flush = time.time()
-        while not self._stop.is_set():
-            try:
-                kind, payload = self._queue.get(timeout=self.flush_interval)
-                if kind == "__stop__":
-                    break
-                buffers[kind].append(payload)
-            except Empty:
-                pass
-
-            now = time.time()
-            should_flush = any(len(v) >= self.batch_size for v in buffers.values()) or (now - last_flush) >= self.flush_interval
-            if should_flush:
+        # Best-effort flush; bus handles shutdown separately.
+        if self._events_cfg.bars_1s and self._enabled:
+            for bar in self._bars.flush_all():
                 try:
-                    self._flush(buffers)
+                    loop = asyncio.get_running_loop()
+                    loop.create_task(self._sink.publish(bar, priority=EventPriority.NORMAL))
                 except Exception:
                     pass
-                last_flush = now
 
-        # final flush
-        try:
-            self._flush(buffers)
-        except Exception:
-            pass
 
-    def _flush(self, buffers: Dict[str, List[dict]]):
-        self._flush_jsonl(buffers.get("trade_jsonl", []), subdir="trades", prefix="trades")
-        self._flush_jsonl(buffers.get("orderbook_jsonl", []), subdir="orderbooks", prefix="orderbooks")
-        self._flush_ticks(buffers.get("tick_csv", []))
-        for k in buffers:
-            buffers[k].clear()
+@dataclass
+class _BarState:
+    sec: int
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: float
+    trades: int
 
-    def _flush_jsonl(self, events: List[dict], subdir: str, prefix: str):
-        if not events:
-            return
-        path = self._current_file(prefix, self.base / subdir, key=None)
-        path.parent.mkdir(parents=True, exist_ok=True)
-        with open(path, "a", encoding="utf-8") as f:
-            for evt in events:
-                f.write(json.dumps(evt, separators=(",", ":")))
-                f.write("\n")
-        self._rotate_if_needed(prefix, None, path)
 
-    def _flush_ticks(self, entries: List[dict]):
-        if not entries:
-            return
-        by_symbol: Dict[str, List[str]] = {}
-        for item in entries:
-            sym = item.get("symbol", "UNKNOWN")
-            by_symbol.setdefault(sym, []).append(item.get("line", ""))
-        for sym, lines in by_symbol.items():
-            path = self._current_file("ticks", self.base / "ticks", key=sym, suffix="csv", prefix=f"{sym}_stream")
-            header_needed = not path.exists()
-            with open(path, "a", encoding="utf-8") as f:
-                if header_needed:
-                    f.write("timestamp,price,qty,side\n")
-                f.writelines(lines)
-            self._rotate_if_needed("ticks", sym, path)
+class _Bars1sAggregator:
+    def __init__(self) -> None:
+        self._state: Dict[str, _BarState] = {}
 
-    def _current_file(self, kind: str, directory: Path, key: Optional[str] = None, suffix: str = "jsonl", prefix: Optional[str] = None) -> Path:
-        directory.mkdir(parents=True, exist_ok=True)
-        file_key = (kind, key)
-        state = self._files.get(file_key)
-        if state:
-            return state.path
-        ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-        name = prefix or kind
-        path = directory / f"{name}_{ts}.{suffix}"
-        state = _FileState(path)
-        self._files[file_key] = state
-        return path
+    def add_trade(self, symbol: str, ts_ms: int, price: float, qty: float) -> Optional[Dict[str, object]]:
+        sec = int(ts_ms // 1000)
+        state = self._state.get(symbol)
+        if state and state.sec != sec:
+            bar = {
+                "table": "bars_1s",
+                "symbol": symbol,
+                "open": state.open,
+                "high": state.high,
+                "low": state.low,
+                "close": state.close,
+                "volume": state.volume,
+                "trades": state.trades,
+                "ts": state.sec * 1000,
+            }
+            self._state[symbol] = _BarState(sec=sec, open=price, high=price, low=price, close=price, volume=qty, trades=1)
+            return bar
+        if state is None:
+            self._state[symbol] = _BarState(sec=sec, open=price, high=price, low=price, close=price, volume=qty, trades=1)
+            return None
+        state.high = max(state.high, price)
+        state.low = min(state.low, price)
+        state.close = price
+        state.volume += qty
+        state.trades += 1
+        return None
 
-    def _rotate_if_needed(self, kind: str, key: Optional[str], path: Path):
-        state = self._files.get((kind, key))
-        if not state:
-            return
-        too_big = path.exists() and path.stat().st_size >= self.max_bytes
-        too_old = (time.time() - state.started_at) >= self.max_age_sec
-        if too_big or too_old:
-            ts = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
-            directory = path.parent
-            name = path.stem.split("_")[0]
-            new_path = directory / f"{name}_{ts}{path.suffix}"
-            self._files[(kind, key)] = _FileState(new_path)
-            self._cleanup(directory)
-
-    def _cleanup(self, directory: Path):
-        if self.retention_days <= 0:
-            return
-        cutoff = time.time() - self.retention_days * 86400
-        for f in directory.glob("*"):
-            try:
-                if f.is_file() and f.stat().st_mtime < cutoff:
-                    f.unlink()
-            except Exception:
-                continue
+    def flush_all(self) -> list[Dict[str, object]]:
+        bars = []
+        for symbol, state in list(self._state.items()):
+            bars.append(
+                {
+                    "table": "bars_1s",
+                    "symbol": symbol,
+                    "open": state.open,
+                    "high": state.high,
+                    "low": state.low,
+                    "close": state.close,
+                    "volume": state.volume,
+                    "trades": state.trades,
+                    "ts": state.sec * 1000,
+                }
+            )
+        self._state.clear()
+        return bars

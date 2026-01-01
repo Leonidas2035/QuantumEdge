@@ -46,6 +46,7 @@ from bot.state.recovery import recover_state
 from bot.policy.policy_client import PolicyClient
 from bot.policy.policy_gate import policy_allows_entry
 from bot.telemetry.event_writer import EventWriter
+from bot.storage.tsdb.publisher import TsdbPublisher
 from telemetry.emitter import TelemetryEmitter, TelemetryConfig
 
 _kill_cache = {"ts": 0.0, "active": False, "reason": None}
@@ -244,6 +245,8 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
     events_max_mb = int(telemetry_cfg.get("events_max_mb", 5))
     events_backups = int(telemetry_cfg.get("events_backups", 3))
     event_writer = EventWriter(events_path, max_size_mb=events_max_mb, backup_count=events_backups)
+    bot_id = str(config.get("app.bot_id", "ai_scalper_bot"))
+    tsdb_publisher = TsdbPublisher(bot_id)
 
     def emit_event(event_type: str, data: Dict[str, Any], symbol_override: Optional[str] = None, component: str = "bot") -> None:
         if telemetry_emitter:
@@ -612,7 +615,8 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
             freshness.update_tick(ts)
             if event.get("b") is not None and event.get("a") is not None:
                 freshness.update_book(ts)
-            await data_manager.save_trade(event)
+            if data_source != "ws":
+                await data_manager.save_trade(event)
 
             ctx = engines[evt_symbol]
             feature_builder = ctx["feature_builder"]
@@ -689,6 +693,18 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
                     prediction = model_manager.predict(features)
                     meta = build_ensemble_output(prediction.outputs, ml_weights)
                     pseudo_signal = _build_signal_from_meta(meta)
+                    signal_label = "flat"
+                    if pseudo_signal.direction > 0:
+                        signal_label = "long"
+                    elif pseudo_signal.direction < 0:
+                        signal_label = "short"
+                    await tsdb_publisher.publish_signal(
+                        evt_symbol,
+                        signal_label,
+                        float(pseudo_signal.edge),
+                        model=ctx.get("ml_versions", {}).get("ensemble") if isinstance(ctx.get("ml_versions"), dict) else None,
+                        ts_ms=int(ts),
+                    )
                     if telemetry_emitter:
                         emit_event(
                             "ml_prediction",
@@ -1006,6 +1022,17 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
                                     "ts": int(ts),
                                 }
                             )
+                            await tsdb_publisher.publish_order(
+                                symbol=evt_symbol,
+                                side="BUY" if decision.direction == "long" else "SELL",
+                                order_type=str(decision.order_type or "market").lower(),
+                                qty=float(decision.size or 0.0),
+                                price=float(price),
+                                status="sent",
+                                client_order_id=client_order_id,
+                                exchange_order_id=None,
+                                ts_ms=int(ts),
+                            )
                             orders_window = ctx.get("orders_window")
                             if isinstance(orders_window, deque):
                                 orders_window.append(now_s)
@@ -1055,6 +1082,15 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
                                     "order_id": client_order_id,
                                 },
                                 evt_symbol,
+                            )
+                            await tsdb_publisher.publish_fill(
+                                symbol=evt_symbol,
+                                price=float(price),
+                                qty=float(result.size or 0.0),
+                                fee=None,
+                                fee_asset=None,
+                                client_order_id=client_order_id,
+                                ts_ms=int(ts),
                             )
                             if client_order_id:
                                 state_store.record_order(
@@ -1116,6 +1152,25 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
                                     "realized_pnl": summary_after.get("realized_pnl", 0.0),
                                     "open_pnl": summary_after.get("open_pnl", 0.0),
                                 }
+                            )
+                            equity_start = float(demo_cfg.get("equity_override", 0) or 0)
+                            realized = float(summary_after.get("realized_pnl", 0.0))
+                            unrealized = float(summary_after.get("open_pnl", 0.0))
+                            equity_val = equity_start + realized + unrealized
+                            equity_val = equity_val if equity_val > 0 else None
+                            await tsdb_publisher.publish_position(
+                                symbol=evt_symbol,
+                                position=float(summary_after.get("position", 0.0)),
+                                entry_price=summary_after.get("entry_price"),
+                                unrealized_pnl=summary_after.get("open_pnl", 0.0),
+                                leverage=None,
+                                ts_ms=int(ts),
+                            )
+                            await tsdb_publisher.publish_equity(
+                                equity=equity_val,
+                                balance=equity_val,
+                                drawdown=None,
+                                ts_ms=int(ts),
                             )
                             metrics_tracker.incr("fills")
                             if result.action in {"buy", "sell"}:
@@ -1189,6 +1244,23 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
                         "drawdown_day": float(stats.max_drawdown_abs()),
                     },
                     evt_symbol,
+                )
+                equity_start = float(demo_cfg.get("equity_override", 0) or 0)
+                equity_val = equity_start + float(summary.get("realized_pnl", 0.0)) + float(summary.get("open_pnl", 0.0))
+                equity_val = equity_val if equity_val > 0 else None
+                await tsdb_publisher.publish_position(
+                    symbol=evt_symbol,
+                    position=float(summary.get("position", 0.0)),
+                    entry_price=summary.get("entry_price"),
+                    unrealized_pnl=summary.get("open_pnl", 0.0),
+                    leverage=None,
+                    ts_ms=int(time.time() * 1000),
+                )
+                await tsdb_publisher.publish_equity(
+                    equity=equity_val,
+                    balance=equity_val,
+                    drawdown=None,
+                    ts_ms=int(time.time() * 1000),
                 )
                 last_report = now
 

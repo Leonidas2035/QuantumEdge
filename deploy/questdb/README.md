@@ -29,7 +29,7 @@ Or use helpers:
 ## Health
 
 ```bash
-curl -f http://localhost:9000/health
+curl -f http://localhost:9003/health
 # or
 curl -f "http://localhost:9000/exec?query=select+1"
 ```
@@ -38,7 +38,8 @@ If the container lacks `wget` the built-in healthcheck may fail; adjust `healthc
 
 ## Ports
 
-- 9000: HTTP console + REST (/exec, /imp, /health)
+- 9000: HTTP console + REST (/exec, /imp)
+- 9003: Health endpoint (/health)
 - 9009: ILP TCP
 - 8812: Postgres wire protocol
 
