@@ -1,0 +1,3 @@
+# Primary requirements entrypoint for Linux setup.
+# Keep this aligned with requirements/requirements.txt.
+-r requirements/requirements.txt

@@ -1,5 +1,5 @@
-#!/usr/bin/env sh
-set -eu
+#!/usr/bin/env bash
+set -euo pipefail
 
 UNIT_NAME="quantumedge-supervisor.service"
 SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
@@ -12,6 +12,9 @@ if [ ! -f "$SRC_UNIT" ]; then
 fi
 
 echo "[install] Copying $UNIT_NAME to $DEST_DIR"
-sudo cp "$SRC_UNIT" "$DEST_DIR/$UNIT_NAME"
+sudo install -m 0644 "$SRC_UNIT" "$DEST_DIR/$UNIT_NAME"
 sudo systemctl daemon-reload
-echo "[install] Done. Enable with: sudo systemctl enable --now $UNIT_NAME"
+echo "[install] Done. Next steps:"
+echo "  sudo systemctl enable $UNIT_NAME"
+echo "  sudo systemctl start $UNIT_NAME"
+echo "  sudo systemctl status $UNIT_NAME"

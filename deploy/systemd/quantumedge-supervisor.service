@@ -1,15 +1,17 @@
 [Unit]
 Description=QuantumEdge SupervisorAgent
-After=network.target
+After=network-online.target
+Wants=network-online.target
 
 [Service]
 Type=simple
-WorkingDirectory=/opt/quantumedge
-EnvironmentFile=-/etc/quantumedge/quantumedge.env
-ExecStart=/opt/quantumedge/.venv/bin/python -m quantumedge supervisor --config /opt/quantumedge/config/supervisor.yaml run-foreground
+WorkingDirectory=/opt/QuantumEdge
+EnvironmentFile=-/etc/quantumedge/env
+ExecStart=/opt/QuantumEdge/.venv/bin/python /opt/QuantumEdge/SupervisorAgent/supervisor.py run-foreground --episode-set smoke --scenario-id S00
 Restart=always
 RestartSec=2
-LimitNOFILE=65535
+LimitNOFILE=1048576
+Nice=-5
 
 [Install]
 WantedBy=multi-user.target

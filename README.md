@@ -22,7 +22,13 @@ Config:
 
 Rule: do not commit secrets, API keys, or encrypted secret files. Keep those local and out of git.
 
-Recommended entrypoint:
+Canonical entrypoint (Linux-first):
+- `python SupervisorAgent/supervisor.py run-foreground`
+
+Helper script (same entrypoint):
+- `./scripts/linux/run_supervisor.sh run-foreground`
+
+Legacy launcher (optional):
 - `python QuantumEdge.py start --with-meta`
 - `python QuantumEdge.py status`
 - `python QuantumEdge.py stop`
