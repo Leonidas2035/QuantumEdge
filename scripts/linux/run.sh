@@ -9,17 +9,14 @@ if [ -z "$MODE" ]; then
   exit 1
 fi
 
-ROOT_DIR=$(cd "$(dirname "$0")/.." && pwd)
+ROOT_DIR=$(cd "$(dirname "$0")/../.." && pwd)
 PYTHON_BIN="$ROOT_DIR/.venv/bin/python"
-CLI="$ROOT_DIR/tools/qe_cli.py"
 
 if [ ! -x "$PYTHON_BIN" ]; then
   echo "[run] Missing .venv. Run scripts/setup.sh first."
   exit 1
 fi
 
-PYTHONPATH="$ROOT_DIR:$ROOT_DIR/ai_scalper_bot:$ROOT_DIR/SupervisorAgent:$ROOT_DIR/meta_agent${PYTHONPATH:+:$PYTHONPATH}"
-export PYTHONPATH
 export QE_ROOT="$ROOT_DIR"
 
 echo "[run] Environment variables to set (do not commit secrets):"
@@ -33,13 +30,13 @@ echo "  OPENAI_API_KEY_DEV / OPENAI_API_KEY_PROD"
 
 case "$MODE" in
   supervisor)
-    "$PYTHON_BIN" "$CLI" supervisor --config "$ROOT_DIR/config/supervisor.yaml" "$@"
+    "$PYTHON_BIN" -m quantumedge supervisor --config "$ROOT_DIR/config/supervisor.yaml" "$@"
     ;;
   bot)
-    "$PYTHON_BIN" "$CLI" bot --config "$ROOT_DIR/config/bot.yaml" "$@"
+    "$PYTHON_BIN" -m quantumedge bot --config "$ROOT_DIR/config/bot.yaml" "$@"
     ;;
   meta)
-    "$PYTHON_BIN" "$CLI" meta --config "$ROOT_DIR/config/meta_agent.yaml" "$@"
+    "$PYTHON_BIN" -m quantumedge meta --config "$ROOT_DIR/config/meta_agent.yaml" "$@"
     ;;
   *)
     echo "Unknown mode: $MODE"

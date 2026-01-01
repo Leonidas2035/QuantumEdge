@@ -2,7 +2,7 @@
 set -eu
 
 ENV_FILE="${1:-config/secrets.local.env}"
-ROOT_DIR=$(cd "$(dirname "$0")/.." && pwd)
+ROOT_DIR=$(cd "$(dirname "$0")/../.." && pwd)
 PATH_FILE="$ROOT_DIR/$ENV_FILE"
 
 if [ ! -f "$PATH_FILE" ]; then
