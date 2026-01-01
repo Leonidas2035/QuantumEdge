@@ -93,3 +93,13 @@ Notes:
 - Port in use: adjust `SUPERVISOR_PORT` in `/etc/quantumedge/env`.
 - Verify process: `pgrep -a -f supervisor.py` or `systemctl status quantumedge-supervisor.service`.
 - Logs: `journalctl -u quantumedge-supervisor.service -f` or `logs/supervisor.log` (if configured).
+
+## QuestDB reports
+
+Enable TSDB in `config/tsdb.yaml` and ensure QuestDB is running. Generate a JSON report:
+
+```bash
+python SupervisorAgent/supervisor.py report --last 24h --bucket 5m
+```
+
+Common queries live in `docs/tsdb_queries.md`.

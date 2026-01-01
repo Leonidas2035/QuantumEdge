@@ -1498,6 +1498,7 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
             "tsdb-maintain",
             "tsdb-ingest",
             "tsdb-query",
+            "report",
             "ml",
             "telemetry",
             "research",
@@ -1552,6 +1553,16 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         "--sql",
         dest="sql",
         help="SQL for tsdb-query.",
+    )
+    parser.add_argument(
+        "--last",
+        dest="last",
+        help="Report window (e.g. 6h, 24h, 7d).",
+    )
+    parser.add_argument(
+        "--bucket",
+        dest="bucket",
+        help="Report bucket (e.g. 1m, 5m, 1h).",
     )
     parser.add_argument(
         "--config",
@@ -1814,6 +1825,26 @@ def main(argv: Optional[list[str]] = None) -> None:
                 print("Missing --sql for tsdb-query.", file=sys.stderr)
                 sys.exit(1)
             print(json.dumps(app.tsdb_query_sql(args.sql), indent=2))
+        elif args.command == "report":
+            if not app.tsdb_config.enabled or app.tsdb_config.backend != "questdb":
+                print("TSDB reports require QuestDB (enable config/tsdb.yaml).", file=sys.stderr)
+                sys.exit(1)
+            query_url = app._questdb_query_url()
+            if not query_url:
+                print("QuestDB query URL is not configured.", file=sys.stderr)
+                sys.exit(1)
+            from tsdb.questdb_client import QuestDbClient
+            from reports.tsdb_reports import build_report
+
+            client = QuestDbClient(
+                query_url=query_url,
+                timeout=3.0,
+                max_retries=app.tsdb_config.retry_max_retries,
+                base_backoff_s=app.tsdb_config.retry_base_backoff_ms / 1000.0,
+                max_backoff_s=app.tsdb_config.retry_max_backoff_ms / 1000.0,
+            )
+            report = build_report(client, last=args.last, bucket=args.bucket)
+            print(json.dumps(report, indent=2))
         elif args.command == "ml":
             from SupervisorAgent.mlops.cli import parse_ml_args, run_ml_command
 
