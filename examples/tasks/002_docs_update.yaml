@@ -1,0 +1,24 @@
+task_id: example_002_docs_update
+created_at: 2026-01-02T22:31:00Z
+project_id: meta_agent
+project_root: meta_agent
+objective: "Update contract documentation"
+instructions: |
+  As a safe example, add a brief note in docs/tasks_contract.md that this file
+  is part of the TaskSpec contract docs. Keep changes limited to docs/.
+constraints:
+  patch_only: true
+  max_files: 5
+  max_file_bytes: 65536
+context:
+  include_globs:
+    - docs/**/*.md
+  focus_files:
+    - docs/tasks_contract.md
+llm:
+  model: gpt-4.1
+  temperature: 0
+  max_context_chars: 80000
+mode: task
+metadata:
+  source: examples

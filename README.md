@@ -11,6 +11,11 @@ Projects:
 - SupervisorAgent/
 - meta_agent/
 
+Meta-Agent Task Contract:
+- Run a TaskSpec: `python meta_agent.py run-task --task examples/tasks/001_refactor_small.yaml`
+- Artifacts: `runtime/runs/<run_id>/report.json` + `runtime/runs/<run_id>/patches/`
+- Contract doc: `docs/tasks_contract.md`
+
 Shared (kept empty or runtime-only):
 - config/
 - runtime/

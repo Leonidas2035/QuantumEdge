@@ -6,7 +6,13 @@ from openai import OpenAI
 
 
 class CodexClient:
-    def __init__(self, mode: Optional[str] = None):
+    def __init__(
+        self,
+        mode: Optional[str] = None,
+        model: Optional[str] = None,
+        temperature: Optional[float] = None,
+        chunk_size: Optional[int] = None,
+    ):
         # Determine mode: env has priority, then provided arg, default dev
         env_mode = os.getenv("META_AGENT_MODE")
         resolved_mode = (env_mode or mode or "dev").strip().lower()
@@ -22,10 +28,11 @@ class CodexClient:
         self.client = OpenAI(api_key=self.api_key)
 
         # more stable model for long prompts
-        self.model = "gpt-4.1"
+        self.model = model or "gpt-4.1"
+        self.temperature = 0 if temperature is None else temperature
 
         # max chunk size to avoid 400 errors
-        self.chunk_size = 12000
+        self.chunk_size = chunk_size or 12000
 
     def _chunk_prompt(self, text: str) -> List[str]:
         """Split large prompts into smaller chunks without breaking file markers."""
@@ -103,7 +110,7 @@ class CodexClient:
                 model=self.model,
                 messages=messages,
                 max_tokens=4096,
-                temperature=0,
+                temperature=self.temperature,
             )
 
             return response.choices[0].message.content

@@ -26,11 +26,29 @@ def apply_change_set_with_policy(
     change_set: ChangeSet,
     patches_dir: str,
     policy: SafetyPolicy | None = None,
+    override_verdict: Optional[str] = None,
+    force_patch_only: bool = False,
+    force_direct: bool = False,
+    always_write_patches: bool = False,
 ) -> WriteOutcome:
     safety_policy = policy or load_safety_policy()
     safety_eval = evaluate_change_set(safety_policy, change_set)
 
-    should_patch = safety_eval.write_mode == "patch_only" or safety_eval.overall_verdict in {"warn", "block"}
+    if override_verdict:
+        safety_eval = SafetyEvaluation(
+            write_mode=safety_eval.write_mode,
+            overall_verdict=override_verdict,
+            files=safety_eval.files,
+            reasons=safety_eval.reasons,
+        )
+
+    should_patch = (
+        force_patch_only
+        or safety_eval.write_mode == "patch_only"
+        or safety_eval.overall_verdict in {"warn", "block"}
+    )
+    if force_direct and safety_eval.overall_verdict == "allow" and not force_patch_only:
+        should_patch = False
     apply_result = {
         "changed_files": [],
         "created_files": [],
@@ -55,6 +73,10 @@ def apply_change_set_with_policy(
     elif safety_eval.overall_verdict == "allow":
         applied = True
         apply_result = apply_change_set_direct(change_set)
+
+    if always_write_patches and not apply_result.get("patch_files"):
+        patch_result = write_change_set_as_patches(change_set, patches_dir)
+        apply_result["patch_files"] = patch_result.get("patch_files", [])
 
     return WriteOutcome(
         status=status,

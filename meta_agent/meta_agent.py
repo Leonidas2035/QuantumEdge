@@ -3,7 +3,7 @@ import json
 import os
 import shutil
 import sys
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 import subprocess
 from typing import Dict, Tuple, Optional
@@ -26,6 +26,7 @@ from paths import (
 from project_scanner import ProjectScanner
 from projects_config import load_project_registry, resolve_project_root
 from prompt_builder import PromptBuilder
+from task_contract import TaskConstraints, TaskContext, TaskLLM, TaskSpec
 from report_schema import Report, write_json_report, write_md_report
 from safety_policy import load_safety_policy
 from write_engine import apply_change_set_with_policy
@@ -163,7 +164,7 @@ def run_diag() -> int:
     # Runtime dirs
     runtime_dir = Path(os.getenv("QE_RUNTIME_DIR") or (base_dir / "runtime")).resolve()
     runtime_checks = []
-    for sub in ("reports", "patches", "logs"):
+    for sub in ("reports", "patches", "logs", "runs"):
         path = runtime_dir / sub
         try:
             path.mkdir(parents=True, exist_ok=True)
@@ -213,6 +214,13 @@ def run_diag() -> int:
 
     all_ok = all(ok for _, ok, _ in results)
     return 0 if all_ok else 1
+
+
+def _run_task_cli(task_path: str) -> int:
+    report = run_task(task_path)
+    print(f"[INFO] run_id={report.run_id} verdict={report.verdict} exit_code={report.exit_code}")
+    print(f"[INFO] report_path={report.artifacts.report_path}")
+    return report.exit_code
 
 
 class MetaAgent:
@@ -418,24 +426,17 @@ class MetaAgent:
         """
         Legacy wrapper that routes task execution through meta_core.run_task.
         """
-        result = run_task(task_path)
-        if result.get("status") != "ok":
-            print(f"[ERROR] Task {result.get('task_id')} failed: {result.get('error_message')}")
+        report = run_task(task_path)
+        if report.exit_code != 0:
+            print(f"[ERROR] Task {report.task_id} failed: {', '.join(report.errors) if report.errors else report.summary}")
             return False
 
-        print(f"[INFO] Task {result.get('task_id')} completed.")
-        if result.get("summary"):
-            print(f"[INFO] Summary: {result['summary']}")
-        if result.get("changed_files"):
-            print(f"[INFO] Changed files ({len(result['changed_files'])}): {', '.join(result['changed_files'])}")
-        if result.get("created_files"):
-            print(f"[INFO] Created files ({len(result['created_files'])}): {', '.join(result['created_files'])}")
-        if result.get("report_md_path"):
-            print(f"[INFO] Markdown report: {result['report_md_path']}")
-        if result.get("report_json_path"):
-            print(f"[INFO] JSON report: {result['report_json_path']}")
+        print(f"[INFO] Task {report.task_id} completed.")
+        if report.summary:
+            print(f"[INFO] Summary: {report.summary}")
+        print(f"[INFO] Report: {report.artifacts.report_path}")
         try:
-            archive_task_file(os.path.abspath(task_path), target_project=result.get("meta", {}).get("target_project"))
+            archive_task_file(os.path.abspath(task_path), target_project=None)
             print(f"[INFO] Archived task file: {task_path}")
         except Exception as exc:
             print(f"[WARN] Failed to archive task file {task_path}: {exc}")
@@ -458,6 +459,51 @@ def parse_args():
     parser.add_argument("--project-id", dest="stage_project_id", help="Override project id for stage pipeline.")
     parser.add_argument("--once", action="store_true", help="Run once and exit (default behavior).")
     return parser.parse_args()
+
+
+def parse_run_task_args(argv: list[str]):
+    parser = argparse.ArgumentParser(description="Run a TaskSpec")
+    parser.add_argument("--task", required=True, help="Path to task.yaml or task.md")
+    return parser.parse_args(argv)
+
+
+def parse_create_task_args(argv: list[str]):
+    parser = argparse.ArgumentParser(description="Create a TaskSpec skeleton")
+    parser.add_argument("--project", required=True, help="Project id from registry")
+    parser.add_argument("--objective", required=True, help="Short objective")
+    parser.add_argument("--output", help="Destination path for task.yaml")
+    return parser.parse_args(argv)
+
+
+def _create_task_spec_file(project_id: str, objective: str, output_path: Optional[str]) -> str:
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    task_id = f"T{stamp}_{project_id}"
+    created_at = datetime.now(timezone.utc).isoformat()
+    spec = TaskSpec(
+        task_id=task_id,
+        created_at=created_at,
+        project_id=project_id,
+        project_root=None,
+        objective=objective,
+        instructions="Describe the task requirements here.",
+        constraints=TaskConstraints(),
+        context=TaskContext(),
+        llm=TaskLLM(),
+        mode="task",
+        metadata={},
+    )
+
+    if output_path:
+        dest = os.path.abspath(output_path)
+    else:
+        runtime_dir = os.getenv("QE_RUNTIME_DIR") or os.path.join(_resolve_base_dir(), "runtime")
+        inbox_dir = os.path.join(runtime_dir, "inbox")
+        os.makedirs(inbox_dir, exist_ok=True)
+        dest = os.path.join(inbox_dir, f"{task_id}.yaml")
+
+    with open(dest, "w", encoding="utf-8") as handle:
+        yaml.safe_dump(spec.to_dict(), handle, allow_unicode=True, sort_keys=False)
+    return dest
 
 
 def cleanup_after_successful_run(stages: list) -> None:
@@ -514,6 +560,18 @@ def cleanup_after_successful_run(stages: list) -> None:
 def main() -> int:
     if len(sys.argv) > 1 and sys.argv[1] == "diag":
         return run_diag()
+    if len(sys.argv) > 1 and sys.argv[1] == "run-task":
+        args = parse_run_task_args(sys.argv[2:])
+        return _run_task_cli(args.task)
+    if len(sys.argv) > 1 and sys.argv[1] == "create-task":
+        args = parse_create_task_args(sys.argv[2:])
+        registry = load_project_registry()
+        if args.project not in registry.projects:
+            print(f"[ERROR] Unknown project id '{args.project}'.")
+            return 1
+        dest = _create_task_spec_file(args.project, args.objective, args.output)
+        print(f"[INFO] TaskSpec created at {dest}")
+        return 0
     args = parse_args()
     if args.config_path:
         os.environ["META_AGENT_CONFIG"] = args.config_path
@@ -589,23 +647,19 @@ def main() -> int:
             if not task_identifier:
                 print("[ERROR] Task mode requested but no --task/--task-id provided.")
                 return 1
-            result = run_task(task_identifier)
-            print(f"[INFO] Task {result.get('task_id')} status: {result.get('status')}")
-            if result.get("summary"):
-                print(f"[INFO] Summary: {result['summary']}")
-            if result.get("error_message"):
-                print(f"[ERROR] {result['error_message']}")
-            if result.get("changed_files"):
-                print(f"[INFO] Changed files ({len(result['changed_files'])}): {', '.join(result['changed_files'])}")
-            if result.get("created_files"):
-                print(f"[INFO] Created files ({len(result['created_files'])}): {', '.join(result['created_files'])}")
-            if result.get("report_md_path"):
-                print(f"[INFO] Markdown report: {result['report_md_path']}")
-            if result.get("report_json_path"):
-                print(f"[INFO] JSON report: {result['report_json_path']}")
-            if result.get("meta", {}).get("lock_busy"):
-                return 2
-            return 0 if result.get("status") == "ok" else 1
+            resolved_task = task_identifier
+            if not os.path.exists(resolved_task):
+                legacy_candidate = os.path.join("meta_agent", "tasks", f"{task_identifier}.md")
+                if os.path.exists(legacy_candidate):
+                    resolved_task = legacy_candidate
+            report = run_task(resolved_task)
+            print(f"[INFO] Task {report.task_id} verdict: {report.verdict}")
+            if report.summary:
+                print(f"[INFO] Summary: {report.summary}")
+            if report.errors:
+                print(f"[ERROR] {', '.join(report.errors)}")
+            print(f"[INFO] Report: {report.artifacts.report_path}")
+            return report.exit_code
 
         agent = MetaAgent()
         success, stages = agent.run_stage_pipeline(override_project_id=args.stage_project_id)

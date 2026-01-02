@@ -1,26 +1,34 @@
 import json
 import os
 import subprocess
-from datetime import datetime
-from typing import Dict, List
+from datetime import datetime, timezone
+from hashlib import sha256
+from typing import Dict, List, Optional
 
 from codex_client import CodexClient
 from file_manager import build_change_set_from_response
 from project_scanner import ProjectScanner
 from prompt_builder import PromptBuilder
-from report_schema import Report, write_json_report, write_md_report
-from task_manager import load_task
-from task_schema import TaskParseError
-from write_engine import apply_change_set_with_policy
+from projects_config import load_project_registry, resolve_project_root
 from run_lock import RunLock, describe_existing_lock, resolve_lock_path
+from safety_policy import SAFETY_POLICY_PATH, load_safety_policy
+from task_contract import (
+    Report,
+    ReportArtifacts,
+    ReportChanges,
+    ReportSafety,
+    PatchInfo,
+    TaskSpec,
+    TaskValidationError,
+    load_task_spec,
+)
+from write_engine import apply_change_set_with_policy
 
 import yaml
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 CONFIG_PATH = os.path.join("config", "meta_agent.yaml")
 TASKS_DIR = os.path.join(BASE_DIR, "tasks")
-REPORTS_DIR = os.path.join(BASE_DIR, "reports")
-PATCHES_DIR = os.path.join(BASE_DIR, "patches")
 
 try:
     from tools.qe_config import get_qe_paths
@@ -69,33 +77,75 @@ def _load_config(path: str = CONFIG_PATH) -> Dict:
         return {}
 
 
-def _build_summary(status: str, changed_files: List[str], created_files: List[str], error_message: str | None) -> str:
-    if status != "ok":
-        return f"Task failed: {error_message}" if error_message else "Task failed."
-    touched = list(dict.fromkeys(created_files + changed_files))
-    if not touched:
-        return "Model responded without file changes."
-    if len(touched) <= 3:
-        return f"Updated files: {', '.join(touched)}"
-    return f"Updated {len(touched)} files."
-
-
-def _resolve_target_project(task_project: str) -> str:
-    """
-    Resolves the absolute target project path.
-    If the task_project is absolute, use it. Otherwise, fall back to config project_root or current dir.
-    """
-    if os.path.isabs(task_project):
-        return task_project
-    config = _load_config()
-    project_root = config.get("project_root")
+def _resolve_runtime_dir() -> str:
     base = _resolve_base_dir()
-    if project_root:
-        if not os.path.isabs(project_root):
-            project_root = os.path.abspath(os.path.join(base, project_root))
-        if os.path.exists(project_root):
-            return project_root
-    return os.path.abspath(os.path.join(base, task_project))
+    base_abs = os.path.abspath(base)
+    env_runtime = os.getenv("QE_RUNTIME_DIR")
+    if env_runtime:
+        candidate = os.path.abspath(env_runtime)
+        try:
+            if os.path.commonpath([candidate, base_abs]) == base_abs:
+                return candidate
+        except ValueError:
+            pass
+    return os.path.abspath(os.path.join(base_abs, "runtime"))
+
+
+def _make_run_id() -> str:
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
+    short = os.urandom(3).hex()
+    return f"{stamp}_{short}"
+
+
+def _relpath_under_base(path: str, base_abs: str) -> str:
+    rel = os.path.relpath(path, base_abs)
+    if rel.startswith(".."):
+        raise TaskValidationError("Path escapes repo root")
+    return rel.replace("\\", "/")
+
+
+def _hash_content(content: str) -> Optional[str]:
+    if content is None:
+        return None
+    return sha256(content.encode("utf-8")).hexdigest()
+
+
+def _build_summary(verdict: str, applied: bool, files_changed: int) -> str:
+    if verdict == "allow":
+        if files_changed == 0:
+            return "No file changes detected."
+        return f"Applied changes to {files_changed} files." if applied else f"Patches generated for {files_changed} files."
+    if verdict == "warn":
+        return "Safety warnings: patches generated only."
+    if verdict == "block":
+        return "Changes blocked by safety policy; patches generated only."
+    return "Task failed; see errors for details."
+
+
+def _exit_code_for(verdict: str, error_type: Optional[str] = None) -> int:
+    if error_type == "invalid_task":
+        return 40
+    if error_type == "lock_busy":
+        return 50
+    if verdict == "allow":
+        return 0
+    if verdict == "warn":
+        return 10
+    if verdict == "block":
+        return 20
+    return 30
+
+
+def _resolve_target_project(spec: TaskSpec) -> str:
+    if spec.project_root:
+        root = spec.project_root
+        if not os.path.isabs(root):
+            root = os.path.join(_resolve_base_dir(), root)
+        return os.path.abspath(root)
+
+    registry = load_project_registry()
+    info = resolve_project_root(spec.project_id, registry)
+    return str(info.root_path)
 
 
 def run_basic_quality_checks(project_root: str, affected_files: List[str]) -> Dict[str, any]:
@@ -146,22 +196,32 @@ def run_basic_quality_checks(project_root: str, affected_files: List[str]) -> Di
     }
 
 
-def run_task(task_id_or_path: str, use_lock: bool = True) -> Dict:
+def run_task(
+    task_path: str,
+    use_lock: bool = True,
+    llm_client: Optional[object] = None,
+) -> Report:
     """
-    Executes a single task (by TASK_ID or path) through Meta-Agent pipeline with safety and quality checks.
+    Executes a single task spec with safety gating and writes run artifacts.
     """
-    _ensure_dir(TASKS_DIR)
-    _ensure_dir(REPORTS_DIR)
-    _ensure_dir(PATCHES_DIR)
-
-    started_at = datetime.utcnow().isoformat() + "Z"
-    finished_at: str | None = None
-    model_name: str | None = None
-
-    report: Report | None = None
-    json_path = None
-    md_path = None
+    started_at = datetime.now(timezone.utc).isoformat()
+    finished_at = started_at
+    errors: List[str] = []
     lock: RunLock | None = None
+
+    base_abs = os.path.abspath(_resolve_base_dir())
+    runtime_dir = _resolve_runtime_dir()
+    run_id = _make_run_id()
+    run_dir = os.path.join(runtime_dir, "runs", run_id)
+    patches_dir = os.path.join(run_dir, "patches")
+    context_manifest_path = os.path.join(run_dir, "context_manifest.json")
+    report_path = os.path.join(run_dir, "report.json")
+    task_copy_path = os.path.join(run_dir, "task.yaml")
+
+    rel_report_path = _relpath_under_base(report_path, base_abs)
+    rel_patches_dir = _relpath_under_base(patches_dir, base_abs)
+    rel_context_manifest_path = _relpath_under_base(context_manifest_path, base_abs)
+    rel_task_copy_path = _relpath_under_base(task_copy_path, base_abs)
 
     if use_lock:
         lock_path = resolve_lock_path(_resolve_base_dir())
@@ -171,236 +231,222 @@ def run_task(task_id_or_path: str, use_lock: bool = True) -> Dict:
             message = "Meta-Agent is already running (lock held)."
             if detail:
                 message = f"{message} {detail}"
-            finished_at = datetime.utcnow().isoformat() + "Z"
+            verdict = "error"
+            exit_code = _exit_code_for(verdict, "lock_busy")
             report = Report(
-                task_id=task_id_or_path,
-                project="unknown",
-                task_type="unknown",
-                title="",
-                priority="normal",
-                status="error",
-                error_message=message,
-                summary=_build_summary("error", [], [], message),
-                changed_files=[],
-                created_files=[],
-                deleted_files=[],
-                safety_status="block",
-                blocked_files=[],
-                warning_files=[],
-                patch_files=[],
-                meta={
-                    "started_at": started_at,
-                    "finished_at": finished_at,
-                    "lock_busy": True,
-                },
+                run_id=run_id,
+                task_id="unknown",
+                started_at=started_at,
+                finished_at=finished_at,
+                verdict=verdict,
+                exit_code=exit_code,
+                summary=message,
+                changes=ReportChanges(),
+                safety=ReportSafety(policy_version=None, checks=[]),
+                artifacts=ReportArtifacts(
+                    report_path=rel_report_path,
+                    patches_dir=rel_patches_dir,
+                    logs_path=None,
+                    context_manifest_path=rel_context_manifest_path,
+                    task_path=rel_task_copy_path,
+                ),
+                errors=[message],
             )
-            json_path = write_json_report(report)
-            md_path = write_md_report(report)
-            return {
-                "task_id": report.task_id,
-                "project": report.project,
-                "task_type": report.task_type,
-                "title": report.title,
-                "priority": report.priority,
-                "status": report.status,
-                "error_message": report.error_message,
-                "changed_files": report.changed_files,
-                "created_files": report.created_files,
-                "deleted_files": report.deleted_files,
-                "summary": report.summary,
-                "risks": report.risks,
-                "notes": report.notes,
-                "safety_status": report.safety_status,
-                "blocked_files": report.blocked_files,
-                "warning_files": report.warning_files,
-                "patch_files": report.patch_files,
-                "meta": report.meta,
-                "report_json_path": json_path,
-                "report_md_path": md_path,
-            }
+            os.makedirs(run_dir, exist_ok=True)
+            with open(report_path, "w", encoding="utf-8") as handle:
+                json.dump(report.to_dict(), handle, indent=2)
+            return report
 
     try:
-        task = load_task(task_id_or_path)
-        target_project = _resolve_target_project(task.project)
+        os.makedirs(patches_dir, exist_ok=True)
 
-        prompt_metadata = {
-            "task_id": task.task_id,
-            "project": task.project,
-            "task_type": task.task_type,
-            "title": task.title,
-            "priority": task.priority,
-            "source": task.source,
-            "target_project": target_project,
-            "run_mode": "task",
+        spec = load_task_spec(task_path)
+        target_project = _resolve_target_project(spec)
+        target_project = os.path.abspath(target_project)
+        if os.path.commonpath([target_project, base_abs]) != base_abs:
+            raise TaskValidationError("project_root must stay within repo root")
+        if not os.path.isdir(target_project):
+            raise TaskValidationError(f"project_root does not exist: {target_project}")
+
+        spec.project_root = target_project
+        with open(task_copy_path, "w", encoding="utf-8") as handle:
+            yaml.safe_dump(spec.to_dict(), handle, allow_unicode=True, sort_keys=False)
+
+        scanner = ProjectScanner(target_project)
+        context = scanner.collect_project_context(
+            max_chars=spec.llm.max_context_chars or 250_000,
+            include_globs=spec.context.include_globs or None,
+            focus_files=spec.context.focus_files or None,
+            deny_globs=spec.constraints.deny_globs or None,
+        )
+        context_manifest = {
+            "project_root": target_project,
+            "files_included": scanner.stats.files_included,
+            "chars_collected": scanner.stats.chars_collected,
+            "stopped_due_to_limit": scanner.stats.stopped_due_to_limit,
+            "skipped_large_files": scanner.stats.skipped_large_files,
+            "included_files": scanner.stats.included_files,
         }
+        with open(context_manifest_path, "w", encoding="utf-8") as handle:
+            json.dump(context_manifest, handle, indent=2)
 
-        context = ProjectScanner(target_project).collect_project_files()
-        full_prompt = PromptBuilder().build_prompt(task.body_markdown, context, prompt_metadata)
+        instructions = f"Objective: {spec.objective}\n\nInstructions:\n{spec.instructions}"
+        prompt_metadata = {
+            "task_id": spec.task_id,
+            "project_id": spec.project_id,
+            "project_root": target_project,
+            "run_id": run_id,
+            "mode": "task",
+        }
+        full_prompt = PromptBuilder().build_prompt(instructions, context, prompt_metadata)
 
-        client = CodexClient()
-        model_name = client.model
+        client = llm_client or CodexClient(
+            model=spec.llm.model,
+            temperature=spec.llm.temperature,
+        )
         response = client.send(full_prompt)
-
         if isinstance(response, str) and response.lstrip().startswith("[ERROR]"):
             raise RuntimeError(response)
 
-        # Build change set from model output
         change_set = build_change_set_from_response(target_project, response)
 
-        outcome = apply_change_set_with_policy(change_set, PATCHES_DIR)
-        status = outcome.status
-        error_message = outcome.error_message
+        constraint_checks: List[str] = []
+        override_verdict: Optional[str] = None
+        force_patch_only = False
+        if len(change_set.changes) > spec.constraints.max_files:
+            override_verdict = "block"
+            constraint_checks.append("constraint:max_files_exceeded")
+            errors.append("Change set exceeds constraints.max_files")
 
-        qc_result = {
-            "compile_errors": {},
-            "tests_run": False,
-            "tests_status": "skipped",
-            "tests_output": "",
-        }
-        if outcome.applied:
-            qc_result = run_basic_quality_checks(
-                target_project,
-                (outcome.changed_files or []) + (outcome.created_files or []),
+        oversized = [
+            rel
+            for rel, change in change_set.changes.items()
+            if len(change.new_content.encode("utf-8")) > spec.constraints.max_file_bytes
+        ]
+        if oversized:
+            override_verdict = "block"
+            constraint_checks.append("constraint:max_file_bytes_exceeded")
+            errors.append(f"Files exceed constraints.max_file_bytes: {', '.join(oversized)}")
+
+        if spec.constraints.patch_only and override_verdict != "block":
+            override_verdict = "warn"
+            constraint_checks.append("constraint:patch_only")
+            force_patch_only = True
+
+        policy = load_safety_policy()
+        outcome = apply_change_set_with_policy(
+            change_set,
+            patches_dir,
+            policy=policy,
+            override_verdict=override_verdict,
+            force_patch_only=force_patch_only,
+            force_direct=True,
+            always_write_patches=True,
+        )
+
+        verdict = outcome.safety_eval.overall_verdict
+        files_changed = len(change_set.changes)
+        summary = _build_summary(verdict, outcome.applied, files_changed)
+
+        safety_checks = list(outcome.safety_eval.reasons or [])
+        for file_status in outcome.safety_eval.files:
+            if file_status.reasons:
+                reasons = ", ".join(file_status.reasons)
+                safety_checks.append(f"{file_status.path}: {reasons} (verdict={file_status.verdict})")
+        safety_checks.extend(constraint_checks)
+
+        patch_info: List[PatchInfo] = []
+        for rel_path, change in change_set.changes.items():
+            patch_path = os.path.join(patches_dir, f"{rel_path}.patch")
+            patch_info.append(
+                PatchInfo(
+                    path=rel_path,
+                    patch_file=_relpath_under_base(patch_path, base_abs),
+                    sha_before=_hash_content(change.old_content),
+                    sha_after=_hash_content(change.new_content),
+                )
             )
 
-        risks: List[str] = []
-        notes: List[str] = []
-        if qc_result.get("compile_errors"):
-            risks.append("Compile errors detected in changed python files.")
-            status = "partial" if status == "ok" else status
-        if qc_result.get("tests_status") == "error":
-            risks.append("Tests failed.")
-            status = "partial" if status == "ok" else status
-
-        safety_status = outcome.safety_eval.overall_verdict
-        blocked_files = [f.path for f in outcome.safety_eval.files if f.verdict == "block"]
-        warning_files = [f.path for f in outcome.safety_eval.files if f.verdict == "warn"]
-        patch_files = outcome.patch_files or []
-
-        finished_at = datetime.utcnow().isoformat() + "Z"
+        finished_at = datetime.now(timezone.utc).isoformat()
         report = Report(
-            task_id=task.task_id,
-            project=task.project,
-            task_type=task.task_type,
-            title=task.title,
-            priority=task.priority,
-            status=status,
-            error_message=error_message,
-            summary=_build_summary(status, outcome.changed_files, outcome.created_files, error_message),
-            changed_files=outcome.changed_files,
-            created_files=outcome.created_files,
-            deleted_files=outcome.deleted_files,
-            risks=risks,
-            notes=notes,
-            safety_status=safety_status,
-            blocked_files=blocked_files,
-            warning_files=warning_files,
-            patch_files=patch_files,
-            meta={
-                "started_at": started_at,
-                "finished_at": finished_at,
-                "model": model_name,
-                "source": task.source,
-                "task_path": task.path,
-                "target_project": target_project,
-                "task_type": task.task_type,
-                "priority": task.priority,
-                "write_mode_used": outcome.write_mode_used,
-                "safety_reasons": outcome.safety_eval.reasons,
-                "quality_checks": qc_result,
-            },
+            run_id=run_id,
+            task_id=spec.task_id,
+            started_at=started_at,
+            finished_at=finished_at,
+            verdict=verdict,
+            exit_code=_exit_code_for(verdict),
+            summary=summary,
+            changes=ReportChanges(
+                patches=patch_info,
+                applied=outcome.applied,
+                files_changed=files_changed,
+            ),
+            safety=ReportSafety(
+                policy_version=os.path.basename(SAFETY_POLICY_PATH),
+                checks=safety_checks,
+            ),
+            artifacts=ReportArtifacts(
+                report_path=rel_report_path,
+                patches_dir=rel_patches_dir,
+                logs_path=None,
+                context_manifest_path=rel_context_manifest_path,
+                task_path=rel_task_copy_path,
+            ),
+            errors=errors,
         )
-    except (TaskParseError, FileNotFoundError) as exc:
-        finished_at = datetime.utcnow().isoformat() + "Z"
+    except TaskValidationError as exc:
+        finished_at = datetime.now(timezone.utc).isoformat()
+        verdict = "error"
+        exit_code = _exit_code_for(verdict, "invalid_task")
+        errors.append(str(exc))
         report = Report(
-            task_id=getattr(exc, "task_id", task_id_or_path),
-            project="unknown",
-            task_type="unknown",
-            title="",
-            priority="normal",
-            status="error",
-            error_message=str(exc),
-            summary=_build_summary("error", [], [], str(exc)),
-            changed_files=[],
-            created_files=[],
-            deleted_files=[],
-            safety_status="block",
-            blocked_files=[],
-            warning_files=[],
-            patch_files=[],
-            meta={
-                "started_at": started_at,
-                "finished_at": finished_at,
-                "model": model_name,
-                "source": "unknown",
-                "task_path": task_id_or_path,
-            },
+            run_id=run_id,
+            task_id="unknown",
+            started_at=started_at,
+            finished_at=finished_at,
+            verdict=verdict,
+            exit_code=exit_code,
+            summary=str(exc),
+            changes=ReportChanges(),
+            safety=ReportSafety(policy_version=None, checks=[]),
+            artifacts=ReportArtifacts(
+                report_path=rel_report_path,
+                patches_dir=rel_patches_dir,
+                logs_path=None,
+                context_manifest_path=rel_context_manifest_path,
+                task_path=rel_task_copy_path,
+            ),
+            errors=errors,
         )
     except Exception as exc:
-        finished_at = datetime.utcnow().isoformat() + "Z"
+        finished_at = datetime.now(timezone.utc).isoformat()
+        verdict = "error"
+        exit_code = _exit_code_for(verdict, "error")
+        errors.append(str(exc))
         report = Report(
-            task_id=getattr(exc, "task_id", str(task_id_or_path)),
-            project=getattr(locals().get("task", None), "project", "unknown"),
-            task_type=getattr(locals().get("task", None), "task_type", "unknown"),
-            title=getattr(locals().get("task", None), "title", ""),
-            priority=getattr(locals().get("task", None), "priority", "normal"),
-            status="error",
-            error_message=str(exc),
-            summary=_build_summary("error", [], [], str(exc)),
-            changed_files=[],
-            created_files=[],
-            deleted_files=[],
-            safety_status="block",
-            blocked_files=[],
-            warning_files=[],
-            patch_files=[],
-            meta={
-                "started_at": started_at,
-                "finished_at": finished_at,
-                "model": model_name,
-                "source": getattr(locals().get("task", None), "source", "unknown"),
-                "task_path": getattr(locals().get("task", None), "path", task_id_or_path),
-            },
+            run_id=run_id,
+            task_id="unknown",
+            started_at=started_at,
+            finished_at=finished_at,
+            verdict=verdict,
+            exit_code=exit_code,
+            summary=str(exc),
+            changes=ReportChanges(),
+            safety=ReportSafety(policy_version=None, checks=[]),
+            artifacts=ReportArtifacts(
+                report_path=rel_report_path,
+                patches_dir=rel_patches_dir,
+                logs_path=None,
+                context_manifest_path=rel_context_manifest_path,
+                task_path=rel_task_copy_path,
+            ),
+            errors=errors,
         )
     finally:
         if lock:
             lock.release()
-        if report is not None:
-            finished = finished_at or datetime.utcnow().isoformat() + "Z"
-            report.meta.setdefault("finished_at", finished)
-            report.meta.setdefault("started_at", started_at)
-            try:
-                from datetime import timezone
 
-                started_dt = datetime.fromisoformat(report.meta["started_at"].replace("Z", "+00:00"))
-                finished_dt = datetime.fromisoformat(report.meta["finished_at"].replace("Z", "+00:00"))
-                duration_sec = max((finished_dt - started_dt).total_seconds(), 0)
-                report.meta["duration_sec"] = duration_sec
-            except Exception:
-                pass
-
-            json_path = write_json_report(report)
-            md_path = write_md_report(report)
-
-    return {
-        "task_id": report.task_id if report else task_id_or_path,
-        "project": report.project if report else "unknown",
-        "task_type": report.task_type if report else "unknown",
-        "title": report.title if report else "",
-        "priority": report.priority if report else "normal",
-        "status": report.status if report else "error",
-        "error_message": report.error_message if report else "unknown error",
-        "changed_files": report.changed_files if report else [],
-        "created_files": report.created_files if report else [],
-        "deleted_files": report.deleted_files if report else [],
-        "summary": report.summary if report else "",
-        "risks": report.risks if report else [],
-        "notes": report.notes if report else [],
-        "safety_status": report.safety_status if report else "block",
-        "blocked_files": report.blocked_files if report else [],
-        "warning_files": report.warning_files if report else [],
-        "patch_files": report.patch_files if report else [],
-        "meta": report.meta if report else {},
-        "report_json_path": json_path,
-        "report_md_path": md_path,
-    }
+    os.makedirs(run_dir, exist_ok=True)
+    with open(report_path, "w", encoding="utf-8") as handle:
+        json.dump(report.to_dict(), handle, indent=2)
+    return report

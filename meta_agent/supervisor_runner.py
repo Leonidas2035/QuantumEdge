@@ -142,8 +142,9 @@ def run_supervisor_maintenance_once(
             priority="high" if item.severity == "high" else "normal",
             source="offmarket_supervisor",
         )
-        result = run_task(task.task_id, use_lock=use_lock)
-        result["project"] = item.project_id
-        tasks_summary.append(result)
+        report = run_task(task.task_id, use_lock=use_lock)
+        summary = report.to_dict()
+        summary["project"] = item.project_id
+        tasks_summary.append(summary)
 
     return {"status": "ok", "tasks": tasks_summary}

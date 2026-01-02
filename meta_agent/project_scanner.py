@@ -1,4 +1,5 @@
 import fnmatch
+import glob
 import os
 from dataclasses import dataclass, field
 from typing import Iterable, List, Optional, Set
@@ -57,6 +58,7 @@ class ScannerStats:
     chars_collected: int = 0
     stopped_due_to_limit: bool = False
     skipped_large_files: List[str] = field(default_factory=list)
+    included_files: List[str] = field(default_factory=list)
 
 
 class ProjectScanner:
@@ -94,7 +96,23 @@ class ProjectScanner:
                 return True
         return False
 
-    def collect_project_context(self, max_chars: int = 250_000) -> str:
+    def _is_denied(self, rel_path: str, deny_globs: Optional[Iterable[str]]) -> bool:
+        if not deny_globs:
+            return False
+        rel_lower = rel_path.replace("\\", "/")
+        return any(fnmatch.fnmatch(rel_lower, pat) for pat in deny_globs)
+
+    def _in_excluded_dir(self, rel_path: str) -> bool:
+        parts = rel_path.replace("\\", "/").split("/")
+        return any(part.lower() in self.exclude_dirs for part in parts)
+
+    def collect_project_context(
+        self,
+        max_chars: int = 250_000,
+        include_globs: Optional[Iterable[str]] = None,
+        focus_files: Optional[Iterable[str]] = None,
+        deny_globs: Optional[Iterable[str]] = None,
+    ) -> str:
         """
         Walks the project tree and returns a concatenated string of file contents
         limited to `max_chars`. Large files (> max_file_chars) are skipped.
@@ -103,17 +121,35 @@ class ProjectScanner:
         context_parts: List[str] = []
         total_chars = 0
 
-        for root, dirs, files in os.walk(self.project_root):
-            # Prune excluded directories in-place for performance
-            dirs[:] = [d for d in dirs if not self._should_exclude_dir(d)]
-
-            for fname in sorted(files):
-                if not self._should_include_file(fname):
+        explicit_files: List[str] = []
+        if focus_files:
+            for entry in focus_files:
+                abs_path = entry if os.path.isabs(entry) else os.path.join(self.project_root, entry)
+                abs_path = os.path.abspath(abs_path)
+                try:
+                    common = os.path.commonpath([abs_path, self.project_root])
+                except ValueError:
                     continue
+                if common != self.project_root:
+                    continue
+                if os.path.isfile(abs_path):
+                    explicit_files.append(abs_path)
 
-                abs_path = os.path.join(root, fname)
+        if include_globs:
+            for pattern in include_globs:
+                glob_pattern = os.path.join(self.project_root, pattern)
+                for abs_path in sorted(glob.glob(glob_pattern, recursive=True)):
+                    if os.path.isfile(abs_path):
+                        explicit_files.append(os.path.abspath(abs_path))
+
+        if explicit_files:
+            for abs_path in sorted(set(explicit_files)):
                 rel_path = os.path.relpath(abs_path, self.project_root)
-                if self._should_exclude_file(rel_path, fname):
+                if self._in_excluded_dir(rel_path):
+                    continue
+                if self._should_exclude_file(rel_path, os.path.basename(abs_path)):
+                    continue
+                if self._is_denied(rel_path, deny_globs):
                     continue
 
                 try:
@@ -141,9 +177,53 @@ class ProjectScanner:
                 context_parts.append(snippet)
                 total_chars += len(snippet)
                 self.stats.files_included += 1
+                self.stats.included_files.append(rel_path)
 
-            if total_chars >= max_chars:
-                break
+        else:
+            for root, dirs, files in os.walk(self.project_root):
+                # Prune excluded directories in-place for performance
+                dirs[:] = [d for d in dirs if not self._should_exclude_dir(d)]
+
+                for fname in sorted(files):
+                    if not self._should_include_file(fname):
+                        continue
+
+                    abs_path = os.path.join(root, fname)
+                    rel_path = os.path.relpath(abs_path, self.project_root)
+                    if self._should_exclude_file(rel_path, fname):
+                        continue
+                    if self._is_denied(rel_path, deny_globs):
+                        continue
+
+                    try:
+                        with open(abs_path, "r", encoding="utf-8", errors="ignore") as handle:
+                            content = handle.read()
+                    except OSError:
+                        continue
+
+                    content = mask_secrets(content)
+
+                    if len(content) > self.max_file_chars:
+                        self.stats.skipped_large_files.append(rel_path)
+                        continue
+
+                    header = f"### FILE: {rel_path}\n"
+                    snippet = header + content.strip() + "\n\n"
+
+                    if total_chars + len(snippet) > max_chars:
+                        self.stats.stopped_due_to_limit = True
+                        # Stop collecting further to respect the limit.
+                        context_parts.append(snippet[: max(0, max_chars - total_chars)])
+                        total_chars = max_chars
+                        break
+
+                    context_parts.append(snippet)
+                    total_chars += len(snippet)
+                    self.stats.files_included += 1
+                    self.stats.included_files.append(rel_path)
+
+                if total_chars >= max_chars:
+                    break
 
         self.stats.chars_collected = total_chars
         return "".join(context_parts)
@@ -160,9 +240,17 @@ def collect_project_context(
     max_chars: int = 250_000,
     include_patterns: Optional[List[str]] = None,
     exclude_dirs: Optional[List[str]] = None,
+    include_globs: Optional[List[str]] = None,
+    focus_files: Optional[List[str]] = None,
+    deny_globs: Optional[List[str]] = None,
 ) -> str:
     """
     Functional wrapper to collect project context without instantiating the class directly.
     """
     scanner = ProjectScanner(project_root, include_exts=include_patterns, exclude_dirs=exclude_dirs)
-    return scanner.collect_project_context(max_chars=max_chars)
+    return scanner.collect_project_context(
+        max_chars=max_chars,
+        include_globs=include_globs,
+        focus_files=focus_files,
+        deny_globs=deny_globs,
+    )
