@@ -15,11 +15,14 @@ Meta-Agent Task Contract:
 - Run a TaskSpec: `python meta_agent.py run-task --task examples/tasks/001_refactor_small.yaml`
 - Artifacts: `runtime/runs/<run_id>/report.json` + `runtime/runs/<run_id>/patches/`
 - Contract doc: `docs/tasks_contract.md`
+ - Projects registry: `config/projects.yaml`
 
 Service-ready usage:
 - Health check: `python meta_agent.py health`
 - Watch inbox: `python meta_agent.py watch --inbox runtime/inbox --poll-seconds 2`
+- Control Center UI: `python meta_agent.py ui` (open `http://127.0.0.1:8766`)
 - Ops doc: `docs/operations.md`
+- Control Center doc: `docs/control_center.md`
 
 Shared (kept empty or runtime-only):
 - config/

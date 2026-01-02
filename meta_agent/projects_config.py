@@ -68,6 +68,25 @@ def _normalize_legacy(raw: dict) -> dict:
     if not raw:
         return {}
     if "projects" in raw:
+        projects_block = raw.get("projects")
+        if isinstance(projects_block, list):
+            normalized: dict = {"projects": {}}
+            for item in projects_block:
+                if not isinstance(item, dict):
+                    continue
+                pid = item.get("id") or item.get("project_id")
+                root = item.get("root") or item.get("path")
+                if not pid or not root:
+                    continue
+                normalized["projects"][pid] = {
+                    "path": root,
+                    "description": item.get("label") or item.get("description") or "",
+                }
+            if "default" in raw:
+                normalized["default"] = raw.get("default")
+            elif normalized["projects"]:
+                normalized["default"] = next(iter(normalized["projects"].keys()))
+            return normalized
         return raw
     projects_block = {}
     for pid, path in raw.items():

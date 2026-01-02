@@ -7,6 +7,7 @@
 - `python meta_agent.py run-task --task examples/tasks/001_refactor_small.yaml`
 - `python meta_agent.py status --limit 5`
 - `python meta_agent.py watch --inbox runtime/inbox --poll-seconds 2 --archive runtime/inbox_done --failed runtime/inbox_failed`
+- `python meta_agent.py ui --port 8766 --bind 127.0.0.1`
 - `python meta_agent.py run-scheduler --once`
 - `python meta_agent.py scheduler-status`
 
@@ -86,6 +87,12 @@ STOP/PAUSE:
 Retries/backoff:
 - Transient errors (exit_code 30, 50) back off exponentially with optional jitter.
 - Non-transient errors (invalid_task, block, gate_failed) do not retry.
+
+## Projects registry
+
+Projects for the Control Center are defined in `config/projects.yaml`.
+Add a new entry under `projects` with `id`, `root`, `label`, and optional
+`default_include_globs`/`deny_globs`.
 
 ## Service usage
 

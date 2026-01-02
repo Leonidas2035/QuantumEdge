@@ -15,13 +15,14 @@ def configure_logger(
     runtime_dir: str,
     level: str = "INFO",
     run_id: Optional[str] = None,
+    log_filename: str = "meta_agent.log",
 ) -> logging.Logger:
     logger = logging.getLogger(name)
     if logger.handlers:
         return logger
 
     log_dir = _ensure_log_dir(runtime_dir)
-    log_path = os.path.join(log_dir, "meta_agent.log")
+    log_path = os.path.join(log_dir, log_filename)
 
     level_value = getattr(logging, level.upper(), logging.INFO)
     logger.setLevel(level_value)

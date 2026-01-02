@@ -17,6 +17,8 @@ from logger import configure_logger
 from meta_core import run_task
 from offmarket_scheduler import main as scheduler_main, status as scheduler_status
 from schedule_contract import ScheduleValidationError
+from approval_engine import approve_apply, ApprovalError
+from control_center_server import run_server
 from paths import (
     BASE_DIR,
     OUTPUT_DIR,
@@ -679,6 +681,20 @@ def parse_watch_args(argv: list[str]):
     return parser.parse_args(argv)
 
 
+def parse_ui_args(argv: list[str]):
+    parser = argparse.ArgumentParser(description="Run Control Center UI")
+    parser.add_argument("--port", type=int, default=8766)
+    parser.add_argument("--bind", default="127.0.0.1")
+    parser.add_argument("--token", dest="token")
+    return parser.parse_args(argv)
+
+
+def parse_approve_args(argv: list[str]):
+    parser = argparse.ArgumentParser(description="Approve and apply a warn run")
+    parser.add_argument("--run-id", required=True)
+    return parser.parse_args(argv)
+
+
 def _resolve_path_under_base(path: str) -> str:
     base = _resolve_base_dir()
     base_abs = os.path.abspath(base)
@@ -954,6 +970,27 @@ def main() -> int:
     if cmd == "watch":
         args = parse_watch_args(remaining[1:])
         return _watch_cli(args, json_mode=global_args.json, quiet=global_args.quiet)
+    if cmd == "ui":
+        args = parse_ui_args(remaining[1:])
+        server, token = run_server(args.bind, args.port, token=args.token)
+        if not global_args.quiet:
+            print(f"[INFO] Control Center listening on http://{args.bind}:{args.port}")
+        try:
+            server.serve_forever()
+        except KeyboardInterrupt:
+            return 0
+        return 0
+    if cmd == "approve-apply":
+        args = parse_approve_args(remaining[1:])
+        try:
+            result = approve_apply(args.run_id, runtime_dir=_resolve_runtime_dir(), method="cli")
+        except ApprovalError as exc:
+            if not global_args.quiet:
+                print(f"[ERROR] {exc}")
+            return exc.exit_code
+        if not global_args.quiet:
+            print(f"[INFO] approve_apply exit_code={result.get('exit_code')} applied={result.get('applied')}")
+        return int(result.get("exit_code") or 0)
 
     args = parse_args(remaining)
     if args.config_path:

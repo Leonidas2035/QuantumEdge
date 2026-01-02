@@ -1,0 +1,163 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Meta-Agent Control Center</title>
+    <link rel="stylesheet" href="styles.css" />
+  </head>
+  <body>
+    <script>
+      window.__CC_TOKEN__ = "__CC_TOKEN__";
+    </script>
+
+    <header class="hero">
+      <div class="hero__inner">
+        <div>
+          <p class="eyebrow">Meta-Agent Control Center</p>
+          <h1>Operate the stack from a single console.</h1>
+          <p class="subhead">
+            Create tasks, inspect runs, review gates, and approve warn-only changes with full
+            shadow validation.
+          </p>
+        </div>
+        <div class="status-strip" id="health-card">
+          <div>
+            <span class="status-dot" id="health-dot"></span>
+            <span id="health-text">Checking health...</span>
+          </div>
+          <div class="tiny" id="active-project-text">Active project: --</div>
+        </div>
+      </div>
+    </header>
+
+    <main class="layout">
+      <section class="card">
+        <div class="card__head">
+          <h2>Dashboard</h2>
+          <button class="ghost" id="refresh-dashboard">Refresh</button>
+        </div>
+        <div class="grid two">
+          <div class="panel">
+            <h3>Scheduler</h3>
+            <div id="scheduler-summary" class="tiny muted">Loading...</div>
+          </div>
+          <div class="panel">
+            <h3>Recent Runs</h3>
+            <div id="recent-runs" class="tiny muted">Loading...</div>
+          </div>
+        </div>
+        <div class="panel">
+          <h3>Active Project</h3>
+          <div class="row">
+            <select id="active-project-select"></select>
+            <button class="ghost" id="set-active-project">Set active</button>
+          </div>
+          <div id="project-warning" class="tiny warn"></div>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="card__head">
+          <h2>Create Task</h2>
+          <span class="tiny muted">Enqueue TaskSpec into runtime/inbox</span>
+        </div>
+        <form id="task-form" class="stack">
+          <label>
+            Objective
+            <input type="text" name="objective" placeholder="Short goal" required />
+          </label>
+          <label>
+            Instructions
+            <textarea name="instructions" rows="5" placeholder="Detailed requirements" required></textarea>
+          </label>
+          <div class="grid two">
+            <label>
+              Project
+              <select name="project_id" id="task-project"></select>
+            </label>
+            <label>
+              LLM Model (optional)
+              <input type="text" name="model" placeholder="model id" />
+            </label>
+          </div>
+          <div class="grid three">
+            <label class="toggle">
+              <input type="checkbox" name="patch_only" />
+              Patch-only
+            </label>
+            <label class="toggle">
+              <input type="checkbox" name="dry_run" />
+              Dry run
+            </label>
+            <label class="toggle">
+              <input type="checkbox" name="gates_preset" checked />
+              Demo gates
+            </label>
+          </div>
+          <details class="accordion">
+            <summary>Advanced context</summary>
+            <label>
+              Include globs (comma-separated)
+              <input type="text" name="include_globs" placeholder="docs/**/*.md, meta_agent/**/*.py" />
+            </label>
+            <label>
+              Focus files (comma-separated)
+              <input type="text" name="focus_files" placeholder="docs/operations.md" />
+            </label>
+            <label>
+              Deny globs (comma-separated)
+              <input type="text" name="deny_globs" placeholder="**/.git/**, **/runtime/**" />
+            </label>
+          </details>
+          <button type="submit" class="primary">Enqueue Task</button>
+          <div id="task-result" class="tiny"></div>
+        </form>
+      </section>
+
+      <section class="card">
+        <div class="card__head">
+          <h2>Runs</h2>
+          <div class="row">
+            <select id="runs-filter">
+              <option value="any">All</option>
+              <option value="allow">Allow</option>
+              <option value="warn">Warn</option>
+              <option value="block">Block</option>
+              <option value="gate_failed">Gate failed</option>
+              <option value="dry_run">Dry run</option>
+            </select>
+            <input id="runs-search" type="search" placeholder="Search run_id or task_id" />
+            <button class="ghost" id="refresh-runs">Refresh</button>
+          </div>
+        </div>
+        <div class="table" id="runs-table"></div>
+      </section>
+
+      <section class="card" id="run-detail-card">
+        <div class="card__head">
+          <h2>Run Detail</h2>
+          <div class="row">
+            <span id="run-detail-title" class="tiny muted">Select a run to inspect.</span>
+          </div>
+        </div>
+        <div id="run-detail-body" class="stack"></div>
+      </section>
+
+      <section class="card">
+        <div class="card__head">
+          <h2>Schedules</h2>
+          <button class="ghost" id="refresh-schedules">Refresh</button>
+        </div>
+        <div id="schedules-list" class="stack"></div>
+      </section>
+    </main>
+
+    <footer class="foot">
+      <span>Meta-Agent Control Center</span>
+      <span class="tiny muted">Local UI, token-protected, no external access.</span>
+    </footer>
+
+    <script src="app.js"></script>
+  </body>
+</html>

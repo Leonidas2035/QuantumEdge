@@ -327,6 +327,7 @@ def run_task(
     context_manifest_path = os.path.join(run_dir, "context_manifest.json")
     report_path = os.path.join(run_dir, "report.json")
     task_copy_path = os.path.join(run_dir, "task.yaml")
+    changeset_path = os.path.join(run_dir, "changeset.json")
 
     rel_report_path = _relpath_under_base(report_path, base_abs)
     rel_patches_dir = _relpath_under_base(patches_dir, base_abs)
@@ -432,6 +433,19 @@ def run_task(
             raise RuntimeError(response)
 
         change_set = build_change_set_from_response(target_project, response)
+        try:
+            os.makedirs(run_dir, exist_ok=True)
+            payload = {
+                "project_root": change_set.project_root,
+                "changes": {
+                    rel: {"old_content": change.old_content, "new_content": change.new_content}
+                    for rel, change in change_set.changes.items()
+                },
+            }
+            with open(changeset_path, "w", encoding="utf-8") as handle:
+                json.dump(payload, handle, ensure_ascii=True, indent=2)
+        except Exception as exc:
+            errors.append(f"Failed to write changeset: {exc}")
         _check_timeout(timeout_seconds, overall_start)
 
         constraint_checks: List[str] = []

@@ -1,0 +1,31 @@
+projects:
+  - id: "meta_agent"
+    root: "."
+    label: "Meta-Agent"
+    default_include_globs:
+      - "**/*.py"
+      - "**/*.md"
+      - "docs/**/*.md"
+      - "examples/**/*.yaml"
+    deny_globs:
+      - "**/.git/**"
+      - "**/venv/**"
+      - "**/.venv/**"
+      - "**/runtime/**"
+      - "**/artifacts/**"
+      - "**/*.env"
+      - "**/secrets*"
+  - id: "quantumedge"
+    root: "quantumedge"
+    label: "QuantumEdge (placeholder)"
+    default_include_globs:
+      - "**/*.py"
+      - "**/*.md"
+    deny_globs:
+      - "**/.git/**"
+      - "**/venv/**"
+      - "**/.venv/**"
+      - "**/runtime/**"
+      - "**/artifacts/**"
+      - "**/*.env"
+      - "**/secrets*"
