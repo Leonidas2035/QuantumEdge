@@ -134,6 +134,7 @@ Body text can be used as instructions if `instructions` is missing.
 Additional report fields:
 - `gates`: gate execution results (passed, steps, stdout/stderr paths)
 - `shadow`: shadow workspace details (strategy, path, kept)
+- `approval`: approval record when manual approve/apply is executed
 
 ## Exit codes
 
@@ -155,6 +156,8 @@ runtime/runs/<run_id>/
   patches/
   gates/
   shadow/
+  changeset.json
+  approval/
   context_manifest.json
 ```
 
@@ -166,3 +169,7 @@ Example:
 ```
 python meta_agent.py run-task --task examples/tasks/001_refactor_small.yaml
 ```
+
+Additional examples:
+- `examples/tasks/002_docs_update.yaml`
+- `examples/tasks/003_shadow_gates_demo.yaml`

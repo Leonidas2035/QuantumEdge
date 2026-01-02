@@ -23,6 +23,7 @@ it via `X-CC-Token`. No token is printed to stdout.
 - The server binds to `127.0.0.1` by default.
 - API calls require the `X-CC-Token` header.
 - No secrets are printed or logged.
+- Approve & Apply is blocked for `block`, `gate_failed`, and `dry_run` runs.
 
 ## Troubleshooting
 

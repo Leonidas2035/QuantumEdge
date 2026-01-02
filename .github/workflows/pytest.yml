@@ -22,3 +22,6 @@ jobs:
       - name: Run pytest
         run: |
           python -m pytest -q
+      - name: Docs check
+        run: |
+          python scripts/docs_check.py

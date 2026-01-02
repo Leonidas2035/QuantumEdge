@@ -1,86 +1,63 @@
-# QuantumEdge Monorepo
+# QuantumEdge Meta-Agent
 
-This repository combines multiple projects under a single root for coordinated development.
+Meta-Agent is a controlled, safety-gated change orchestrator for this monorepo.
+It scans project context, builds prompts, and produces structured change sets.
+All writes go through a single safety policy and write engine.
+Allow changes can be gated by shadow workspaces and quality gates.
+Warn/block results never apply automatically; patches and reports are saved.
+Dry-run mode always produces patches without applying to real repos.
+Runs are archived under `runtime/runs/<run_id>/` with full artifacts.
+An inbox/watch loop supports batch execution without parallel workers.
+An off-market scheduler creates tasks in maintenance windows (Europe/Kyiv).
+A local Control Center UI provides task creation and run review.
+Manual approve/apply re-runs shadow+gates before any real apply.
+All entrypoints return stable exit codes for automation.
 
-Linux-first note:
-- Primary target OS: AlmaLinux.
-- Windows-only artifacts live under `legacy/windows/` (optional/legacy).
+## Quickstart
 
-Projects:
-- ai_scalper_bot/
-- SupervisorAgent/
-- meta_agent/
+```bash
+python meta_agent.py diag
+python meta_agent.py health
+python meta_agent.py run-task --task examples/tasks/001_refactor_small.yaml
+python meta_agent.py watch --inbox runtime/inbox --poll-seconds 2
+python meta_agent.py run-scheduler --once
+python meta_agent.py ui
+```
 
-Meta-Agent Task Contract:
-- Run a TaskSpec: `python meta_agent.py run-task --task examples/tasks/001_refactor_small.yaml`
-- Artifacts: `runtime/runs/<run_id>/report.json` + `runtime/runs/<run_id>/patches/`
-- Contract doc: `docs/tasks_contract.md`
- - Projects registry: `config/projects.yaml`
+## Results and artifacts
 
-Service-ready usage:
-- Health check: `python meta_agent.py health`
-- Watch inbox: `python meta_agent.py watch --inbox runtime/inbox --poll-seconds 2`
-- Control Center UI: `python meta_agent.py ui` (open `http://127.0.0.1:8766`)
-- Ops doc: `docs/operations.md`
-- Control Center doc: `docs/control_center.md`
+- Report: `runtime/runs/<run_id>/report.json`
+- Patches: `runtime/runs/<run_id>/patches/`
+- Gates output: `runtime/runs/<run_id>/gates/`
+- Shadow workspace: `runtime/runs/<run_id>/shadow/`
+- Change set: `runtime/runs/<run_id>/changeset.json`
 
-Shared (kept empty or runtime-only):
-- config/
-- runtime/
-- logs/
-- data/
+## Safety model
 
-Config:
-- See `docs/CONFIG.md` for unified QE_ROOT-based settings and run commands.
+- Default write mode is patch-only unless policy allows direct apply.
+- Safety policy evaluates every change set before any write.
+- Shadow + gates must pass before allow applies to the real repo.
+- Approve/apply is allowed only for `warn` verdicts and reruns gates.
 
-Rule: do not commit secrets, API keys, or encrypted secret files. Keep those local and out of git.
+## Exit codes
 
-Canonical entrypoint (Linux-first):
-- `python SupervisorAgent/supervisor.py run-foreground`
+| Code | Meaning |
+| --- | --- |
+| 0 | allow + applied |
+| 10 | warn (patch/report only) |
+| 11 | dry_run_complete (patch/report only) |
+| 12 | gate_failed (patch/report only) |
+| 20 | block (patch/report only) |
+| 30 | error |
+| 40 | invalid_task |
+| 50 | lock_busy |
 
-Helper script (same entrypoint):
-- `./scripts/linux/run_supervisor.sh run-foreground`
+## Docs
 
-Legacy launcher (optional):
-- `python QuantumEdge.py start --with-meta`
-- `python QuantumEdge.py status`
-- `python QuantumEdge.py stop`
-
-Supervisor health endpoint: `/api/v1/dashboard/health` (configurable via `config/supervisor.yaml` `health_path`).
-
-Policy contract (Supervisor -> bot):
-- File: `runtime/policy.json`
-- API: `GET /api/v1/policy/current`
-- Schema: `docs/policy_schema_v1.json`
-- Policy engine config lives in `config/supervisor.yaml` (heuristics + optional LLM moderation).
-
-Telemetry (bot -> SupervisorAgent):
-- Ingest: `POST /api/v1/telemetry/ingest`
-- Summary: `GET /api/v1/telemetry/summary`
-- Events: `GET /api/v1/telemetry/events?limit=200`
-- Alerts: `GET /api/v1/telemetry/alerts`
-
-Ops entrypoints:
-- `python QuantumEdge.py start|stop|restart|status|diag`
-- `python SupervisorAgent/supervisor.py start|stop|restart|status|diag`
-
-Cross-platform scripts:
-- `scripts/linux/qe_start.sh`, `scripts/linux/qe_stop.sh`, `scripts/linux/qe_diag.sh`
-- `legacy/windows/scripts/qe_start.ps1`, `legacy/windows/scripts/qe_stop.ps1`, `legacy/windows/scripts/qe_diag.ps1`
-
-Runtime dependencies:
-- Bot-only runtime: `requirements/requirements-runtime.txt`
-- Full stack (Supervisor + research + meta-agent): `requirements/requirements.txt`
-
-Runtime vs research:
-- Live trading runtime remains under `ai_scalper_bot/bot`.
-- Offline/backtest tooling moved to `SupervisorAgent/research/` (compat wrappers remain under `ai_scalper_bot` for one stage).
-
-ModelOps (SupervisorAgent):
-- Train/publish models: `python SupervisorAgent/supervisor.py ml train --symbol BTCUSDT --horizons 1,5,30 --source ticks --input-dir data/ticks --publish`
-- Runtime models live under `runtime/models/<symbol>/<horizon>/current/`
-
-Research suite (SupervisorAgent):
-- Backtest: `python SupervisorAgent/supervisor.py research backtest --symbol BTCUSDT --data_dir data/ticks`
-- Replay: `python SupervisorAgent/supervisor.py research replay --symbol BTCUSDT --data_dir data/ticks --speed 1.0`
-- Scenario: `python SupervisorAgent/supervisor.py research scenario --name spread_spike --symbol BTCUSDT --data_dir data/ticks`
+- Architecture: `docs/architecture.md`
+- Operations runbook: `docs/operations.md`
+- Task contract: `docs/tasks_contract.md`
+- Scheduler: `docs/scheduler.md`
+- Control Center UI: `docs/control_center.md`
+- Security: `docs/security.md`
+- Release notes: `docs/CHANGELOG.md`

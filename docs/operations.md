@@ -1,15 +1,61 @@
-# Meta-Agent Operations
+# Meta-Agent Operations Runbook
+
+This runbook covers core commands, runtime locations, and troubleshooting steps.
 
 ## Commands
 
-- `python meta_agent.py diag`
-- `python meta_agent.py health`
-- `python meta_agent.py run-task --task examples/tasks/001_refactor_small.yaml`
-- `python meta_agent.py status --limit 5`
-- `python meta_agent.py watch --inbox runtime/inbox --poll-seconds 2 --archive runtime/inbox_done --failed runtime/inbox_failed`
-- `python meta_agent.py ui --port 8766 --bind 127.0.0.1`
-- `python meta_agent.py run-scheduler --once`
-- `python meta_agent.py scheduler-status`
+### Diagnostics and health
+
+```
+python meta_agent.py diag
+python meta_agent.py health
+python meta_agent.py status --limit 5
+```
+
+### Run a task
+
+```
+python meta_agent.py run-task --task examples/tasks/001_refactor_small.yaml
+```
+
+Common options:
+- `--json` machine-readable summary output
+- `--timeout-seconds <N>` overall task timeout
+- `--llm-timeout-seconds <N>` LLM request timeout
+- `--retries <N>` retry transient errors
+- `--runtime-dir <path>` override runtime root
+
+### Watch inbox
+
+```
+python meta_agent.py watch --inbox runtime/inbox --poll-seconds 2 --archive runtime/inbox_done --failed runtime/inbox_failed
+```
+
+Controls:
+- `STOP` file in inbox -> graceful exit
+- `PAUSE` file in inbox -> pause enqueue/processing
+
+### Scheduler
+
+```
+python meta_agent.py run-scheduler --once
+python meta_agent.py run-scheduler --tick-seconds 2
+python meta_agent.py scheduler-status
+```
+
+### Control Center UI
+
+```
+python meta_agent.py ui --port 8766 --bind 127.0.0.1
+```
+
+### Approve & apply (CLI)
+
+```
+python meta_agent.py approve-apply --run-id <run_id>
+```
+
+Approve/apply is allowed only for `warn` verdicts and always re-runs gates in shadow.
 
 ## Runtime layout
 
@@ -21,8 +67,12 @@ runtime/
     patches/
     gates/
     shadow/
+    changeset.json
     context_manifest.json
-  logs/meta_agent.log
+    approval/
+  logs/
+    meta_agent.log
+    control_center.log
   scheduler/state.json
   schedules/
   inbox/
@@ -30,77 +80,28 @@ runtime/
   inbox_failed/
 ```
 
-## Quality Gates & Shadow
+## Quality gates & shadow
 
-When gates are configured, Meta-Agent applies changes in a shadow workspace and runs gate steps
-before applying to the real project. If gates fail or time out, no real apply occurs and the run
-returns `exit_code=12`.
-
-Dry-run (`execution.dry_run: true`) never applies to the real project. It can still run gates in
-shadow and returns `exit_code=11`.
-
-Gate outputs are saved under `runtime/runs/<run_id>/gates/*.out` and `*.err`.
-
-Example snippet:
-```yaml
-execution:
-  dry_run: true
-gates:
-  enabled: true
-  steps:
-    - name: smoke
-      cmd: ["python", "-c", "import sys; sys.exit(0)"]
-```
-
-## Off-market Scheduler
-
-Schedules are YAML files stored in `runtime/schedules/` (or `schedules/` in the repo). Each
-schedule defines maintenance windows (Europe/Kyiv by default), trigger cadence, retry policy,
-and a TaskSpec template.
-
-Key files:
-- Schedules: `runtime/schedules/*.yaml`
-- State: `runtime/scheduler/state.json`
-
-Example schedule:
-- `examples/schedules/001_nightly_maintenance.yaml`
-
-Run once:
-```
-python meta_agent.py run-scheduler --once
-```
-
-Continuous loop:
-```
-python meta_agent.py run-scheduler --tick-seconds 2
-```
-
-Status:
-```
-python meta_agent.py scheduler-status
-```
-
-STOP/PAUSE:
-- Create `STOP` in the inbox to exit scheduler gracefully.
-- Create `PAUSE` to pause enqueue/processing while keeping state updates.
-
-Retries/backoff:
-- Transient errors (exit_code 30, 50) back off exponentially with optional jitter.
-- Non-transient errors (invalid_task, block, gate_failed) do not retry.
+- Gate steps run in shadow workspaces before applying to the real repo.
+- Gate output logs live in `runtime/runs/<run_id>/gates/`.
+- Dry-run (`execution.dry_run: true`) never applies and returns exit_code `11`.
+- Gate failure returns exit_code `12` and never applies.
 
 ## Projects registry
 
 Projects for the Control Center are defined in `config/projects.yaml`.
 Add a new entry under `projects` with `id`, `root`, `label`, and optional
-`default_include_globs`/`deny_globs`.
+`default_include_globs` / `deny_globs`.
 
 ## Service usage
 
-Linux (systemd): see `ops/systemd/meta-agent-watch.service`.
+Linux systemd:
+- `ops/systemd/meta-agent-watch.service`
 
-Windows (NSSM): see `ops/windows/nssm_install.ps1`.
+Windows NSSM:
+- `ops/windows/nssm_install.ps1`
 
-## Exit codes (run-task)
+## Exit codes
 
 - `0` allow + applied
 - `10` warn (patch/report only)
@@ -113,6 +114,10 @@ Windows (NSSM): see `ops/windows/nssm_install.ps1`.
 
 ## Troubleshooting
 
-- `lock busy`: another Meta-Agent process is running; wait or stop it.
-- `invalid_task`: check required fields in `task.yaml`.
-- Logs: `runtime/logs/meta_agent.log`
+- **lock_busy (50)**: another Meta-Agent process holds the lock.
+- **invalid_task (40)**: check required fields in `task.yaml`.
+- **gate_failed (12)**: inspect `runtime/runs/<run_id>/gates/*.out` and `.err`.
+- **warn verdict**: use UI or CLI approve/apply to re-run gates before apply.
+- **scheduler stuck/backoff**: inspect `runtime/scheduler/state.json` `next_eligible_at` and `attempts`.
+- **UI 403**: refresh the page to reload a valid token.
+- **Logs**: `runtime/logs/meta_agent.log` and `runtime/logs/control_center.log`.
