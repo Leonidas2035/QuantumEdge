@@ -158,6 +158,20 @@ def _build_summary(verdict: str, applied: bool, files_changed: int) -> str:
     return "Task failed; see errors for details."
 
 
+def _log_event(path: str, event: str, payload: dict) -> None:
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        data = {
+            "ts": datetime.now(timezone.utc).isoformat(),
+            "event": event,
+            **payload,
+        }
+        with open(path, "a", encoding="utf-8") as handle:
+            handle.write(json.dumps(data, ensure_ascii=True) + "\n")
+    except Exception:
+        return
+
+
 def _exit_code_for(verdict: str, error_type: Optional[str] = None) -> int:
     if error_type == "invalid_task":
         return 40
@@ -328,6 +342,7 @@ def run_task(
     report_path = os.path.join(run_dir, "report.json")
     task_copy_path = os.path.join(run_dir, "task.yaml")
     changeset_path = os.path.join(run_dir, "changeset.json")
+    events_path = os.path.join(run_dir, "events.jsonl")
 
     rel_report_path = _relpath_under_base(report_path, base_abs)
     rel_patches_dir = _relpath_under_base(patches_dir, base_abs)
@@ -372,9 +387,11 @@ def run_task(
             return report
 
     try:
+        _log_event(events_path, "run_started", {"run_id": run_id})
         os.makedirs(patches_dir, exist_ok=True)
 
         spec = load_task_spec(task_path)
+        _log_event(events_path, "task_loaded", {"task_id": spec.task_id, "project_id": spec.project_id})
         _check_timeout(timeout_seconds, overall_start)
         target_project = _resolve_target_project(spec)
         target_project = os.path.abspath(target_project)
@@ -408,6 +425,15 @@ def run_task(
         }
         with open(context_manifest_path, "w", encoding="utf-8") as handle:
             json.dump(context_manifest, handle, indent=2)
+        _log_event(
+            events_path,
+            "scan_done",
+            {
+                "files_included": scanner.stats.files_included,
+                "chars_collected": scanner.stats.chars_collected,
+                "stopped_due_to_limit": scanner.stats.stopped_due_to_limit,
+            },
+        )
 
         _check_timeout(timeout_seconds, overall_start)
 
@@ -429,10 +455,12 @@ def run_task(
         )
         response = client.send(full_prompt)
         llm_ms = _elapsed_ms(llm_start)
+        _log_event(events_path, "llm_called", {"duration_ms": llm_ms, "model": spec.llm.model or "default"})
         if isinstance(response, str) and response.lstrip().startswith("[ERROR]"):
             raise RuntimeError(response)
 
         change_set = build_change_set_from_response(target_project, response)
+        _log_event(events_path, "changeset_built", {"files_changed": len(change_set.changes)})
         try:
             os.makedirs(run_dir, exist_ok=True)
             payload = {
@@ -475,6 +503,14 @@ def run_task(
         policy = load_safety_policy()
         safety_eval = evaluate_change_set(policy, change_set)
         safety_ms = _elapsed_ms(safety_start)
+        _log_event(
+            events_path,
+            "safety_verdict",
+            {
+                "verdict": safety_eval.overall_verdict,
+                "write_mode": safety_eval.write_mode,
+            },
+        )
 
         apply_ms = 0
         patch_start = time.perf_counter()
@@ -525,6 +561,14 @@ def run_task(
                     )
                     apply_ms += _elapsed_ms(shadow_apply_start)
                     gate_results = run_gates(shadow_dir, spec.gates, logger, artifacts_dir=gates_dir)
+                    _log_event(
+                        events_path,
+                        "gates_result",
+                        {
+                            "passed": gate_results.passed,
+                            "steps": len(gate_results.steps),
+                        },
+                    )
                     _check_timeout(timeout_seconds, overall_start)
                     if not gate_results.passed:
                         gate_failed = True
@@ -545,6 +589,11 @@ def run_task(
                 )
                 apply_ms += _elapsed_ms(apply_start)
                 applied = outcome.applied
+                _log_event(
+                    events_path,
+                    "apply_done",
+                    {"applied": applied},
+                )
                 _check_timeout(timeout_seconds, overall_start)
 
         safety_checks = list(patch_outcome.safety_eval.reasons or [])
@@ -649,6 +698,11 @@ def run_task(
             gates=gates_report,
             shadow=shadow_report,
         )
+        _log_event(
+            events_path,
+            "run_finished",
+            {"exit_code": exit_code, "verdict": final_verdict, "applied": applied},
+        )
     except TaskValidationError as exc:
         finished_at = datetime.now(timezone.utc).isoformat()
         verdict = "error"
@@ -683,6 +737,7 @@ def run_task(
                 apply_ms=0,
             ),
         )
+        _log_event(events_path, "run_finished", {"exit_code": exit_code, "verdict": verdict})
     except Exception as exc:
         finished_at = datetime.now(timezone.utc).isoformat()
         verdict = "error"
@@ -717,6 +772,7 @@ def run_task(
                 apply_ms=0,
             ),
         )
+        _log_event(events_path, "run_finished", {"exit_code": exit_code, "verdict": verdict})
     finally:
         if shadow_dir:
             cleanup_shadow(

@@ -61,3 +61,4 @@ python meta_agent.py ui
 - Control Center UI: `docs/control_center.md`
 - Security: `docs/security.md`
 - Release notes: `docs/CHANGELOG.md`
+- Upgrade guide: `docs/upgrade.md`

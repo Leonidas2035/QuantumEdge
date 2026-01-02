@@ -12,6 +12,7 @@ DOC_PATHS = [
     "docs/control_center.md",
     "docs/security.md",
     "docs/CHANGELOG.md",
+    "docs/upgrade.md",
 ]
 
 SUBCOMMANDS = [
@@ -24,6 +25,8 @@ SUBCOMMANDS = [
     ["scheduler-status", "--help"],
     ["ui", "--help"],
     ["approve-apply", "--help"],
+    ["dump-run", "--help"],
+    ["version"],
 ]
 
 

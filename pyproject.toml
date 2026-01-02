@@ -1,0 +1,44 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "meta-agent"
+version = "0.1.0"
+description = "Meta-Agent orchestration and safety-gated automation"
+readme = "README.md"
+requires-python = ">=3.11"
+dependencies = [
+  "PyYAML>=6.0",
+  "openai>=1.0.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest",
+  "ruff",
+  "black",
+]
+
+[project.scripts]
+meta-agent = "meta_agent.cli_entry:main"
+
+[tool.setuptools]
+packages = ["meta_agent"]
+include-package-data = true
+
+[tool.setuptools.package-data]
+meta_agent = ["ui/*"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+select = ["F"]
+ignore = ["F401", "F841"]
+extend-exclude = [
+  "meta_agent/legacy",
+  "meta_agent/repo_meta_agent",
+  "ai_scalper_bot",
+  "SupervisorAgent",
+  "quantumedge",
+]

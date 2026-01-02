@@ -14,6 +14,15 @@ class CodexClient:
         chunk_size: Optional[int] = None,
         request_timeout_seconds: Optional[int] = None,
     ):
+        self.mock_response = os.getenv("META_AGENT_MOCK_LLM_RESPONSE")
+        if self.mock_response is not None:
+            self.client = None
+            self.model = model or "mock"
+            self.temperature = 0 if temperature is None else temperature
+            self.request_timeout_seconds = request_timeout_seconds
+            self.chunk_size = chunk_size or 12000
+            self.mode = "dev"
+            return
         # Determine mode: env has priority, then provided arg, default dev
         env_mode = os.getenv("META_AGENT_MODE")
         resolved_mode = (env_mode or mode or "dev").strip().lower()
@@ -92,6 +101,8 @@ class CodexClient:
         Sends prompt to Codex with safe chunking and stable formatting.
         Avoids invalid_request_error and ensures compatibility with chat models.
         """
+        if self.mock_response is not None:
+            return self.mock_response
 
         messages = [
             {

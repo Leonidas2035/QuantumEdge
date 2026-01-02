@@ -10,6 +10,7 @@ This runbook covers core commands, runtime locations, and troubleshooting steps.
 python meta_agent.py diag
 python meta_agent.py health
 python meta_agent.py status --limit 5
+python meta_agent.py version
 ```
 
 ### Run a task
@@ -57,6 +58,13 @@ python meta_agent.py approve-apply --run-id <run_id>
 
 Approve/apply is allowed only for `warn` verdicts and always re-runs gates in shadow.
 
+### Dump run summary
+
+```
+python meta_agent.py dump-run --run-id <run_id>
+python meta_agent.py dump-run --run-id <run_id> --json
+```
+
 ## Runtime layout
 
 ```
@@ -70,6 +78,7 @@ runtime/
     changeset.json
     context_manifest.json
     approval/
+    events.jsonl
   logs/
     meta_agent.log
     control_center.log

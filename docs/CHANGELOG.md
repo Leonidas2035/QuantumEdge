@@ -59,3 +59,11 @@
 - Added security guidance and release notes.
 - Added docs check in CI.
 - Checks: `python meta_agent.py diag`, `python -m pytest -q`.
+
+## Stage 7 - Release Pack
+
+- Added packaging metadata and console entrypoint.
+- Added smoke E2E script and CI smoke job.
+- Added structured run events (`events.jsonl`) and dump-run command.
+- Added upgrade guide and lint job.
+- Checks: `meta-agent diag`, `python tools/smoke_e2e.py`.

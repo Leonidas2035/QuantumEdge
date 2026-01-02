@@ -158,6 +158,7 @@ runtime/runs/<run_id>/
   shadow/
   changeset.json
   approval/
+  events.jsonl
   context_manifest.json
 ```
 

@@ -19,6 +19,7 @@ from offmarket_scheduler import main as scheduler_main, status as scheduler_stat
 from schedule_contract import ScheduleValidationError
 from approval_engine import approve_apply, ApprovalError
 from control_center_server import run_server
+from version import __version__
 from paths import (
     BASE_DIR,
     OUTPUT_DIR,
@@ -695,6 +696,12 @@ def parse_approve_args(argv: list[str]):
     return parser.parse_args(argv)
 
 
+def parse_dump_run_args(argv: list[str]):
+    parser = argparse.ArgumentParser(description="Dump run summary")
+    parser.add_argument("--run-id", required=True)
+    return parser.parse_args(argv)
+
+
 def _resolve_path_under_base(path: str) -> str:
     base = _resolve_base_dir()
     base_abs = os.path.abspath(base)
@@ -909,6 +916,10 @@ def main() -> int:
     _apply_global_args(global_args)
 
     cmd = remaining[0] if remaining else None
+    if cmd == "version":
+        if not global_args.quiet:
+            print(__version__)
+        return 0
     if cmd == "diag":
         return run_diag()
     if cmd == "run-task":
@@ -991,6 +1002,34 @@ def main() -> int:
         if not global_args.quiet:
             print(f"[INFO] approve_apply exit_code={result.get('exit_code')} applied={result.get('applied')}")
         return int(result.get("exit_code") or 0)
+    if cmd == "dump-run":
+        args = parse_dump_run_args(remaining[1:])
+        runtime_dir = _resolve_runtime_dir()
+        report_path = os.path.join(runtime_dir, "runs", args.run_id, "report.json")
+        if not os.path.exists(report_path):
+            if not global_args.quiet:
+                print(f"[ERROR] report.json not found for run_id={args.run_id}")
+            return 1
+        with open(report_path, "r", encoding="utf-8") as handle:
+            report = json.load(handle)
+        payload = {
+            "run_id": report.get("run_id"),
+            "verdict": report.get("verdict"),
+            "exit_code": report.get("exit_code"),
+            "applied": (report.get("changes") or {}).get("applied"),
+            "gates_passed": (report.get("gates") or {}).get("passed"),
+            "report_path": (report.get("artifacts") or {}).get("report_path"),
+            "patches_dir": (report.get("artifacts") or {}).get("patches_dir"),
+            "gates_dir": "runtime/runs/{}/gates".format(args.run_id),
+        }
+        if global_args.json:
+            print(json.dumps(payload, ensure_ascii=True))
+        elif not global_args.quiet:
+            print(f"run_id={payload['run_id']} verdict={payload['verdict']} exit_code={payload['exit_code']}")
+            print(f"applied={payload['applied']} gates_passed={payload['gates_passed']}")
+            print(f"report_path={payload['report_path']}")
+            print(f"patches_dir={payload['patches_dir']}")
+        return 0
 
     args = parse_args(remaining)
     if args.config_path:
