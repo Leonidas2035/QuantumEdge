@@ -38,7 +38,7 @@ class RunLock:
 
 
 def resolve_lock_path(base_dir: str) -> Path:
-    runtime_dir = os.getenv("QE_RUNTIME_DIR")
+    runtime_dir = os.getenv("META_AGENT_RUNTIME_DIR") or os.getenv("QE_RUNTIME_DIR")
     if runtime_dir:
         return Path(runtime_dir).resolve() / "meta_agent" / "meta_agent.lock"
     return Path(base_dir).resolve() / "runtime" / "meta_agent" / "meta_agent.lock"

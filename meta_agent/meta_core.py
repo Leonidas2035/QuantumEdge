@@ -1,6 +1,7 @@
 import json
 import os
 import subprocess
+import time
 from datetime import datetime, timezone
 from hashlib import sha256
 from typing import Dict, List, Optional
@@ -11,12 +12,14 @@ from project_scanner import ProjectScanner
 from prompt_builder import PromptBuilder
 from projects_config import load_project_registry, resolve_project_root
 from run_lock import RunLock, describe_existing_lock, resolve_lock_path
-from safety_policy import SAFETY_POLICY_PATH, load_safety_policy
+from safety_policy import SAFETY_POLICY_PATH, evaluate_change_set, load_safety_policy
 from task_contract import (
     Report,
     ReportArtifacts,
     ReportChanges,
     ReportSafety,
+    ReportCLI,
+    ReportDurations,
     PatchInfo,
     TaskSpec,
     TaskValidationError,
@@ -80,6 +83,14 @@ def _load_config(path: str = CONFIG_PATH) -> Dict:
 def _resolve_runtime_dir() -> str:
     base = _resolve_base_dir()
     base_abs = os.path.abspath(base)
+    env_meta_runtime = os.getenv("META_AGENT_RUNTIME_DIR")
+    if env_meta_runtime:
+        candidate = os.path.abspath(env_meta_runtime)
+        try:
+            if os.path.commonpath([candidate, base_abs]) == base_abs:
+                return candidate
+        except ValueError:
+            pass
     env_runtime = os.getenv("QE_RUNTIME_DIR")
     if env_runtime:
         candidate = os.path.abspath(env_runtime)
@@ -102,6 +113,25 @@ def _relpath_under_base(path: str, base_abs: str) -> str:
     if rel.startswith(".."):
         raise TaskValidationError("Path escapes repo root")
     return rel.replace("\\", "/")
+
+
+def _elapsed_ms(start: float) -> int:
+    return int((time.perf_counter() - start) * 1000)
+
+
+def _check_timeout(timeout_seconds: Optional[int], start: float) -> None:
+    if timeout_seconds is None:
+        return
+    if time.perf_counter() - start > timeout_seconds:
+        raise TimeoutError("Task timed out")
+
+
+def _build_cli_context(cli_context: Optional[dict]) -> Optional[ReportCLI]:
+    if not cli_context:
+        return None
+    command = str(cli_context.get("command") or "")
+    args = cli_context.get("args_sanitized") or []
+    return ReportCLI(command=command, args_sanitized=list(args))
 
 
 def _hash_content(content: str) -> Optional[str]:
@@ -200,11 +230,15 @@ def run_task(
     task_path: str,
     use_lock: bool = True,
     llm_client: Optional[object] = None,
+    timeout_seconds: Optional[int] = None,
+    llm_timeout_seconds: Optional[int] = None,
+    cli_context: Optional[dict] = None,
 ) -> Report:
     """
     Executes a single task spec with safety gating and writes run artifacts.
     """
     started_at = datetime.now(timezone.utc).isoformat()
+    overall_start = time.perf_counter()
     finished_at = started_at
     errors: List[str] = []
     lock: RunLock | None = None
@@ -251,6 +285,9 @@ def run_task(
                     task_path=rel_task_copy_path,
                 ),
                 errors=[message],
+                cli=_build_cli_context(cli_context),
+                runtime_dir=_relpath_under_base(runtime_dir, base_abs),
+                durations=None,
             )
             os.makedirs(run_dir, exist_ok=True)
             with open(report_path, "w", encoding="utf-8") as handle:
@@ -261,6 +298,7 @@ def run_task(
         os.makedirs(patches_dir, exist_ok=True)
 
         spec = load_task_spec(task_path)
+        _check_timeout(timeout_seconds, overall_start)
         target_project = _resolve_target_project(spec)
         target_project = os.path.abspath(target_project)
         if os.path.commonpath([target_project, base_abs]) != base_abs:
@@ -272,6 +310,7 @@ def run_task(
         with open(task_copy_path, "w", encoding="utf-8") as handle:
             yaml.safe_dump(spec.to_dict(), handle, allow_unicode=True, sort_keys=False)
 
+        scan_start = time.perf_counter()
         scanner = ProjectScanner(target_project)
         context = scanner.collect_project_context(
             max_chars=spec.llm.max_context_chars or 250_000,
@@ -279,6 +318,7 @@ def run_task(
             focus_files=spec.context.focus_files or None,
             deny_globs=spec.constraints.deny_globs or None,
         )
+        scan_ms = _elapsed_ms(scan_start)
         context_manifest = {
             "project_root": target_project,
             "files_included": scanner.stats.files_included,
@@ -290,6 +330,8 @@ def run_task(
         with open(context_manifest_path, "w", encoding="utf-8") as handle:
             json.dump(context_manifest, handle, indent=2)
 
+        _check_timeout(timeout_seconds, overall_start)
+
         instructions = f"Objective: {spec.objective}\n\nInstructions:\n{spec.instructions}"
         prompt_metadata = {
             "task_id": spec.task_id,
@@ -300,15 +342,19 @@ def run_task(
         }
         full_prompt = PromptBuilder().build_prompt(instructions, context, prompt_metadata)
 
+        llm_start = time.perf_counter()
         client = llm_client or CodexClient(
             model=spec.llm.model,
             temperature=spec.llm.temperature,
+            request_timeout_seconds=llm_timeout_seconds,
         )
         response = client.send(full_prompt)
+        llm_ms = _elapsed_ms(llm_start)
         if isinstance(response, str) and response.lstrip().startswith("[ERROR]"):
             raise RuntimeError(response)
 
         change_set = build_change_set_from_response(target_project, response)
+        _check_timeout(timeout_seconds, overall_start)
 
         constraint_checks: List[str] = []
         override_verdict: Optional[str] = None
@@ -333,16 +379,24 @@ def run_task(
             constraint_checks.append("constraint:patch_only")
             force_patch_only = True
 
+        safety_start = time.perf_counter()
         policy = load_safety_policy()
+        safety_eval = evaluate_change_set(policy, change_set)
+        safety_ms = _elapsed_ms(safety_start)
+
+        apply_start = time.perf_counter()
         outcome = apply_change_set_with_policy(
             change_set,
             patches_dir,
             policy=policy,
+            precomputed_eval=safety_eval,
             override_verdict=override_verdict,
             force_patch_only=force_patch_only,
             force_direct=True,
             always_write_patches=True,
         )
+        _check_timeout(timeout_seconds, overall_start)
+        apply_ms = _elapsed_ms(apply_start)
 
         verdict = outcome.safety_eval.overall_verdict
         files_changed = len(change_set.changes)
@@ -368,6 +422,7 @@ def run_task(
             )
 
         finished_at = datetime.now(timezone.utc).isoformat()
+        total_ms = _elapsed_ms(overall_start)
         report = Report(
             run_id=run_id,
             task_id=spec.task_id,
@@ -393,12 +448,22 @@ def run_task(
                 task_path=rel_task_copy_path,
             ),
             errors=errors,
+            cli=_build_cli_context(cli_context),
+            runtime_dir=_relpath_under_base(runtime_dir, base_abs),
+            durations=ReportDurations(
+                total_ms=total_ms,
+                scan_ms=scan_ms,
+                llm_ms=llm_ms,
+                safety_ms=safety_ms,
+                apply_ms=apply_ms,
+            ),
         )
     except TaskValidationError as exc:
         finished_at = datetime.now(timezone.utc).isoformat()
         verdict = "error"
         exit_code = _exit_code_for(verdict, "invalid_task")
         errors.append(str(exc))
+        total_ms = _elapsed_ms(overall_start)
         report = Report(
             run_id=run_id,
             task_id="unknown",
@@ -417,12 +482,22 @@ def run_task(
                 task_path=rel_task_copy_path,
             ),
             errors=errors,
+            cli=_build_cli_context(cli_context),
+            runtime_dir=_relpath_under_base(runtime_dir, base_abs),
+            durations=ReportDurations(
+                total_ms=total_ms,
+                scan_ms=0,
+                llm_ms=0,
+                safety_ms=0,
+                apply_ms=0,
+            ),
         )
     except Exception as exc:
         finished_at = datetime.now(timezone.utc).isoformat()
         verdict = "error"
         exit_code = _exit_code_for(verdict, "error")
         errors.append(str(exc))
+        total_ms = _elapsed_ms(overall_start)
         report = Report(
             run_id=run_id,
             task_id="unknown",
@@ -441,6 +516,15 @@ def run_task(
                 task_path=rel_task_copy_path,
             ),
             errors=errors,
+            cli=_build_cli_context(cli_context),
+            runtime_dir=_relpath_under_base(runtime_dir, base_abs),
+            durations=ReportDurations(
+                total_ms=total_ms,
+                scan_ms=0,
+                llm_ms=0,
+                safety_ms=0,
+                apply_ms=0,
+            ),
         )
     finally:
         if lock:

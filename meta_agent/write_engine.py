@@ -26,13 +26,14 @@ def apply_change_set_with_policy(
     change_set: ChangeSet,
     patches_dir: str,
     policy: SafetyPolicy | None = None,
+    precomputed_eval: SafetyEvaluation | None = None,
     override_verdict: Optional[str] = None,
     force_patch_only: bool = False,
     force_direct: bool = False,
     always_write_patches: bool = False,
 ) -> WriteOutcome:
     safety_policy = policy or load_safety_policy()
-    safety_eval = evaluate_change_set(safety_policy, change_set)
+    safety_eval = precomputed_eval or evaluate_change_set(safety_policy, change_set)
 
     if override_verdict:
         safety_eval = SafetyEvaluation(

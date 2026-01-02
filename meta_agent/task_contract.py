@@ -132,6 +132,21 @@ class ReportArtifacts:
 
 
 @dataclass
+class ReportCLI:
+    command: str
+    args_sanitized: List[str]
+
+
+@dataclass
+class ReportDurations:
+    total_ms: int
+    scan_ms: int
+    llm_ms: int
+    safety_ms: int
+    apply_ms: int
+
+
+@dataclass
 class Report:
     run_id: str
     task_id: str
@@ -144,6 +159,9 @@ class Report:
     safety: ReportSafety
     artifacts: ReportArtifacts
     errors: List[str] = field(default_factory=list)
+    cli: Optional[ReportCLI] = None
+    runtime_dir: Optional[str] = None
+    durations: Optional[ReportDurations] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)

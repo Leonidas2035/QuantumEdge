@@ -1,0 +1,14 @@
+[Unit]
+Description=Meta-Agent watch (Task inbox)
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/quantumedge
+EnvironmentFile=/opt/quantumedge/ops/env.example
+ExecStart=/usr/bin/python meta_agent.py watch --inbox runtime/inbox --poll-seconds 2 --archive runtime/inbox_done --failed runtime/inbox_failed
+Restart=on-failure
+RestartSec=2
+
+[Install]
+WantedBy=multi-user.target

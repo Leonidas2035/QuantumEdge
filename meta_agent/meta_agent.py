@@ -3,6 +3,7 @@ import json
 import os
 import shutil
 import sys
+import time
 from datetime import datetime, timezone
 from pathlib import Path
 import subprocess
@@ -12,6 +13,7 @@ import yaml
 
 from codex_client import CodexClient
 from file_manager import build_change_set_from_response
+from logger import configure_logger
 from meta_core import run_task
 from paths import (
     BASE_DIR,
@@ -26,7 +28,9 @@ from paths import (
 from project_scanner import ProjectScanner
 from projects_config import load_project_registry, resolve_project_root
 from prompt_builder import PromptBuilder
+from secret_masking import mask_secrets
 from task_contract import TaskConstraints, TaskContext, TaskLLM, TaskSpec
+from watch import process_inbox_once
 from report_schema import Report, write_json_report, write_md_report
 from safety_policy import load_safety_policy
 from write_engine import apply_change_set_with_policy
@@ -62,6 +66,20 @@ def _resolve_base_dir() -> str:
     if os.path.isdir(os.path.join(parent, "config")) and os.path.isdir(os.path.join(parent, "ai_scalper_bot")):
         return parent
     return BASE_DIR
+
+
+def _resolve_runtime_dir() -> str:
+    base = _resolve_base_dir()
+    base_abs = os.path.abspath(base)
+    env_runtime = os.getenv("META_AGENT_RUNTIME_DIR") or os.getenv("QE_RUNTIME_DIR")
+    if env_runtime:
+        candidate = os.path.abspath(env_runtime)
+        try:
+            if os.path.commonpath([candidate, base_abs]) == base_abs:
+                return candidate
+        except ValueError:
+            pass
+    return os.path.abspath(os.path.join(base_abs, "runtime"))
 
 
 def _resolve_meta_config_path(path: Optional[str]) -> str:
@@ -162,7 +180,7 @@ def run_diag() -> int:
         record("prompts", stage_ok, stage_detail)
 
     # Runtime dirs
-    runtime_dir = Path(os.getenv("QE_RUNTIME_DIR") or (base_dir / "runtime")).resolve()
+    runtime_dir = Path(_resolve_runtime_dir()).resolve()
     runtime_checks = []
     for sub in ("reports", "patches", "logs", "runs"):
         path = runtime_dir / sub
@@ -214,6 +232,128 @@ def run_diag() -> int:
 
     all_ok = all(ok for _, ok, _ in results)
     return 0 if all_ok else 1
+
+
+def _parse_global_args(argv: list[str]):
+    parser = argparse.ArgumentParser(add_help=False)
+    parser.add_argument("--runtime-dir", dest="runtime_dir")
+    parser.add_argument("--log-level", dest="log_level")
+    parser.add_argument("--json", action="store_true")
+    parser.add_argument("--quiet", action="store_true")
+    return parser.parse_known_args(argv)
+
+
+def _apply_global_args(args) -> None:
+    if args.runtime_dir:
+        os.environ["META_AGENT_RUNTIME_DIR"] = args.runtime_dir
+    if args.log_level:
+        os.environ["META_AGENT_LOG_LEVEL"] = args.log_level
+
+
+def _sanitize_args(argv: list[str]) -> list[str]:
+    sanitized: list[str] = []
+    for arg in argv:
+        sanitized.append(mask_secrets(arg))
+    return sanitized
+
+
+def _format_run_summary_json(report) -> str:
+    payload = {
+        "run_id": report.run_id,
+        "verdict": report.verdict,
+        "exit_code": report.exit_code,
+        "report_path": report.artifacts.report_path,
+        "patches_dir": report.artifacts.patches_dir,
+    }
+    return json.dumps(payload, ensure_ascii=True)
+
+
+def _emit_run_summary(report, json_mode: bool, quiet: bool) -> None:
+    if json_mode:
+        print(_format_run_summary_json(report))
+        return
+    if quiet:
+        return
+    print(f"[INFO] run_id={report.run_id}")
+    print(f"[INFO] verdict={report.verdict} exit_code={report.exit_code}")
+    print(f"[INFO] report_path={report.artifacts.report_path}")
+    print(f"[INFO] patches_dir={report.artifacts.patches_dir}")
+
+
+def _is_transient_error(report) -> bool:
+    if report.exit_code not in {30}:
+        return False
+    text = " ".join(report.errors or []).lower()
+    transient_markers = [
+        "timeout",
+        "timed out",
+        "rate limit",
+        "temporarily",
+        "connection",
+        "unavailable",
+        "429",
+        "503",
+    ]
+    return any(marker in text for marker in transient_markers)
+
+
+def _run_task_cli(
+    task_path: str,
+    json_mode: bool,
+    quiet: bool,
+    timeout_seconds: Optional[int],
+    llm_timeout_seconds: Optional[int],
+    retries: int,
+    report_path: Optional[str],
+    cli_args: list[str],
+) -> int:
+    runtime_dir = _resolve_runtime_dir()
+    log_level = (os.getenv("META_AGENT_LOG_LEVEL") or "INFO").upper()
+    logger = configure_logger("meta_agent.run_task", runtime_dir, log_level)
+
+    cli_context = {
+        "command": "run-task",
+        "args_sanitized": _sanitize_args(cli_args),
+    }
+
+    attempt = 0
+    report = None
+    while attempt <= retries:
+        attempt += 1
+        if attempt > 1:
+            backoff = min(2 ** (attempt - 2), 8)
+            logger.info("Retrying run-task attempt=%s backoff=%ss", attempt, backoff)
+            time.sleep(backoff)
+        try:
+            report = run_task(
+                task_path,
+                timeout_seconds=timeout_seconds,
+                llm_timeout_seconds=llm_timeout_seconds,
+                cli_context=cli_context,
+            )
+        except Exception as exc:
+            logger.error("run_task raised exception: %s", exc)
+            continue
+        if report.exit_code == 0:
+            break
+        if not _is_transient_error(report):
+            break
+
+    if report is None:
+        return 30
+
+    if report_path:
+        try:
+            abs_report = os.path.abspath(report_path)
+            os.makedirs(os.path.dirname(abs_report), exist_ok=True)
+            base = _resolve_base_dir()
+            src = os.path.join(base, report.artifacts.report_path)
+            shutil.copy2(src, abs_report)
+        except Exception as exc:
+            logger.error("Failed to duplicate report: %s", exc)
+
+    _emit_run_summary(report, json_mode=json_mode, quiet=quiet)
+    return report.exit_code
 
 
 def _run_task_cli(task_path: str) -> int:
@@ -443,7 +583,7 @@ class MetaAgent:
         return True
 
 
-def parse_args():
+def parse_args(argv: Optional[list[str]] = None):
     parser = argparse.ArgumentParser(description="Meta-Agent CLI")
     parser.add_argument("--config", dest="config_path", help="Path to meta-agent config (YAML/JSON).")
     parser.add_argument("--mode", default="auto", help="Execution mode (stages|task) or supervisor cadence (daily|weekly|adhoc|auto).")
@@ -458,12 +598,16 @@ def parse_args():
     parser.add_argument("--supervisor-project", dest="supervisor_project", help="Project root for supervisor goal runs.", default="ai_scalper_bot")
     parser.add_argument("--project-id", dest="stage_project_id", help="Override project id for stage pipeline.")
     parser.add_argument("--once", action="store_true", help="Run once and exit (default behavior).")
-    return parser.parse_args()
+    return parser.parse_args(argv)
 
 
 def parse_run_task_args(argv: list[str]):
     parser = argparse.ArgumentParser(description="Run a TaskSpec")
     parser.add_argument("--task", required=True, help="Path to task.yaml or task.md")
+    parser.add_argument("--timeout-seconds", type=int, dest="timeout_seconds")
+    parser.add_argument("--llm-timeout-seconds", type=int, dest="llm_timeout_seconds")
+    parser.add_argument("--retries", type=int, default=0)
+    parser.add_argument("--report-path", dest="report_path")
     return parser.parse_args(argv)
 
 
@@ -504,6 +648,185 @@ def _create_task_spec_file(project_id: str, objective: str, output_path: Optiona
     with open(dest, "w", encoding="utf-8") as handle:
         yaml.safe_dump(spec.to_dict(), handle, allow_unicode=True, sort_keys=False)
     return dest
+
+
+def parse_status_args(argv: list[str]):
+    parser = argparse.ArgumentParser(description="Show recent runs")
+    parser.add_argument("--limit", type=int, default=5)
+    parser.add_argument("--last", action="store_true")
+    return parser.parse_args(argv)
+
+
+def parse_health_args(argv: list[str]):
+    parser = argparse.ArgumentParser(description="Health check")
+    return parser.parse_args(argv)
+
+
+def parse_watch_args(argv: list[str]):
+    parser = argparse.ArgumentParser(description="Watch inbox for TaskSpecs")
+    parser.add_argument("--inbox", default="runtime/inbox")
+    parser.add_argument("--poll-seconds", type=int, default=2)
+    parser.add_argument("--archive", default="runtime/inbox_done")
+    parser.add_argument("--failed", default="runtime/inbox_failed")
+    return parser.parse_args(argv)
+
+
+def _resolve_path_under_base(path: str) -> str:
+    base = _resolve_base_dir()
+    base_abs = os.path.abspath(base)
+    candidate = path if os.path.isabs(path) else os.path.join(base_abs, path)
+    candidate = os.path.abspath(candidate)
+    if os.path.commonpath([candidate, base_abs]) != base_abs:
+        raise ValueError("Path escapes repo root")
+    return candidate
+
+
+def _status_cli(limit: int, show_last: bool, json_mode: bool, quiet: bool) -> int:
+    runtime_dir = _resolve_runtime_dir()
+    runs_dir = os.path.join(runtime_dir, "runs")
+    if not os.path.isdir(runs_dir):
+        if not quiet:
+            print("[WARN] No runs directory found.")
+        return 1
+
+    reports: list[dict] = []
+    for entry in sorted(os.listdir(runs_dir)):
+        report_path = os.path.join(runs_dir, entry, "report.json")
+        if not os.path.exists(report_path):
+            continue
+        try:
+            with open(report_path, "r", encoding="utf-8") as handle:
+                data = json.load(handle)
+            reports.append(data)
+        except Exception:
+            continue
+
+    reports.sort(key=lambda r: r.get("finished_at", ""), reverse=True)
+    if show_last and reports:
+        last = reports[0]
+        if json_mode:
+            payload = {
+                "run_id": last.get("run_id"),
+                "verdict": last.get("verdict"),
+                "exit_code": last.get("exit_code"),
+                "finished_at": last.get("finished_at"),
+                "report_path": last.get("artifacts", {}).get("report_path"),
+            }
+            print(json.dumps(payload, ensure_ascii=True))
+        elif not quiet:
+            print(f"[INFO] run_id={last.get('run_id')} verdict={last.get('verdict')} exit_code={last.get('exit_code')}")
+            print(f"[INFO] finished_at={last.get('finished_at')}")
+            print(f"[INFO] report_path={last.get('artifacts', {}).get('report_path')}")
+        return 0
+
+    if json_mode:
+        payload = [
+            {
+                "run_id": r.get("run_id"),
+                "finished_at": r.get("finished_at"),
+                "verdict": r.get("verdict"),
+                "exit_code": r.get("exit_code"),
+            }
+            for r in reports[:limit]
+        ]
+        print(json.dumps(payload, ensure_ascii=True))
+        return 0
+
+    if not quiet:
+        for rep in reports[:limit]:
+            print(
+                f"{rep.get('run_id')} {rep.get('finished_at')} verdict={rep.get('verdict')} exit_code={rep.get('exit_code')}"
+            )
+    return 0
+
+
+def _health_check(runtime_dir: str) -> tuple[bool, list[tuple[str, bool, str]]]:
+    results: list[tuple[str, bool, str]] = []
+
+    def record(name: str, ok: bool, detail: str) -> None:
+        results.append((name, ok, detail))
+
+    try:
+        os.makedirs(runtime_dir, exist_ok=True)
+        record("runtime_dir", True, runtime_dir)
+    except Exception as exc:
+        record("runtime_dir", False, str(exc))
+
+    for sub in ("logs", "runs"):
+        path = os.path.join(runtime_dir, sub)
+        try:
+            os.makedirs(path, exist_ok=True)
+            record(f"runtime_{sub}", True, path)
+        except Exception as exc:
+            record(f"runtime_{sub}", False, str(exc))
+
+    try:
+        from safety_policy import load_safety_policy
+
+        load_safety_policy()
+        record("safety_policy", True, "loaded")
+    except Exception as exc:
+        record("safety_policy", False, str(exc))
+
+    try:
+        from write_engine import apply_change_set_with_policy  # noqa: F401
+
+        record("write_engine", True, "available")
+    except Exception as exc:
+        record("write_engine", False, str(exc))
+
+    ok = all(item[1] for item in results)
+    return ok, results
+
+
+def _health_cli(json_mode: bool, quiet: bool) -> int:
+    runtime_dir = _resolve_runtime_dir()
+    ok, results = _health_check(runtime_dir)
+    if json_mode:
+        payload = {
+            "ok": ok,
+            "checks": [
+                {"name": name, "ok": passed, "detail": detail} for name, passed, detail in results
+            ],
+        }
+        print(json.dumps(payload, ensure_ascii=True))
+        return 0 if ok else 1
+    if not quiet:
+        for name, passed, detail in results:
+            status = "PASS" if passed else "FAIL"
+            print(f"{status} - {name}: {detail}")
+    return 0 if ok else 1
+
+
+def _watch_cli(args, json_mode: bool, quiet: bool) -> int:
+    runtime_dir = _resolve_runtime_dir()
+    log_level = (os.getenv("META_AGENT_LOG_LEVEL") or "INFO").upper()
+    logger = configure_logger("meta_agent.watch", runtime_dir, log_level)
+
+    try:
+        inbox = _resolve_path_under_base(args.inbox)
+        archive = _resolve_path_under_base(args.archive)
+        failed = _resolve_path_under_base(args.failed)
+    except ValueError as exc:
+        if not quiet:
+            print(f"[ERROR] {exc}")
+        return 1
+
+    while True:
+        result = process_inbox_once(
+            inbox=inbox,
+            archive=archive,
+            failed=failed,
+            logger=logger,
+        )
+        if result.get("stop"):
+            if not quiet:
+                print("[INFO] STOP detected; exiting.")
+            return 0
+        if result.get("pause"):
+            time.sleep(args.poll_seconds)
+            continue
+        time.sleep(args.poll_seconds)
 
 
 def cleanup_after_successful_run(stages: list) -> None:
@@ -558,21 +881,45 @@ def cleanup_after_successful_run(stages: list) -> None:
 
 
 def main() -> int:
-    if len(sys.argv) > 1 and sys.argv[1] == "diag":
+    global_args, remaining = _parse_global_args(sys.argv[1:])
+    _apply_global_args(global_args)
+
+    cmd = remaining[0] if remaining else None
+    if cmd == "diag":
         return run_diag()
-    if len(sys.argv) > 1 and sys.argv[1] == "run-task":
-        args = parse_run_task_args(sys.argv[2:])
-        return _run_task_cli(args.task)
-    if len(sys.argv) > 1 and sys.argv[1] == "create-task":
-        args = parse_create_task_args(sys.argv[2:])
+    if cmd == "run-task":
+        args = parse_run_task_args(remaining[1:])
+        return _run_task_cli(
+            args.task,
+            json_mode=global_args.json,
+            quiet=global_args.quiet,
+            timeout_seconds=args.timeout_seconds,
+            llm_timeout_seconds=args.llm_timeout_seconds,
+            retries=args.retries,
+            report_path=args.report_path,
+            cli_args=remaining[1:],
+        )
+    if cmd == "create-task":
+        args = parse_create_task_args(remaining[1:])
         registry = load_project_registry()
         if args.project not in registry.projects:
             print(f"[ERROR] Unknown project id '{args.project}'.")
             return 1
         dest = _create_task_spec_file(args.project, args.objective, args.output)
-        print(f"[INFO] TaskSpec created at {dest}")
+        if not global_args.quiet:
+            print(f"[INFO] TaskSpec created at {dest}")
         return 0
-    args = parse_args()
+    if cmd == "status":
+        args = parse_status_args(remaining[1:])
+        return _status_cli(args.limit, args.last, json_mode=global_args.json, quiet=global_args.quiet)
+    if cmd == "health":
+        parse_health_args(remaining[1:])
+        return _health_cli(json_mode=global_args.json, quiet=global_args.quiet)
+    if cmd == "watch":
+        args = parse_watch_args(remaining[1:])
+        return _watch_cli(args, json_mode=global_args.json, quiet=global_args.quiet)
+
+    args = parse_args(remaining)
     if args.config_path:
         os.environ["META_AGENT_CONFIG"] = args.config_path
 

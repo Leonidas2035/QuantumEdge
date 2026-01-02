@@ -16,6 +16,11 @@ Meta-Agent Task Contract:
 - Artifacts: `runtime/runs/<run_id>/report.json` + `runtime/runs/<run_id>/patches/`
 - Contract doc: `docs/tasks_contract.md`
 
+Service-ready usage:
+- Health check: `python meta_agent.py health`
+- Watch inbox: `python meta_agent.py watch --inbox runtime/inbox --poll-seconds 2`
+- Ops doc: `docs/operations.md`
+
 Shared (kept empty or runtime-only):
 - config/
 - runtime/

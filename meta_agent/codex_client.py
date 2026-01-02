@@ -12,6 +12,7 @@ class CodexClient:
         model: Optional[str] = None,
         temperature: Optional[float] = None,
         chunk_size: Optional[int] = None,
+        request_timeout_seconds: Optional[int] = None,
     ):
         # Determine mode: env has priority, then provided arg, default dev
         env_mode = os.getenv("META_AGENT_MODE")
@@ -30,6 +31,7 @@ class CodexClient:
         # more stable model for long prompts
         self.model = model or "gpt-4.1"
         self.temperature = 0 if temperature is None else temperature
+        self.request_timeout_seconds = request_timeout_seconds
 
         # max chunk size to avoid 400 errors
         self.chunk_size = chunk_size or 12000
@@ -111,6 +113,7 @@ class CodexClient:
                 messages=messages,
                 max_tokens=4096,
                 temperature=self.temperature,
+                timeout=self.request_timeout_seconds,
             )
 
             return response.choices[0].message.content
