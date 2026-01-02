@@ -15,15 +15,20 @@ __pycache__/
 SupervisorAgent/runtime/
 **/logs/
 **/data/
+**/runtime/
 *.log
 /artifacts/
 storage/models/
 **/storage/models/
+meta_agent/output/
+meta_agent/reports/
+meta_agent/patches/
 
 # Secrets and encrypted files
 **/secrets.env
 **/.env
 **/*.env
+**/secrets*
 **/*.enc
 **/*.key
 **/*.pem

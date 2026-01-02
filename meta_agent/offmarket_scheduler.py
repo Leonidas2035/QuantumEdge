@@ -8,6 +8,7 @@ from pathlib import Path
 
 from offmarket_state import OffmarketState, load_offmarket_state, save_offmarket_state
 from projects_config import load_project_registry
+from run_lock import RunLock, describe_existing_lock, resolve_lock_path
 from supervisor_runner import run_supervisor_maintenance_once
 
 try:
@@ -136,51 +137,66 @@ def _day_allowed(schedule_cfg: dict, now: datetime) -> bool:
     return bool(days.get("allow_weekends", True))
 
 
-def main() -> None:
+def main() -> int:
     schedule_cfg = _load_schedule()
     logger = _setup_logging()
 
     if not schedule_cfg.get("enabled", False):
         logger.info("Offmarket scheduler disabled; exiting.")
-        return
+        return 0
 
-    now = datetime.now(timezone.utc)
-    state = load_offmarket_state(_resolve_state_path())
+    lock_path = resolve_lock_path(str(_resolve_base_dir()))
+    lock = RunLock(lock_path)
+    if not lock.acquire():
+        detail = describe_existing_lock(lock_path)
+        msg = "Meta-Agent is already running (lock held)."
+        if detail:
+            msg = f"{msg} {detail}"
+        logger.error(msg)
+        return 2
 
-    if not _within_window(schedule_cfg, now):
-        logger.info("Outside allowed window; skipping.")
-        return
-    if not _day_allowed(schedule_cfg, now):
-        logger.info("Day not allowed; skipping.")
-        return
-
-    # reset runs_today if new day
-    if state.last_run_utc and state.last_run_utc.date() != now.date():
-        state.runs_today = 0
-
-    max_runs = int(schedule_cfg.get("max_runs_per_day", 1))
-    if state.runs_today >= max_runs:
-        logger.info("Run limit reached for today (%s >= %s)", state.runs_today, max_runs)
-        return
-
-    if not _bot_idle(schedule_cfg, logger):
-        logger.info("Bot not idle; skipping.")
-        return
-
-    registry = load_project_registry()
     try:
-        result = run_supervisor_maintenance_once(registry, schedule_cfg)
-        state.last_run_utc = now
-        state.runs_today += 1
-        state.last_run_result = result.get("status")
-        save_offmarket_state(_resolve_state_path(), state)
-        logger.info("Offmarket maintenance completed with status=%s", result.get("status"))
-    except Exception as exc:
-        state.last_run_utc = now
-        state.last_run_result = f"error: {exc}"
-        save_offmarket_state(_resolve_state_path(), state)
-        logger.error("Offmarket maintenance failed: %s", exc)
+        now = datetime.now(timezone.utc)
+        state = load_offmarket_state(_resolve_state_path())
+
+        if not _within_window(schedule_cfg, now):
+            logger.info("Outside allowed window; skipping.")
+            return 0
+        if not _day_allowed(schedule_cfg, now):
+            logger.info("Day not allowed; skipping.")
+            return 0
+
+        # reset runs_today if new day
+        if state.last_run_utc and state.last_run_utc.date() != now.date():
+            state.runs_today = 0
+
+        max_runs = int(schedule_cfg.get("max_runs_per_day", 1))
+        if state.runs_today >= max_runs:
+            logger.info("Run limit reached for today (%s >= %s)", state.runs_today, max_runs)
+            return 0
+
+        if not _bot_idle(schedule_cfg, logger):
+            logger.info("Bot not idle; skipping.")
+            return 0
+
+        registry = load_project_registry()
+        try:
+            result = run_supervisor_maintenance_once(registry, schedule_cfg, use_lock=False)
+            state.last_run_utc = now
+            state.runs_today += 1
+            state.last_run_result = result.get("status")
+            save_offmarket_state(_resolve_state_path(), state)
+            logger.info("Offmarket maintenance completed with status=%s", result.get("status"))
+            return 0
+        except Exception as exc:
+            state.last_run_utc = now
+            state.last_run_result = f"error: {exc}"
+            save_offmarket_state(_resolve_state_path(), state)
+            logger.error("Offmarket maintenance failed: %s", exc)
+            return 1
+    finally:
+        lock.release()
 
 
 if __name__ == "__main__":
-    main()
+    raise SystemExit(main())

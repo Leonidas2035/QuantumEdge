@@ -5,17 +5,14 @@ from datetime import datetime
 from typing import Dict, List
 
 from codex_client import CodexClient
-from file_manager import (
-    apply_change_set_direct,
-    build_change_set_from_response,
-    write_change_set_as_patches,
-)
+from file_manager import build_change_set_from_response
 from project_scanner import ProjectScanner
 from prompt_builder import PromptBuilder
 from report_schema import Report, write_json_report, write_md_report
-from safety_policy import evaluate_change_set, load_safety_policy
 from task_manager import load_task
 from task_schema import TaskParseError
+from write_engine import apply_change_set_with_policy
+from run_lock import RunLock, describe_existing_lock, resolve_lock_path
 
 import yaml
 
@@ -149,7 +146,7 @@ def run_basic_quality_checks(project_root: str, affected_files: List[str]) -> Di
     }
 
 
-def run_task(task_id_or_path: str) -> Dict:
+def run_task(task_id_or_path: str, use_lock: bool = True) -> Dict:
     """
     Executes a single task (by TASK_ID or path) through Meta-Agent pipeline with safety and quality checks.
     """
@@ -164,6 +161,63 @@ def run_task(task_id_or_path: str) -> Dict:
     report: Report | None = None
     json_path = None
     md_path = None
+    lock: RunLock | None = None
+
+    if use_lock:
+        lock_path = resolve_lock_path(_resolve_base_dir())
+        lock = RunLock(lock_path)
+        if not lock.acquire():
+            detail = describe_existing_lock(lock_path)
+            message = "Meta-Agent is already running (lock held)."
+            if detail:
+                message = f"{message} {detail}"
+            finished_at = datetime.utcnow().isoformat() + "Z"
+            report = Report(
+                task_id=task_id_or_path,
+                project="unknown",
+                task_type="unknown",
+                title="",
+                priority="normal",
+                status="error",
+                error_message=message,
+                summary=_build_summary("error", [], [], message),
+                changed_files=[],
+                created_files=[],
+                deleted_files=[],
+                safety_status="block",
+                blocked_files=[],
+                warning_files=[],
+                patch_files=[],
+                meta={
+                    "started_at": started_at,
+                    "finished_at": finished_at,
+                    "lock_busy": True,
+                },
+            )
+            json_path = write_json_report(report)
+            md_path = write_md_report(report)
+            return {
+                "task_id": report.task_id,
+                "project": report.project,
+                "task_type": report.task_type,
+                "title": report.title,
+                "priority": report.priority,
+                "status": report.status,
+                "error_message": report.error_message,
+                "changed_files": report.changed_files,
+                "created_files": report.created_files,
+                "deleted_files": report.deleted_files,
+                "summary": report.summary,
+                "risks": report.risks,
+                "notes": report.notes,
+                "safety_status": report.safety_status,
+                "blocked_files": report.blocked_files,
+                "warning_files": report.warning_files,
+                "patch_files": report.patch_files,
+                "meta": report.meta,
+                "report_json_path": json_path,
+                "report_md_path": md_path,
+            }
 
     try:
         task = load_task(task_id_or_path)
@@ -193,39 +247,21 @@ def run_task(task_id_or_path: str) -> Dict:
         # Build change set from model output
         change_set = build_change_set_from_response(target_project, response)
 
-        # Evaluate safety
-        policy = load_safety_policy()
-        safety_eval = evaluate_change_set(policy, change_set)
+        outcome = apply_change_set_with_policy(change_set, PATCHES_DIR)
+        status = outcome.status
+        error_message = outcome.error_message
 
-        # Apply changes (or write patches)
-        apply_result = {
-            "changed_files": [],
-            "created_files": [],
-            "deleted_files": [],
-            "patch_files": [],
+        qc_result = {
+            "compile_errors": {},
+            "tests_run": False,
+            "tests_status": "skipped",
+            "tests_output": "",
         }
-        if safety_eval.overall_verdict == "block":
-            apply_result = {
-                "changed_files": [],
-                "created_files": [],
-                "deleted_files": [],
-                "patch_files": [],
-            }
-            status = "blocked"
-            error_message = "Changes blocked by safety policy."
-        else:
-            status = "ok"
-            error_message = None
-            if safety_eval.write_mode == "patch_only":
-                apply_result = write_change_set_as_patches(change_set, PATCHES_DIR)
-            else:
-                apply_result = apply_change_set_direct(change_set)
-
-        # Quality checks
-        qc_result = run_basic_quality_checks(
-            target_project,
-            (apply_result.get("changed_files") or []) + (apply_result.get("created_files") or []),
-        )
+        if outcome.applied:
+            qc_result = run_basic_quality_checks(
+                target_project,
+                (outcome.changed_files or []) + (outcome.created_files or []),
+            )
 
         risks: List[str] = []
         notes: List[str] = []
@@ -236,10 +272,10 @@ def run_task(task_id_or_path: str) -> Dict:
             risks.append("Tests failed.")
             status = "partial" if status == "ok" else status
 
-        safety_status = safety_eval.overall_verdict
-        blocked_files = [f.path for f in safety_eval.files if f.verdict == "block"]
-        warning_files = [f.path for f in safety_eval.files if f.verdict == "warn"]
-        patch_files = apply_result.get("patch_files") or []
+        safety_status = outcome.safety_eval.overall_verdict
+        blocked_files = [f.path for f in outcome.safety_eval.files if f.verdict == "block"]
+        warning_files = [f.path for f in outcome.safety_eval.files if f.verdict == "warn"]
+        patch_files = outcome.patch_files or []
 
         finished_at = datetime.utcnow().isoformat() + "Z"
         report = Report(
@@ -250,10 +286,10 @@ def run_task(task_id_or_path: str) -> Dict:
             priority=task.priority,
             status=status,
             error_message=error_message,
-            summary=_build_summary(status, apply_result.get("changed_files", []), apply_result.get("created_files", []), error_message),
-            changed_files=apply_result.get("changed_files", []),
-            created_files=apply_result.get("created_files", []),
-            deleted_files=apply_result.get("deleted_files", []),
+            summary=_build_summary(status, outcome.changed_files, outcome.created_files, error_message),
+            changed_files=outcome.changed_files,
+            created_files=outcome.created_files,
+            deleted_files=outcome.deleted_files,
             risks=risks,
             notes=notes,
             safety_status=safety_status,
@@ -269,8 +305,8 @@ def run_task(task_id_or_path: str) -> Dict:
                 "target_project": target_project,
                 "task_type": task.task_type,
                 "priority": task.priority,
-                "write_mode_used": safety_eval.write_mode,
-                "safety_reasons": safety_eval.reasons,
+                "write_mode_used": outcome.write_mode_used,
+                "safety_reasons": outcome.safety_eval.reasons,
                 "quality_checks": qc_result,
             },
         )
@@ -327,6 +363,8 @@ def run_task(task_id_or_path: str) -> Dict:
             },
         )
     finally:
+        if lock:
+            lock.release()
         if report is not None:
             finished = finished_at or datetime.utcnow().isoformat() + "Z"
             report.meta.setdefault("finished_at", finished)

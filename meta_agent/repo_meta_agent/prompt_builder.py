@@ -1,21 +1,21 @@
 class PromptBuilder:
-    HEADER = """
-ТИ — GPT-5.1-Codex, експерт з Python, ML, HFT, торгових систем.
-Пиши ПОВНІ файли у форматі:
-
-===FILE: path/to/file===
-<код>
-
-Ніколи не скорочуй код.
-Не додавай пояснень поза файлами.
-"""
+    HEADER = (
+        "You are Codex running inside Meta-Agent. "
+        "Follow the task instructions strictly. "
+        "Return files using the exact format below:\n"
+        "===FILE: relative/or/absolute/path===\n"
+        "<file content>\n"
+        "Only include files that should be written.\n"
+    )
 
     def build_prompt(self, stage_instructions: str, project_context: str) -> str:
         return (
-            self.HEADER +
-            "\n# Вимоги етапу:\n" +
-            stage_instructions +
-            "\n# Існуючий код проєкту:\n" +
-            project_context +
-            "\n# Згенеруй нові або оновлені файли нижче:\n"
+            self.HEADER
+            + "\n# Task Instructions\n"
+            + stage_instructions
+            + "\n# Project Context\n"
+            + project_context
+            + "\n# Output Guidance\n"
+            + "Use the ===FILE: path=== blocks for any files to create or update. "
+            + "Avoid extra commentary outside those blocks unless specifically requested.\n"
         )

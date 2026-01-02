@@ -3,16 +3,20 @@ import json
 import os
 import shutil
 import sys
+from datetime import datetime
+from pathlib import Path
+import subprocess
 from typing import Dict, Tuple, Optional
 
 import yaml
 
 from codex_client import CodexClient
-from file_manager import FileManager
+from file_manager import build_change_set_from_response
 from meta_core import run_task
 from paths import (
     BASE_DIR,
     OUTPUT_DIR,
+    PATCHES_DIR,
     PROMPTS_ARCHIVE_DIR,
     PROMPTS_DIR,
     REPORTS_DIR,
@@ -22,7 +26,14 @@ from paths import (
 from project_scanner import ProjectScanner
 from projects_config import load_project_registry, resolve_project_root
 from prompt_builder import PromptBuilder
-from supervisor_runner import run_supervisor_cycle
+from report_schema import Report, write_json_report, write_md_report
+from safety_policy import load_safety_policy
+from write_engine import apply_change_set_with_policy
+from run_lock import RunLock, describe_existing_lock, resolve_lock_path
+try:
+    from supervisor_runner import run_supervisor_cycle
+except Exception:
+    run_supervisor_cycle = None
 from task_archiver import archive_task_file
 from task_manager import list_tasks
 
@@ -90,6 +101,120 @@ def load_task_from_file(path: str) -> Tuple[Dict, str]:
     return metadata, body
 
 
+def run_diag() -> int:
+    results: list[tuple[str, bool, str]] = []
+
+    def record(name: str, ok: bool, detail: str) -> None:
+        results.append((name, ok, detail))
+        status = "PASS" if ok else "FAIL"
+        print(f"{status} - {name}: {detail}")
+
+    base_dir = Path(_resolve_base_dir())
+
+    # Config
+    cfg_path = Path(_resolve_meta_config_path(None))
+    cfg_ok = cfg_path.exists() and os.access(cfg_path, os.R_OK)
+    record("config", cfg_ok, str(cfg_path) if cfg_ok else f"missing/unreadable ({cfg_path})")
+
+    # Projects registry
+    try:
+        registry = load_project_registry()
+        missing = [pid for pid, info in registry.projects.items() if not info.root_path.exists()]
+        if missing:
+            record("projects_registry", False, f"missing roots: {', '.join(missing)}")
+        else:
+            record("projects_registry", True, f"{len(registry.projects)} projects")
+    except Exception as exc:
+        record("projects_registry", False, f"{exc}")
+
+    # Prompts
+    prompts_ok = Path(PROMPTS_DIR).exists()
+    if not prompts_ok:
+        record("prompts", False, f"missing prompts dir: {PROMPTS_DIR}")
+    else:
+        stage_ok = True
+        stage_detail = "ok"
+        if os.path.exists(STAGES_PATH):
+            try:
+                with open(STAGES_PATH, "r", encoding="utf-8") as handle:
+                    stages = yaml.safe_load(handle) or []
+                for stage in stages:
+                    prompt_file = stage.get("prompt")
+                    if not prompt_file:
+                        stage_ok = False
+                        stage_detail = "stage missing prompt path"
+                        break
+                    resolved = Path(prompt_file)
+                    if not resolved.is_absolute():
+                        resolved = Path(STAGES_PATH).parent / prompt_file
+                    if not resolved.exists():
+                        fallback = Path(PROMPTS_DIR) / Path(prompt_file).name
+                        if fallback.exists():
+                            resolved = fallback
+                        else:
+                            stage_ok = False
+                            stage_detail = f"missing prompt: {prompt_file}"
+                            break
+            except Exception as exc:
+                stage_ok = False
+                stage_detail = f"stages.yaml unreadable: {exc}"
+        record("prompts", stage_ok, stage_detail)
+
+    # Runtime dirs
+    runtime_dir = Path(os.getenv("QE_RUNTIME_DIR") or (base_dir / "runtime")).resolve()
+    runtime_checks = []
+    for sub in ("reports", "patches", "logs"):
+        path = runtime_dir / sub
+        try:
+            path.mkdir(parents=True, exist_ok=True)
+            test_file = path / ".write_test"
+            test_file.write_text("ok", encoding="utf-8")
+            test_file.unlink(missing_ok=True)
+            runtime_checks.append((sub, True, str(path)))
+        except Exception as exc:
+            runtime_checks.append((sub, False, f"{path} ({exc})"))
+    for sub, ok, detail in runtime_checks:
+        record(f"runtime_{sub}", ok, detail)
+
+    # Safety config
+    try:
+        policy = load_safety_policy()
+        ok = policy is not None
+        record("safety_policy", ok, "loaded" if ok else "missing")
+    except Exception as exc:
+        record("safety_policy", False, f"{exc}")
+
+    # Tracked secrets (minimal check)
+    secret_suffixes = (".env", ".key", ".pem", ".pfx", ".p12", ".enc")
+    try:
+        proc = subprocess.run(
+            ["git", "ls-files"],
+            capture_output=True,
+            text=True,
+            check=False,
+            cwd=str(base_dir),
+        )
+        if proc.returncode != 0:
+            record("tracked_secrets", False, "git ls-files failed")
+        else:
+            tracked = [line.strip() for line in proc.stdout.splitlines() if line.strip()]
+            hits = []
+            for path in tracked:
+                lower = path.lower()
+                if lower.endswith((".example", ".sample", ".template")):
+                    continue
+                if lower.endswith(secret_suffixes):
+                    hits.append(path)
+                elif "/secrets/" in lower or "\\secrets\\" in lower:
+                    hits.append(path)
+            record("tracked_secrets", not hits, "none" if not hits else f"found: {', '.join(hits)}")
+    except Exception as exc:
+        record("tracked_secrets", False, f"{exc}")
+
+    all_ok = all(ok for _, ok, _ in results)
+    return 0 if all_ok else 1
+
+
 class MetaAgent:
     def __init__(self, config_path: str = "config.json"):
         resolved = _resolve_meta_config_path(config_path)
@@ -97,6 +222,7 @@ class MetaAgent:
         self.builder = PromptBuilder()
         self.mode = self._resolve_mode()
         self.client = CodexClient(mode=self.mode)
+        self.lock_busy = False
         projects_path = (self.config or {}).get("projects_path")
         self.project_registry = load_project_registry(projects_path) if projects_path else load_project_registry()
 
@@ -160,73 +286,131 @@ class MetaAgent:
             print("[WARN] No stages to run.")
             return False, []
 
-        default_project_id = self.project_registry.default_project_id
-        for stage in stages:
-            name = stage.get("name", "unnamed_stage")
-            prompt_file = stage.get("prompt")
-            if not prompt_file:
-                print(f"[ERROR] Stage {name} is missing a prompt path.")
-                return False, stages
+        lock_path = resolve_lock_path(_resolve_base_dir())
+        lock = RunLock(lock_path)
+        if not lock.acquire():
+            detail = describe_existing_lock(lock_path)
+            msg = "Meta-Agent is already running (lock held)."
+            if detail:
+                msg = f"{msg} {detail}"
+            print(f"[ERROR] {msg}")
+            self.lock_busy = True
+            return False, stages
 
-            project_id = override_project_id or stage.get("project") or default_project_id
-            try:
-                project_info = resolve_project_root(project_id, self.project_registry)
-            except KeyError as exc:
-                print(f"[ERROR] {exc}")
-                return False, stages
-            target_project = project_info.root_path
-            if not os.path.isdir(target_project):
-                print(f"[ERROR] Target project path does not exist for project_id={project_id}: {target_project}")
-                return False, stages
+        try:
+            default_project_id = self.project_registry.default_project_id
+            for stage in stages:
+                name = stage.get("name", "unnamed_stage")
+                prompt_file = stage.get("prompt")
+                if not prompt_file:
+                    print(f"[ERROR] Stage {name} is missing a prompt path.")
+                    return False, stages
 
-            resolved_prompt = os.path.abspath(prompt_file)
-            if not os.path.exists(resolved_prompt):
-                alternative = os.path.abspath(os.path.join("prompts", prompt_file))
-                if os.path.exists(alternative):
-                    resolved_prompt = alternative
+                project_id = override_project_id or stage.get("project") or default_project_id
+                try:
+                    project_info = resolve_project_root(project_id, self.project_registry)
+                except KeyError as exc:
+                    print(f"[ERROR] {exc}")
+                    return False, stages
+                target_project = project_info.root_path
+                if not os.path.isdir(target_project):
+                    print(f"[ERROR] Target project path does not exist for project_id={project_id}: {target_project}")
+                    return False, stages
+
+                if os.path.isabs(prompt_file):
+                    resolved_prompt = prompt_file
                 else:
-                    print(f"[ERROR] Prompt file not found for stage {name}: {prompt_file}")
+                    stage_base = os.path.dirname(STAGES_PATH)
+                    resolved_prompt = os.path.abspath(os.path.join(stage_base, prompt_file))
+                if not os.path.exists(resolved_prompt):
+                    alternative = os.path.abspath(os.path.join(PROMPTS_DIR, os.path.basename(prompt_file)))
+                    if os.path.exists(alternative):
+                        resolved_prompt = alternative
+                    else:
+                        print(f"[ERROR] Prompt file not found for stage {name}: {prompt_file}")
+                        return False, stages
+
+                print(f"[INFO] Running stage: {name} using {prompt_file}")
+                try:
+                    with open(resolved_prompt, "r", encoding="utf-8") as handle:
+                        stage_instructions = handle.read()
+
+                    print(
+                        f"[INFO] Collecting project context from {target_project} for stage {name} (project_id={project_id})..."
+                    )
+                    scanner = ProjectScanner(target_project)
+                    context = scanner.collect_project_context(max_chars=MAX_CONTEXT_CHARS)
+                    print(
+                        f"[INFO] Collected context for stage {name}: "
+                        f"{scanner.stats.files_included} files, {scanner.stats.chars_collected} chars."
+                    )
+
+                    full_prompt = self.builder.build_prompt(
+                        stage_instructions,
+                        context,
+                        {
+                            "stage": name,
+                            "mode": "legacy",
+                            "target_project": target_project,
+                            "project_id": project_id,
+                            "project_path": target_project,
+                        },
+                    )
+
+                    print(f"[INFO] Sending prompt to Codex for stage {name}...")
+                    response = self.client.send(full_prompt)
+                    print(f"[INFO] Codex response received for stage {name}.")
+
+                    if isinstance(response, str) and response.lstrip().startswith("[ERROR]"):
+                        print(f"[ERROR] Codex call failed for stage {name}: {response}")
+                        return False, stages
+
+                    change_set = build_change_set_from_response(target_project, response)
+                    outcome = apply_change_set_with_policy(change_set, PATCHES_DIR)
+
+                    started_at = datetime.utcnow().isoformat() + "Z"
+                    finished_at = datetime.utcnow().isoformat() + "Z"
+                    summary = (
+                        f"Stage {name} completed with {len(outcome.changed_files) + len(outcome.created_files)} file changes."
+                        if outcome.changed_files or outcome.created_files
+                        else f"Stage {name} completed with no file changes."
+                    )
+                    report = Report(
+                        task_id=f"stage_{name}",
+                        project=project_id,
+                        task_type="stage",
+                        title=name,
+                        priority="normal",
+                        status=outcome.status,
+                        error_message=outcome.error_message,
+                        summary=summary,
+                        changed_files=outcome.changed_files,
+                        created_files=outcome.created_files,
+                        deleted_files=outcome.deleted_files,
+                        safety_status=outcome.safety_eval.overall_verdict,
+                        blocked_files=[f.path for f in outcome.safety_eval.files if f.verdict == "block"],
+                        warning_files=[f.path for f in outcome.safety_eval.files if f.verdict == "warn"],
+                        patch_files=outcome.patch_files,
+                        meta={
+                            "started_at": started_at,
+                            "finished_at": finished_at,
+                            "model": getattr(self.client, "model", None),
+                            "source": resolved_prompt,
+                            "task_path": resolved_prompt,
+                            "target_project": target_project,
+                            "stage": name,
+                            "write_mode_used": outcome.write_mode_used,
+                            "safety_reasons": outcome.safety_eval.reasons,
+                        },
+                    )
+                    write_json_report(report)
+                    write_md_report(report)
+                    print(f"[INFO] Stage {name} completed with status={outcome.status}.")
+                except Exception as exc:
+                    print(f"[ERROR] Stage {name} failed: {exc}")
                     return False, stages
-
-            print(f"[INFO] Running stage: {name} using {prompt_file}")
-            try:
-                with open(resolved_prompt, "r", encoding="utf-8") as handle:
-                    stage_instructions = handle.read()
-
-                print(f"[INFO] Collecting project context from {target_project} for stage {name} (project_id={project_id})...")
-                scanner = ProjectScanner(target_project)
-                context = scanner.collect_project_context(max_chars=MAX_CONTEXT_CHARS)
-                print(
-                    f"[INFO] Collected context for stage {name}: "
-                    f"{scanner.stats.files_included} files, {scanner.stats.chars_collected} chars."
-                )
-
-                full_prompt = self.builder.build_prompt(
-                    stage_instructions,
-                    context,
-                    {
-                        "stage": name,
-                        "mode": "legacy",
-                        "target_project": target_project,
-                        "project_id": project_id,
-                        "project_path": target_project,
-                    },
-                )
-
-                print(f"[INFO] Sending prompt to Codex for stage {name}...")
-                response = self.client.send(full_prompt)
-                print(f"[INFO] Codex response received for stage {name}.")
-
-                if isinstance(response, str) and response.lstrip().startswith("[ERROR]"):
-                    print(f"[ERROR] Codex call failed for stage {name}: {response}")
-                    return False, stages
-
-                file_manager = FileManager(base_output_dir=OUTPUT_DIR, target_project=str(target_project), mode="write_dev")
-                file_manager.process_output(response)
-                print(f"[INFO] Stage {name} completed.")
-            except Exception as exc:
-                print(f"[ERROR] Stage {name} failed: {exc}")
-                return False, stages
+        finally:
+            lock.release()
 
         return True, stages
 
@@ -328,6 +512,8 @@ def cleanup_after_successful_run(stages: list) -> None:
 
 
 def main() -> int:
+    if len(sys.argv) > 1 and sys.argv[1] == "diag":
+        return run_diag()
     args = parse_args()
     if args.config_path:
         os.environ["META_AGENT_CONFIG"] = args.config_path
@@ -360,6 +546,9 @@ def main() -> int:
         return 0
 
     if args.supervisor_goal:
+        if run_supervisor_cycle is None:
+            print("[ERROR] supervisor_runner.run_supervisor_cycle is unavailable.")
+            return 1
         try:
             sup_result = run_supervisor_cycle(
                 goal=args.supervisor_goal,
@@ -414,6 +603,8 @@ def main() -> int:
                 print(f"[INFO] Markdown report: {result['report_md_path']}")
             if result.get("report_json_path"):
                 print(f"[INFO] JSON report: {result['report_json_path']}")
+            if result.get("meta", {}).get("lock_busy"):
+                return 2
             return 0 if result.get("status") == "ok" else 1
 
         agent = MetaAgent()
@@ -424,6 +615,8 @@ def main() -> int:
 
     if success:
         cleanup_after_successful_run(stages)
+    if not success and getattr(agent, "lock_busy", False):
+        return 2
     return 0 if success else 1
 
 

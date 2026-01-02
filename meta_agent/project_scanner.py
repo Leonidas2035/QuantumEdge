@@ -1,6 +1,9 @@
+import fnmatch
 import os
 from dataclasses import dataclass, field
 from typing import Iterable, List, Optional, Set
+
+from secret_masking import mask_secrets
 
 # Default settings for context collection
 DEFAULT_INCLUDE_EXTS: Set[str] = {".py", ".md", ".yaml", ".yml", ".toml", ".json", ".txt"}
@@ -23,12 +26,26 @@ DEFAULT_EXCLUDE_DIRS: Set[str] = {
     "logs",
     "output",
     "reports",
+    "runtime",
+    "patches",
     "tmp",
     "temp",
     "coverage",
     "htmlcov",
 }
 
+DEFAULT_EXCLUDE_FILES: Set[str] = {
+    ".env",
+    ".env.*",
+    "*.env",
+    "secrets*",
+    "*.key",
+    "*.pem",
+    "*.pfx",
+    "*.p12",
+    "*.enc",
+    "*.kdbx",
+}
 
 @dataclass
 class ScannerStats:
@@ -52,11 +69,13 @@ class ProjectScanner:
         project_root: str,
         include_exts: Optional[Iterable[str]] = None,
         exclude_dirs: Optional[Iterable[str]] = None,
+        exclude_files: Optional[Iterable[str]] = None,
         max_file_chars: int = 100_000,
     ):
         self.project_root = os.path.abspath(project_root)
         self.include_exts = {ext.lower() for ext in (include_exts or DEFAULT_INCLUDE_EXTS)}
         self.exclude_dirs = {d.lower() for d in (exclude_dirs or DEFAULT_EXCLUDE_DIRS)}
+        self.exclude_files = {f.lower() for f in (exclude_files or DEFAULT_EXCLUDE_FILES)}
         self.max_file_chars = max_file_chars
         self.stats = ScannerStats()
 
@@ -66,6 +85,14 @@ class ProjectScanner:
     def _should_include_file(self, filename: str) -> bool:
         _, ext = os.path.splitext(filename)
         return ext.lower() in self.include_exts
+
+    def _should_exclude_file(self, rel_path: str, filename: str) -> bool:
+        rel_lower = rel_path.replace("\\", "/").lower()
+        name_lower = filename.lower()
+        for pattern in self.exclude_files:
+            if fnmatch.fnmatch(name_lower, pattern) or fnmatch.fnmatch(rel_lower, pattern):
+                return True
+        return False
 
     def collect_project_context(self, max_chars: int = 250_000) -> str:
         """
@@ -86,12 +113,16 @@ class ProjectScanner:
 
                 abs_path = os.path.join(root, fname)
                 rel_path = os.path.relpath(abs_path, self.project_root)
+                if self._should_exclude_file(rel_path, fname):
+                    continue
 
                 try:
                     with open(abs_path, "r", encoding="utf-8", errors="ignore") as handle:
                         content = handle.read()
                 except OSError:
                     continue
+
+                content = mask_secrets(content)
 
                 if len(content) > self.max_file_chars:
                     self.stats.skipped_large_files.append(rel_path)

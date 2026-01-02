@@ -1,5 +1,6 @@
 import os
-from typing import List, Optional
+import re
+from typing import List, Optional, Tuple
 
 from openai import OpenAI
 
@@ -27,8 +28,55 @@ class CodexClient:
         self.chunk_size = 12000
 
     def _chunk_prompt(self, text: str) -> List[str]:
-        """Split large prompts into smaller chunks."""
-        return [text[i:i + self.chunk_size] for i in range(0, len(text), self.chunk_size)]
+        """Split large prompts into smaller chunks without breaking file markers."""
+        preamble, file_blocks = self._split_prompt_blocks(text)
+        chunks = self._split_preamble(preamble) if preamble else [""]
+
+        current = chunks[-1]
+        for block in file_blocks:
+            if not current:
+                current = block
+                chunks[-1] = current
+                continue
+            if len(current) + len(block) <= self.chunk_size:
+                current += block
+                chunks[-1] = current
+            else:
+                chunks.append(block)
+                current = block
+
+        return [chunk for chunk in chunks if chunk]
+
+    def _split_prompt_blocks(self, text: str) -> Tuple[str, List[str]]:
+        marker_re = re.compile(r"(?m)^(===FILE:.*?===|### FILE: .*)$")
+        markers = list(marker_re.finditer(text))
+        if not markers:
+            return text, []
+
+        preamble = text[: markers[0].start()]
+        blocks: List[str] = []
+        for idx, marker in enumerate(markers):
+            start = marker.start()
+            end = markers[idx + 1].start() if idx + 1 < len(markers) else len(text)
+            blocks.append(text[start:end])
+        return preamble, blocks
+
+    def _split_preamble(self, preamble: str) -> List[str]:
+        if len(preamble) <= self.chunk_size:
+            return [preamble]
+
+        chunks: List[str] = []
+        current = ""
+        for para in preamble.split("\n\n"):
+            candidate = f"{current}\n\n{para}" if current else para
+            if len(candidate) <= self.chunk_size or not current:
+                current = candidate
+            else:
+                chunks.append(current)
+                current = para
+        if current:
+            chunks.append(current)
+        return chunks
 
     def send(self, prompt: str) -> str:
         """

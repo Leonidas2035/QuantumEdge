@@ -108,7 +108,11 @@ def build_backlog_from_reports(
     return backlog
 
 
-def run_supervisor_maintenance_once(registry: ProjectRegistry, schedule_cfg: Dict[str, Any]) -> Dict[str, Any]:
+def run_supervisor_maintenance_once(
+    registry: ProjectRegistry,
+    schedule_cfg: Dict[str, Any],
+    use_lock: bool = True,
+) -> Dict[str, Any]:
     backlog_cfg = schedule_cfg.get("backlog", {}) or {}
     max_items = int(backlog_cfg.get("max_items_per_run", 5))
     min_sev = str(backlog_cfg.get("min_severity", "normal")).lower()
@@ -138,7 +142,7 @@ def run_supervisor_maintenance_once(registry: ProjectRegistry, schedule_cfg: Dic
             priority="high" if item.severity == "high" else "normal",
             source="offmarket_supervisor",
         )
-        result = run_task(task.task_id)
+        result = run_task(task.task_id, use_lock=use_lock)
         result["project"] = item.project_id
         tasks_summary.append(result)
 

@@ -1,3 +1,6 @@
+from secret_masking import mask_secrets
+
+
 class PromptBuilder:
     HEADER = (
         "You are Codex running inside Meta-Agent. "
@@ -13,12 +16,12 @@ class PromptBuilder:
 
         if metadata:
             meta_lines = "\n".join(f"{key}: {value}" for key, value in metadata.items())
-            sections.append("# Task Metadata\n" + meta_lines)
+            sections.append("# Task Metadata\n" + mask_secrets(meta_lines))
 
-        sections.append("# Task Instructions\n" + stage_instructions.strip())
+        sections.append("# Task Instructions\n" + mask_secrets(stage_instructions.strip()))
 
         if project_context:
-            sections.append("# Project Context\n" + project_context.strip())
+            sections.append("# Project Context\n" + mask_secrets(project_context.strip()))
 
         sections.append(
             "# Output Guidance\n"
