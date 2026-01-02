@@ -1,0 +1,27 @@
+task_id: demo_shadow_gates
+created_at: 2026-01-02T22:45:00Z
+project_id: meta_agent
+project_root: meta_agent
+objective: "Demo shadow gates in task run"
+instructions: |
+  Add a short note about Quality Gates to docs/operations.md.
+constraints:
+  patch_only: false
+  max_files: 3
+  max_file_bytes: 65536
+context:
+  include_globs:
+    - docs/operations.md
+  focus_files:
+    - docs/operations.md
+execution:
+  dry_run: false
+  shadow_strategy: copy
+  shadow_keep: false
+gates:
+  enabled: true
+  steps:
+    - name: smoke
+      cmd: ["python", "-c", "import sys; sys.exit(0)"]
+      timeout_seconds: 60
+mode: task

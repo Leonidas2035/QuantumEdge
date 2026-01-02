@@ -356,13 +356,6 @@ def _run_task_cli(
     return report.exit_code
 
 
-def _run_task_cli(task_path: str) -> int:
-    report = run_task(task_path)
-    print(f"[INFO] run_id={report.run_id} verdict={report.verdict} exit_code={report.exit_code}")
-    print(f"[INFO] report_path={report.artifacts.report_path}")
-    return report.exit_code
-
-
 class MetaAgent:
     def __init__(self, config_path: str = "config.json"):
         resolved = _resolve_meta_config_path(config_path)

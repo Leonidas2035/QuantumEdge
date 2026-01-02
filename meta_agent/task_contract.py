@@ -37,6 +37,8 @@ DEFAULT_DENY_GLOBS = [
     "**/patches/**",
 ]
 
+SENSITIVE_ENV_KEYWORDS = ("KEY", "SECRET", "TOKEN", "PASSWORD")
+
 
 def _generate_task_id(project_id: str) -> str:
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
@@ -67,6 +69,30 @@ class TaskLLM:
 
 
 @dataclass
+class TaskExecution:
+    dry_run: bool = False
+    shadow: bool = False
+    shadow_strategy: str = "copy"
+    shadow_keep: bool = False
+
+
+@dataclass
+class GateStep:
+    name: str
+    cmd: List[str]
+    cwd: Optional[str] = None
+    timeout_seconds: int = 300
+    env: Optional[Dict[str, str]] = None
+    continue_on_fail: bool = False
+
+
+@dataclass
+class TaskGates:
+    enabled: bool = False
+    steps: List[GateStep] = field(default_factory=list)
+
+
+@dataclass
 class TaskSpec:
     task_id: str
     created_at: str
@@ -77,6 +103,8 @@ class TaskSpec:
     constraints: TaskConstraints = field(default_factory=TaskConstraints)
     context: TaskContext = field(default_factory=TaskContext)
     llm: TaskLLM = field(default_factory=TaskLLM)
+    execution: TaskExecution = field(default_factory=TaskExecution)
+    gates: TaskGates = field(default_factory=TaskGates)
     mode: str = "task"
     metadata: Dict[str, Any] = field(default_factory=dict)
 
@@ -94,6 +122,10 @@ class TaskSpec:
             errors.append("constraints.max_files must be > 0")
         if self.constraints.max_file_bytes <= 0:
             errors.append("constraints.max_file_bytes must be > 0")
+        if self.gates.enabled and not self.gates.steps:
+            errors.append("gates.enabled requires at least one gate step")
+        if self.execution.shadow_strategy not in {"copy", "git_worktree"}:
+            errors.append("execution.shadow_strategy must be copy or git_worktree")
         if errors:
             raise TaskValidationError("; ".join(errors))
 
@@ -147,6 +179,35 @@ class ReportDurations:
 
 
 @dataclass
+class ReportGateStep:
+    name: str
+    exit_code: Optional[int]
+    duration_ms: int
+    stdout_path: Optional[str]
+    stderr_path: Optional[str]
+    timed_out: bool
+    error: Optional[str] = None
+
+
+@dataclass
+class ReportGates:
+    enabled: bool
+    passed: bool
+    steps: List[ReportGateStep]
+    artifacts_dir: Optional[str]
+    started_at: str
+    finished_at: str
+
+
+@dataclass
+class ReportShadow:
+    used: bool
+    strategy: Optional[str]
+    kept: bool
+    shadow_dir_rel: Optional[str]
+
+
+@dataclass
 class Report:
     run_id: str
     task_id: str
@@ -162,6 +223,8 @@ class Report:
     cli: Optional[ReportCLI] = None
     runtime_dir: Optional[str] = None
     durations: Optional[ReportDurations] = None
+    gates: Optional[ReportGates] = None
+    shadow: Optional[ReportShadow] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return asdict(self)
@@ -216,6 +279,68 @@ def _normalize_llm(raw: dict) -> TaskLLM:
     )
 
 
+def _normalize_execution(raw: dict, has_gates: bool, dry_run: bool) -> TaskExecution:
+    execution = raw or {}
+    shadow = execution.get("shadow")
+    if shadow is None:
+        shadow = bool(has_gates or dry_run)
+    return TaskExecution(
+        dry_run=bool(execution.get("dry_run", dry_run)),
+        shadow=bool(shadow),
+        shadow_strategy=str(execution.get("shadow_strategy", "copy")),
+        shadow_keep=bool(execution.get("shadow_keep", False)),
+    )
+
+
+def _validate_gate_env(env: Optional[Dict[str, str]]) -> None:
+    if not env:
+        return
+    for key in env.keys():
+        upper = key.upper()
+        if any(word in upper for word in SENSITIVE_ENV_KEYWORDS):
+            raise TaskValidationError(f"Gate env key not allowed: {key}")
+
+
+def _normalize_gate_steps(raw_steps: list) -> List[GateStep]:
+    steps: List[GateStep] = []
+    for entry in raw_steps:
+        if not isinstance(entry, dict):
+            raise TaskValidationError("Gate step must be a mapping")
+        name = str(entry.get("name") or "")
+        cmd = entry.get("cmd")
+        if not name:
+            raise TaskValidationError("Gate step missing name")
+        if not isinstance(cmd, list) or not cmd:
+            raise TaskValidationError("Gate step cmd must be a non-empty list")
+        if not all(isinstance(c, str) for c in cmd):
+            raise TaskValidationError("Gate step cmd must be list of strings")
+        env = entry.get("env")
+        if env is not None and not isinstance(env, dict):
+            raise TaskValidationError("Gate step env must be a mapping")
+        _validate_gate_env(env)
+        steps.append(
+            GateStep(
+                name=name,
+                cmd=cmd,
+                cwd=entry.get("cwd"),
+                timeout_seconds=int(entry.get("timeout_seconds", 300)),
+                env=env,
+                continue_on_fail=bool(entry.get("continue_on_fail", False)),
+            )
+        )
+    return steps
+
+
+def _normalize_gates(raw: dict) -> TaskGates:
+    gates = raw or {}
+    steps_raw = list(gates.get("steps", []) or [])
+    steps = _normalize_gate_steps(steps_raw)
+    enabled = gates.get("enabled")
+    if enabled is None:
+        enabled = bool(steps)
+    return TaskGates(enabled=bool(enabled), steps=steps)
+
+
 def _task_from_dict(raw: dict) -> TaskSpec:
     if not isinstance(raw, dict):
         raise TaskValidationError("TaskSpec must be a mapping")
@@ -223,6 +348,9 @@ def _task_from_dict(raw: dict) -> TaskSpec:
     created_at = raw.get("created_at") or _now_iso()
     if isinstance(created_at, datetime):
         created_at = created_at.astimezone(timezone.utc).isoformat()
+    dry_run_hint = bool((raw.get("execution") or {}).get("dry_run", False))
+    gates_block = raw.get("gates") or {}
+    gates = _normalize_gates(gates_block)
     spec = TaskSpec(
         task_id=str(task_id),
         created_at=str(created_at),
@@ -233,6 +361,8 @@ def _task_from_dict(raw: dict) -> TaskSpec:
         constraints=_normalize_constraints(raw.get("constraints") or {}),
         context=_normalize_context(raw.get("context") or {}),
         llm=_normalize_llm(raw.get("llm") or {}),
+        execution=_normalize_execution(raw.get("execution") or {}, gates.enabled, dry_run_hint),
+        gates=gates,
         mode=str(raw.get("mode") or "task"),
         metadata=dict(raw.get("metadata") or {}),
     )

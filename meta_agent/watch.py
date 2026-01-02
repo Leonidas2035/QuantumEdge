@@ -73,7 +73,7 @@ def process_inbox_once(
             return {"lock_busy": True, "processed": processed}
 
         dest_prefix = f"{report.run_id}_{basename}"
-        if report.exit_code in {0, 10, 20}:
+        if report.exit_code in {0, 10, 11, 12, 20}:
             dest_path = os.path.join(archive, dest_prefix)
             shutil.move(task_path, dest_path)
             logger.info("Task archived: %s", dest_prefix)

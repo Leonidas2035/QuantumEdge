@@ -26,6 +26,20 @@ Optional fields:
   - `model` (string)
   - `temperature` (float)
   - `max_context_chars` (int)
+- `execution`:
+  - `dry_run` (bool, never apply; produces patches + gate results)
+  - `shadow` (bool, use shadow workspace for gates; defaults to true when gates/dry_run present)
+  - `shadow_strategy` (`copy` or `git_worktree`)
+  - `shadow_keep` (bool, keep shadow dir for debugging)
+- `gates`:
+  - `enabled` (bool)
+  - `steps` (list of gate steps)
+    - `name` (string)
+    - `cmd` (list of strings, no shell)
+    - `cwd` (optional, relative to project root)
+    - `timeout_seconds` (int, default 300)
+    - `env` (optional map; keys with KEY/SECRET/TOKEN/PASSWORD are rejected)
+    - `continue_on_fail` (bool)
 - `metadata` (free-form dict for Supervisor)
 
 ### Example task.yaml
@@ -51,6 +65,14 @@ llm:
   model: gpt-4.1
   temperature: 0
   max_context_chars: 80000
+execution:
+  dry_run: true
+  shadow_strategy: copy
+gates:
+  enabled: true
+  steps:
+    - name: smoke
+      cmd: ["python", "-c", "import sys; sys.exit(0)"]
 mode: task
 metadata:
   source: supervisor
@@ -109,10 +131,16 @@ Body text can be used as instructions if `instructions` is missing.
 }
 ```
 
+Additional report fields:
+- `gates`: gate execution results (passed, steps, stdout/stderr paths)
+- `shadow`: shadow workspace details (strategy, path, kept)
+
 ## Exit codes
 
 - `0`  allow + applied
 - `10` warn (patch/report only)
+- `11` dry_run_complete (patch/report only)
+- `12` gate_failed (patch/report only)
 - `20` block (patch/report only)
 - `30` error (unexpected)
 - `40` invalid task (validation)
@@ -125,6 +153,8 @@ runtime/runs/<run_id>/
   task.yaml
   report.json
   patches/
+  gates/
+  shadow/
   context_manifest.json
 ```
 
