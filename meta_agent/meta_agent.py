@@ -15,6 +15,8 @@ from codex_client import CodexClient
 from file_manager import build_change_set_from_response
 from logger import configure_logger
 from meta_core import run_task
+from offmarket_scheduler import main as scheduler_main, status as scheduler_status
+from schedule_contract import ScheduleValidationError
 from paths import (
     BASE_DIR,
     OUTPUT_DIR,
@@ -655,6 +657,19 @@ def parse_health_args(argv: list[str]):
     return parser.parse_args(argv)
 
 
+def parse_scheduler_args(argv: list[str]):
+    parser = argparse.ArgumentParser(description="Run off-market scheduler")
+    parser.add_argument("--schedules-dir", dest="schedules_dir")
+    parser.add_argument("--tick-seconds", type=int, default=2)
+    parser.add_argument("--once", action="store_true")
+    return parser.parse_args(argv)
+
+
+def parse_scheduler_status_args(argv: list[str]):
+    parser = argparse.ArgumentParser(description="Scheduler status")
+    parser.add_argument("--schedules-dir", dest="schedules_dir")
+    return parser.parse_args(argv)
+
 def parse_watch_args(argv: list[str]):
     parser = argparse.ArgumentParser(description="Watch inbox for TaskSpecs")
     parser.add_argument("--inbox", default="runtime/inbox")
@@ -908,6 +923,34 @@ def main() -> int:
     if cmd == "health":
         parse_health_args(remaining[1:])
         return _health_cli(json_mode=global_args.json, quiet=global_args.quiet)
+    if cmd == "run-scheduler":
+        args = parse_scheduler_args(remaining[1:])
+        return scheduler_main(
+            schedules_dir=args.schedules_dir,
+            tick_seconds=args.tick_seconds,
+            once=args.once,
+            json_mode=global_args.json,
+            quiet=global_args.quiet,
+        )
+    if cmd == "scheduler-status":
+        args = parse_scheduler_status_args(remaining[1:])
+        try:
+            payload = scheduler_status(args.schedules_dir or None, _resolve_runtime_dir())
+        except ScheduleValidationError as exc:
+            if not global_args.quiet:
+                print(f"[ERROR] {exc}")
+            return 1
+        if global_args.json:
+            print(json.dumps(payload, ensure_ascii=True))
+            return 0
+        if not global_args.quiet:
+            for entry in payload:
+                print(
+                    f"{entry.get('schedule_id')} enabled={entry.get('enabled')} in_window={entry.get('in_window')} "
+                    f"next_eligible_at={entry.get('next_eligible_at')} last_exit_code={entry.get('last_exit_code')} "
+                    f"attempts={entry.get('attempts')}"
+                )
+        return 0
     if cmd == "watch":
         args = parse_watch_args(remaining[1:])
         return _watch_cli(args, json_mode=global_args.json, quiet=global_args.quiet)

@@ -7,6 +7,8 @@
 - `python meta_agent.py run-task --task examples/tasks/001_refactor_small.yaml`
 - `python meta_agent.py status --limit 5`
 - `python meta_agent.py watch --inbox runtime/inbox --poll-seconds 2 --archive runtime/inbox_done --failed runtime/inbox_failed`
+- `python meta_agent.py run-scheduler --once`
+- `python meta_agent.py scheduler-status`
 
 ## Runtime layout
 
@@ -20,6 +22,8 @@ runtime/
     shadow/
     context_manifest.json
   logs/meta_agent.log
+  scheduler/state.json
+  schedules/
   inbox/
   inbox_done/
   inbox_failed/
@@ -46,6 +50,42 @@ gates:
     - name: smoke
       cmd: ["python", "-c", "import sys; sys.exit(0)"]
 ```
+
+## Off-market Scheduler
+
+Schedules are YAML files stored in `runtime/schedules/` (or `schedules/` in the repo). Each
+schedule defines maintenance windows (Europe/Kyiv by default), trigger cadence, retry policy,
+and a TaskSpec template.
+
+Key files:
+- Schedules: `runtime/schedules/*.yaml`
+- State: `runtime/scheduler/state.json`
+
+Example schedule:
+- `examples/schedules/001_nightly_maintenance.yaml`
+
+Run once:
+```
+python meta_agent.py run-scheduler --once
+```
+
+Continuous loop:
+```
+python meta_agent.py run-scheduler --tick-seconds 2
+```
+
+Status:
+```
+python meta_agent.py scheduler-status
+```
+
+STOP/PAUSE:
+- Create `STOP` in the inbox to exit scheduler gracefully.
+- Create `PAUSE` to pause enqueue/processing while keeping state updates.
+
+Retries/backoff:
+- Transient errors (exit_code 30, 50) back off exponentially with optional jitter.
+- Non-transient errors (invalid_task, block, gate_failed) do not retry.
 
 ## Service usage
 

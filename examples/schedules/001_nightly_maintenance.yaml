@@ -1,0 +1,37 @@
+schedule_id: nightly_maintenance
+enabled: true
+timezone: Europe/Kyiv
+project_id: meta_agent
+inbox_dir: runtime/inbox
+archive_dir: runtime/inbox_done
+failed_dir: runtime/inbox_failed
+windows:
+  - days: ["*"]
+    start: "02:00"
+    end: "05:00"
+trigger:
+  type: interval
+  every_seconds: 900
+task_template:
+  objective: "Nightly docs tidy (dry-run)"
+  instructions: |
+    Review docs/operations.md for formatting consistency. Do not change code.
+  constraints:
+    patch_only: true
+    max_files: 2
+    max_file_bytes: 65536
+  context:
+    include_globs:
+      - docs/**/*.md
+  execution:
+    dry_run: true
+  mode: task
+policy:
+  max_concurrent: 1
+  max_runs_per_window: 10
+  max_attempts: 3
+retries:
+  enabled: true
+  backoff_base_seconds: 15
+  backoff_max_seconds: 300
+  jitter: true
