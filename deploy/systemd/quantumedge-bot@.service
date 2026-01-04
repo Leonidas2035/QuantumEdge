@@ -1,0 +1,18 @@
+[Unit]
+Description=QuantumEdge bot %i
+After=marketdatahub.service supervisoragent.service
+Requires=marketdatahub.service supervisoragent.service
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/QuantumEdge
+EnvironmentFile=-/etc/quantumedge/bot@.env
+Environment=BOT_ID=%i
+ExecStart=/opt/QuantumEdge/.venv/bin/python /opt/QuantumEdge/ai_scalper_bot/bot/run_bot.py
+Restart=always
+RestartSec=5
+LimitNOFILE=65536
+Nice=5
+
+[Install]
+WantedBy=multi-user.target

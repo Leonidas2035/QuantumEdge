@@ -1,0 +1,15 @@
+[Unit]
+Description=QuantumEdge L2 replay runner
+After=marketdatahub.service
+Requires=marketdatahub.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/QuantumEdge
+ExecStart=/usr/bin/flock /tmp/quantumedge-l2-replay.lock /opt/QuantumEdge/.venv/bin/python /opt/QuantumEdge/tools/replay_spool.py --spool-dir runtime/spool/l2 --quest-host 127.0.0.1 --ilp-port 9009
+TimeoutStartSec=0
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

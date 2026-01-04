@@ -29,9 +29,127 @@ Payload structs exist for the common gradients: `FillEvent`, `PositionEvent`, `E
 
 Each table is partitioned by `DAY`, designated the `ts` timestamp column, and includes `source`, `seq`, `event_id`, and `payload_json` to help replay logic deduplicate or examine raw data.
 
+The code-driven map (`MarketDataHub.models.l2_contract.ENTITY_TABLE_MAP`) is the single source of truth backing these table names.
+
+## L2 JSONL Canonical Format
+
+- Each spool line is plain JSON (MessagePack is used for the Hot Path; L2 uses `msgspec.json.encode` and gzip compresses the file level).
+- Required top-level fields: `ts_ns` (nanoseconds), `stream` (must be `"l2"`), `entity`, `schema_ver` (current `1`), and `payload`.
+- Optional/nullable tops: `symbol`, `seq`, `event_id`, `source`, `account`.
+- Allowed entities: `fills`, `positions`, `equity`, `risk` (future streams such as `orders` or `funding` must register in `ENTITY_TABLE_MAP`).
+- At-least-once: duplicates are acceptable, missing records are not; include `event_id` when possible and fall back to `seq`.
+
+### Entity payload keys
+
+Filled-in payload shapes (extra keys are stored in `payload_json`):
+
+- `fills`: `order_id`, `trade_id`, `side`, `qty`, `price`, `fee`, `fee_asset`, `pnl`, `exchange`, `market`, `liquidity`.
+- `positions`: `side`, `qty`, `entry_price`, `mark_price`, `u_pnl`, `leverage`, `margin`.
+- `equity`: `equity`, `balance`, `available`, `currency`.
+- `risk`: `mode`, `exposure`, `max_dd`, `notes`, `flags` (array of strings).
+
+### Canonical JSONL examples
+
+```json
+{"ts_ns":1700000000123456789,"stream":"l2","entity":"fills","symbol":"BTCUSDT","seq":10231,"event_id":"01HZX8Y0ZP8S6J8W6V6Q9Z4V8T","source":"ai_scalper_bot","schema_ver":1,"payload":{"order_id":"A1B2C3","trade_id":"T998877","side":"buy","qty":0.0125,"price":43750.5,"fee":0.12,"fee_asset":"USDT","pnl":0.0,"exchange":"binance","market":"futures","liquidity":"taker"}}
+{"ts_ns":1700000001123456789,"stream":"l2","entity":"positions","symbol":"BTCUSDT","seq":541,"event_id":"01HZX8Y2M3Q4Q3Z8G8R7E9M2PD","source":"executor","schema_ver":1,"payload":{"side":"long","qty":0.035,"entry_price":43620.0,"mark_price":43748.2,"u_pnl":4.49,"leverage":10,"margin":15.2}}
+{"ts_ns":1700000002123456789,"stream":"l2","entity":"equity","seq":88,"event_id":"01HZX8Y3W4H0W7C8TQ0M1H6B5A","source":"supervisor","schema_ver":1,"payload":{"equity":1023.55,"balance":990.10,"available":210.75,"currency":"USDT"}}
+{"ts_ns":1700000003123456789,"stream":"l2","entity":"risk","seq":27,"event_id":"01HZX8Y4A9K8G6J2F3S2D0P9QZ","source":"supervisor","schema_ver":1,"payload":{"mode":"scalp","exposure":0.42,"max_dd":0.08,"notes":"reduced size due to volatility spike","flags":["volatility_high","spread_wide"]}}
+```
+
 ## At-least-once semantics
 
 - Every L2 append writes the envelope to disk before trying QuestDB. The spool directories are organized by day/hour (`spool/l2/YYYY-MM-DD/HH/*.jsonl.gz`) with rotation at ~64 MB.
 - A replay cursor file (`spool/l2/.replay_state.json`) remembers progress so replays can resume without redelivering already ingested data.
 - Duplicates can occur (the same envelope re-sent after replay), but missing records are unacceptable.
 - L0/L1 may still drop under pressure; only L2 uses the WAL guarantee.
+
+## Replay procedure
+
+Use `tools/replay_spool.py` to drain the backlog into QuestDB with cursor state and retries:
+
+```bash
+python tools/replay_spool.py \
+  --spool-dir runtime/spool/l2 \
+  --quest-host 127.0.0.1 \
+  --ilp-port 9009 \
+  --batch-rows 5000 \
+  --flush-interval-ms 200
+```
+
+- The command scans `spool/l2/YYYY-MM-DD/HH/*.jsonl.gz`, decodes `L2Envelope`s, and builds ILP lines for `l2_fills`, `l2_positions`, `l2_equity`, and `l2_risk`.
+- A cursor file (`spool/l2/.replay_state.json`) is updated atomically (write-temp + rename) to record the last file/line delivered. Re-running the tool resumes where it left off.
+- Use `--from-date`/`--to-date` to limit replay windows and `--max-files` to cap the sweep; `--dry-run` exercises decoding without speaking to QuestDB.
+- Optionally add `--verify-http --http-port 9000` after replay to hit QuestDB `/exec` for quick row-count sanity checks.
+- If QuestDB is unavailable, the tool backs off and retries; spool files stay on disk so cleanup is a manual retention task.
+
+## Monitoring & disk guardrails
+
+- `MARKET_DATA_L2_MAX_SPOOL_GB` (default 50) enforces an upper bound on the gzip spool. When the budget is exceeded the hub either blocks (default) or logs a warning until an operator frees space by archiving older files.
+- `MARKET_DATA_L2_BUDGET_MODE=warn` keeps writes flowing but still honors never-drop by forcing manual retention; `block` politely stalls the hub and waits for cleanup.
+- Inspect usage with `tools/spool_status.py` to see total bytes, file count, oldest/newest spool files, and the replay cursor (`spool/l2/.replay_state.json`).
+- Supervisor cron/systemd timers should run the replay tool regularly (e.g., every hour) to keep spool depth manageable, and verify `max_spool_gb` headroom before running heavier bots.
+
+## Replay automation
+
+- Deploy the provided systemd timer/service pair (`quantumedge-l2-replay.timer/service`) so `/usr/bin/flock /tmp/quantumedge-l2-replay.lock python tools/replay_spool.py --spool-dir runtime/spool/l2 --quest-host 127.0.0.1 --ilp-port 9009` runs every five minutes; the lock prevents concurrent runs.
+- After replay completes, the cursor file `spool/l2/.replay_state.json` advances atomically; `tools/spool_status.py` shows when oldest files are safe to prune (see `tools/prune_spool.py` coming soon).
+
+## Pruning spool files
+
+- Run `python tools/prune_spool.py --retention-days 7` to dry-run and preview deletions; rerun with `--apply` once you have drained the backlog and replayed files referenced by the cursor.
+- The script skips files that are not older than the retention threshold, newer than the last replayed file (`last_file` in `.replay_state.json`), or from the current UTC hour. Use `--include-today` only when a human auditor closes the loop.
+
+## Order book aggregator & whale walls
+
+MarketDataHub now keeps an incremental order book per symbol, publishes `SYMBOL:depth_l2` and `SYMBOL:walls` events, and serves snapshots via the existing REQ/REP endpoint so bots can recover without replaying the entire TCP stream.
+
+```yaml
+orderbook:
+  enabled: true
+  symbols: [BTCUSDT, ETHUSDT]
+  top_n_levels: 50
+  publish_interval_ms: 100
+  walls:
+    enabled: true
+    per_symbol_threshold_qty:
+      BTCUSDT: 50.0
+    default_threshold_notional_usd: 2000000
+    top_k: 20
+    max_distance_bps: 500
+  snapshot:
+    include_depth: true
+    include_walls: true
+```
+
+- Topics: `BTCUSDT:depth_l2`, `BTCUSDT:walls` (L1 events, subject to HWM/conflate).  
+- Depth payload: lists of top N bids/asks (price+qty) plus optional mid/spread.  
+- Walls payload highlights price levels meeting `walls.per_symbol_threshold_qty` (50+ BTC for BTCUSDT) or `threshold_notional_usd`, includes distance from mid in basis points and summary statistics.
+
+Example walls event:
+
+```json
+{
+  "ts_ns": 1700000004123456789,
+  "symbol": "BTCUSDT",
+  "event_type": "walls",
+  "seq": 12,
+  "priority": "L1",
+  "bids_walls": [
+    {"price": 39850.0, "qty": 52.1, "notional": 2076675.0, "distance_bps": 150},
+    {"price": 39800.0, "qty": 60.0, "notional": 2388000.0, "distance_bps": 250}
+  ],
+  "asks_walls": [],
+  "threshold_qty": 50.0,
+  "threshold_notional_usd": 2000000,
+  "summary": {
+    "count_bid_walls": 2,
+    "count_ask_walls": 0,
+    "max_wall_qty": 60.0,
+    "nearest_wall_distance_bps": 150
+  }
+}
+```
+
+- Bots requesting `depth_l2` or `walls` snapshots via `tools/snapshot_client` (existing REQ/REP) now receive the latest event payload without resync.  
+- This is strictly data-plane: MarketDataHub enriches the PUB stream but never makes trading decisions. The aggregator can be wired to real depth streams once available; until then it runs a lightweight synthetic feed for demonstration/testing purposes.

@@ -95,6 +95,36 @@ Notes:
 - Customize `ExecStart` args in `deploy/systemd/quantumedge-supervisor.service` if you need a different scenario.
 - For least privilege, run the service under a dedicated user and ensure `/opt/QuantumEdge` and `/etc/quantumedge` are readable.
 
+## Systemd stack (QuestDB, Hub, Supervisor, Bots, replay)
+
+Create `/etc/quantumedge/marketdatahub.env` for Hub-specific knobs (non-secrets). Example:
+
+```
+MARKET_DATA_ZMQ_ENDPOINT=ipc:///tmp/quantum_market_data.ipc
+MARKET_DATA_SNAPSHOT_ENDPOINT=ipc:///tmp/quantum_market_snapshot.ipc
+MARKET_DATA_TSDB_ENABLED=1
+MARKET_DATA_L2_ENABLED=1
+MARKET_DATA_STATUS_INTERVAL_SEC=10
+```
+
+Bot instances can load `/etc/quantumedge/bot@.env`:
+
+```
+# Shared bot settings
+BOREAL_BOT_CONFIG=ai_scalper_bot/config/bot.yaml
+```
+
+Reload systemd and enable the full stack:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable --now questdb marketdatahub supervisoragent quantumedge-bot@scalper quantumedge-l2-replay.timer
+```
+
+The marketdatahub service writes `runtime/status/marketdatahub.json` every 10 seconds; read it with `python -m MarketDataHub.hub status` (or use `--json` for compact output) to verify endpoints, TSDB metrics, and L2 spool health.
+
+Use `python tools/spool_status.py` and `python tools/prune_spool.py` (when available) to keep the spool budget in check before bots resume trading.
+
 ## Troubleshooting
 
 - Missing venv: rerun `./scripts/linux/setup.sh`.
@@ -112,3 +142,45 @@ python SupervisorAgent/supervisor.py report --last 24h --bucket 5m
 ```
 
 Common queries live in `docs/tsdb_queries.md`.
+
+Apply the schema with the helper:
+
+```bash
+python tools/questdb_apply_schema.sh --host 127.0.0.1 --port 9000
+```
+
+The script posts `deploy/questdb/schema.sql` to QuestDB's `/exec` endpoint and is safe to rerun (`CREATE TABLE IF NOT EXISTS` statements protect repeat executions).
+
+## L2 spool reliability
+
+- Monitor spool depth with `python tools/spool_status.py` to track total bytes, file count, and the replay cursor (`spool/l2/.replay_state.json`). If size approaches `MARKET_DATA_L2_MAX_SPOOL_GB` (default 50), clean up older files or run replay immediately.
+- Schedule `tools/replay_spool.py` via cron/systemd timer to keep the backlog drained and avoid hitting the budget ceiling. Example systemd timer snippet:
+
+```ini
+[Unit]
+Description=QuantumEdge L2 replay timer
+
+[Timer]
+OnCalendar=*:00/30
+Persistent=true
+
+[Install]
+WantedBy=timers.target
+```
+
+Point the accompanying service at:
+
+```bash
+python tools/replay_spool.py --spool-dir runtime/spool/l2 --quest-host 127.0.0.1 --ilp-port 9009
+```
+
+- On shutdown, ensure the Hub/supervisor sequence gives `MarketDataHub/spool/l2_spooler.py` time to flush (the CLI `meta_agent.py diag` can be used to confirm a clean exit). If `tools/spool_status.py` reports a large backlog, replay before starting next batch of bots.
+## Smoke verification
+
+Run `tools/smoke_e2e_stack.py` after the stack is live to assert Hot Path messages flow, QuestDB receives rows, and the L2 replay plumbing can drain the spool:
+
+```bash
+python tools/smoke_e2e_stack.py
+```
+
+The script momentarily starts QuestDB and MarketDataHub, injects synthetic events, validates snapshots, checks `market_l1`/`l2_equity` row counts, and replays the spool via `tools/replay_spool.py`.

@@ -1,0 +1,18 @@
+[Unit]
+Description=QuantumEdge MarketDataHub
+After=questdb.service network-online.target
+Requires=questdb.service
+
+[Service]
+Type=simple
+WorkingDirectory=/opt/QuantumEdge
+EnvironmentFile=-/etc/quantumedge/marketdatahub.env
+ExecStart=/opt/QuantumEdge/.venv/bin/python -m MarketDataHub.hub run
+Restart=always
+RestartSec=5
+LimitNOFILE=65536
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target

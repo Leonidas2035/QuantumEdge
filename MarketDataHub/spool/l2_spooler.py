@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import gzip
+import logging
 import os
 import threading
 import time
@@ -14,6 +15,27 @@ import msgspec
 
 from MarketDataHub.config import L2Config
 from MarketDataHub.models import L2Envelope, encode_l2
+
+
+def _never_drop_policy(
+    limit: int,
+    mode: str,
+    current_size: int,
+    refresh: Callable[[], int],
+) -> int:
+    """Centralized policy: never drop because of spool budget pressure."""
+    if limit <= 0 or current_size <= limit:
+        return current_size
+    msg = f"L2 spool size {current_size}B exceeds budget {limit}B (mode={mode})"
+    if mode == "warn":
+        logging.warning(msg)
+        return current_size
+    logging.warning("%s; blocking until space is available", msg)
+    size = refresh()
+    while size > limit:
+        time.sleep(1.0)
+        size = refresh()
+    return size
 
 
 class L2Spooler:
@@ -34,6 +56,11 @@ class L2Spooler:
         self._last_flush = 0.0
         self._closed = False
         self._rotate_count = 0
+        self._budget_limit = self._config.max_spool_bytes
+        self._budget_mode = self._config.on_budget_exceeded
+        self._budget_checked_at = 0.0
+        self._cached_size = 0
+        self._spool_root = Path(self._config.spool_dir)
 
     def append(self, event: L2Envelope) -> None:
         timestamp = self._time_provider()
@@ -42,6 +69,7 @@ class L2Spooler:
         with self._lock:
             if self._closed:
                 raise RuntimeError("L2Spooler is closed")
+            self._enforce_budget()
             if self._should_rotate(hour_label):
                 self._rotate(hour_label, timestamp)
             self._gzip.write(line)
@@ -64,6 +92,33 @@ class L2Spooler:
         if self._bytes_since_rotate >= self._config.rotate_mb * 1024 * 1024:
             return True
         return False
+
+    def _enforce_budget(self) -> None:
+        limit = self._budget_limit
+        if limit <= 0:
+            return
+        now = self._time_provider()
+        if now - self._budget_checked_at >= 1.0:
+            self._cached_size = self._scan_spool_size()
+            self._budget_checked_at = now
+
+        def refresh() -> int:
+            self._cached_size = self._scan_spool_size()
+            self._budget_checked_at = self._time_provider()
+            return self._cached_size
+
+        self._cached_size = _never_drop_policy(
+            limit, self._budget_mode, self._cached_size, refresh
+        )
+
+    def _scan_spool_size(self) -> int:
+        if not self._spool_root.exists():
+            return 0
+        total = 0
+        for path in self._spool_root.rglob("*.jsonl.gz"):
+            if path.is_file():
+                total += path.stat().st_size
+        return total
 
     def _rotate(self, hour_label: str, timestamp: float) -> None:
         self._flush()

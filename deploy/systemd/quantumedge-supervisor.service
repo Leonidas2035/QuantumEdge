@@ -1,7 +1,8 @@
 [Unit]
 Description=QuantumEdge SupervisorAgent
-After=network-online.target
-Wants=network-online.target
+After=network-online.target marketdatahub.service questdb.service
+Wants=network-online.target marketdatahub.service questdb.service
+Requires=marketdatahub.service questdb.service
 
 [Service]
 Type=simple
@@ -9,7 +10,7 @@ WorkingDirectory=/opt/QuantumEdge
 EnvironmentFile=-/etc/quantumedge/env
 ExecStart=/opt/QuantumEdge/.venv/bin/python /opt/QuantumEdge/SupervisorAgent/supervisor.py run-foreground --episode-set smoke --scenario-id S00
 Restart=always
-RestartSec=2
+RestartSec=5
 LimitNOFILE=1048576
 Nice=-5
 

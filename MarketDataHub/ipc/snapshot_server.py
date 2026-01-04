@@ -13,7 +13,17 @@ import zmq
 import zmq.asyncio
 
 from MarketDataHub.config import HubConfig
-from MarketDataHub.models import Bar1sEvent, L1Event, MarketEvent, SnapshotRequest, SnapshotResponse, TradeEvent, encode_event
+from MarketDataHub.models import (
+    Bar1sEvent,
+    DepthL2Event,
+    L1Event,
+    MarketEvent,
+    SnapshotRequest,
+    SnapshotResponse,
+    TradeEvent,
+    WallsEvent,
+    encode_event,
+)
 
 
 class SnapshotCache:
@@ -21,6 +31,8 @@ class SnapshotCache:
         self._l1: Dict[str, L1Event] = {}
         self._bar: Dict[str, Bar1sEvent] = {}
         self._trades: Deque[TradeEvent] = deque(maxlen=trade_tail)
+        self._depth: Dict[str, DepthL2Event] = {}
+        self._walls: Dict[str, WallsEvent] = {}
 
     def update(self, event: MarketEvent) -> None:
         if isinstance(event, L1Event):
@@ -29,6 +41,10 @@ class SnapshotCache:
             self._bar[event.symbol] = event
         elif isinstance(event, TradeEvent):
             self._trades.append(event)
+        elif isinstance(event, DepthL2Event):
+            self._depth[event.symbol] = event
+        elif isinstance(event, WallsEvent):
+            self._walls[event.symbol] = event
 
     def snapshot_for(self, symbol: str, event_type: str) -> MarketEvent | None:
         if event_type == "l1":
@@ -37,6 +53,10 @@ class SnapshotCache:
             return self._bar.get(symbol)
         if event_type == "trade_tail":
             return list(self._trades)
+        if event_type == "depth_l2":
+            return self._depth.get(symbol)
+        if event_type == "walls":
+            return self._walls.get(symbol)
         return None
 
 

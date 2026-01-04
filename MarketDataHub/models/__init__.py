@@ -19,6 +19,18 @@ from .l2 import (
     decode_l2,
     encode_l2,
 )
+from .l2_contract import ENTITY_TABLE_MAP, ALLOWED_ENTITIES, SCHEMA_VERSION
+from .orderbook import (
+    DEPTH_EVENT_TYPE,
+    DepthLevel,
+    DepthL2Event,
+    WallLevel,
+    WallsEvent,
+    WallsSummary,
+    WALLS_EVENT_TYPE,
+    encode_orderbook,
+    decode_orderbook,
+)
 from .snapshots import SnapshotRequest, SnapshotResponse
 
 __all__ = [
@@ -32,6 +44,15 @@ __all__ = [
     "decode_event",
     "SnapshotRequest",
     "SnapshotResponse",
+    "DepthLevel",
+    "DepthL2Event",
+    "WallLevel",
+    "WallsEvent",
+    "WallsSummary",
+    "DEPTH_EVENT_TYPE",
+    "WALLS_EVENT_TYPE",
+    "encode_orderbook",
+    "decode_orderbook",
     "L2Envelope",
     "FillEvent",
     "PositionEvent",

@@ -1,0 +1,18 @@
+[Unit]
+Description=QuantumEdge QuestDB
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=oneshot
+WorkingDirectory=/opt/QuantumEdge
+EnvironmentFile=-/etc/quantumedge/env
+ExecStart=/opt/QuantumEdge/deploy/questdb/up.sh
+ExecStop=/opt/QuantumEdge/deploy/questdb/down.sh
+RemainAfterExit=yes
+TimeoutStartSec=0
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

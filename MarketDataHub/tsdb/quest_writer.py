@@ -11,7 +11,7 @@ import time
 from typing import Any, Dict, Iterable, List, Optional
 
 from MarketDataHub.config import L2Config, TsdbConfig
-from MarketDataHub.models import Bar1sEvent, L1Event, L2Envelope, MarketEvent
+from MarketDataHub.models import Bar1sEvent, ENTITY_TABLE_MAP, L1Event, L2Envelope, MarketEvent
 from MarketDataHub.spool.l2_spooler import L2Spooler
 
 
@@ -250,13 +250,7 @@ class QuestILPWriter:
         return json.dumps(value)
 
     def _l2_table_for_entity(self, entity: str) -> Optional[str]:
-        mapping = {
-            "fills": "l2_fills",
-            "positions": "l2_positions",
-            "equity": "l2_equity",
-            "risk": "l2_risk",
-        }
-        return mapping.get(entity)
+        return ENTITY_TABLE_MAP.get(entity)
 
     def _maybe_log_l2_overflow(self) -> None:
         now = time.time()

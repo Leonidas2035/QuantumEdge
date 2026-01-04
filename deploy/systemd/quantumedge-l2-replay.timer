@@ -1,0 +1,11 @@
+[Unit]
+Description=QuantumEdge L2 replay timer
+
+[Timer]
+OnBootSec=2min
+OnUnitActiveSec=5min
+Persistent=true
+Unit=quantumedge-l2-replay.service
+
+[Install]
+WantedBy=timers.target
