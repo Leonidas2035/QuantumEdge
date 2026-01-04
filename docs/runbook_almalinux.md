@@ -60,6 +60,15 @@ Equivalent direct command:
 python SupervisorAgent/supervisor.py run-foreground --episode-set smoke --scenario-id S00
 ```
 
+## Startup order and monitoring
+
+- **Hub first**: the Hub (meta_agent process) handles the hot ZeroMQ -> bot plane. Always start the Hub before any bots to avoid backpressure; Supervisor/systemd should order the meta command ahead of the bot units. Pin it to dedicated P-cores (`taskset -c 0,1 ./scripts/linux/run.sh meta ...`) so it never shares CPUs with bots.
+- **Bots second**: start bot services only after the Hub is healthy (`curl http://127.0.0.1:11400/health` from Supervisor or the Control Center). Bot units should use separate E-core ranges (`taskset -c 4-7`, `taskset -c 8-11`) and `nice +5` so they do not steal Hub cycles.
+- **Supervised startup**: drop-in `ExecStartPost` hooks (or `After=` ordering) ensure Hub has exclusive access to P-cores before bots come online; leave Supervisor pinned to an idle core (e.g., `taskset -c 2`) so control-plane logging and approvals remain responsive.
+- **Monitoring**: the future Hub heartbeat should be monitored (e.g., expected metrics emitted under `runtime/status/`); gap detection triggers alerts before bots attempt to trade. Documented pinning guidance lives in `docs/perf_tsdb.md`.
+
+Supervisor is the control-plane, Hub is pure data-plane (no trading logic), so follow this contour rigorously.
+
 ## Systemd service
 
 Install the unit (does not auto-start):
