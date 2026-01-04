@@ -26,7 +26,7 @@ class MarketDataHubService:
         self.bus = EventBus(l0_hwm=self.config.l0_hwm, l1_hwm=self.config.l1_hwm)
         self.publisher = ZmqPublisher(self.config)
         self.writer: Optional[QuestILPWriter] = (
-            QuestILPWriter(self.config.tsdb) if self.config.tsdb.enabled else None
+            QuestILPWriter(self.config.tsdb, self.config.l2) if self.config.tsdb.enabled else None
         )
         self.snapshot_cache = SnapshotCache(trade_tail=self.config.snapshot.trade_tail)
         self.snapshot_server = SnapshotServer(self.config, self.snapshot_cache)

@@ -1,12 +1,12 @@
 import asyncio
-from MarketDataHub.config import TsdbConfig
+from MarketDataHub.config import L2Config, TsdbConfig
 from MarketDataHub.models import Bar1sEvent, L1Event, Priority
 from MarketDataHub.tsdb.quest_writer import QuestILPWriter
 
 
 def test_format_lines_for_l1_and_bar() -> None:
-    config = TsdbConfig()
-    writer = QuestILPWriter(config)
+    tsdb_config = TsdbConfig()
+    writer = QuestILPWriter(tsdb_config, L2Config(enabled=False))
     l1 = L1Event(
         ts_ns=1_700_000_000_000_000_000,
         symbol="BTCUSDT",
@@ -31,18 +31,18 @@ def test_format_lines_for_l1_and_bar() -> None:
         volume=10.0,
         trades=5,
     )
-    lines = writer._build_batch()
+    lines, _ = writer._build_batch()
     assert lines == []
     asyncio.run(writer.enqueue(l1))
     asyncio.run(writer.enqueue(bar))
-    built = writer._build_batch()
+    built, _ = writer._build_batch()
     assert any("market_l1" in line for line in built)
     assert any("bars_1s" in line for line in built)
 
 
 def test_queue_drop_when_full() -> None:
     config = TsdbConfig(bars_queue_max=1)
-    writer = QuestILPWriter(config)
+    writer = QuestILPWriter(config, L2Config(enabled=False))
     bar1 = Bar1sEvent(
         ts_ns=1,
         symbol="SYM",

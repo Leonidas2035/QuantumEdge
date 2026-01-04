@@ -5,13 +5,14 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import dataclasses
+import json
 import logging
-import socket
 import time
-from typing import Dict, Iterable, List, Optional
+from typing import Any, Dict, Iterable, List, Optional
 
-from MarketDataHub.config import TsdbConfig
-from MarketDataHub.models import Bar1sEvent, L1Event, MarketEvent
+from MarketDataHub.config import L2Config, TsdbConfig
+from MarketDataHub.models import Bar1sEvent, L1Event, L2Envelope, MarketEvent
+from MarketDataHub.spool.l2_spooler import L2Spooler
 
 
 @dataclasses.dataclass
@@ -20,15 +21,28 @@ class TsdbMetrics:
     dropped_rows: int = 0
     last_flush_ts: Optional[float] = None
     errors: int = 0
+    l2_spooled_total: int = 0
+    l2_buffered_total: int = 0
+    l2_written_total: int = 0
+    l2_write_errors_total: int = 0
+    l2_buffer_overflow_total: int = 0
 
 
 class QuestILPWriter:
-    """Micro-batch ILP writer with bounded caches."""
+    """Micro-batch ILP writer with bounded caches and L2 support."""
 
-    def __init__(self, config: TsdbConfig) -> None:
-        self._config = config
+    def __init__(self, tsdb_config: TsdbConfig, l2_config: L2Config) -> None:
+        self._config = tsdb_config
+        self._l2_config = l2_config
         self._l1_cache: Dict[str, L1Event] = {}
         self._bars_queue: asyncio.Queue[Bar1sEvent] = asyncio.Queue(maxsize=self._config.bars_queue_max)
+        self._l2_buffer: List[str] = []
+        self._l2_buffer_max = self._l2_config.buffer_max
+        self._l2_spooler: Optional[L2Spooler] = (
+            L2Spooler(self._l2_config) if self._l2_config.enabled else None
+        )
+        self._l2_overflow_log_ts = 0.0
+        self._l2_overflow_interval = 5.0
         self._batch_rows = self._config.batch_rows
         self._flush_interval = self._config.flush_interval_ms / 1000.0
         self._metrics = TsdbMetrics()
@@ -55,6 +69,8 @@ class QuestILPWriter:
             with contextlib.suppress(asyncio.CancelledError):
                 await self._task
         await self._close_connection()
+        if self._l2_spooler:
+            self._l2_spooler.close()
 
     async def enqueue(self, event: MarketEvent) -> None:
         if isinstance(event, L1Event):
@@ -70,6 +86,21 @@ class QuestILPWriter:
                 except asyncio.QueueEmpty:
                     self._metrics.dropped_rows += 1
 
+    async def enqueue_l2(self, event: L2Envelope) -> None:
+        if not self._l2_spooler:
+            return
+        self._l2_spooler.append(event)
+        self._metrics.l2_spooled_total += 1
+        line = self._format_l2_line(event)
+        if not line:
+            return
+        if len(self._l2_buffer) >= self._l2_buffer_max:
+            self._metrics.l2_buffer_overflow_total += 1
+            self._maybe_log_l2_overflow()
+            return
+        self._l2_buffer.append(line)
+        self._metrics.l2_buffered_total += 1
+
     async def _flush_loop(self) -> None:
         while self._running:
             await asyncio.sleep(self._flush_interval)
@@ -77,35 +108,34 @@ class QuestILPWriter:
 
     async def _flush(self) -> None:
         async with self._lock:
-            lines = self._build_batch()
+            lines, l2_count = self._build_batch()
             if not lines:
                 return
             try:
                 await self._write_batch(lines)
                 self._metrics.written_rows += len(lines)
+                self._metrics.l2_written_total += l2_count
                 self._metrics.last_flush_ts = time.time()
             except Exception as exc:
                 logging.warning("QuestDB ILP flush failed: %s", exc)
                 self._metrics.errors += 1
+                if l2_count:
+                    self._metrics.l2_write_errors_total += l2_count
                 await self._close_connection()
 
-    def _build_batch(self) -> List[str]:
+    def _build_batch(self) -> tuple[List[str], int]:
         lines: List[str] = []
-        for symbol, event in list(self._l1_cache.items()):
-            lines.append(self._format_l1(event))
-            self._l1_cache.pop(symbol, None)
-            if len(lines) >= self._batch_rows:
-                return lines
-        while len(lines) < self._batch_rows and not self._bars_queue.empty():
-            try:
-                bar = self._bars_queue.get_nowait()
-            except asyncio.QueueEmpty:
-                break
-            lines.append(self._format_bar(bar))
-        return lines
+        lines.extend(self._build_l1_lines())
+        if len(lines) < self._batch_rows:
+            lines.extend(self._build_bar_lines(self._batch_rows - len(lines)))
+        l2_lines = []
+        if self._l2_buffer:
+            l2_lines = self._drain_l2_buffer(self._batch_rows - len(lines))
+            lines.extend(l2_lines)
+        return lines, len(l2_lines)
 
     def queue_depth(self) -> int:
-        return self._bars_queue.qsize()
+        return self._bars_queue.qsize() + len(self._l2_buffer)
 
     @staticmethod
     def _format_l1(event: L1Event) -> str:
@@ -123,6 +153,116 @@ class QuestILPWriter:
             f"open={event.open},high={event.high},low={event.low},close={event.close},"
             f"volume={event.volume},trades={int(event.trades)}i {ts}"
         )
+
+    def _build_l1_lines(self) -> List[str]:
+        lines: List[str] = []
+        for symbol, event in list(self._l1_cache.items()):
+            if len(lines) >= self._batch_rows:
+                break
+            lines.append(self._format_l1(event))
+            self._l1_cache.pop(symbol, None)
+        return lines
+
+    def _build_bar_lines(self, limit: int) -> List[str]:
+        lines: List[str] = []
+        while len(lines) < limit and not self._bars_queue.empty():
+            try:
+                bar = self._bars_queue.get_nowait()
+            except asyncio.QueueEmpty:
+                break
+            lines.append(self._format_bar(bar))
+        return lines
+
+    def _drain_l2_buffer(self, limit: int) -> List[str]:
+        drained: List[str] = []
+        for _ in range(min(limit, len(self._l2_buffer))):
+            drained.append(self._l2_buffer.pop(0))
+        return drained
+
+    def _format_l2_line(self, event: L2Envelope) -> Optional[str]:
+        table = self._l2_table_for_entity(event.entity)
+        if not table:
+            return None
+        tags = []
+        if event.symbol:
+            tags.append(f"symbol={event.symbol}")
+        if event.source:
+            tags.append(f"source={event.source}")
+        measurement = table + ("," + ",".join(tags) if tags else "")
+        fields: Dict[str, Any] = {}
+        payload = event.payload or {}
+        if event.seq is not None:
+            fields["seq"] = event.seq
+        if event.event_id:
+            fields["event_id"] = event.event_id
+        fields["payload_json"] = json.dumps(payload, separators=(",", ":"))
+        if event.entity == "fills":
+            fields["order_id"] = payload.get("order_id")
+            fields["side"] = payload.get("side")
+            fields["qty"] = payload.get("qty")
+            fields["price"] = payload.get("price")
+            fields["fee"] = payload.get("fee")
+            fields["pnl"] = payload.get("pnl")
+            fields["exchange"] = payload.get("exchange")
+            fields["account"] = payload.get("account")
+        elif event.entity == "positions":
+            fields["side"] = payload.get("side")
+            fields["qty"] = payload.get("qty")
+            fields["entry_price"] = payload.get("entry_price")
+            fields["mark_price"] = payload.get("mark_price")
+            fields["unrealized_pnl"] = payload.get("unrealized_pnl")
+            fields["leverage"] = payload.get("leverage")
+            fields["margin"] = payload.get("margin")
+        elif event.entity == "equity":
+            fields["equity"] = payload.get("equity")
+            fields["balance"] = payload.get("balance")
+            fields["available"] = payload.get("available")
+            fields["currency"] = payload.get("currency")
+        elif event.entity == "risk":
+            fields["risk_mode"] = payload.get("risk_mode")
+            fields["max_dd"] = payload.get("max_dd")
+            fields["exposure"] = payload.get("exposure")
+            fields["notes"] = payload.get("notes")
+        field_str = self._format_fields(fields)
+        if not field_str:
+            return None
+        return f"{measurement} {field_str} {event.ts_ns}"
+
+    def _format_fields(self, fields: Dict[str, Any]) -> str:
+        parts = []
+        for key, value in fields.items():
+            if value is None:
+                continue
+            formatted = self._format_value(value)
+            if formatted is None:
+                continue
+            parts.append(f"{key}={formatted}")
+        return ",".join(parts)
+
+    @staticmethod
+    def _format_value(value: Any) -> Optional[str]:
+        if isinstance(value, bool):
+            return "true" if value else "false"
+        if isinstance(value, int):
+            return f"{value}i"
+        if isinstance(value, float):
+            return repr(value)
+        return json.dumps(value)
+
+    def _l2_table_for_entity(self, entity: str) -> Optional[str]:
+        mapping = {
+            "fills": "l2_fills",
+            "positions": "l2_positions",
+            "equity": "l2_equity",
+            "risk": "l2_risk",
+        }
+        return mapping.get(entity)
+
+    def _maybe_log_l2_overflow(self) -> None:
+        now = time.time()
+        if now - self._l2_overflow_log_ts >= self._l2_overflow_interval:
+            logging.warning("L2 buffer full; relying on WAL replay for delivery")
+            self._l2_overflow_log_ts = now
 
     async def _write_batch(self, lines: Iterable[str]) -> None:
         await self._ensure_connection()

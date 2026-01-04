@@ -47,6 +47,7 @@ class L2Config:
     rotate_mb: int = int(os.getenv("MARKET_DATA_L2_ROTATE_MB", "64"))
     flush_interval_ms: int = int(os.getenv("MARKET_DATA_L2_FLUSH_MS", "200"))
     fsync_on_rotate: bool = os.getenv("MARKET_DATA_L2_FSYNC_ON_ROTATE", "0") in {"1", "true", "True"}
+    buffer_max: int = int(os.getenv("MARKET_DATA_L2_BUFFER_MAX", "1024"))
 
 
 @dataclass
