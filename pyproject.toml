@@ -11,11 +11,14 @@ requires-python = ">=3.11"
 dependencies = [
   "PyYAML>=6.0",
   "openai>=1.0.0",
+  "msgspec>=0.20.0",
+  "pyzmq>=25.0",
 ]
 
 [project.optional-dependencies]
 dev = [
   "pytest",
+  "pytest-asyncio",
   "ruff",
   "black",
 ]
