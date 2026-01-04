@@ -8,6 +8,15 @@ app:
   exchange: "binance_demo"
   data_path: "data"
 
+market_data:
+  source: "hub"  # ws | mock | hub
+  hub:
+    pub_endpoint: "ipc:///tmp/quantum_market_data.ipc"
+    snapshot_endpoint: "ipc:///tmp/quantum_market_snapshot.ipc"
+    rcvhwm: 1000
+    conflate_l1: true
+    topics: []
+
 binance:
   base_url: "https://api.binance.com"
   ws_spot_base: "wss://stream.binance.com:9443"

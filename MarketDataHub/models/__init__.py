@@ -10,6 +10,7 @@ from .events import (
     decode_event,
     encode_event,
 )
+from .snapshots import SnapshotRequest, SnapshotResponse
 
 __all__ = [
     "MarketEvent",
@@ -20,4 +21,6 @@ __all__ = [
     "Priority",
     "encode_event",
     "decode_event",
+    "SnapshotRequest",
+    "SnapshotResponse",
 ]

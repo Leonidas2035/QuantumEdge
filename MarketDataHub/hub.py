@@ -13,6 +13,7 @@ from MarketDataHub.config import HubConfig
 from MarketDataHub.feeds.binance_futures import BinanceFuturesFeed
 from MarketDataHub.feeds.binance_spot import BinanceSpotFeed
 from MarketDataHub.ipc.publisher import ZmqPublisher
+from MarketDataHub.ipc.snapshot_server import SnapshotCache, SnapshotServer
 from MarketDataHub.models import HeartbeatEvent, Priority
 from MarketDataHub.tsdb.quest_writer import QuestWriter
 
@@ -25,6 +26,8 @@ class MarketDataHubService:
         self.bus = EventBus(l0_hwm=self.config.l0_hwm, l1_hwm=self.config.l1_hwm)
         self.publisher = ZmqPublisher(self.config)
         self.writer = QuestWriter(self.config)
+        self.snapshot_cache = SnapshotCache(trade_tail=self.config.snapshot.trade_tail)
+        self.snapshot_server = SnapshotServer(self.config, self.snapshot_cache)
         self.feeds = [
             BinanceSpotFeed(self.config, self.bus),
             BinanceFuturesFeed(self.config, self.bus),
@@ -35,6 +38,7 @@ class MarketDataHubService:
     async def start(self) -> None:
         logging.basicConfig(level=self.config.log_level)
         self.writer.start()
+        self.snapshot_server.start()
         for feed in self.feeds:
             await feed.start()
         self._tasks.extend(
@@ -57,6 +61,7 @@ class MarketDataHubService:
             await feed.stop()
         self.writer.stop()
         self.publisher.close()
+        self.snapshot_server.stop()
         for task in self._tasks:
             task.cancel()
             with suppress(asyncio.CancelledError):
@@ -65,6 +70,7 @@ class MarketDataHubService:
     async def _dispatcher_loop(self) -> None:
         while not self._stop_event.is_set():
             event = await self.bus.get_event()
+            self.snapshot_cache.update(event)
             self.publisher.publish(event)
             await self.writer.enqueue(event)
 

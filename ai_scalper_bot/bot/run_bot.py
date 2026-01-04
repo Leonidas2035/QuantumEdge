@@ -76,6 +76,10 @@ def _kill_switch_active() -> Dict[str, Any]:
 
 
 def _resolve_data_source() -> str:
+    market_data_cfg = config.get("market_data", {}) or {}
+    source = str(market_data_cfg.get("source") or "").lower()
+    if source:
+        return source
     websocket_cfg = config.get("app.websocket", {})
     if isinstance(websocket_cfg, dict):
         return "ws" if websocket_cfg.get("enabled", False) else "mock"
@@ -163,6 +167,21 @@ async def _event_stream(symbols):
                 yield event
         except Exception as exc:
             print(f"[WARN] Websocket source failed ({exc}); falling back to mock.")
+
+    if data_source == "hub":
+        try:
+            from bot.market_data.hub_source import HubMarketDataSource
+
+            print("[INFO] Market data source: MarketDataHub (ZMQ).")
+            hub_cfg = config.get("market_data", {})
+            hub_source = HubMarketDataSource(symbols, hub_cfg)
+            try:
+                async for event in hub_source.stream():
+                    yield event
+            finally:
+                await hub_source.stop()
+        except Exception as exc:
+            print(f"[WARN] Hub source failed ({exc}); falling back to mock.")
 
     print("[INFO] Market data source: mock websocket.")
     mock = MockWSManager(symbols)

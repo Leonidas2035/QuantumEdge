@@ -14,6 +14,13 @@ class ZmqConfig:
 
 
 @dataclass
+class SnapshotConfig:
+    endpoint: str = os.getenv("MARKET_DATA_SNAPSHOT_ENDPOINT", "ipc:///tmp/quantum_market_snapshot.ipc")
+    trade_tail: int = int(os.getenv("MARKET_DATA_SNAPSHOT_TRADE_TAIL", "0"))
+    timeout_ms: int = int(os.getenv("MARKET_DATA_SNAPSHOT_TIMEOUT_MS", "500"))
+
+
+@dataclass
 class QuestConfig:
     host: str = os.getenv("MARKET_DATA_QUEST_HOST", "127.0.0.1")
     port: int = int(os.getenv("MARKET_DATA_QUEST_PORT", "9009"))
@@ -25,6 +32,7 @@ class QuestConfig:
 class HubConfig:
     symbols: List[str] = field(default_factory=lambda: os.getenv("MARKET_DATA_SYMBOLS", "BTCUSDT").split(","))
     zmq: ZmqConfig = field(default_factory=ZmqConfig)
+    snapshot: SnapshotConfig = field(default_factory=SnapshotConfig)
     quest: QuestConfig = field(default_factory=QuestConfig)
     l0_hwm: int = int(os.getenv("MARKET_DATA_L0_HWM", "2000"))
     l1_hwm: int = int(os.getenv("MARKET_DATA_L1_HWM", "5000"))
