@@ -10,6 +10,15 @@ from .events import (
     decode_event,
     encode_event,
 )
+from .l2 import (
+    EquityEvent,
+    FillEvent,
+    L2Envelope,
+    PositionEvent,
+    RiskEvent,
+    decode_l2,
+    encode_l2,
+)
 from .snapshots import SnapshotRequest, SnapshotResponse
 
 __all__ = [
@@ -23,4 +32,11 @@ __all__ = [
     "decode_event",
     "SnapshotRequest",
     "SnapshotResponse",
+    "L2Envelope",
+    "FillEvent",
+    "PositionEvent",
+    "EquityEvent",
+    "RiskEvent",
+    "encode_l2",
+    "decode_l2",
 ]

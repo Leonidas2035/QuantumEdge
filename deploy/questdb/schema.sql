@@ -30,6 +30,63 @@ CREATE TABLE IF NOT EXISTS bars_1s (
   ts TIMESTAMP
 ) TIMESTAMP(ts) PARTITION BY DAY;
 
+CREATE TABLE IF NOT EXISTS l2_fills (
+  symbol SYMBOL,
+  order_id SYMBOL,
+  side SYMBOL,
+  qty DOUBLE,
+  price DOUBLE,
+  fee DOUBLE,
+  pnl DOUBLE,
+  exchange SYMBOL,
+  account SYMBOL,
+  source SYMBOL,
+  seq LONG,
+  event_id STRING,
+  payload_json STRING,
+  ts TIMESTAMP
+) TIMESTAMP(ts) PARTITION BY DAY;
+
+CREATE TABLE IF NOT EXISTS l2_positions (
+  symbol SYMBOL,
+  side SYMBOL,
+  qty DOUBLE,
+  entry_price DOUBLE,
+  mark_price DOUBLE,
+  unrealized_pnl DOUBLE,
+  leverage DOUBLE,
+  margin DOUBLE,
+  source SYMBOL,
+  seq LONG,
+  event_id STRING,
+  payload_json STRING,
+  ts TIMESTAMP
+) TIMESTAMP(ts) PARTITION BY DAY;
+
+CREATE TABLE IF NOT EXISTS l2_equity (
+  equity DOUBLE,
+  balance DOUBLE,
+  available DOUBLE,
+  currency SYMBOL,
+  source SYMBOL,
+  seq LONG,
+  event_id STRING,
+  payload_json STRING,
+  ts TIMESTAMP
+) TIMESTAMP(ts) PARTITION BY DAY;
+
+CREATE TABLE IF NOT EXISTS l2_risk (
+  risk_mode SYMBOL,
+  max_dd DOUBLE,
+  exposure DOUBLE,
+  notes STRING,
+  source SYMBOL,
+  seq LONG,
+  event_id STRING,
+  payload_json STRING,
+  ts TIMESTAMP
+) TIMESTAMP(ts) PARTITION BY DAY;
+
 CREATE TABLE IF NOT EXISTS bars_1m (
   symbol SYMBOL,
   open DOUBLE,
