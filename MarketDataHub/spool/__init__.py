@@ -1,0 +1,1 @@
+"""Spool support for MarketDataHub."""
