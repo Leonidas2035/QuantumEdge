@@ -41,6 +41,7 @@ class Bar1sEvent(MarketEvent):
     low: float
     close: float
     volume: float
+    trades: int
 
 
 class HeartbeatEvent(MarketEvent):

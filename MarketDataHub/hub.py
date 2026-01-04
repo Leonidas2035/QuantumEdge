@@ -15,7 +15,7 @@ from MarketDataHub.feeds.binance_spot import BinanceSpotFeed
 from MarketDataHub.ipc.publisher import ZmqPublisher
 from MarketDataHub.ipc.snapshot_server import SnapshotCache, SnapshotServer
 from MarketDataHub.models import HeartbeatEvent, Priority
-from MarketDataHub.tsdb.quest_writer import QuestWriter
+from MarketDataHub.tsdb.quest_writer import QuestILPWriter
 
 
 class MarketDataHubService:
@@ -25,7 +25,9 @@ class MarketDataHubService:
         self.config = config or HubConfig.load()
         self.bus = EventBus(l0_hwm=self.config.l0_hwm, l1_hwm=self.config.l1_hwm)
         self.publisher = ZmqPublisher(self.config)
-        self.writer = QuestWriter(self.config)
+        self.writer: Optional[QuestILPWriter] = (
+            QuestILPWriter(self.config.tsdb) if self.config.tsdb.enabled else None
+        )
         self.snapshot_cache = SnapshotCache(trade_tail=self.config.snapshot.trade_tail)
         self.snapshot_server = SnapshotServer(self.config, self.snapshot_cache)
         self.feeds = [
@@ -37,7 +39,8 @@ class MarketDataHubService:
 
     async def start(self) -> None:
         logging.basicConfig(level=self.config.log_level)
-        self.writer.start()
+        if self.writer:
+            await self.writer.start()
         self.snapshot_server.start()
         for feed in self.feeds:
             await feed.start()
@@ -47,6 +50,8 @@ class MarketDataHubService:
                 asyncio.create_task(self._heartbeat_loop()),
             ]
         )
+        if self.writer:
+            self._tasks.append(asyncio.create_task(self._status_loop()))
         loop = asyncio.get_running_loop()
         for sig in (signal.SIGINT, signal.SIGTERM):
             try:
@@ -62,6 +67,8 @@ class MarketDataHubService:
         self.writer.stop()
         self.publisher.close()
         self.snapshot_server.stop()
+        if self.writer:
+            await self.writer.stop()
         for task in self._tasks:
             task.cancel()
             with suppress(asyncio.CancelledError):
@@ -72,7 +79,20 @@ class MarketDataHubService:
             event = await self.bus.get_event()
             self.snapshot_cache.update(event)
             self.publisher.publish(event)
-            await self.writer.enqueue(event)
+            if self.writer:
+                await self.writer.enqueue(event)
+
+    async def _status_loop(self) -> None:
+        while not self._stop_event.is_set():
+            metrics = self.writer.metrics  # type: ignore[attr-defined]
+            logging.info(
+                "TSDB warm-path rows=%d dropped=%d last_flush=%s queue=%d",
+                metrics.written_rows,
+                metrics.dropped_rows,
+                metrics.last_flush_ts,
+                self.writer.queue_depth(),  # type: ignore[attr-defined]
+            )
+            await asyncio.sleep(5)
 
     async def _heartbeat_loop(self) -> None:
         symbol = self.config.symbols[0]

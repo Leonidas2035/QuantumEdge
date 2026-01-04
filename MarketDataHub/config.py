@@ -29,11 +29,25 @@ class QuestConfig:
 
 
 @dataclass
+@dataclass
+class TsdbConfig:
+    enabled: bool = os.getenv("MARKET_DATA_TSDB_ENABLED", "1") in {"1", "true", "True"}
+    host: str = os.getenv("MARKET_DATA_TSDB_HOST", "127.0.0.1")
+    ilp_port: int = int(os.getenv("MARKET_DATA_TSDB_ILP_PORT", "9009"))
+    batch_rows: int = int(os.getenv("MARKET_DATA_TSDB_BATCH_ROWS", "1024"))
+    flush_interval_ms: int = int(os.getenv("MARKET_DATA_TSDB_FLUSH_MS", "200"))
+    l1_conflate: bool = os.getenv("MARKET_DATA_TSDB_L1_CONFLATE", "1") in {"1", "true", "True"}
+    bars_queue_max: int = int(os.getenv("MARKET_DATA_TSDB_BARS_QUEUE_MAX", "5000"))
+    store_trades_raw: bool = os.getenv("MARKET_DATA_TSDB_STORE_TRADES_RAW", "0") in {"1", "true", "True"}
+
+
+@dataclass
 class HubConfig:
     symbols: List[str] = field(default_factory=lambda: os.getenv("MARKET_DATA_SYMBOLS", "BTCUSDT").split(","))
     zmq: ZmqConfig = field(default_factory=ZmqConfig)
     snapshot: SnapshotConfig = field(default_factory=SnapshotConfig)
     quest: QuestConfig = field(default_factory=QuestConfig)
+    tsdb: TsdbConfig = field(default_factory=TsdbConfig)
     l0_hwm: int = int(os.getenv("MARKET_DATA_L0_HWM", "2000"))
     l1_hwm: int = int(os.getenv("MARKET_DATA_L1_HWM", "5000"))
     log_level: str = os.getenv("MARKET_DATA_LOG_LEVEL", "INFO")
