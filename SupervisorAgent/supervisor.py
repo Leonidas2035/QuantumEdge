@@ -50,7 +50,7 @@ from supervisor.config_loader import load_processes_spec
 from supervisor.process_manager import ProcessManager, ProcessInfo
 from supervisor.risk_engine import RiskEngine, RiskDecision, OrderRequest, OrderSide, OrderType
 from supervisor import state as state_utils
-from supervisor.events import BaseEvent, EventLogger, EventType, new_run_id
+from supervisor.events import BaseEvent, EventLogger, EventType, new_run_id, prune_event_logs
 from supervisor.audit_report import load_events_for_date, compute_stats, render_markdown_report
 from supervisor.llm_supervisor import LlmSupervisor, LlmSupervisorAdvice
 from supervisor.llm.chat_client import ChatCompletionsClient
@@ -149,6 +149,7 @@ class SupervisorApp:
         self.run_id = new_run_id()
         self._start_ts = time.time()
         self.event_logger = EventLogger(events_path, self.logger, snapshots_dir=self.snapshots_dir, run_id=self.run_id)
+        prune_event_logs(paths.events_dir, config.events_retention_days, self.logger)
         # TSDB wiring
         self.tsdb_backend = "none"
         self.tsdb_writer = self._build_tsdb_writer(tsdb_config)

@@ -17,6 +17,7 @@ SupervisorAgent/runtime/
 **/data/
 **/runtime/
 *.log
+*.jsonl
 /artifacts/
 storage/models/
 **/storage/models/

@@ -39,6 +39,7 @@ class SupervisorConfig:
     api_host: str = "127.0.0.1"
     api_auth_token: str = ""
     processes_file: str = "config/processes.yaml"
+    events_retention_days: int = 7
     bot_entrypoint: str = "ai_scalper_bot/run_bot.py"
     bot_workdir: str = "ai_scalper_bot"
     bot_config: str = "config/bot.yaml"
@@ -381,6 +382,9 @@ def load_supervisor_config(path: Path) -> SupervisorConfig:
     env_host = os.getenv("SUPERVISOR_HOST") or os.getenv("QE_SUPERVISOR_HOST")
     api_host = str(env_host or raw.get("api_host", "127.0.0.1"))
     processes_file = str(raw.get("processes_file", "config/processes.yaml"))
+    events_retention_days = int(raw.get("events_retention_days", 7))
+    if events_retention_days < 1:
+        events_retention_days = 1
     bot_entrypoint = str(raw.get("bot_entrypoint", "ai_scalper_bot/run_bot.py"))
     bot_workdir = str(raw.get("bot_workdir", "ai_scalper_bot"))
     bot_config = str(raw.get("bot_config", "config/bot.yaml"))
@@ -489,6 +493,7 @@ def load_supervisor_config(path: Path) -> SupervisorConfig:
         api_host=api_host,
         api_auth_token=str(raw.get("api_auth_token", "")),
         processes_file=processes_file,
+        events_retention_days=events_retention_days,
         bot_entrypoint=bot_entrypoint,
         bot_workdir=bot_workdir,
         bot_config=bot_config,
