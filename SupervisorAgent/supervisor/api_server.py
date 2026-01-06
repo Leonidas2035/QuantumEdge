@@ -6,6 +6,7 @@ import json
 import logging
 import mimetypes
 import threading
+import time
 from dataclasses import dataclass
 from http.server import HTTPServer, BaseHTTPRequestHandler
 from pathlib import Path
@@ -14,6 +15,7 @@ from typing import Optional, TYPE_CHECKING
 if TYPE_CHECKING:
     from supervisor import SupervisorApp  # type: ignore
 
+from supervisor.events import new_trace_id
 from supervisor.security import check_dashboard_auth, dashboard_auth_mode, dashboard_auth_token, is_path_allowed
 
 
@@ -54,6 +56,24 @@ class ApiServer:
                 self.send_header("Content-Length", str(len(body)))
                 self.end_headers()
                 self.wfile.write(body)
+                self._log_api_call(status_code)
+
+            def _init_trace(self) -> None:
+                self._trace_id = new_trace_id()
+                self._start_ts = time.time()
+                self._method = self.command
+
+            def _log_api_call(self, status_code: int) -> None:
+                path = self.path.split("?", 1)[0]
+                if not path.startswith("/api/"):
+                    return
+                trace_id = getattr(self, "_trace_id", None)
+                start_ts = getattr(self, "_start_ts", None)
+                duration_ms = int((time.time() - start_ts) * 1000) if start_ts else 0
+                try:
+                    app.log_api_call(self._method, path, status_code, duration_ms, trace_id)
+                except Exception:
+                    pass
 
             def log_message(self, format: str, *args) -> None:  # noqa: A003
                 logger.debug("API %s - %s", self.address_string(), format % args)
@@ -130,8 +150,37 @@ class ApiServer:
                 self.end_headers()
 
             def do_POST(self) -> None:  # noqa: N802
+                self._init_trace()
                 if not self._check_auth(require_dashboard_token=True):
                     return
+                if self.path.startswith("/api/v1/process/"):
+                    path_base = self.path.split("?", 1)[0]
+                    parts = path_base.strip("/").split("/")
+                    if len(parts) == 5:
+                        _, _, _, name, action = parts
+                        try:
+                            if action == "start":
+                                if app.process_manager.is_running_named(name):
+                                    self._send_json(409, {"error": "already_running", "process": name})
+                                    return
+                                response = app.start_process(name)
+                                self._send_json(200, {"status": "started", "process": response})
+                                return
+                            if action == "stop":
+                                response = app.stop_process(name)
+                                self._send_json(200, {"status": "stopped", "process": response})
+                                return
+                            if action == "restart":
+                                response = app.restart_process(name)
+                                self._send_json(200, {"status": "restarted", "process": response})
+                                return
+                        except KeyError:
+                            self._send_json(404, {"error": "not_found", "process": name})
+                            return
+                        except Exception as exc:  # pylint: disable=broad-except
+                            logger.exception("Error managing process %s: %s", name, exc)
+                            self._send_json(500, {"error": "internal_error"})
+                            return
                 if self.path == "/api/v1/bot/restart":
                     try:
                         response = app.restart_bot()
@@ -326,6 +375,7 @@ class ApiServer:
                 self._send_json(404, {"error": "not_found"})
 
             def do_GET(self) -> None:  # noqa: N802
+                self._init_trace()
                 path = self.path.split("?", 1)[0]
                 if path in {"/", "/dashboard", "/dashboard/"}:
                     self._serve_static("index.html")
@@ -361,12 +411,46 @@ class ApiServer:
                         logger.exception("Error building policy debug payload: %s", exc)
                         self._send_json(500, {"error": "internal_error"})
                     return
+                if self.path == "/api/v1/system/status":
+                    try:
+                        response = app.get_system_status()
+                        self._send_json(200, response)
+                    except Exception as exc:  # pylint: disable=broad-except
+                        logger.exception("Error building system status: %s", exc)
+                        self._send_json(500, {"error": "internal_error"})
+                    return
                 if self.path == "/api/v1/bot/status":
                     try:
                         response = app.get_bot_status()
                         self._send_json(200, response)
                     except Exception as exc:  # pylint: disable=broad-except
                         logger.exception("Error building bot status: %s", exc)
+                        self._send_json(500, {"error": "internal_error"})
+                    return
+                if self.path.startswith("/api/v1/events/tail"):
+                    try:
+                        limit = 200
+                        types = None
+                        since_ts_ms = None
+                        if "?" in self.path:
+                            _, query = self.path.split("?", 1)
+                            for part in query.split("&"):
+                                if part.startswith("limit="):
+                                    try:
+                                        limit = int(part.split("=", 1)[1])
+                                    except ValueError:
+                                        limit = 200
+                                if part.startswith("types="):
+                                    types = [t.strip() for t in part.split("=", 1)[1].split(",") if t.strip()]
+                                if part.startswith("since_ts_ms="):
+                                    try:
+                                        since_ts_ms = int(part.split("=", 1)[1])
+                                    except ValueError:
+                                        since_ts_ms = None
+                        response = app.get_events_tail(limit=limit, types=types, since_ts_ms=since_ts_ms)
+                        self._send_json(200, response)
+                    except Exception as exc:  # pylint: disable=broad-except
+                        logger.exception("Error tailing events: %s", exc)
                         self._send_json(500, {"error": "internal_error"})
                     return
                 if self.path.startswith("/api/v1/telemetry/summary"):

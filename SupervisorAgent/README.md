@@ -10,6 +10,7 @@ SupervisorAgent is a lightweight controller process for the QuantumEdge trading 
 Edit the YAML files under `config/`:
 - `config/paths.yaml` sets paths to QuantumEdge (`quantumedge_root`), Python executable (leave empty to auto-detect), Meta-Agent root, and the supervisor logs directory.
 - `config/supervisor.yaml` sets runtime options: mode (`paper`/`demo`/`off`), heartbeat settings, restart policy, and HTTP API settings.
+- `config/processes.yaml` defines orchestrated processes (Hub + bots) and health checks.
 - `config/risk.yaml` sets global risk limits (currency, daily loss, drawdown, per-symbol notional, leverage).
 - `config/llm_supervisor.yaml` configures the LLM watchdog.
 - `config/meta_supervisor.yaml` configures Meta-Agent orchestration.
@@ -54,7 +55,14 @@ Run from the repo root (`QE_ROOT`):
   - `POST /api/v1/heartbeat` ??? body: heartbeat JSON; updates supervisor heartbeat/risk state; returns heartbeat status and risk flags.
   - `POST /api/v1/risk/evaluate` ??? body: order request JSON (symbol, side, order_type, quantity, price/notional, leverage, is_reduce_only); returns risk decision and risk flags.
   - `GET /api/v1/status` ??? returns overall snapshot: bot running status, heartbeat state, and risk flags.
+  - `GET /api/v1/system/status` ??? unified process + supervisor status.
+  - `POST /api/v1/process/<name>/start|stop|restart` ??? control-plane process actions.
+  - `GET /api/v1/events/tail` ??? JSONL tail for telemetry.
 - Intended callers: QuantumEdge runtime and internal monitoring tools. Hard risk limits and trust policies still apply; this API does not bypass them.
+
+## Control-Plane Docs
+- `docs/orchestration.md`
+- `docs/telemetry.md`
 # SupervisorAgent
 
 SupervisorAgent is a lightweight controller process for the QuantumEdge trading bot. It launches, monitors, and stops the trading engine from outside the hot trading loop, paving the way for risk controls, LLM oversight, and Meta-Agent strategic cycles.
