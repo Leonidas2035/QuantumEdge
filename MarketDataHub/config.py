@@ -83,6 +83,18 @@ class OrderbookConfig:
     snapshot: OrderbookSnapshotConfig = field(default_factory=OrderbookSnapshotConfig)
 
 
+@dataclass
+class AccountConfig:
+    spot_api_key: str = os.getenv("BINANCE_API_KEY", "")
+    spot_api_secret: str = os.getenv("BINANCE_API_SECRET", "")
+    usdm_api_key: str = os.getenv("BINANCE_FAPI_KEY", "") or os.getenv("BINANCE_API_KEY", "")
+    usdm_api_secret: str = os.getenv("BINANCE_FAPI_SECRET", "") or os.getenv("BINANCE_API_SECRET", "")
+    repair_interval_sec: int = int(os.getenv("BINANCE_ACCOUNT_REPAIR_INTERVAL", "1800"))
+    base_url: str = "https://api.binance.com"
+    fapi_url: str = "https://fapi.binance.com"
+    recv_window: int = 5000
+
+
 
 @dataclass
 class HubConfig:
@@ -93,6 +105,7 @@ class HubConfig:
     tsdb: TsdbConfig = field(default_factory=TsdbConfig)
     l2: L2Config = field(default_factory=L2Config)
     orderbook: OrderbookConfig = field(default_factory=OrderbookConfig)
+    account: "AccountConfig" = field(default_factory=lambda: AccountConfig())
     l0_hwm: int = int(os.getenv("MARKET_DATA_L0_HWM", "2000"))
     l1_hwm: int = int(os.getenv("MARKET_DATA_L1_HWM", "5000"))
     log_level: str = os.getenv("MARKET_DATA_LOG_LEVEL", "INFO")

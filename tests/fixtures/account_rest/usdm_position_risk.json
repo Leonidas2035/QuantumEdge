@@ -1,0 +1,14 @@
+[
+  {
+    "symbol": "BTCUSDT",
+    "positionSide": "LONG",
+    "positionAmt": "0.012",
+    "entryPrice": "40000.0",
+    "markPrice": "40100.0",
+    "unRealizedProfit": "1.200",
+    "leverage": "10",
+    "marginType": "cross",
+    "liquidationPrice": "36000.0",
+    "notional": "480.00"
+  }
+]

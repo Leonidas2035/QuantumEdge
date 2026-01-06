@@ -1,0 +1,17 @@
+[
+  {
+    "symbol": "BTCUSDT",
+    "orderId": 789012,
+    "clientOrderId": "future1",
+    "status": "NEW",
+    "side": "SELL",
+    "type": "LIMIT",
+    "price": "40500.0",
+    "origQty": "0.005",
+    "executedQty": "0.000",
+    "avgPrice": "0.000",
+    "reduceOnly": false,
+    "positionSide": "SHORT",
+    "timeInForce": "GTC"
+  }
+]

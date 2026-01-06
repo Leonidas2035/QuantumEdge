@@ -1,0 +1,19 @@
+{
+  "totalWalletBalance": "2.0000",
+  "totalUnrealizedProfit": "0.1234",
+  "totalMarginBalance": "2.1234",
+  "availableBalance": "1.5000",
+  "maxWithdrawAmount": "1.4000",
+  "assets": [
+    {
+      "asset": "BTC",
+      "walletBalance": "0.050",
+      "availableBalance": "0.050"
+    },
+    {
+      "asset": "USDT",
+      "walletBalance": "1000.00",
+      "availableBalance": "900.00"
+    }
+  ]
+}
