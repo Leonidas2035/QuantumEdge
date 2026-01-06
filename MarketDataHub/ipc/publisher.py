@@ -34,6 +34,9 @@ class ZmqPublisher:
         self._socket.send_multipart([topic, payload])
         logging.debug("Published event %s seq=%s topic=%s", event.event_type, event.seq, topic)
 
+    def publish_payload(self, topic: str, payload: bytes) -> None:
+        self._socket.send_multipart([topic.encode("utf-8"), payload])
+
     def close(self) -> None:
         self._socket.close()
         logging.info("ZMQ publisher closed")

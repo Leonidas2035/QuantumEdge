@@ -1,0 +1,1 @@
+{"e":"ORDER_TRADE_UPDATE","E":1700000005000,"o":{"symbol":"BTCUSDT","orderId":200001,"clientOrderId":"test-usdm","status":"FILLED","side":"SELL","type":"LIMIT","price":"41000","origQty":"0.005","executedQty":"0.005","cummulativeQuoteQty":"205","avgPrice":"41000","reduceOnly":false,"positionSide":"BOTH","timeInForce":"GTC","eventTime":1700000005000}}

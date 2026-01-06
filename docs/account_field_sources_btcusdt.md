@@ -1,25 +1,14 @@
-# Binance account field sources — BTCUSDT
+# BTCUSDT Account Fields & Sources
 
-| Field | Description | Source |
+| Field | Source | Notes |
 | --- | --- | --- |
-| `market.spot_last` | Current spot ticker price | `spot_ws` (bookTicker) or fallback `spot_rest_ticker_price` |
-| `market.usdm_mark` | Mark price + funding rate | `usdm_rest_premiumIndex` |
-| `spot.balances` | `asset` balances (free/locked) | `hub.account_snapshot` from `GET /api/v3/account` snapshot; incremental via `spot_ws` `outboundAccountPosition` |
-| `spot.open_orders` | Spot open orders for BTCUSDT | REST `GET /api/v3/openOrders?symbol=BTCUSDT`; ws deltas via `executionReport` patch |
-| `usdm.account_totals` | wallet/available/UNP totals | `GET /fapi/v3/account`; repaired after reconnect via `usdm_ws` `ACCOUNT_UPDATE` |
-| `usdm.assets` | Per-asset wallet/available balances | `GET /fapi/v3/account` + ongoing `ACCOUNT_UPDATE` |
-| `usdm.positions` | Positions per symbol | `GET /fapi/v3/positionRisk`; incremental via `ACCOUNT_UPDATE` |
-| `usdm.open_orders` | USD-M open orders for BTCUSDT | `GET /fapi/v1/openOrders?symbol=BTCUSDT`; deltas via `ORDER_TRADE_UPDATE` |
+| `market.spot_last[].price` | `GET /api/v3/ticker/price?symbol=BTCUSDT` (REST) or `ws://.../bookTicker` (spot WS) | REST used only at startup/repair if `publish_market_prices` enabled. |
+| `market.usdm_mark[].markPrice` / `fundingRate` | `GET /fapi/v1/premiumIndex?symbol=BTCUSDT` | Same REST-only principle. |
+| `spot.balances[]` | `GET /api/v3/account?omitZeroBalances=true` | Built at startup/repair; deltas come from `outboundAccountPosition` (spot WS). |
+| `spot.open_orders[]` | `GET /api/v3/openOrders?symbol=BTCUSDT` **(always include ?symbol)** | Subsequent order updates arrive via `executionReport`. |
+| `usdm.account_totals` | `GET /fapi/v3/account` | Repaired and replaced wholly when triggers fire. |
+| `usdm.assets[]` | `GET /fapi/v3/account` (field `assets`) or `ACCOUNT_UPDATE.B` (futures WS) | Delivers balances updates per asset. |
+| `usdm.positions[]` | `GET /fapi/v3/positionRisk` or `ACCOUNT_UPDATE.P` | WS replaces only touched positions; account snapshot is authoritative after repairs. |
+| `usdm.open_orders[]` | `GET /fapi/v1/openOrders?symbol=BTCUSDT` | Future order deltas (`ORDER_TRADE_UPDATE`) incrementally patch the cache. |
 
-## Delta patch rules
-
-- `spot_ws` `outboundAccountPosition` feeds `spot.balances` updates; patch carries `balances_update` array with `asset/free/locked`.  
-- `spot_ws` `executionReport` fills `spot.open_orders` patches; include all REST order fields plus event/transact times when present.  
-- `usdm_ws` `ACCOUNT_UPDATE` updates `usdm.account_totals`, `usdm.assets`, and `usdm.positions`.  
-- `usdm_ws` `ORDER_TRADE_UPDATE` updates `usdm.open_orders` via `orders_update`.
-
-**Notes**
-
-- `openOrders` endpoints always include `?symbol=BTCUSDT` to keep Binance weight low.  
-- Delta `patch` objects only include the fields needed to update the cache (see models + patch rule summary above).  
-- Repair snapshots (`*_rest_repair`) use the same REST endpoints but run only after reconnect/repair interval.
+**Important**: calls to `/openOrders` **must always include `symbol=BTCUSDT`** to keep Binance weight low; we never query without a symbol. REST is limited to startup/repair, WS carries the live state.

@@ -1,0 +1,1 @@
+{"e":"executionReport","E":1700000002000,"o":{"symbol":"BTCUSDT","orderId":123456,"clientOrderId":"test-spot","status":"FILLED","side":"BUY","type":"LIMIT","price":"40000.00","origQty":"0.01","executedQty":"0.01","cummulativeQuoteQty":"400","timeInForce":"GTC","eventTime":1700000002000,"transactTime":1700000002000}}

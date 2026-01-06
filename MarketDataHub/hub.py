@@ -11,8 +11,12 @@ import sys
 import time
 from contextlib import suppress
 from pathlib import Path
-from typing import Callable, Dict, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
+from MarketDataHub.account.account_state import AccountState, FINAL_ORDER_STATUSES
+from MarketDataHub.account.binance_spot_userstream import BinanceSpotUserStream
+from MarketDataHub.account.binance_usdm_userstream import BinanceUsdmUserStream
+from MarketDataHub.account.publisher import AccountPublisher
 from MarketDataHub.bus.event_bus import EventBus
 from MarketDataHub.config import HubConfig
 from MarketDataHub.feeds.binance_futures import BinanceFuturesFeed
@@ -20,8 +24,9 @@ from MarketDataHub.feeds.binance_spot import BinanceSpotFeed
 from MarketDataHub.ipc.publisher import ZmqPublisher
 from MarketDataHub.ipc.snapshot_server import SnapshotCache, SnapshotServer
 from MarketDataHub.models import HeartbeatEvent, Priority
-from MarketDataHub.spool.status import summarize_spool
+from MarketDataHub.models.account_snapshot import AccountSnapshot
 from MarketDataHub.orderbook.aggregator import OrderBookAggregator
+from MarketDataHub.spool.status import summarize_spool
 from MarketDataHub.tsdb.quest_writer import QuestILPWriter
 
 
@@ -93,6 +98,14 @@ class MarketDataHubService:
             if self.config.orderbook.enabled
             else None
         )
+        self.account_state = AccountState(self.config.account)
+        self.account_publisher = AccountPublisher(self.publisher)
+        self._account_repair_manager = AccountRepairManager(
+            state=self.account_state,
+            publisher=self.account_publisher,
+            symbols=self.config.symbols,
+            include_market=self.config.account_runtime.publish_market_prices,
+        )
         self._tasks: list[asyncio.Task] = []
         self._stop_event = asyncio.Event()
         self._start_ts = time.time()
@@ -103,6 +116,10 @@ class MarketDataHubService:
             self._collect_status,
             self._stop_event,
         )
+        self._account_streams: List[Any] = []
+        self._account_stream_tasks: List[asyncio.Task] = []
+        self._repair_timer_task: Optional[asyncio.Task] = None
+        self._account_lock = asyncio.Lock()
 
     async def start(self) -> None:
         logging.basicConfig(level=self.config.log_level)
@@ -114,8 +131,13 @@ class MarketDataHubService:
         if self._status_reporter.task:
             self._tasks.append(self._status_reporter.task)
         self.snapshot_server.start()
+        await self._publish_initial_account_snapshot()
+        self._start_account_streams()
         for feed in self.feeds:
             await feed.start()
+        if self.config.account_runtime.repair_interval_sec > 0:
+            self._repair_timer_task = asyncio.create_task(self._account_repair_timer())
+            self._tasks.append(self._repair_timer_task)
         self._tasks.extend(
             [
                 asyncio.create_task(self._dispatcher_loop()),
@@ -143,6 +165,17 @@ class MarketDataHubService:
             await self.orderbook.stop()
         if self.writer:
             await self.writer.stop()
+        for stream in self._account_streams:
+            await stream.stop()
+        for task in self._account_stream_tasks:
+            task.cancel()
+            with suppress(asyncio.CancelledError):
+                await task
+        if self._repair_timer_task:
+            self._repair_timer_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await self._repair_timer_task
+        await self._account_repair_manager.stop()
         for task in self._tasks:
             task.cancel()
             with suppress(asyncio.CancelledError):
@@ -266,6 +299,81 @@ class MarketDataHubService:
             "newest": str(summary.newest) if summary.newest else None,
         }
 
+    async def _publish_initial_account_snapshot(self) -> None:
+        snapshot = await self._account_repair_manager.run_snapshot_once()
+        self.account_publisher.publish_snapshot(snapshot)
+
+    def _start_account_streams(self) -> None:
+        if self.config.account_runtime.enable_spot:
+            spot_stream = BinanceSpotUserStream(
+                self.config.account,
+                handler=self._handle_spot_event,
+                on_reconnect=self._handle_account_reconnect,
+            )
+            self._account_streams.append(spot_stream)
+            task = asyncio.create_task(spot_stream.run())
+            self._account_stream_tasks.append(task)
+            self._tasks.append(task)
+        if self.config.account_runtime.enable_usdm:
+            usdm_stream = BinanceUsdmUserStream(
+                self.config.account,
+                handler=self._handle_usdm_event,
+                on_reconnect=self._handle_account_reconnect,
+            )
+            self._account_streams.append(usdm_stream)
+            task = asyncio.create_task(usdm_stream.run())
+            self._account_stream_tasks.append(task)
+            self._tasks.append(task)
+
+    async def _handle_spot_event(self, payload: Dict[str, Any]) -> None:
+        event_type = payload.get("e")
+        delta: Optional[AccountDelta] = None
+        repair_needed = False
+        async with self._account_lock:
+            if event_type == "outboundAccountPosition":
+                delta = self.account_state.apply_spot_outboundAccountPosition(payload)
+            elif event_type == "executionReport":
+                raw_order = payload.get("o") or payload
+                order_id = str(raw_order.get("orderId", "")) if raw_order else ""
+                existed = bool(order_id and order_id in self.account_state.spot_open_orders)
+                delta = self.account_state.apply_spot_execution_report(payload)
+                if delta and order_id and delta.patch.spot and delta.patch.spot.orders_update:
+                    status = delta.patch.spot.orders_update[0].status
+                    repair_needed = status in FINAL_ORDER_STATUSES and not existed
+        if delta:
+            self.account_publisher.publish_delta(delta)
+        if repair_needed:
+            await self._account_repair_manager.request_repair()
+
+    async def _handle_usdm_event(self, payload: Dict[str, Any]) -> None:
+        event_type = payload.get("e")
+        delta: Optional[AccountDelta] = None
+        repair_needed = False
+        async with self._account_lock:
+            if event_type == "ACCOUNT_UPDATE":
+                delta = self.account_state.apply_usdm_ACCOUNT_UPDATE(payload)
+            elif event_type == "ORDER_TRADE_UPDATE":
+                raw_order = payload.get("o") or payload
+                order_id = str(raw_order.get("orderId", "")) if raw_order else ""
+                existed = bool(order_id and order_id in self.account_state.usdm_open_orders)
+                delta = self.account_state.apply_usdm_ORDER_TRADE_UPDATE(payload)
+                if delta and order_id and delta.patch.usdm and delta.patch.usdm.orders_update:
+                    status = delta.patch.usdm.orders_update[0].status
+                    repair_needed = status in FINAL_ORDER_STATUSES and not existed
+        if delta:
+            self.account_publisher.publish_delta(delta)
+        if repair_needed:
+            await self._account_repair_manager.request_repair()
+
+    async def _handle_account_reconnect(self) -> None:
+        await self._account_repair_manager.request_repair()
+
+    async def _account_repair_timer(self) -> None:
+        interval = self.config.account_runtime.repair_interval_sec
+        while not self._stop_event.is_set():
+            await asyncio.sleep(interval)
+            await self._account_repair_manager.request_repair()
+
 
 async def run() -> None:
     service = MarketDataHubService()
@@ -305,6 +413,57 @@ def main() -> None:
         asyncio.run(run())
     except KeyboardInterrupt:
         pass
+
+
+class AccountRepairManager:
+    """Runs canonical REST snapshots on demand while throttling duplicates."""
+
+    def __init__(
+        self,
+        state: AccountState,
+        publisher: AccountPublisher,
+        symbols: List[str],
+        include_market: bool,
+    ) -> None:
+        self._state = state
+        self._publisher = publisher
+        self._symbols = symbols
+        self._include_market = include_market
+        self._lock = asyncio.Lock()
+        self._repair_task: Optional[asyncio.Task] = None
+        self._pending = False
+
+    async def run_snapshot_once(self) -> AccountSnapshot:
+        return await self._execute_snapshot()
+
+    async def request_repair(self) -> None:
+        async with self._lock:
+            if self._repair_task and not self._repair_task.done():
+                self._pending = True
+                return
+            self._repair_task = asyncio.create_task(self._repair_worker())
+
+    async def stop(self) -> None:
+        if self._repair_task:
+            self._repair_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await self._repair_task
+
+    async def _repair_worker(self) -> None:
+        try:
+            await self._execute_snapshot()
+        finally:
+            async with self._lock:
+                if self._pending:
+                    self._pending = False
+                    self._repair_task = asyncio.create_task(self._repair_worker())
+                else:
+                    self._repair_task = None
+
+    async def _execute_snapshot(self) -> AccountSnapshot:
+        snapshot = await asyncio.to_thread(self._state.build_snapshot, self._symbols, self._include_market)
+        self._publisher.publish_snapshot(snapshot)
+        return snapshot
 
 
 if __name__ == "__main__":

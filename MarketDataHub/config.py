@@ -95,6 +95,20 @@ class AccountConfig:
     recv_window: int = 5000
 
 
+@dataclass
+class AccountRuntimeConfig:
+    enable_spot: bool = os.getenv("MARKET_DATA_ACCOUNT_SPOT", "1") in {"1", "true", "True"}
+    enable_usdm: bool = os.getenv("MARKET_DATA_ACCOUNT_USDM", "1") in {"1", "true", "True"}
+    repair_interval_sec: int = int(os.getenv("BINANCE_ACCOUNT_REPAIR_INTERVAL", "1800"))
+    publish_market_prices: bool = os.getenv("MARKET_DATA_ACCOUNT_MARKET_PRICES", "1") in {"1", "true", "True"}
+    market_price_sources: List[str] = field(
+        default_factory=lambda: os.getenv(
+            "MARKET_DATA_ACCOUNT_PRICE_SOURCES",
+            "spot_ws_bookTicker,spot_rest_ticker_price,usdm_rest_premiumIndex",
+        ).split(",")
+    )
+
+
 
 @dataclass
 class HubConfig:
@@ -106,6 +120,7 @@ class HubConfig:
     l2: L2Config = field(default_factory=L2Config)
     orderbook: OrderbookConfig = field(default_factory=OrderbookConfig)
     account: "AccountConfig" = field(default_factory=lambda: AccountConfig())
+    account_runtime: "AccountRuntimeConfig" = field(default_factory=lambda: AccountRuntimeConfig())
     l0_hwm: int = int(os.getenv("MARKET_DATA_L0_HWM", "2000"))
     l1_hwm: int = int(os.getenv("MARKET_DATA_L1_HWM", "5000"))
     log_level: str = os.getenv("MARKET_DATA_LOG_LEVEL", "INFO")
