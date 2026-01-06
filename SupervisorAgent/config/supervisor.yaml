@@ -12,6 +12,7 @@ api_enabled: true
 api_host: "127.0.0.1"
 # API listens on heartbeat_port
 api_auth_token: ""  # optional shared secret; empty disables auth
+processes_file: "config/processes.yaml"
 
 snapshots:
   enabled: true
