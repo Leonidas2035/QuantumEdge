@@ -45,16 +45,11 @@ def load_events_for_date(events_dir: Path, target_date: date) -> List[BaseEvent]
                 continue
             try:
                 raw = json.loads(line)
-                ts = datetime.fromisoformat(raw["ts"])
-                event = BaseEvent(
-                    ts=ts,
-                    type=EventType(raw["type"]),
-                    source=raw.get("source", "unknown"),
-                    data=raw.get("data", {}),
-                )
-                events.append(event)
-            except Exception:
+            except json.JSONDecodeError:
                 continue
+            event = BaseEvent.from_dict(raw)
+            if event:
+                events.append(event)
     return events
 
 

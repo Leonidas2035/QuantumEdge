@@ -164,15 +164,11 @@ class DashboardService:
                         if not line.strip():
                             continue
                         raw = json.loads(line)
-                        ts = datetime.fromisoformat(raw["ts"])
-                        if cutoff and ts < cutoff:
+                        event = BaseEvent.from_dict(raw)
+                        if not event:
                             continue
-                        event = BaseEvent(
-                            ts=ts,
-                            type=EventType(raw["type"]),
-                            source=raw.get("source", "unknown"),
-                            data=raw.get("data", {}),
-                        )
+                        if cutoff and event.ts < cutoff:
+                            continue
                         events.append(event)
             except Exception as exc:
                 self.logger.warning("Failed to read events from %s: %s", path, exc)

@@ -1,4 +1,4 @@
-"""Process management for the QuantumEdge trading engine."""
+"""Process management for SupervisorAgent orchestration."""
 
 from __future__ import annotations
 
@@ -6,23 +6,31 @@ import json
 import logging
 import os
 import signal
+import socket
 import subprocess
 import time
+import urllib.request
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Optional
-
-import yaml
+from typing import Dict, Optional
 
 from supervisor.config import PathsConfig, SupervisorConfig
-from supervisor import state as state_utils
-from supervisor.events import EventLogger
+from supervisor.events import BaseEvent, EventLogger, EventType
+from supervisor.process_spec import HealthCheckSpec, ProcessSpec, ProcessStatus
+
+
+class ProcessState:
+    STOPPED = "STOPPED"
+    STARTING = "STARTING"
+    RUNNING = "RUNNING"
+    CRASHED = "CRASHED"
+    FAILED = "FAILED"
 
 
 @dataclass
 class ProcessInfo:
-    """Metadata about the managed QuantumEdge process."""
+    """Metadata about a managed process."""
 
     pid: int
     start_time: Optional[datetime]
@@ -36,16 +44,22 @@ class ProcessInfo:
         return None
 
 
-class BotState:
-    STOPPED = "STOPPED"
-    STARTING = "STARTING"
-    RUNNING = "RUNNING"
-    CRASHED = "CRASHED"
-    FAILED = "FAILED"
+@dataclass
+class _RuntimeProcess:
+    spec: ProcessSpec
+    process: Optional[subprocess.Popen] = None
+    log_handle: Optional[object] = None
+    info: Optional[ProcessInfo] = None
+    state: str = ProcessState.STOPPED
+    retries: int = 0
+    next_restart_at: Optional[float] = None
+    last_health: Optional[str] = None
+    last_health_ts: Optional[datetime] = None
+    last_error: Optional[str] = None
 
 
 class ProcessManager:
-    """Starts, stops, and tracks the QuantumEdge child process."""
+    """Manage multiple named processes for SupervisorAgent."""
 
     def __init__(
         self,
@@ -54,294 +68,268 @@ class ProcessManager:
         state_dir: Path,
         event_logger: Optional[EventLogger] = None,
         logger: Optional[logging.Logger] = None,
+        processes: Optional[Dict[str, ProcessSpec]] = None,
+        run_id: str = "",
     ) -> None:
         self.paths = paths
         self.config = config
         self.state_dir = state_dir
         self._events = event_logger
         self.logger = logger or logging.getLogger(__name__)
+        self._run_id = run_id
+        self._state_path = self.paths.runtime_dir / "state" / "process_state.json"
+        self._runtime: Dict[str, _RuntimeProcess] = {}
+        self._default_name: Optional[str] = None
 
-        self._process: Optional[subprocess.Popen] = None
-        self._child_log_file = None
-        self._info: Optional[ProcessInfo] = state_utils.load_process_info(state_dir)
-        self._restart_attempts = 0
-        self._next_restart_at: Optional[float] = None
-        self._state = BotState.STOPPED
-        self._stop_requested = False
-        self._auto_start_suspended = False
-        self._state_path = self.state_dir / "bot.state.json"
-
-        if self._info and not self._pid_running(self._info.pid):
-            self.logger.info("Found stale process state; marking process as stopped.")
-            if self._info.last_exit_time is None:
-                self._info.last_exit_time = datetime.now(timezone.utc)
-            state_utils.save_process_info(self.state_dir, self._info)
-            self._state = BotState.STOPPED
-        elif self._info and self._pid_running(self._info.pid):
-            self._state = BotState.RUNNING
-
-        self._write_bot_state()
+        if processes:
+            for name, spec in processes.items():
+                self._runtime[name] = _RuntimeProcess(spec=spec)
+            self._default_name = self._select_default_process(list(processes.keys()))
+            self._load_state()
 
     def get_info(self) -> Optional[ProcessInfo]:
-        return self._info
+        runtime = self._default_runtime()
+        return runtime.info if runtime else None
 
     def get_state(self) -> str:
-        return self._state
+        runtime = self._default_runtime()
+        return runtime.state if runtime else ProcessState.STOPPED
 
     def get_status_payload(self) -> dict:
-        pid = self._info.pid if self._info and self._pid_running(self._info.pid) else None
-        last_exit_code = self._info.last_exit_code if self._info else None
-        last_exit_time = self._info.last_exit_time.isoformat() if self._info and self._info.last_exit_time else None
+        runtime = self._default_runtime()
+        if not runtime:
+            return {"managed": False, "state": ProcessState.STOPPED}
+        pid = runtime.info.pid if runtime.info and self._pid_running(runtime.info.pid) else None
+        last_exit_time = runtime.info.last_exit_time.isoformat() if runtime.info and runtime.info.last_exit_time else None
         return {
             "managed": True,
-            "state": self._state,
+            "state": runtime.state,
             "pid": pid,
-            "restarts": self._restart_attempts,
-            "last_exit_code": last_exit_code,
+            "restarts": runtime.retries,
+            "last_exit_code": runtime.info.last_exit_code if runtime.info else None,
             "last_exit_time": last_exit_time,
         }
 
-    def _load_env_file(self, env: dict) -> list[str]:
-        env_file = self.config.bot_env_file
-        if not env_file:
-            return []
-        path = Path(env_file)
-        if not path.is_absolute():
-            path = (self.paths.qe_root / path).resolve()
-        if not path.exists():
-            self.logger.warning("Bot env_file missing: %s", path)
-            return []
+    @property
+    def default_name(self) -> Optional[str]:
+        return self._default_name
 
-        loaded: list[str] = []
-        try:
-            for line in path.read_text(encoding="utf-8").splitlines():
-                line = line.strip()
-                if not line or line.startswith("#"):
-                    continue
-                if line.lower().startswith("export "):
-                    line = line[7:].strip()
-                if "=" not in line:
-                    continue
-                key, value = line.split("=", 1)
-                key = key.strip()
-                value = value.strip()
-                if not key:
-                    continue
-                if (value.startswith('"') and value.endswith('"')) or (value.startswith("'") and value.endswith("'")):
-                    value = value[1:-1]
-                env[key] = value
-                loaded.append(key)
-        except OSError as exc:
-            self.logger.warning("Failed to read env_file %s: %s", path, exc)
-            return []
+    def status(self, name: str) -> ProcessStatus:
+        runtime = self._require_runtime(name)
+        pid = runtime.info.pid if runtime.info else None
+        is_running = pid is not None and self._pid_running(pid)
+        last_start_ts = runtime.info.start_time.isoformat() if runtime.info and runtime.info.start_time else None
+        last_health_ts = runtime.last_health_ts.isoformat() if runtime.last_health_ts else None
+        return ProcessStatus(
+            name=name,
+            pid=pid,
+            is_running=is_running,
+            state=runtime.state,
+            last_start_ts=last_start_ts,
+            last_exit_code=runtime.info.last_exit_code if runtime.info else None,
+            last_health=runtime.last_health,
+            last_health_ts=last_health_ts,
+            retries=runtime.retries,
+            last_error=runtime.last_error,
+        )
 
-        if loaded:
-            self.logger.info("Loaded %s keys from env_file: %s", len(loaded), ", ".join(sorted(loaded)))
-        return loaded
-
-    def _load_bot_config(self) -> dict:
-        bot_config = self.config.bot_config
-        if not bot_config:
-            return {}
-        path = Path(bot_config)
-        if not path.is_absolute():
-            path = (self.paths.qe_root / path).resolve()
-        if not path.exists():
-            return {}
-        try:
-            data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
-        except Exception as exc:  # noqa: BLE001
-            self.logger.debug("Failed to parse bot config %s: %s", path, exc)
-            return {}
-        return data if isinstance(data, dict) else {}
-
-    def _env_truthy(self, value: Optional[str]) -> bool:
-        if value is None:
-            return False
-        return str(value).strip().lower() in {"1", "true", "yes", "on"}
-
-    def _require_bingx_keys(self, env: dict) -> Optional[list[str]]:
-        bot_cfg = self._load_bot_config()
-        exchange = (self.config.exchange or bot_cfg.get("app", {}).get("exchange") or bot_cfg.get("exchange") or "").lower()
-        if exchange != "bingx_swap":
-            return None
-        demo_cfg = bot_cfg.get("bingx_demo", {}) or {}
-        allow_trading = bool(demo_cfg.get("allow_trading_demo", False))
-        allow_place_test = bool(demo_cfg.get("allow_place_test_order", False)) or self._env_truthy(env.get("QE_DEMO_PLACE_TEST_ORDER"))
-        if not (allow_trading or allow_place_test):
-            return None
-        required = ["BINGX_DEMO_API_KEY", "BINGX_DEMO_API_SECRET"]
-        missing = [key for key in required if not env.get(key)]
-        return missing or None
-
-    def tick(self, mode: str) -> None:
-        """Poll process status and apply restart policy."""
-
-        self._refresh_state()
-        if self._state == BotState.RUNNING:
-            return
-        if mode == "off":
-            return
-
-        if self._state == BotState.CRASHED and self._next_restart_at is not None:
-            if time.monotonic() < self._next_restart_at:
-                return
-            self._next_restart_at = None
-
-        if self._state in {BotState.STOPPED, BotState.CRASHED}:
-            if self._state == BotState.STOPPED and (not self.config.bot_auto_start or self._auto_start_suspended):
-                return
-            if self._state == BotState.CRASHED and not self.config.bot_restart_enabled:
-                return
-            try:
-                self.start(mode)
-            except Exception as exc:
-                self.logger.error("Bot start attempt failed: %s", exc)
+    def status_all(self) -> Dict[str, dict]:
+        return {name: self.status(name).to_dict() for name in self._runtime}
 
     def is_running(self) -> bool:
-        """Check whether the managed process is currently alive."""
-        self._refresh_state()
-        return self._state == BotState.RUNNING
+        runtime = self._default_runtime()
+        if not runtime or not runtime.info:
+            return False
+        return self._pid_running(runtime.info.pid)
 
-    def start(self, mode: str) -> ProcessInfo:
-        """Start the QuantumEdge process if not already running."""
+    def is_running_named(self, name: str) -> bool:
+        runtime = self._require_runtime(name)
+        return self._is_runtime_running(runtime)
 
-        if mode == "off":
-            raise ValueError("Cannot start QuantumEdge when mode is 'off'.")
+    def start(self, name: str) -> ProcessInfo:
+        runtime = self._require_runtime(name)
+        if runtime.spec.enabled is False:
+            self.logger.warning("Process '%s' is disabled in config; manual start requested.", name)
+        if self._is_runtime_running(runtime):
+            self.logger.info("Process '%s' already running with PID %s", name, runtime.info.pid)
+            return runtime.info  # type: ignore[return-value]
+        runtime.state = ProcessState.STARTING
+        runtime.last_error = None
+        self._write_state()
+        info = self._spawn_process(runtime)
+        runtime.info = info
+        if self._is_runtime_running(runtime):
+            runtime.state = ProcessState.RUNNING
+        else:
+            runtime.state = ProcessState.CRASHED
+            runtime.last_error = "immediate-exit"
+        runtime.retries = 0
+        runtime.next_restart_at = None
+        self._write_state()
+        if runtime.state != ProcessState.RUNNING:
+            self._log_process_event("PROCESS_EXIT", "WARN", {"name": name, "pid": info.pid, "reason": "immediate-exit"})
+            raise RuntimeError(f"Process '{name}' exited during startup")
+        self._log_process_event("PROCESS_START", "INFO", {"name": name, "pid": info.pid})
+        if name == self._default_name:
+            self._log_bot_event("BOT_START", {"mode": self.config.mode, "pid": info.pid})
+        return info
 
-        if self.is_running():
-            self.logger.info("Bot already running with PID %s", self._info.pid)
-            return self._info  # type: ignore[return-value]
-
-        self._stop_requested = False
-        self._auto_start_suspended = False
-        self._set_state(BotState.STARTING)
-        env = os.environ.copy()
-        self._load_env_file(env)
-        missing = self._require_bingx_keys(env)
-        if missing:
-            self.logger.error("Missing required BingX demo keys: %s", ", ".join(missing))
-            self._set_state(BotState.FAILED)
-            self._auto_start_suspended = True
-            raise RuntimeError("Missing BingX demo credentials.")
-
-        info = self._spawn_process(mode, env)
-        time.sleep(0.5)
-        if self._process and self._process.poll() is None:
-            self._set_state(BotState.RUNNING)
-            self._restart_attempts = 0
-            self._next_restart_at = None
-            self._write_bot_state()
-            if self._events:
-                self._events.log_bot_start(mode, info)
-            self.logger.info("Bot started with PID %s", info.pid)
-            return info
-        return_code = self._process.poll() if self._process else None
-        self.logger.error("Bot exited immediately with code %s", return_code)
-        self._handle_exit(return_code, "immediate-exit")
-        raise RuntimeError(f"Bot exited during startup with code {return_code}")
-
-    def stop(self, graceful_timeout_s: float = 10.0) -> None:
-        """Stop the managed process."""
-        self._stop_requested = True
-        self._auto_start_suspended = True
-
-        if not self._info or not self.is_running():
-            self._cleanup_process_handles()
-            self._set_state(BotState.STOPPED)
-            self._restart_attempts = 0
-            self._next_restart_at = None
-            self._write_bot_state()
+    def stop(self, name: str, graceful_timeout_s: float = 10.0) -> None:
+        runtime = self._require_runtime(name)
+        if not self._is_runtime_running(runtime):
+            runtime.state = ProcessState.STOPPED
+            runtime.retries = 0
+            runtime.next_restart_at = None
+            self._write_state()
             return
-
-        pid = self._info.pid
-        self.logger.info("Stopping bot PID %s", pid)
-
-        if self._process:
-            stop_reason = "graceful-stop"
-            self._process.terminate()
+        pid = runtime.info.pid if runtime.info else None
+        self.logger.info("Stopping process '%s' (PID %s)", name, pid)
+        if runtime.process:
+            runtime.process.terminate()
             try:
-                self._process.wait(timeout=graceful_timeout_s)
+                runtime.process.wait(timeout=graceful_timeout_s)
             except subprocess.TimeoutExpired:
-                self.logger.warning("Graceful stop timed out; forcing termination.")
+                self.logger.warning("Process '%s' graceful stop timed out; forcing termination.", name)
                 self._force_kill(pid)
-                stop_reason = "forced-kill"
                 try:
-                    self._process.wait(timeout=5)
+                    runtime.process.wait(timeout=5)
                 except subprocess.TimeoutExpired:
-                    self.logger.error("Failed to confirm process termination for PID %s", pid)
-            self._update_exit_state(self._process.returncode)
-            self._log_bot_stop(stop_reason)
-            self._cleanup_process_handles()
-            self._set_state(BotState.STOPPED)
-            self._restart_attempts = 0
-            self._next_restart_at = None
-            self._write_bot_state()
-            return
+                    self.logger.error("Failed to confirm process termination for '%s'", name)
+            runtime.info.last_exit_code = runtime.process.returncode
+            runtime.info.last_exit_time = datetime.now(timezone.utc)
+        else:
+            self._terminate_external(pid, graceful_timeout_s)
+            if runtime.info and runtime.info.last_exit_time is None:
+                runtime.info.last_exit_time = datetime.now(timezone.utc)
+        self._cleanup_process(runtime)
+        runtime.state = ProcessState.STOPPED
+        runtime.retries = 0
+        runtime.next_restart_at = None
+        self._write_state()
+        self._log_process_event("PROCESS_STOP", "INFO", {"name": name, "pid": pid})
+        if name == self._default_name:
+            self._log_bot_event("BOT_STOP", {"reason": "manual", "pid": pid})
 
-        # No local handle; fall back to signals and OS tools.
-        self._terminate_external(pid, graceful_timeout_s)
-        self._set_state(BotState.STOPPED)
-        self._restart_attempts = 0
-        self._next_restart_at = None
-        self._write_bot_state()
+    def stop_all(self) -> None:
+        for name in list(self._runtime.keys()):
+            try:
+                self.stop(name)
+            except Exception as exc:  # noqa: BLE001
+                self.logger.warning("Failed to stop process '%s': %s", name, exc)
 
-    def restart(self, mode: str) -> ProcessInfo:
-        """Restart the managed process using the configured backoff."""
-        self._restart_attempts = 0
-        self._next_restart_at = None
-        self.stop()
-        time.sleep(self._restart_delay())
-        return self.start(mode)
+    def restart(self, name: str) -> ProcessInfo:
+        self.stop(name)
+        runtime = self._require_runtime(name)
+        delay = runtime.spec.restart.backoff_for_attempt(1)
+        if delay > 0:
+            time.sleep(delay)
+        info = self.start(name)
+        self._log_process_event("PROCESS_RESTART", "INFO", {"name": name, "pid": info.pid})
+        return info
+
+    def ensure_all(self) -> None:
+        for name, runtime in self._runtime.items():
+            if runtime.spec.enabled:
+                try:
+                    self.ensure(name)
+                except Exception as exc:  # noqa: BLE001
+                    self.logger.error("Failed to ensure process '%s': %s", name, exc)
+
+    def ensure(self, name: str) -> None:
+        runtime = self._require_runtime(name)
+        if runtime.spec.enabled and not self._is_runtime_running(runtime):
+            self.start(name)
+
+    def tick_restarts(self) -> None:
+        now = time.monotonic()
+        for name, runtime in self._runtime.items():
+            self._refresh_state(name, runtime)
+            if runtime.state != ProcessState.CRASHED:
+                continue
+            policy = runtime.spec.restart
+            if not policy.enabled:
+                continue
+            if runtime.retries >= policy.max_retries:
+                runtime.state = ProcessState.FAILED
+                self._write_state()
+                continue
+            if runtime.next_restart_at is None:
+                runtime.retries += 1
+                delay = max(policy.backoff_for_attempt(runtime.retries), policy.cooldown_s)
+                runtime.next_restart_at = now + delay
+                self._write_state()
+                continue
+            if now < runtime.next_restart_at:
+                continue
+            runtime.next_restart_at = None
+            self._write_state()
+            try:
+                info = self.start(name)
+                self._log_process_event("PROCESS_RESTART", "INFO", {"name": name, "pid": info.pid})
+            except Exception as exc:  # noqa: BLE001
+                runtime.last_error = str(exc)
+                runtime.state = ProcessState.CRASHED
+                self._write_state()
+
+    def tick_healthchecks(self) -> None:
+        for name, runtime in self._runtime.items():
+            if runtime.spec.healthcheck.type == "none":
+                continue
+            if not self._is_runtime_running(runtime):
+                runtime.last_health = "stopped"
+                runtime.last_health_ts = datetime.now(timezone.utc)
+                self._write_state()
+                continue
+            ok = self._run_healthcheck(runtime.spec.healthcheck)
+            new_status = "ok" if ok else "fail"
+            prev_status = runtime.last_health
+            runtime.last_health = new_status
+            runtime.last_health_ts = datetime.now(timezone.utc)
+            self._write_state()
+            if prev_status != new_status:
+                event_type = "HEALTH_OK" if ok else "HEALTH_FAIL"
+                severity = "INFO" if ok else "WARN"
+                self._log_process_event(event_type, severity, {"name": name, "health": runtime.last_health})
+
+    def tick(self) -> None:
+        self.ensure_all()
+        self.tick_restarts()
+        self.tick_healthchecks()
 
     # Internal helpers
-    def _spawn_process(self, mode: str, env: dict) -> ProcessInfo:
-        qe_root = self.paths.qe_root
-        run_bot = Path(self.config.bot_entrypoint)
-        if not run_bot.is_absolute():
-            run_bot = (qe_root / run_bot).resolve()
-        if not run_bot.exists():
-            raise FileNotFoundError(f"QuantumEdge entrypoint not found: {run_bot}")
+    def _select_default_process(self, names: list[str]) -> Optional[str]:
+        for name in names:
+            if name.lower() == "bot":
+                return name
+        for name in names:
+            if name.lower().startswith("bot"):
+                return name
+        return names[0] if names else None
 
-        bot_workdir = Path(self.config.bot_workdir) if self.config.bot_workdir else self.paths.quantumedge_root
-        if not bot_workdir.is_absolute():
-            bot_workdir = (qe_root / bot_workdir).resolve()
+    def _default_runtime(self) -> Optional[_RuntimeProcess]:
+        if not self._default_name:
+            return None
+        return self._runtime.get(self._default_name)
 
-        log_path = self.paths.logs_dir / "bot.log"
-        log_path.parent.mkdir(parents=True, exist_ok=True)
+    def _require_runtime(self, name: str) -> _RuntimeProcess:
+        if name not in self._runtime:
+            raise KeyError(f"Unknown process '{name}'")
+        return self._runtime[name]
 
-        log_handle = log_path.open("a", encoding="utf-8")
-        cmd = [str(self.paths.python_executable), str(run_bot), f"--mode={mode}"]
-
+    def _spawn_process(self, runtime: _RuntimeProcess) -> ProcessInfo:
+        spec = runtime.spec
+        log_handle = self._open_log_file(spec.name)
+        cmd = list(spec.cmd)
+        env = os.environ.copy()
+        env.update(spec.env)
+        env["RUN_ID"] = self._run_id
         creationflags = 0
         if os.name == "nt" and hasattr(subprocess, "CREATE_NEW_PROCESS_GROUP"):
             creationflags = subprocess.CREATE_NEW_PROCESS_GROUP
-
-        env.setdefault("QE_ROOT", str(qe_root))
-        env.setdefault("QE_CONFIG_DIR", str(qe_root / "config"))
-        env.setdefault("QE_RUNTIME_DIR", str(qe_root / "runtime"))
-        env.setdefault("QE_LOGS_DIR", str(qe_root / "logs"))
-        env.setdefault("QE_DATA_DIR", str(qe_root / "data"))
-        env.setdefault("SUPERVISOR_HOST", self.config.api_host)
-        env.setdefault("SUPERVISOR_PORT", str(self.config.heartbeat_port))
-        env.setdefault("SUPERVISOR_URL", f"http://{self.config.api_host}:{self.config.heartbeat_port}")
-        if self.config.bot_config:
-            bot_config = Path(self.config.bot_config)
-            if not bot_config.is_absolute():
-                bot_config = (qe_root / bot_config).resolve()
-            env.setdefault("QE_CONFIG_PATH", str(bot_config))
-            env.setdefault("BOT_CONFIG_PATH", str(bot_config))
-        py_paths = [str(qe_root), str(self.paths.quantumedge_root)]
-        existing = env.get("PYTHONPATH")
-        if existing:
-            py_paths.append(existing)
-        env["PYTHONPATH"] = os.pathsep.join(py_paths)
-        if self.config.exchange:
-            env["EXCHANGE"] = self.config.exchange
         try:
             process = subprocess.Popen(
                 cmd,
-                cwd=bot_workdir,
+                cwd=spec.cwd,
                 stdout=log_handle,
                 stderr=subprocess.STDOUT,
                 creationflags=creationflags,
@@ -350,122 +338,94 @@ class ProcessManager:
         except Exception:
             log_handle.close()
             raise
-
-        self._process = process
-        self._child_log_file = log_handle
-        self._info = ProcessInfo(
+        runtime.process = process
+        runtime.log_handle = log_handle
+        info = ProcessInfo(
             pid=process.pid,
             start_time=datetime.now(timezone.utc),
             last_exit_code=None,
             last_exit_time=None,
         )
-        state_utils.save_process_info(self.state_dir, self._info)
-        return self._info
+        runtime.info = info
+        return info
 
-    def _set_state(self, state: str) -> None:
-        if state != self._state:
-            self._state = state
-            self._write_bot_state()
+    def _open_log_file(self, name: str) -> object:
+        logs_dir = self.paths.logs_dir / "processes"
+        logs_dir.mkdir(parents=True, exist_ok=True)
+        log_path = logs_dir / f"{name}.log"
+        self._rotate_log(log_path)
+        return log_path.open("a", encoding="utf-8")
 
-    def _write_bot_state(self) -> None:
-        payload = {
-            "state": self._state,
-            "pid": self._info.pid if self._info else None,
-            "restarts": self._restart_attempts,
-            "last_exit_code": self._info.last_exit_code if self._info else None,
-            "last_exit_time": self._info.last_exit_time.isoformat() if self._info and self._info.last_exit_time else None,
-            "updated_at": datetime.now(timezone.utc).isoformat(),
-        }
+    def _rotate_log(self, path: Path, max_bytes: int = 10 * 1024 * 1024, backups: int = 3) -> None:
+        if not path.exists():
+            return
         try:
-            self._state_path.parent.mkdir(parents=True, exist_ok=True)
-            with self._state_path.open("w", encoding="utf-8") as handle:
-                json.dump(payload, handle, indent=2)
-        except OSError as exc:
-            self.logger.debug("Failed to write bot state: %s", exc)
-
-    def _restart_delay(self) -> float:
-        backoffs = self.config.bot_restart_backoff_seconds or [self.config.restart_backoff_s]
-        index = max(0, min(self._restart_attempts - 1, len(backoffs) - 1))
+            if path.stat().st_size < max_bytes:
+                return
+        except OSError:
+            return
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%d%H%M%S")
+        rotated = path.with_suffix(f".{timestamp}.log")
         try:
-            delay = float(backoffs[index])
-        except (TypeError, ValueError):
-            delay = float(self.config.restart_backoff_s)
-        return max(0.0, delay)
-
-    def _schedule_restart(self) -> None:
-        if not self.config.bot_restart_enabled:
+            path.replace(rotated)
+        except OSError:
             return
-        self._restart_attempts += 1
-        if self._restart_attempts > self.config.bot_restart_max_retries:
-            self._set_state(BotState.FAILED)
-            self.logger.error("Bot restart attempts exhausted; marking FAILED.")
-            return
-        delay = self._restart_delay()
-        self._next_restart_at = time.monotonic() + delay
-        self.logger.warning(
-            "Scheduling bot restart in %.1fs (attempt %s/%s)",
-            delay,
-            self._restart_attempts,
-            self.config.bot_restart_max_retries,
-        )
-        self._write_bot_state()
+        for extra in sorted(path.parent.glob(f"{path.stem}.*.log"), key=lambda p: p.stat().st_mtime, reverse=True):
+            backups -= 1
+            if backups <= 0:
+                try:
+                    extra.unlink()
+                except OSError:
+                    pass
 
-    def _handle_exit(self, exit_code: Optional[int], reason: str) -> None:
-        self._update_exit_state(exit_code)
-        self._log_bot_stop(reason)
-        if self._events:
-            self._events.log_anomaly("bot_exit", f"Bot exited ({reason}) with code {exit_code}", {"pid": self._info.pid if self._info else None})
-        self._cleanup_process_handles()
-        if self._stop_requested:
-            self._set_state(BotState.STOPPED)
-            return
-        self._set_state(BotState.CRASHED)
-        if self.config.bot_restart_enabled:
-            self._schedule_restart()
-
-    def _refresh_state(self) -> None:
-        if self._process:
-            return_code = self._process.poll()
+    def _refresh_state(self, name: str, runtime: _RuntimeProcess) -> None:
+        if runtime.process:
+            return_code = runtime.process.poll()
             if return_code is None:
-                self._set_state(BotState.RUNNING)
+                runtime.state = ProcessState.RUNNING
                 return
-            self.logger.warning("Bot exited with code %s", return_code)
-            self._handle_exit(return_code, "unexpected-exit")
+            runtime.info.last_exit_code = return_code
+            runtime.info.last_exit_time = datetime.now(timezone.utc)
+            runtime.state = ProcessState.CRASHED
+            runtime.last_error = f"exit_code={return_code}"
+            self._cleanup_process(runtime)
+            self._write_state()
+            self._log_process_event("PROCESS_EXIT", "WARN", {"name": name, "exit_code": return_code})
+            if name == self._default_name:
+                self._log_bot_event("BOT_STOP", {"reason": "unexpected-exit", "exit_code": return_code})
             return
-
-        if self._info:
-            alive = self._pid_running(self._info.pid)
+        if runtime.info and runtime.info.pid:
+            alive = self._pid_running(runtime.info.pid)
             if alive:
-                self._set_state(BotState.RUNNING)
+                runtime.state = ProcessState.RUNNING
                 return
-            if self._info.last_exit_time is None:
-                self._update_exit_state(self._info.last_exit_code)
-            if self._state == BotState.RUNNING and not self._stop_requested:
-                self._set_state(BotState.CRASHED)
-                if self.config.bot_restart_enabled:
-                    self._schedule_restart()
-        elif self._state != BotState.STOPPED:
-            self._set_state(BotState.STOPPED)
+            if runtime.info.last_exit_time is None:
+                runtime.info.last_exit_time = datetime.now(timezone.utc)
+            runtime.state = ProcessState.CRASHED
+            self._write_state()
 
-    def _update_exit_state(self, exit_code: Optional[int]) -> None:
-        if not self._info:
-            return
-        self._info.last_exit_code = exit_code
-        self._info.last_exit_time = datetime.now(timezone.utc)
-        state_utils.save_process_info(self.state_dir, self._info)
+    def _run_healthcheck(self, spec: HealthCheckSpec) -> bool:
+        if spec.type == "http":
+            return _http_health(spec.url, spec.timeout_s)
+        if spec.type == "tcp":
+            return _tcp_health(spec.host, spec.port, spec.timeout_s)
+        return True
 
-    def _cleanup_process_handles(self) -> None:
-        if self._child_log_file:
+    def _is_runtime_running(self, runtime: _RuntimeProcess) -> bool:
+        if runtime.process and runtime.process.poll() is None:
+            return True
+        if runtime.info and runtime.info.pid:
+            return self._pid_running(runtime.info.pid)
+        return False
+
+    def _cleanup_process(self, runtime: _RuntimeProcess) -> None:
+        if runtime.log_handle:
             try:
-                self._child_log_file.close()
+                runtime.log_handle.close()
             except Exception:
                 pass
-        self._child_log_file = None
-        self._process = None
-
-    def _log_bot_stop(self, reason: str) -> None:
-        if self._events and self._info:
-            self._events.log_bot_stop(reason, self._info)
+        runtime.log_handle = None
+        runtime.process = None
 
     def _pid_running(self, pid: int) -> bool:
         if pid <= 0:
@@ -497,30 +457,25 @@ class ProcessManager:
         else:
             return True
 
-    def _terminate_external(self, pid: int, timeout: float) -> None:
-        stop_reason = "external-stop"
+    def _terminate_external(self, pid: Optional[int], timeout: float) -> None:
+        if not pid:
+            return
         try:
             os.kill(pid, signal.SIGTERM)
         except PermissionError:
             self.logger.warning("Permission error while sending SIGTERM to PID %s", pid)
         except OSError:
             pass
-
         end_time = time.time() + timeout
         while time.time() < end_time:
             if not self._pid_running(pid):
-                self._update_exit_state(exit_code=None)
-                self._log_bot_stop(stop_reason)
                 return
             time.sleep(0.5)
-
-        self.logger.warning("Forcing process termination for PID %s", pid)
         self._force_kill(pid)
-        stop_reason = "forced-kill"
-        self._update_exit_state(exit_code=None)
-        self._log_bot_stop(stop_reason)
 
-    def _force_kill(self, pid: int) -> None:
+    def _force_kill(self, pid: Optional[int]) -> None:
+        if not pid:
+            return
         if os.name == "nt":
             subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True)
         else:
@@ -528,3 +483,148 @@ class ProcessManager:
                 os.kill(pid, signal.SIGKILL)
             except OSError:
                 pass
+
+    def _write_state(self) -> None:
+        payload = {}
+        for name, runtime in self._runtime.items():
+            payload[name] = {
+                "pid": runtime.info.pid if runtime.info else None,
+                "start_ts": runtime.info.start_time.isoformat() if runtime.info and runtime.info.start_time else None,
+                "last_exit_code": runtime.info.last_exit_code if runtime.info else None,
+                "last_exit_time": runtime.info.last_exit_time.isoformat() if runtime.info and runtime.info.last_exit_time else None,
+                "retries": runtime.retries,
+                "last_health": runtime.last_health,
+                "last_health_ts": runtime.last_health_ts.isoformat() if runtime.last_health_ts else None,
+                "last_error": runtime.last_error,
+                "state": runtime.state,
+            }
+        try:
+            self._state_path.parent.mkdir(parents=True, exist_ok=True)
+            tmp_path = self._state_path.with_suffix(".tmp")
+            with tmp_path.open("w", encoding="utf-8") as handle:
+                json.dump(payload, handle, indent=2)
+            tmp_path.replace(self._state_path)
+        except OSError as exc:
+            self.logger.debug("Failed to write process state: %s", exc)
+
+    def _load_state(self) -> None:
+        if not self._state_path.exists():
+            return
+        try:
+            raw = json.loads(self._state_path.read_text(encoding="utf-8"))
+        except Exception as exc:  # noqa: BLE001
+            self.logger.debug("Failed to read process state: %s", exc)
+            return
+        if not isinstance(raw, dict):
+            return
+        for name, data in raw.items():
+            runtime = self._runtime.get(name)
+            if not runtime or not isinstance(data, dict):
+                continue
+            pid = data.get("pid")
+            start_ts = _parse_iso(data.get("start_ts"))
+            last_exit_time = _parse_iso(data.get("last_exit_time"))
+            runtime.info = ProcessInfo(
+                pid=int(pid) if pid else 0,
+                start_time=start_ts,
+                last_exit_code=data.get("last_exit_code"),
+                last_exit_time=last_exit_time,
+            ) if pid else None
+            runtime.retries = int(data.get("retries") or 0)
+            runtime.last_health = data.get("last_health")
+            runtime.last_health_ts = _parse_iso(data.get("last_health_ts"))
+            runtime.last_error = data.get("last_error")
+            runtime.state = data.get("state", runtime.state)
+            if runtime.info and self._pid_running(runtime.info.pid):
+                runtime.state = ProcessState.RUNNING
+            elif runtime.info:
+                runtime.state = ProcessState.STOPPED
+
+    def _log_process_event(self, event_type: str, severity: str, fields: dict) -> None:
+        if not self._events:
+            return
+        name = fields.get("name") if isinstance(fields, dict) else None
+        component = self._component_for_process(name)
+        try:
+            event = BaseEvent(
+                ts=datetime.now(timezone.utc),
+                type=EventType(event_type),
+                source=component,
+                data=fields,
+                severity=severity,
+                run_id=self._run_id,
+            )
+        except ValueError:
+            event = BaseEvent(
+                ts=datetime.now(timezone.utc),
+                type=EventType.ANOMALY,
+                source=component,
+                data={"event_type": event_type, **fields},
+                severity=severity,
+                run_id=self._run_id,
+            )
+        self._events.log_event(event)
+
+    def _log_bot_event(self, event_type: str, fields: dict) -> None:
+        if not self._events:
+            return
+        component = self._component_for_process(self._default_name)
+        try:
+            event = BaseEvent(
+                ts=datetime.now(timezone.utc),
+                type=EventType(event_type),
+                source=component,
+                data=fields,
+                severity="INFO",
+                run_id=self._run_id,
+            )
+        except ValueError:
+            event = BaseEvent(
+                ts=datetime.now(timezone.utc),
+                type=EventType.ANOMALY,
+                source=component,
+                data={"event_type": event_type, **fields},
+                severity="INFO",
+                run_id=self._run_id,
+            )
+        self._events.log_event(event)
+
+    def _component_for_process(self, name: Optional[str]) -> str:
+        if not name:
+            return "supervisor"
+        lowered = str(name).lower()
+        if lowered == "hub":
+            return "hub"
+        if lowered.startswith("bot"):
+            return f"bot:{name}"
+        return "supervisor"
+
+
+def _http_health(url: Optional[str], timeout_s: float) -> bool:
+    if not url:
+        return False
+    req = urllib.request.Request(url, method="GET")
+    try:
+        with urllib.request.urlopen(req, timeout=timeout_s) as resp:
+            return int(resp.status) == 200
+    except Exception:
+        return False
+
+
+def _tcp_health(host: Optional[str], port: Optional[int], timeout_s: float) -> bool:
+    if not host or port is None:
+        return False
+    try:
+        with socket.create_connection((host, int(port)), timeout=timeout_s):
+            return True
+    except Exception:
+        return False
+
+
+def _parse_iso(value: Optional[str]) -> Optional[datetime]:
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except Exception:
+        return None

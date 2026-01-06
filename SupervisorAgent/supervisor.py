@@ -46,10 +46,11 @@ from supervisor.config import (
 )
 from supervisor.heartbeat import HeartbeatServer, HeartbeatPayload
 from supervisor.logging_setup import setup_logging
+from supervisor.config_loader import load_processes_spec
 from supervisor.process_manager import ProcessManager, ProcessInfo
 from supervisor.risk_engine import RiskEngine, RiskDecision, OrderRequest, OrderSide, OrderType
 from supervisor import state as state_utils
-from supervisor.events import EventLogger
+from supervisor.events import BaseEvent, EventLogger, EventType, new_run_id
 from supervisor.audit_report import load_events_for_date, compute_stats, render_markdown_report
 from supervisor.llm_supervisor import LlmSupervisor, LlmSupervisorAdvice
 from supervisor.llm.chat_client import ChatCompletionsClient
@@ -91,6 +92,7 @@ from supervisor.alerts.rules import load_alert_rules
 from supervisor.alerts.storage import AlertStorage
 from supervisor.alerts.engine import AlertEngine, AlertResult
 from supervisor.security import is_path_allowed, validate_kill_switch_challenge
+from supervisor.process_spec import ProcessSpec
 
 try:
     from tools.qe_config import get_qe_paths
@@ -119,6 +121,7 @@ class SupervisorApp:
         guard_cfg: GuardConfig,
         directives_cfg: DirectivesConfig,
         autopilot_cfg: AutopilotConfig,
+        process_specs: Dict[str, ProcessSpec],
         project_root: Path,
         logger: Optional[logging.Logger] = None,
     ) -> None:
@@ -136,13 +139,16 @@ class SupervisorApp:
         self.dashboard_config = dashboard_config
         self.logger = logger or logging.getLogger(__name__)
         self.autopilot_cfg = autopilot_cfg
+        self.process_specs = process_specs
         self.state_dir = paths.runtime_dir / "supervisor"
         self.state_dir.mkdir(parents=True, exist_ok=True)
 
         events_path = paths.events_dir / f"events_{date.today().isoformat()}.jsonl"
         self.snapshots_dir = paths.logs_dir / "snapshots"
         self.snapshots_dir.mkdir(parents=True, exist_ok=True)
-        self.event_logger = EventLogger(events_path, self.logger, snapshots_dir=self.snapshots_dir)
+        self.run_id = new_run_id()
+        self._start_ts = time.time()
+        self.event_logger = EventLogger(events_path, self.logger, snapshots_dir=self.snapshots_dir, run_id=self.run_id)
         # TSDB wiring
         self.tsdb_backend = "none"
         self.tsdb_writer = self._build_tsdb_writer(tsdb_config)
@@ -152,7 +158,15 @@ class SupervisorApp:
         self.heartbeat_server = HeartbeatServer(config.heartbeat_timeout_s)
         risk_state = state_utils.load_risk_state(self.state_dir, today=date.today())
         self.risk_engine = RiskEngine(risk_config, risk_state, self.logger, self.event_logger, llm_config.trust_policy)
-        self.process_manager = ProcessManager(paths, config, self.state_dir, self.event_logger, self.logger)
+        self.process_manager = ProcessManager(
+            paths,
+            config,
+            self.state_dir,
+            self.event_logger,
+            self.logger,
+            processes=process_specs,
+            run_id=self.run_id,
+        )
         self.llm_client = ChatCompletionsClient(llm_config.api_url, llm_config.api_key_env, self.logger)
         self.llm_supervisor = LlmSupervisor(llm_config, risk_config, paths.events_dir, self.logger, self.event_logger, chat_client=self.llm_client)
         self.trend_evaluator = TrendEvaluator(trend_config, self.llm_client, self.logger)
@@ -313,19 +327,79 @@ class SupervisorApp:
         )
 
     def start(self) -> None:
-        info = self.process_manager.start(self.config.mode)
-        self.logger.info("Bot started with PID %s", info.pid)
+        name = self.process_manager.default_name
+        if not name:
+            self.logger.error("No default process configured for start().")
+            return
+        info = self.process_manager.start(name)
+        self.logger.info("Process '%s' started with PID %s", name, info.pid)
 
     def stop(self) -> None:
-        self.process_manager.stop()
-        self.logger.info("Bot stopped.")
+        name = self.process_manager.default_name
+        if not name:
+            self.logger.error("No default process configured for stop().")
+            return
+        self.process_manager.stop(name)
+        self.logger.info("Process '%s' stopped.", name)
 
     def restart(self) -> None:
-        info = self.process_manager.restart(self.config.mode)
-        self.logger.info("Bot restarted with PID %s", info.pid)
+        name = self.process_manager.default_name
+        if not name:
+            self.logger.error("No default process configured for restart().")
+            return
+        info = self.process_manager.restart(name)
+        self.logger.info("Process '%s' restarted with PID %s", name, info.pid)
 
     def get_bot_status(self) -> Dict[str, Any]:
         return self.process_manager.get_status_payload()
+
+    def get_system_status(self) -> Dict[str, Any]:
+        uptime_s = time.time() - self._start_ts if hasattr(self, "_start_ts") else None
+        return {
+            "run_id": self.run_id,
+            "uptime_s": uptime_s,
+            "policy_version": POLICY_VERSION,
+            "processes": self.process_manager.status_all(),
+        }
+
+    def start_process(self, name: str) -> Dict[str, Any]:
+        info = self.process_manager.start(name)
+        status = self.process_manager.status(name).to_dict()
+        status["pid"] = info.pid
+        return status
+
+    def stop_process(self, name: str) -> Dict[str, Any]:
+        self.process_manager.stop(name)
+        return self.process_manager.status(name).to_dict()
+
+    def restart_process(self, name: str) -> Dict[str, Any]:
+        info = self.process_manager.restart(name)
+        status = self.process_manager.status(name).to_dict()
+        status["pid"] = info.pid
+        return status
+
+    def get_events_tail(self, limit: int = 200, types: Optional[List[str]] = None, since_ts_ms: Optional[int] = None) -> Dict[str, Any]:
+        from supervisor.events import tail_events
+
+        events = tail_events(self.paths.events_dir / f"events_{date.today().isoformat()}.jsonl", limit=limit, types=types, since_ts_ms=since_ts_ms)
+        return {"events": events}
+
+    def log_api_call(self, method: str, path: str, status_code: int, duration_ms: int, trace_id: Optional[str]) -> None:
+        event = BaseEvent(
+            ts=datetime.now(timezone.utc),
+            type=EventType.API_CALL,
+            source="ApiServer",
+            data={
+                "method": method,
+                "path": path,
+                "status_code": status_code,
+                "duration_ms": duration_ms,
+            },
+            severity="INFO" if status_code < 400 else "WARN",
+            run_id=self.run_id,
+            trace_id=trace_id,
+        )
+        self.event_logger.log_event(event)
 
     def get_policy_payload(self) -> Dict[str, Any]:
         policy = self._current_policy or self.policy_engine.current_policy()
@@ -370,18 +444,26 @@ class SupervisorApp:
 
     def start_bot(self) -> Dict[str, Any]:
         try:
-            self.process_manager.start(self.config.mode)
+            name = self.process_manager.default_name
+            if not name:
+                raise RuntimeError("No default process configured.")
+            self.process_manager.start(name)
         except Exception as exc:
             self.logger.error("Bot start failed: %s", exc)
         return self.get_bot_status()
 
     def stop_bot(self) -> Dict[str, Any]:
-        self.process_manager.stop()
+        name = self.process_manager.default_name
+        if name:
+            self.process_manager.stop(name)
         return self.get_bot_status()
 
     def restart_bot(self) -> Dict[str, Any]:
         try:
-            self.process_manager.restart(self.config.mode)
+            name = self.process_manager.default_name
+            if not name:
+                raise RuntimeError("No default process configured.")
+            self.process_manager.restart(name)
         except Exception as exc:
             self.logger.error("Bot restart failed: %s", exc)
         return self.get_bot_status()
@@ -561,7 +643,7 @@ class SupervisorApp:
             self.api_server.start()
         try:
             while not self._stop_requested:
-                self.process_manager.tick(self.config.mode)
+                self.process_manager.tick()
                 self.telemetry.update_process_state(self.process_manager.get_status_payload())
                 if time.time() >= next_policy_publish_at:
                     self._publish_policy()
@@ -681,7 +763,7 @@ class SupervisorApp:
                 self.run_context.write_artifacts_manifest()
             if self.api_server:
                 self.api_server.stop()
-            self.process_manager.stop()
+            self.process_manager.stop_all()
 
     def risk_status(self) -> None:
         """Print detailed risk engine state."""
@@ -1455,6 +1537,11 @@ class SupervisorApp:
         else:
             add("WARN", "Dashboard service disabled")
 
+        if self.process_specs:
+            add("OK", f"Process specs loaded ({len(self.process_specs)} processes)")
+        else:
+            add("WARN", "No process specs loaded")
+
         if self.tsdb_writer:
             add("OK", f"TSDB enabled (backend={self.tsdb_backend})")
             status = self.get_tsdb_status()
@@ -1627,6 +1714,10 @@ def build_app(
     runtime_logs_dir = project_root / "runtime" / "logs"
     setup_logging(runtime_logs_dir)
     supervisor_config = load_supervisor_config(supervisor_config_path)
+    processes_path = Path(supervisor_config.processes_file)
+    if not processes_path.is_absolute():
+        processes_path = (project_root / processes_path).resolve()
+    process_specs = load_processes_spec(processes_path, paths_config.qe_root)
     risk_config = load_risk_config(supervisor_config_dir / "risk.yaml")
     llm_config = load_llm_supervisor_config(supervisor_config_dir / "llm_supervisor.yaml")
     trend_config = load_trend_evaluator_config(supervisor_config_dir / "llm_trend_evaluator.yaml")
@@ -1659,6 +1750,7 @@ def build_app(
         guard_cfg,
         directives_cfg,
         autopilot_cfg,
+        process_specs,
         project_root,
         logging.getLogger(__name__),
     )
