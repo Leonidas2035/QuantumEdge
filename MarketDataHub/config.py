@@ -84,6 +84,15 @@ class OrderbookConfig:
 
 
 @dataclass
+class MicrostructureConfig:
+    enabled: bool = os.getenv("MARKET_DATA_MICRO_ENABLED", "1") in {"1", "true", "True"}
+    ofi_window_n: int = int(os.getenv("MARKET_DATA_MICRO_OFI_WINDOW_N", "50"))
+    trade_window_sec: float = float(os.getenv("MARKET_DATA_MICRO_TRADE_WINDOW_SEC", "1.0"))
+    publish_topic_suffix: str = os.getenv("MARKET_DATA_MICRO_TOPIC_SUFFIX", "microstructure.v1")
+    zscore_eps: float = float(os.getenv("MARKET_DATA_MICRO_ZSCORE_EPS", "1e-9"))
+
+
+@dataclass
 class AccountConfig:
     spot_api_key: str = os.getenv("BINANCE_API_KEY", "")
     spot_api_secret: str = os.getenv("BINANCE_API_SECRET", "")
@@ -119,6 +128,7 @@ class HubConfig:
     tsdb: TsdbConfig = field(default_factory=TsdbConfig)
     l2: L2Config = field(default_factory=L2Config)
     orderbook: OrderbookConfig = field(default_factory=OrderbookConfig)
+    microstructure: MicrostructureConfig = field(default_factory=MicrostructureConfig)
     account: "AccountConfig" = field(default_factory=lambda: AccountConfig())
     account_runtime: "AccountRuntimeConfig" = field(default_factory=lambda: AccountRuntimeConfig())
     l0_hwm: int = int(os.getenv("MARKET_DATA_L0_HWM", "2000"))

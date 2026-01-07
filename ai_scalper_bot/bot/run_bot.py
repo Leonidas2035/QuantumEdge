@@ -33,6 +33,7 @@ from bot.trading.execution_mode import NormalExecutionMode, ScalpExecutionMode
 from bot.trading.order_policy import OrderPolicy
 from bot.trading.trade_stats import TradeStats
 from bot.market_data.data_manager import DataManager
+from bot.market_data.microstructure_cache import MicrostructureCache
 from bot.supervisor_client import SupervisorClient, SupervisorClientConfig
 from bot.integrations.supervisor_snapshot_client import SupervisorSnapshotClient
 from bot.monitoring.supervisor_snapshot_monitor import run_supervisor_snapshot_monitor
@@ -173,7 +174,14 @@ async def _event_stream(symbols):
             from bot.market_data.hub_source import HubMarketDataSource
 
             print("[INFO] Market data source: MarketDataHub (ZMQ).")
-            hub_cfg = config.get("market_data", {})
+            hub_cfg = config.get("market_data", {}) or {}
+            micro_cfg = config.get("microstructure", {}) or {}
+            if micro_cfg:
+                hub_cfg = dict(hub_cfg)
+                hub_section = dict(hub_cfg.get("hub", {}) or {})
+                hub_section.setdefault("include_microstructure", micro_cfg.get("enabled", True))
+                hub_section.setdefault("microstructure_topic_suffix", micro_cfg.get("publish_topic_suffix", "microstructure.v1"))
+                hub_cfg["hub"] = hub_section
             hub_source = HubMarketDataSource(symbols, hub_cfg)
             try:
                 async for event in hub_source.stream():
@@ -207,6 +215,12 @@ def _build_signal_from_meta(meta: EnsembleOutput) -> SignalOutput:
 async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, status_writer: Optional[BotStatusWriter] = None, logger: Optional[logging.Logger] = None):
     if logger is None:
         logging.basicConfig(level=getattr(logging, str(config.get("app.log_level", "INFO")).upper(), logging.INFO))
+    spot_cfg = config.get("spot_scalper", {}) or {}
+    if isinstance(spot_cfg, dict) and bool(spot_cfg.get("enabled", False)):
+        from bot.spot_scalper import run_spot_scalper
+
+        await run_spot_scalper(config, logger=logger)
+        return
     cpu_logger = logging.getLogger("cpu_affinity")
     cpu_cfg = load_cpu_affinity_config(config)
     apply_cpu_affinity(cpu_cfg, cpu_logger)
@@ -386,6 +400,11 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
     app_risk = config.get("app.risk", {}) or {}
     min_edge = app_risk.get("llm_require_edge", 0.0)
     data_manager = DataManager()
+    micro_cfg = config.get("microstructure", {}) or {}
+    micro_enabled = bool(micro_cfg.get("enabled", True))
+    micro_max_age_ms = int(micro_cfg.get("max_age_ms", 2000))
+    micro_topic_suffix = str(micro_cfg.get("publish_topic_suffix", "microstructure.v1"))
+    micro_cache = MicrostructureCache(max_age_ms=micro_max_age_ms) if micro_enabled else None
 
     execution_cfg = config.get("execution", {}) or {}
     exec_mode_name = str(execution_cfg.get("mode", "normal")).lower()
@@ -620,10 +639,48 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
             if stop_event and stop_event.is_set():
                 break
             try:
+                event_type = event.get("event_type")
                 ts = int(event.get("E") or event.get("T") or time.time() * 1000)
+                evt_symbol = event.get("s", symbol)
+                if event_type == micro_topic_suffix:
+                    if micro_cache:
+                        micro_cache.update_from_event(event)
+                        latest_micro = micro_cache.latest(evt_symbol, ts)
+                        ctx = engines.get(evt_symbol)
+                        if ctx and latest_micro:
+                            ctx["microstructure"] = latest_micro
+                            ctx["microstructure_ts"] = ts
+                            ctx["feature_builder"].update_microstructure(latest_micro)
+                        if ctx and event.get("b") is not None and event.get("a") is not None:
+                            ctx["last_book_event"] = dict(event)
+                    if event.get("b") is not None and event.get("a") is not None and order_policy:
+                        order_policy.update_book(
+                            evt_symbol,
+                            float(event.get("b", 0.0)),
+                            float(event.get("best_bid_qty", 0.0) or 0.0),
+                            float(event.get("a", 0.0)),
+                            float(event.get("best_ask_qty", 0.0) or 0.0),
+                            ts,
+                        )
+                    freshness.update_book(ts)
+                    continue
+                if event_type in {"l1", "bar1s"}:
+                    if event_type == "l1" and order_policy and event.get("b") is not None and event.get("a") is not None:
+                        ctx = engines.get(evt_symbol)
+                        if ctx:
+                            ctx["last_book_event"] = dict(event)
+                        order_policy.update_book(
+                            evt_symbol,
+                            float(event.get("b", 0.0)),
+                            float(event.get("quant_bid", 0.0) or 0.0),
+                            float(event.get("a", 0.0)),
+                            float(event.get("quant_ask", 0.0) or 0.0),
+                            ts,
+                        )
+                    freshness.update_book(ts)
+                    continue
                 price = float(event["p"])
                 qty = float(event["q"])
-                evt_symbol = event.get("s", symbol)
             except Exception:
                 emit_event("error", {"code": "event_parse", "message": "Failed to parse market event", "where": "event_stream"}, symbol)
                 metrics_tracker.record_error("event_parse")
@@ -634,6 +691,15 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
             freshness.update_tick(ts)
             if event.get("b") is not None and event.get("a") is not None:
                 freshness.update_book(ts)
+                if order_policy:
+                    order_policy.update_book(
+                        evt_symbol,
+                        float(event.get("b", 0.0)),
+                        float(event.get("quant_bid", event.get("q", 0.0)) or 0.0),
+                        float(event.get("a", 0.0)),
+                        float(event.get("quant_ask", event.get("q", 0.0)) or 0.0),
+                        ts,
+                    )
             if data_source != "ws":
                 await data_manager.save_trade(event)
 
@@ -698,6 +764,9 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
                         ctx["depth_warned"] = True
 
             side = "sell" if event.get("m") else "buy"
+            latest_micro = micro_cache.latest(evt_symbol, ts) if micro_cache else ctx.get("microstructure")
+            if latest_micro:
+                feature_builder.update_microstructure(latest_micro)
             features = feature_builder.add_tick(ts, price, qty, side=side)
             meta = EnsembleOutput(meta_edge=0.0, direction=0, components={})
             pseudo_signal = None
@@ -873,12 +942,15 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
                     execution_mode = ctx["execution_mode"]
                     gate_info = None
                     if decision.action == DecisionAction.ENTER and isinstance(execution_mode, ScalpExecutionMode):
+                        last_gate_event = ctx.get("last_book_event") or event
                         gate_info = execution_mode.evaluate_entry(
                             decision,
                             price,
                             evt_symbol,
                             signal=pseudo_signal,
-                            last_event=event,
+                            last_event=last_gate_event,
+                            microstructure=ctx.get("microstructure"),
+                            horizon_signals=meta.components if isinstance(meta.components, dict) else None,
                         )
                         if isinstance(gate_info, dict):
                             circuit_breakers.record_spread(gate_info.get("spread_bps"), now_s)
@@ -1057,6 +1129,7 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
                                 orders_window.append(now_s)
                             metrics_tracker.incr("orders")
                         try:
+                            last_gate_event = ctx.get("last_book_event") or event
                             result = await execution_mode.execute_trade(
                                 decision,
                                 price,
@@ -1065,7 +1138,10 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
                                 trader,
                                 allow_fn=_supervisor_allows,
                                 signal=pseudo_signal,
-                                last_event=event,
+                                last_event=last_gate_event,
+                                client_order_id=client_order_id,
+                                microstructure=ctx.get("microstructure"),
+                                horizon_signals=meta.components if isinstance(meta.components, dict) else None,
                             )
                         except Exception as exc:
                             metrics_tracker.record_error("execution_error")

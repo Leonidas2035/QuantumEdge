@@ -155,6 +155,8 @@ class ScalpExecutionMode:
         symbol: str,
         signal: Optional[Any] = None,
         last_event: Optional[Dict[str, Any]] = None,
+        microstructure: Optional[Dict[str, Any]] = None,
+        horizon_signals: Optional[Dict[int, Any]] = None,
     ) -> Dict[str, Any]:
         ok, guard_reason = self.guard.can_enter()
         if not ok:
@@ -182,6 +184,35 @@ class ScalpExecutionMode:
         if depth_usd < self.min_depth_usd:
             return {"ok": False, "reason": "DEPTH_TOO_THIN", "depth_usd": depth_usd}
 
+        gate_cfg = self.cfg.get("entry_gate", {}) or {}
+        if gate_cfg.get("enabled", False):
+            ofi_threshold = float(gate_cfg.get("ofi_ma5_threshold", 0.0))
+            require_micro = bool(gate_cfg.get("require_microstructure", False))
+            if not microstructure:
+                if require_micro:
+                    return {"ok": False, "reason": "MICROSTRUCTURE_MISSING"}
+            else:
+                ofi_ma5 = float(microstructure.get("ofi_ma5", 0.0) or 0.0)
+                if decision.direction == "long" and ofi_ma5 < ofi_threshold:
+                    return {"ok": False, "reason": "OFI_GATE_LONG", "ofi_ma5": ofi_ma5}
+                if decision.direction != "long" and ofi_ma5 > -ofi_threshold:
+                    return {"ok": False, "reason": "OFI_GATE_SHORT", "ofi_ma5": ofi_ma5}
+            if horizon_signals:
+                h1_thr = float(gate_cfg.get("p_up_h1", 0.0) or 0.0)
+                h5_thr = float(gate_cfg.get("p_up_h5", 0.0) or 0.0)
+                h1 = horizon_signals.get(1)
+                h5 = horizon_signals.get(5)
+                if decision.direction == "long":
+                    if h1 and float(getattr(h1, "p_up", 0.0)) < h1_thr:
+                        return {"ok": False, "reason": "H1_GATE_LONG"}
+                    if h5 and float(getattr(h5, "p_up", 0.0)) < h5_thr:
+                        return {"ok": False, "reason": "H5_GATE_LONG"}
+                else:
+                    if h1 and float(getattr(h1, "p_down", 0.0)) < h1_thr:
+                        return {"ok": False, "reason": "H1_GATE_SHORT"}
+                    if h5 and float(getattr(h5, "p_down", 0.0)) < h5_thr:
+                        return {"ok": False, "reason": "H5_GATE_SHORT"}
+
         return {"ok": True, "reason": "OK", "spread_bps": spread_bps, "depth_usd": depth_usd}
 
     async def execute_trade(
@@ -194,6 +225,9 @@ class ScalpExecutionMode:
         allow_fn,
         signal: Optional[Any] = None,
         last_event: Optional[Dict[str, Any]] = None,
+        client_order_id: Optional[str] = None,
+        microstructure: Optional[Dict[str, Any]] = None,
+        horizon_signals: Optional[Dict[int, Any]] = None,
         **_: Any,
     ) -> ExecutionResult:
         # Exit handling remains straightforward; apply guard bookkeeping.
@@ -208,7 +242,15 @@ class ScalpExecutionMode:
         if decision.action != DecisionAction.ENTER:
             return ExecutionResult(executed=False, reason="noop", skipped=True)
 
-        gate = self.evaluate_entry(decision, price, symbol, signal=signal, last_event=last_event)
+        gate = self.evaluate_entry(
+            decision,
+            price,
+            symbol,
+            signal=signal,
+            last_event=last_event,
+            microstructure=microstructure,
+            horizon_signals=horizon_signals,
+        )
         if not gate.get("ok"):
             self.logger.info("Scalp entry blocked: %s", gate.get("reason"))
             return ExecutionResult(executed=False, reason=str(gate.get("reason")), skipped=True)
@@ -225,7 +267,20 @@ class ScalpExecutionMode:
                 stops["tp_price"],
                 stops["tp_bps"],
             )
-            await self.policy.place_scalp_order(trader, action, size, price, timestamp, symbol, tp_price=stops["tp_price"], sl_price=stops["sl_price"])
+            result = await self.policy.place_scalp_order(
+                trader,
+                action,
+                size,
+                price,
+                timestamp,
+                symbol,
+                tp_price=stops["tp_price"],
+                sl_price=stops["sl_price"],
+                client_order_id=client_order_id,
+            )
+            executed = bool(result.get("executed", result.get("filled", True)))
+            if not executed:
+                return ExecutionResult(executed=False, reason=str(result.get("reason", "execution_blocked")), skipped=True)
             if hasattr(trader, "set_bracket"):
                 trader.set_bracket(action, stops["tp_price"], stops["sl_price"])
             self.guard.record_entry()

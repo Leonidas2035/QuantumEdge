@@ -26,6 +26,15 @@ We do NOT store full orderbook deltas by default. Enable only if required for sp
 - Index strategy: SYMBOL column for symbol
 - Expected write rate: 1-20 rows/sec per symbol (stream-driven)
 
+### microstructure_v1 (L1)
+- Columns: symbol SYMBOL, best_bid_px DOUBLE, best_bid_qty DOUBLE, best_ask_px DOUBLE, best_ask_qty DOUBLE,
+  ofi_raw DOUBLE, ofi_z DOUBLE, ofi_ma5 DOUBLE, spread_bps DOUBLE, top_qty_sum DOUBLE,
+  trade_rate_1s DOUBLE, volume_1s DOUBLE, is_gap BOOLEAN, is_resynced BOOLEAN, ts_event LONG, ts TIMESTAMP
+- Timestamp: ts
+- Partition: DAY
+- Index strategy: SYMBOL column for symbol
+- Expected write rate: 1-20 rows/sec per symbol (stream-driven)
+
 ### bars_1s (L1)
 - Columns: symbol SYMBOL, open DOUBLE, high DOUBLE, low DOUBLE, close DOUBLE, volume DOUBLE, trades LONG, ts TIMESTAMP
 - Timestamp: ts

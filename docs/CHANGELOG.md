@@ -1,5 +1,9 @@
 # Release Notes
 
+## Unreleased
+
+- Added a SPOT-only hot-path scalper engine with regime/signal/exec/risk loop, L1/L2 book handling, and tests; futures are disabled for this mode.
+
 ## Stage 0 - Hardening
 
 - Removed tracked secrets and added `.env.example`.

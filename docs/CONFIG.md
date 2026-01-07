@@ -99,6 +99,27 @@ Bot defaults (from `config/bot.yaml`):
 - `policy.policy_ttl_grace_sec`: default `0`
 - `policy.safe_mode_default`: default `risk_off`
 
+Execution (smart maker) config (bot):
+- `execution.scalp.smart_executor.enabled`: enable maker-first smart executor in scalp mode
+- `execution.scalp.smart_executor.order_policy`: `maker_first` | `maker_only`
+- `execution.scalp.smart_executor.fallback_policy`: `none` | `aggressive_limit` | `market`
+- `execution.scalp.smart_executor.maker_timeout_ms`, `max_reprices`, `min_reprice_interval_ms`, `max_lifetime_ms`
+- `execution.scalp.smart_executor.spread_max_bps`, `min_top_depth_usd`, `min_remaining_qty`, `min_notional`
+
+Microstructure config (bot):
+- `microstructure.enabled`: subscribe and merge microstructure features
+- `microstructure.max_age_ms`: stale cutoff for cached features
+- `microstructure.publish_topic_suffix`: topic suffix (default `microstructure.v1`)
+
+Spot scalper (hot path) config (bot):
+- `enabled_market`: set to `spot` (spot-only guard)
+- `futures_enabled`: set to `false` (futures hard disabled for scalper)
+- `spot_scalper.enabled`: enable the spot-only hot path
+- `spot_scalper.thresholds.max_spread_bps`, `max_short_vol_bps`, `trend_threshold`, `imbalance_threshold`
+- `spot_scalper.execution.ttl_ms`, `max_requotes`, `tick_size`, `min_qty`
+- `spot_scalper.fees.fee_bps`, `spot_scalper.fees.slippage_bps`
+- `spot_scalper.risk.risk_per_trade`, `daily_dd_limit`, `max_consecutive_errors`, `spread_kill_bps`
+
 If no fresh policy is available, the bot enters safe mode (no new entries, exits allowed).
 
 ## Telemetry & monitoring (SupervisorAgent)

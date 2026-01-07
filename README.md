@@ -60,5 +60,6 @@ python meta_agent.py ui
 - Scheduler: `docs/scheduler.md`
 - Control Center UI: `docs/control_center.md`
 - Security: `docs/security.md`
+- Spot scalper: `docs/spot_scalper.md`
 - Release notes: `docs/CHANGELOG.md`
 - Upgrade guide: `docs/upgrade.md`

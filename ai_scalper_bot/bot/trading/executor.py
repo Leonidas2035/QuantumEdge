@@ -34,12 +34,24 @@ class BinanceDemoExecutor:
     - Uses MARKET orders only for simplicity and safety.
     """
 
-    def __init__(self, symbol: Optional[str] = None):
+    def __init__(
+        self,
+        symbol: Optional[str] = None,
+        *,
+        exchange_override: Optional[str] = None,
+        base_url_override: Optional[str] = None,
+    ):
         self.config = config
         self.demo_cfg: Dict = config.get("binance_demo", {}) or {}
-        self._validate_config()
+        if exchange_override:
+            self.demo_cfg = dict(self.demo_cfg)
+            self.demo_cfg["exchange"] = exchange_override
+        if base_url_override:
+            self.demo_cfg = dict(self.demo_cfg)
+            self.demo_cfg["base_url"] = base_url_override
 
         self.exchange = str(self.demo_cfg.get("exchange", "futures")).lower()
+        self._validate_config()
         self.allowed_symbols = self._load_allowed_symbols()
         default_symbol = symbol or self.demo_cfg.get("default_symbol") or self._fallback_symbol()
         self.symbol = (default_symbol or "BTCUSDT").upper()
@@ -101,7 +113,10 @@ class BinanceDemoExecutor:
         if not await self.initialize():
             return None
         try:
-            info = await self.client.futures_exchange_info()
+            if self.exchange == "futures":
+                info = await self.client.futures_exchange_info()
+            else:
+                info = await self.client.get_exchange_info()
         except Exception as exc:
             self._log(f"[ERROR] Failed to fetch exchangeInfo: {exc}", level="ERROR")
             return None
@@ -177,12 +192,17 @@ class BinanceDemoExecutor:
         if not await self.initialize():
             return 0.0
         try:
-            balances = await self.client.futures_account_balance()
-            for b in balances:
-                if b.get("asset") == "USDT":
-                    return float(b.get("balance", 0.0))
+            if self.exchange == "futures":
+                balances = await self.client.futures_account_balance()
+                for b in balances:
+                    if b.get("asset") == "USDT":
+                        return float(b.get("balance", 0.0))
+            else:
+                balance = await self.client.get_asset_balance(asset="USDT")
+                if balance:
+                    return float(balance.get("free") or balance.get("balance") or 0.0)
         except Exception as exc:
-            self._log(f"[WARN] Unable to fetch futures balance: {exc}", level="WARN")
+            self._log(f"[WARN] Unable to fetch demo balance: {exc}", level="WARN")
         return 0.0
 
     async def initialize(self) -> bool:
@@ -203,6 +223,9 @@ class BinanceDemoExecutor:
                 # Force futures endpoints to the testnet host from config.
                 self.client.FUTURES_TESTNET_URL = base_url
             else:
+                if "fapi" in str(base_url).lower() or "future" in str(base_url).lower():
+                    self._log("[WARN] Spot demo base_url points to futures; overriding to spot testnet.", level="WARN")
+                    base_url = BaseClient.API_TESTNET_URL
                 self.client.API_TESTNET_URL = base_url
             self._log(f"[DEMO] Binance client initialized for {self.exchange} testnet.")
             return True
@@ -288,7 +311,16 @@ class BinanceDemoExecutor:
         raise
 
     async def submit_order(
-        self, symbol: str, side: str, qty: float, reduce_only: bool = False, price: Optional[float] = None, client_order_id: Optional[str] = None
+        self,
+        symbol: str,
+        side: str,
+        qty: float,
+        reduce_only: bool = False,
+        price: Optional[float] = None,
+        client_order_id: Optional[str] = None,
+        order_type: Optional[str] = None,
+        time_in_force: Optional[str] = None,
+        post_only: bool = False,
     ):
         if not await self.initialize():
             return None
@@ -302,34 +334,42 @@ class BinanceDemoExecutor:
 
         try:
             if self.exchange == "futures":
+                order_type = (order_type or ("MARKET" if norm_price is None else "LIMIT")).upper()
+                tif = time_in_force
+                if order_type == "LIMIT" and post_only and not tif:
+                    tif = "GTX"
                 params = {
                     "symbol": symbol,
                     "side": side,
-                    "type": "MARKET",
+                    "type": order_type,
                     "quantity": norm_qty,
                     "reduceOnly": reduce_only,
                     "recvWindow": self.recv_window,
                 }
                 if client_order_id:
                     params["newClientOrderId"] = client_order_id
-                if norm_price is not None and not reduce_only:
-                    params["type"] = "LIMIT"
-                    params["timeInForce"] = "GTC"
+                if norm_price is not None and not reduce_only and order_type != "MARKET":
                     params["price"] = norm_price
+                    params["timeInForce"] = tif or "GTC"
                 return await self._submit_with_retries(self.client.futures_create_order, **params)
 
             if reduce_only:
                 self._log("Reduce-only not supported for spot; skipping order.", level="WARN")
                 return None
+            order_type = (order_type or ("MARKET" if norm_price is None else "LIMIT")).upper()
+            if order_type == "LIMIT" and post_only:
+                order_type = "LIMIT_MAKER"
+            tif = time_in_force if order_type == "LIMIT" else None
             return await self._submit_with_retries(
                 self.client.create_order,
                 symbol=symbol,
                 side=side,
-                type="MARKET" if norm_price is None else "LIMIT",
+                type=order_type,
                 quantity=norm_qty,
                 price=norm_price if norm_price is not None else None,
                 recvWindow=self.recv_window,
                 newClientOrderId=client_order_id,
+                timeInForce=tif,
             )
         except (BinanceAPIException, BinanceRequestException) as exc:
             msg = str(exc)
@@ -362,6 +402,34 @@ class BinanceDemoExecutor:
             self.entry_price = None
             self.trades += 1
             self._bracket = None
+
+    async def cancel_order(self, symbol: str, order_id: Optional[str] = None, client_order_id: Optional[str] = None) -> bool:
+        if not await self.initialize():
+            return False
+        symbol = symbol.upper()
+        if not order_id and not client_order_id:
+            return False
+        try:
+            if self.exchange == "futures":
+                await self._submit_with_retries(
+                    self.client.futures_cancel_order,
+                    symbol=symbol,
+                    orderId=order_id,
+                    origClientOrderId=client_order_id,
+                    recvWindow=self.recv_window,
+                )
+            else:
+                await self._submit_with_retries(
+                    self.client.cancel_order,
+                    symbol=symbol,
+                    orderId=order_id,
+                    origClientOrderId=client_order_id,
+                    recvWindow=self.recv_window,
+                )
+            return True
+        except Exception as exc:
+            self._log(f"[WARN] Cancel order failed: {exc}", level="WARN")
+            return False
 
     async def sync_positions(self) -> Dict:
         """Best-effort sync from testnet; keeps internal position close to account state."""

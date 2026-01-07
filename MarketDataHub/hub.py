@@ -23,9 +23,11 @@ from MarketDataHub.feeds.binance_futures import BinanceFuturesFeed
 from MarketDataHub.feeds.binance_spot import BinanceSpotFeed
 from MarketDataHub.ipc.publisher import ZmqPublisher
 from MarketDataHub.ipc.snapshot_server import SnapshotCache, SnapshotServer
-from MarketDataHub.models import HeartbeatEvent, Priority
+from MarketDataHub.models import HeartbeatEvent, Priority, TradeEvent
 from MarketDataHub.models.account_snapshot import AccountSnapshot
 from MarketDataHub.orderbook.aggregator import OrderBookAggregator
+from MarketDataHub.microstructure.ofi import MicrostructureAnalyzer
+from MarketDataHub.microstructure.publisher import MicrostructurePublisher
 from MarketDataHub.spool.status import summarize_spool
 from MarketDataHub.tsdb.quest_writer import QuestILPWriter
 
@@ -93,8 +95,29 @@ class MarketDataHubService:
             BinanceSpotFeed(self.config, self.bus),
             BinanceFuturesFeed(self.config, self.bus),
         ]
+        self.microstructure_analyzer: Optional[MicrostructureAnalyzer] = None
+        self.microstructure_publisher: Optional[MicrostructurePublisher] = None
+        if self.config.microstructure.enabled:
+            self.microstructure_analyzer = MicrostructureAnalyzer(
+                window_n=self.config.microstructure.ofi_window_n,
+                eps=self.config.microstructure.zscore_eps,
+                trade_window_sec=self.config.microstructure.trade_window_sec,
+            )
+            self.microstructure_publisher = MicrostructurePublisher(
+                self.publisher,
+                self.bus,
+                self.writer,
+                event_type=self.config.microstructure.publish_topic_suffix,
+            )
         self.orderbook: Optional[OrderBookAggregator] = (
-            OrderBookAggregator(self.config.orderbook, self.publisher, self.bus, self.snapshot_cache)
+            OrderBookAggregator(
+                self.config.orderbook,
+                self.publisher,
+                self.bus,
+                self.snapshot_cache,
+                microstructure=self.microstructure_analyzer,
+                micro_publisher=self.microstructure_publisher,
+            )
             if self.config.orderbook.enabled
             else None
         )
@@ -188,6 +211,8 @@ class MarketDataHubService:
             self._last_event_ts[key] = getattr(event, "ts_ns", time.time_ns())
             self.snapshot_cache.update(event)
             self.publisher.publish(event)
+            if self.microstructure_analyzer and isinstance(event, TradeEvent):
+                self.microstructure_analyzer.update_trade(event.ts_ns, event.size)
             if self.writer:
                 await self.writer.enqueue(event)
 

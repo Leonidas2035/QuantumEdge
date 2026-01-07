@@ -25,6 +25,8 @@ from MarketDataHub.models import (
 from MarketDataHub.models.orderbook import DepthLevel
 from MarketDataHub.orderbook.book import OrderBook
 from MarketDataHub.ipc.snapshot_server import SnapshotCache
+from MarketDataHub.microstructure.ofi import MicrostructureAnalyzer
+from MarketDataHub.microstructure.publisher import MicrostructurePublisher
 
 
 @dataclass
@@ -44,6 +46,8 @@ class OrderBookAggregator:
         publisher: ZmqPublisher,
         bus: EventBus,
         snapshot_cache: SnapshotCache,
+        microstructure: MicrostructureAnalyzer | None = None,
+        micro_publisher: MicrostructurePublisher | None = None,
     ) -> None:
         self._config = config
         self._publisher = publisher
@@ -58,6 +62,8 @@ class OrderBookAggregator:
         self._last_depth_ts: Dict[str, int] = {}
         self._last_walls_ts: Dict[str, int] = {}
         self._tasks: List[asyncio.Task] = []
+        self._microstructure = microstructure
+        self._micro_publisher = micro_publisher
 
     @property
     def stats(self) -> AggregatorStats:
@@ -98,6 +104,8 @@ class OrderBookAggregator:
             return
         book.apply_snapshot(bids, asks)
         self._stats.orderbook_resync_total += 1
+        if self._microstructure:
+            self._microstructure.mark_resync()
 
     def apply_delta(
         self,
@@ -150,6 +158,22 @@ class OrderBookAggregator:
         self._stats.depth_publish_total += 1
         if self._config.snapshot.include_depth:
             self._snapshot_cache.update(event)
+        if (
+            self._microstructure
+            and self._micro_publisher
+            and best_bid
+            and best_ask
+        ):
+            snapshot = self._microstructure.update_book(
+                symbol=symbol,
+                bid_px=best_bid[0],
+                bid_qty=best_bid[1],
+                ask_px=best_ask[0],
+                ask_qty=best_ask[1],
+                ts_event=event.ts_ns,
+            )
+            if snapshot:
+                self._micro_publisher.publish(snapshot)
 
     def _publish_walls(self, symbol: str) -> None:
         book = self._books[symbol]

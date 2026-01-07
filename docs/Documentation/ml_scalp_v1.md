@@ -11,9 +11,10 @@ Source of truth:
 - `ai_scalper_bot/bot/ml/features/builder.py`
 
 Key guarantees:
-- `FEATURE_SCHEMA_VERSION = "v1"`
+- `FEATURE_SCHEMA_VERSION = "v2"`
 - `feature_names()` matches runtime and training outputs
 - online and offline use the same builder logic
+ - microstructure features (`ofi_z`, `ofi_ma5`, `spread_bps`, `top_qty_sum`, `trade_rate_1s`, `volume_1s`) appended to the schema
 
 ## Training (offline)
 Example:

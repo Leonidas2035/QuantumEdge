@@ -11,7 +11,7 @@ import time
 from typing import Any, Dict, Iterable, List, Optional
 
 from MarketDataHub.config import L2Config, TsdbConfig
-from MarketDataHub.models import Bar1sEvent, ENTITY_TABLE_MAP, L1Event, L2Envelope, MarketEvent
+from MarketDataHub.models import Bar1sEvent, ENTITY_TABLE_MAP, L1Event, L2Envelope, MarketEvent, MicrostructureEvent
 from MarketDataHub.spool.l2_spooler import L2Spooler
 
 
@@ -36,6 +36,7 @@ class QuestILPWriter:
         self._l2_config = l2_config
         self._l1_cache: Dict[str, L1Event] = {}
         self._bars_queue: asyncio.Queue[Bar1sEvent] = asyncio.Queue(maxsize=self._config.bars_queue_max)
+        self._micro_queue: asyncio.Queue[MicrostructureEvent] = asyncio.Queue(maxsize=self._config.bars_queue_max)
         self._l2_buffer: List[str] = []
         self._l2_buffer_max = self._l2_config.buffer_max
         self._l2_spooler: Optional[L2Spooler] = (
@@ -85,6 +86,16 @@ class QuestILPWriter:
                     self._metrics.dropped_rows += 1
                 except asyncio.QueueEmpty:
                     self._metrics.dropped_rows += 1
+        elif isinstance(event, MicrostructureEvent):
+            try:
+                self._micro_queue.put_nowait(event)
+            except asyncio.QueueFull:
+                try:
+                    self._micro_queue.get_nowait()
+                    self._micro_queue.put_nowait(event)
+                    self._metrics.dropped_rows += 1
+                except asyncio.QueueEmpty:
+                    self._metrics.dropped_rows += 1
 
     async def enqueue_l2(self, event: L2Envelope) -> None:
         if not self._l2_spooler:
@@ -128,6 +139,8 @@ class QuestILPWriter:
         lines.extend(self._build_l1_lines())
         if len(lines) < self._batch_rows:
             lines.extend(self._build_bar_lines(self._batch_rows - len(lines)))
+        if len(lines) < self._batch_rows:
+            lines.extend(self._build_micro_lines(self._batch_rows - len(lines)))
         l2_lines = []
         if self._l2_buffer:
             l2_lines = self._drain_l2_buffer(self._batch_rows - len(lines))
@@ -135,7 +148,7 @@ class QuestILPWriter:
         return lines, len(l2_lines)
 
     def queue_depth(self) -> int:
-        return self._bars_queue.qsize() + len(self._l2_buffer)
+        return self._bars_queue.qsize() + self._micro_queue.qsize() + len(self._l2_buffer)
 
     @staticmethod
     def _format_l1(event: L1Event) -> str:
@@ -154,6 +167,32 @@ class QuestILPWriter:
             f"volume={event.volume},trades={int(event.trades)}i {ts}"
         )
 
+    @staticmethod
+    def _format_microstructure(event: MicrostructureEvent) -> str:
+        ts = event.ts_ns
+        measurement = f"microstructure_v1,symbol={event.symbol}"
+        fields: Dict[str, Any] = {
+            "best_bid_px": event.best_bid_px,
+            "best_bid_qty": event.best_bid_qty,
+            "best_ask_px": event.best_ask_px,
+            "best_ask_qty": event.best_ask_qty,
+            "ofi_raw": event.ofi_raw,
+            "ofi_z": event.ofi_z,
+            "ofi_ma5": event.ofi_ma5,
+            "spread_bps": event.spread_bps,
+            "top_qty_sum": event.top_qty_sum,
+            "trade_rate_1s": event.trade_rate_1s,
+            "volume_1s": event.volume_1s,
+            "is_gap": event.is_gap,
+            "is_resynced": event.is_resynced,
+            "schema_version": int(event.schema_version),
+            "ts_event": int(event.ts_event),
+        }
+        field_str = QuestILPWriter._format_fields(fields)
+        if not field_str:
+            return ""
+        return f"{measurement} {field_str} {ts}"
+
     def _build_l1_lines(self) -> List[str]:
         lines: List[str] = []
         for symbol, event in list(self._l1_cache.items()):
@@ -171,6 +210,18 @@ class QuestILPWriter:
             except asyncio.QueueEmpty:
                 break
             lines.append(self._format_bar(bar))
+        return lines
+
+    def _build_micro_lines(self, limit: int) -> List[str]:
+        lines: List[str] = []
+        while len(lines) < limit and not self._micro_queue.empty():
+            try:
+                event = self._micro_queue.get_nowait()
+            except asyncio.QueueEmpty:
+                break
+            line = self._format_microstructure(event)
+            if line:
+                lines.append(line)
         return lines
 
     def _drain_l2_buffer(self, limit: int) -> List[str]:

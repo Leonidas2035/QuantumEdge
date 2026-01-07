@@ -9,9 +9,9 @@ from typing import Dict, List, Optional
 import numpy as np
 import pandas as pd
 
-from bot.ml.feature_schema import FEATURE_NAMES, REGIME_ENUM
+from bot.ml.feature_schema import FEATURE_NAMES, MICROSTRUCTURE_FEATURES, REGIME_ENUM
 
-FEATURE_SCHEMA_VERSION = "v1"
+FEATURE_SCHEMA_VERSION = "v2"
 
 
 def feature_names() -> List[str]:
@@ -42,7 +42,7 @@ def _regime_tag(vol_30s: float, ema_slope_30s: float) -> int:
     return REGIME_ENUM["flat"]
 
 
-def build_feature_frame(ticks: pd.DataFrame) -> pd.DataFrame:
+def build_feature_frame(ticks: pd.DataFrame, microstructure: Optional[Dict[str, float]] = None) -> pd.DataFrame:
     """
     Build 1s bars + features from raw tick data.
 
@@ -108,6 +108,17 @@ def build_feature_frame(ticks: pd.DataFrame) -> pd.DataFrame:
 
     bars["regime_tag"] = bars.apply(lambda row: _regime_tag(row["vol_30s"], row["ema_slope_30s"]), axis=1)
 
+    micro = microstructure or {}
+    for name in MICROSTRUCTURE_FEATURES:
+        value = micro.get(name, 0.0)
+        try:
+            value = float(value)
+        except Exception:
+            value = 0.0
+        if value != value:
+            value = 0.0
+        bars[name] = value
+
     return bars
 
 
@@ -131,6 +142,7 @@ class FeatureBuilder:
         self.qty = deque(maxlen=self.max_ticks)
         self.side = deque(maxlen=self.max_ticks)
         self.ts = deque(maxlen=self.max_ticks)
+        self._microstructure: Dict[str, float] = {}
 
     def add_tick(self, timestamp: int, price: float, qty: float, side: str = "buy") -> Optional[np.ndarray]:
         self.ts.append(int(timestamp))
@@ -139,6 +151,9 @@ class FeatureBuilder:
         side_sign = -1.0 if str(side).lower().startswith("sell") else 1.0
         self.side.append(side_sign)
         return self._compute()
+
+    def update_microstructure(self, microstructure: Dict[str, float]) -> None:
+        self._microstructure.update(microstructure or {})
 
     def _compute(self) -> Optional[np.ndarray]:
         if len(self.ts) < 2:
@@ -154,5 +169,5 @@ class FeatureBuilder:
         df["ts"] = pd.to_datetime(df["timestamp"], unit="ms")
         if (df["ts"].max() - df["ts"].min()).total_seconds() < self.warmup_seconds:
             return None
-        bars = build_feature_frame(df)
+        bars = build_feature_frame(df, microstructure=self._microstructure)
         return build_feature_vector(bars)

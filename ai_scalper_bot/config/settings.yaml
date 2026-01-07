@@ -16,9 +16,45 @@ app:
   warmup_seconds: 300
   warmup_seconds: 300
 
+enabled_market: "spot"
+futures_enabled: false
+
 data:
   max_tick_staleness_ms: 5000
   max_book_staleness_ms: 5000
+
+microstructure:
+  enabled: true
+  max_age_ms: 2000
+  publish_topic_suffix: "microstructure.v1"
+
+spot_scalper:
+  enabled: false
+  symbols: ["BTCUSDT"]
+  thresholds:
+    max_spread_bps: 2.0
+    max_short_vol_bps: 15.0
+    trend_threshold: 0.0005
+    imbalance_threshold: 0.1
+    vol_window: 30
+    ema_fast: 5
+    ema_slow: 20
+  fees:
+    fee_bps: 5.0
+    slippage_bps: 1.0
+  execution:
+    ttl_ms: 800
+    max_requotes: 3
+    tick_size: 0.01
+    min_qty: 0.001
+  risk:
+    risk_per_trade: 0.01
+    daily_dd_limit: 0.03
+    max_consecutive_errors: 5
+    spread_kill_bps: 10.0
+    equity_usd: 0.0
+  events_path: "runtime/events/spot_scalper.jsonl"
+  status_file: "runtime/status/spot_scalper.json"
 
 binance:
   base_url: "https://api.binance.com"
@@ -28,10 +64,10 @@ binance:
 
 binance_demo:
   enabled: true
-  exchange: "futures"  # futures | spot
+  exchange: "spot"  # spot only
   testnet: true        # hard-require testnet only
-  base_url: "https://testnet.binancefuture.com/fapi"
-  ws_base_url: "wss://testnet.binancefuture.com/ws-fapi/v1"
+  base_url: "https://testnet.binance.vision"
+  ws_base_url: "wss://testnet.binance.vision/ws"
   default_symbol: "BTCUSDT"
   symbols: ["BTCUSDT", "ETHUSDT"]
   default_order_type: "MARKET"
@@ -221,6 +257,20 @@ execution:
       cancel_timeout_ms: 1500
       max_partial_fill_time_ms: 2000
       min_fill_ratio_before_cancel: 0.25
+
+    entry_gate:
+      enabled: false
+      ofi_ma5_threshold: 0.0
+      p_up_h1: 0.0
+      p_up_h5: 0.0
+      require_microstructure: false
+
+    smart_executor:
+      enabled: false
+      require_book: true
+      market: "usdm"
+      order_policy: "maker_first"
+      fallback_policy: "aggressive_limit"
 
     risk_guards:
       max_open_scalp_positions: 2

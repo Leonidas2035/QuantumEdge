@@ -4,7 +4,17 @@ Shared feature schema for offline and online pipelines.
 This keeps feature names consistent between dataset_builder and online_features.
 """
 
-FEATURE_SCHEMA_VERSION = "v1"
+FEATURE_SCHEMA_VERSION = "v2"
+
+MICROSTRUCTURE_FEATURES = [
+    "ofi_z",
+    "ofi_ma5",
+    "spread_bps",
+    "top_qty_sum",
+    "trade_rate_1s",
+    "volume_1s",
+]
+
 
 FEATURE_NAMES = [
     # Returns / volatility
@@ -30,7 +40,7 @@ FEATURE_NAMES = [
     "vol_spike_30s",
     # Regime tag (numeric)
     "regime_tag",
-]
+] + MICROSTRUCTURE_FEATURES
 
 
 REGIME_ENUM = {

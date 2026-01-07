@@ -16,11 +16,13 @@ from MarketDataHub.models import (
     Bar1sEvent,
     L1Event,
     MarketEvent,
+    MicrostructureEvent,
     SnapshotRequest,
     SnapshotResponse,
     TradeEvent,
     decode_event,
 )
+from MarketDataHub.models.orderbook import DEPTH_EVENT_TYPE, DepthL2Event
 
 
 class HubSourceConfig:
@@ -30,12 +32,15 @@ class HubSourceConfig:
         self.snapshot_endpoint = hub.get("snapshot_endpoint", "ipc:///tmp/quantum_market_snapshot.ipc")
         self.rcvhwm = int(hub.get("rcvhwm", 1000))
         self.conflate_l1 = bool(hub.get("conflate_l1", False))
+        self.include_microstructure = bool(hub.get("include_microstructure", True))
+        self.microstructure_topic_suffix = str(hub.get("microstructure_topic_suffix", "microstructure.v1"))
         self.topics = hub.get("topics") or self._default_topics(symbols)
         self.snapshot_timeout_ms = int(hub.get("snapshot_timeout_ms", 500))
 
-    @staticmethod
-    def _default_topics(symbols: Iterable[str]) -> List[str]:
+    def _default_topics(self, symbols: Iterable[str]) -> List[str]:
         types = ["trade", "l1", "bar1s"]
+        if self.include_microstructure:
+            types.append(self.microstructure_topic_suffix)
         return [f"{symbol}:{etype}" for symbol in symbols for etype in types]
 
 
@@ -63,11 +68,6 @@ class HubSnapshotClient:
 
 
 class HubMarketDataSource:
-    EVENT_MAP = {
-        "trade": TradeEvent,
-        "l1": L1Event,
-        "bar1s": Bar1sEvent,
-    }
 
     def __init__(
         self,
@@ -78,6 +78,13 @@ class HubMarketDataSource:
     ) -> None:
         self.symbols = symbols
         self._config = HubSourceConfig(source_cfg or config.get("market_data", {}), symbols)
+        self._event_map = {
+            "trade": TradeEvent,
+            "l1": L1Event,
+            "bar1s": Bar1sEvent,
+            DEPTH_EVENT_TYPE: DepthL2Event,
+            self._config.microstructure_topic_suffix: MicrostructureEvent,
+        }
         self._ctx = zmq.asyncio.Context.instance()
         self._sub = self._ctx.socket(zmq.SUB)
         self._sub.setsockopt(zmq.RCVHWM, self._config.rcvhwm)
@@ -144,7 +151,7 @@ class HubMarketDataSource:
             logging.warning("Gap detected for %s:%s (got %s expected %s)", symbol, event_type, seq, last_seq + 1)
             snapshot = await self._snapshot_client.request(symbol, event_type)
             if snapshot and snapshot.ok and snapshot.payload:
-                event_cls = self.EVENT_MAP.get(snapshot.payload_type)
+                event_cls = self._event_map.get(snapshot.payload_type)
                 if event_cls:
                     cached = decode_event(snapshot.payload, event_cls)
                     self._seq_tracker[key] = cached.seq
@@ -153,11 +160,11 @@ class HubMarketDataSource:
         return None
 
     def _decode_event(self, event_type: str, payload: bytes) -> Optional[MarketEvent]:
-        event_cls = self.EVENT_MAP.get(event_type)
+        event_cls = self._event_map.get(event_type)
         if not event_cls:
             logging.debug("Unknown event_type %s", event_type)
             return None
-        return decode_event(payload, type=event_cls)
+        return decode_event(payload, type_=event_cls)
 
     def _normalize_event(self, event: MarketEvent) -> Dict[str, Any]:
         base = {
@@ -168,12 +175,47 @@ class HubMarketDataSource:
         if isinstance(event, TradeEvent):
             base.update({"p": event.price, "q": event.size, "side": event.taker_side})
         elif isinstance(event, L1Event):
+            mid = None
+            if event.best_bid and event.best_ask:
+                mid = (event.best_bid + event.best_ask) / 2.0
+            depth = None
+            if mid and event.bid_size and event.ask_size:
+                depth = mid * (event.bid_size + event.ask_size)
             base.update(
                 {
                     "b": event.best_bid,
                     "a": event.best_ask,
                     "quant_bid": event.bid_size,
                     "quant_ask": event.ask_size,
+                    "bid_qty": event.bid_size,
+                    "ask_qty": event.ask_size,
+                    "depth": depth,
+                }
+            )
+        elif isinstance(event, DepthL2Event):
+            best_bid_px = None
+            best_bid_qty = None
+            if event.bids:
+                best_bid_px = max(level.price for level in event.bids)
+                best_bid_qty = sum(level.qty for level in event.bids if level.price == best_bid_px)
+            best_ask_px = None
+            best_ask_qty = None
+            if event.asks:
+                best_ask_px = min(level.price for level in event.asks)
+                best_ask_qty = sum(level.qty for level in event.asks if level.price == best_ask_px)
+            mid = event.mid
+            if mid is None and best_bid_px is not None and best_ask_px is not None:
+                mid = (best_bid_px + best_ask_px) / 2.0
+            depth = None
+            if mid and best_bid_qty and best_ask_qty:
+                depth = mid * (best_bid_qty + best_ask_qty)
+            base.update(
+                {
+                    "b": best_bid_px,
+                    "a": best_ask_px,
+                    "bid_qty": best_bid_qty,
+                    "ask_qty": best_ask_qty,
+                    "depth": depth,
                 }
             )
         elif isinstance(event, Bar1sEvent):
@@ -184,6 +226,33 @@ class HubMarketDataSource:
                     "low": event.low,
                     "close": event.close,
                     "volume": event.volume,
+                }
+            )
+        elif isinstance(event, MicrostructureEvent):
+            mid = None
+            if event.best_bid_px and event.best_ask_px:
+                mid = (event.best_bid_px + event.best_ask_px) / 2.0
+            depth = None
+            if mid and event.top_qty_sum:
+                depth = mid * event.top_qty_sum
+            base.update(
+                {
+                    "b": event.best_bid_px,
+                    "a": event.best_ask_px,
+                    "depth": depth,
+                    "best_bid_qty": event.best_bid_qty,
+                    "best_ask_qty": event.best_ask_qty,
+                    "ofi_raw": event.ofi_raw,
+                    "ofi_z": event.ofi_z,
+                    "ofi_ma5": event.ofi_ma5,
+                    "spread_bps": event.spread_bps,
+                    "top_qty_sum": event.top_qty_sum,
+                    "trade_rate_1s": event.trade_rate_1s,
+                    "volume_1s": event.volume_1s,
+                    "is_gap": event.is_gap,
+                    "is_resynced": event.is_resynced,
+                    "ts_event": event.ts_event,
+                    "ts_ingest": event.ts_ingest,
                 }
             )
         return base
