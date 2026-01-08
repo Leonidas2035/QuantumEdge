@@ -41,3 +41,43 @@ rules:
     threshold: 1
     duration_sec: 30
     cooldown_sec: 120
+  - name: "telemetry_stale"
+    severity: "WARN"
+    field: "dashboard.telemetry.stale_count"
+    operator: ">="
+    threshold: 1
+    duration_sec: 20
+    cooldown_sec: 60
+    resolve_after_sec: 20
+  - name: "api_errors"
+    severity: "WARN"
+    field: "dashboard.health.api_errors_1m"
+    operator: ">"
+    threshold: 0
+    duration_sec: 10
+    cooldown_sec: 60
+    resolve_after_sec: 20
+  - name: "cancel_storm"
+    severity: "WARN"
+    field: "dashboard.orders.cancel_count_1m"
+    operator: ">="
+    threshold: 20
+    duration_sec: 10
+    cooldown_sec: 60
+    resolve_after_sec: 20
+  - name: "stuck_sells_dca"
+    severity: "WARN"
+    field: "dashboard.dca.stuck_sells"
+    operator: ">="
+    threshold: 1
+    duration_sec: 20
+    cooldown_sec: 120
+    resolve_after_sec: 30
+  - name: "limit_breaches"
+    severity: "CRIT"
+    field: "dashboard.limits.breaches"
+    operator: ">="
+    threshold: 1
+    duration_sec: 10
+    cooldown_sec: 60
+    resolve_after_sec: 20

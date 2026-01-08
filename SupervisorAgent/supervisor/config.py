@@ -200,6 +200,7 @@ class SnapshotSchedulerConfig:
 
     enabled: bool
     interval_minutes: int
+    history_window_minutes: int = 15
 
 
 @dataclass
@@ -236,7 +237,7 @@ class AutopilotConfig:
     policy_accept_max_breaker_storms: int
     policy_accept_max_data_stale_sec: int
     policy_accept_min_coverage: float
-    history_window_minutes: int
+    history_window_minutes: int = 60
 
 
 @dataclass
@@ -250,6 +251,11 @@ class DashboardConfig:
     max_snapshots: int
     require_snapshot_recent_minutes: int
     require_heartbeat_recent_seconds: int
+    telemetry_stale_ms: int
+    cancel_window_sec: int
+    cancel_storm_threshold: int
+    dca_stuck_sell_ms: int
+    alert_eval_interval_sec: int
 
 
 @dataclass
@@ -820,11 +826,17 @@ def load_dashboard_config(path: Path) -> DashboardConfig:
             max_snapshots=12,
             require_snapshot_recent_minutes=10,
             require_heartbeat_recent_seconds=60,
+            telemetry_stale_ms=5000,
+            cancel_window_sec=60,
+            cancel_storm_threshold=20,
+            dca_stuck_sell_ms=60000,
+            alert_eval_interval_sec=5,
         )
 
     raw = _load_yaml(path)
     overview = raw.get("overview", {}) or {}
     health = raw.get("health", {}) or {}
+    stage9 = raw.get("stage9", {}) or {}
 
     return DashboardConfig(
         enabled=bool(raw.get("enabled", True)),
@@ -834,6 +846,11 @@ def load_dashboard_config(path: Path) -> DashboardConfig:
         max_snapshots=int(overview.get("max_snapshots", 12)),
         require_snapshot_recent_minutes=int(health.get("require_snapshot_recent_minutes", 10)),
         require_heartbeat_recent_seconds=int(health.get("require_heartbeat_recent_seconds", 60)),
+        telemetry_stale_ms=int(stage9.get("telemetry_stale_ms", 5000)),
+        cancel_window_sec=int(stage9.get("cancel_window_sec", 60)),
+        cancel_storm_threshold=int(stage9.get("cancel_storm_threshold", 20)),
+        dca_stuck_sell_ms=int(stage9.get("dca_stuck_sell_ms", 60000)),
+        alert_eval_interval_sec=int(stage9.get("alert_eval_interval_sec", 5)),
     )
 
 

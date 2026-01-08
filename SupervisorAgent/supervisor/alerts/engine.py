@@ -5,7 +5,7 @@ from __future__ import annotations
 import time
 import uuid
 from dataclasses import dataclass
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 from supervisor.alerts.rules import AlertRule
 from supervisor.alerts.storage import AlertRecord, AlertStorage
@@ -23,8 +23,8 @@ class AlertEngine:
         self.storage = storage
         self._last_fired: Dict[str, float] = {}
 
-    def evaluate(self, summary: Dict[str, Any]) -> AlertResult:
-        now = time.time()
+    def evaluate(self, summary: Dict[str, Any], *, now: Optional[float] = None) -> AlertResult:
+        now = now if now is not None else time.time()
         active = self.storage.load_active()
         silenced = self._active_silences(now)
         for rule in self.rules:
@@ -46,12 +46,14 @@ class AlertEngine:
                         acknowledged=False,
                         ack_note=None,
                         evidence=match["evidence"],
+                        clear_since=None,
                     )
                     active[record.alert_id] = record
                     existing = record
                 existing.last_seen = now
                 existing.message = match["message"]
                 existing.evidence = match["evidence"]
+                existing.clear_since = None
                 if now - existing.first_seen >= rule.duration_sec:
                     if not existing.active:
                         existing.active = True
@@ -68,20 +70,22 @@ class AlertEngine:
                             )
                     active[existing.alert_id] = existing
             else:
-                if existing and existing.active:
-                    existing.active = False
-                    existing.last_seen = now
-                    self.storage.append_history(
-                        {
-                            "ts": now,
-                            "type": "ALERT_RESOLVED",
-                            "alert_id": existing.alert_id,
-                            "rule": rule.name,
-                            "message": existing.message,
-                        }
-                    )
                 if existing:
-                    active.pop(existing.alert_id, None)
+                    if existing.clear_since is None:
+                        existing.clear_since = now
+                    if existing.active and now - existing.clear_since >= rule.resolve_after_sec:
+                        existing.active = False
+                        existing.last_seen = now
+                        self.storage.append_history(
+                            {
+                                "ts": now,
+                                "type": "ALERT_RESOLVED",
+                                "alert_id": existing.alert_id,
+                                "rule": rule.name,
+                                "message": existing.message,
+                            }
+                        )
+                        active.pop(existing.alert_id, None)
         self.storage.save_active(active)
         return AlertResult(
             active=[alert.to_dict() for alert in active.values() if alert.active],

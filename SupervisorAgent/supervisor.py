@@ -62,6 +62,8 @@ from supervisor.api_server import ApiServer, ApiServerConfig
 from supervisor.snapshot_models import SnapshotReport
 from supervisor.tasks.snapshot_scheduler import SnapshotScheduler
 from supervisor.dashboard.service import DashboardService
+from supervisor.dashboard.audit_log import DashboardAuditLogger
+from supervisor.dashboard.state_store import DashboardStateStore
 from supervisor.tsdb import NoopTimeseriesStore, ClickHouseTimeseriesStore, QuestDbTimeseriesStore, TsdbWriter
 from supervisor.tsdb.maintenance import apply_retention_and_rollups
 from supervisor.tsdb.query import build_timeseries_query, derive_questdb_query_url, questdb_query, sanitize_symbol
@@ -185,7 +187,7 @@ class SupervisorApp:
             self.logger,
         )
         self.meta_supervisor_state_path = self.state_dir / "meta_supervisor_state.json"
-        # Dashboard service
+        # Dashboard service (legacy views)
         self.dashboard_service = DashboardService(
             cfg={
                 "enabled": dashboard_config.enabled,
@@ -275,10 +277,25 @@ class SupervisorApp:
         self.autopilot = build_controller(self, autopilot_cfg, paths)
         self.action_ledger: Optional[ActionLedger] = None
         self._directives_last_hash: Optional[str] = None
-        alerts_path = project_root / "config" / "alerts.yaml"
+        alerts_path = project_root / "SupervisorAgent" / "config" / "alerts.yaml"
+        if not alerts_path.exists():
+            fallback = project_root / "config" / "alerts.yaml"
+            if fallback.exists():
+                alerts_path = fallback
         alert_rules = load_alert_rules(alerts_path)
         self.alert_storage = AlertStorage(self.paths.runtime_dir / "alerts")
         self.alert_engine = AlertEngine(alert_rules, self.alert_storage)
+        dashboard_audit_path = self.paths.runtime_dir / "dashboard" / "audit.jsonl"
+        self.dashboard_audit_logger = DashboardAuditLogger(dashboard_audit_path, self.logger)
+        self.dashboard_store = DashboardStateStore(
+            audit_logger=self.dashboard_audit_logger,
+            alert_engine=self.alert_engine,
+            telemetry_stale_ms=int(getattr(dashboard_config, "telemetry_stale_ms", 5000)),
+            cancel_window_sec=int(getattr(dashboard_config, "cancel_window_sec", 60)),
+            cancel_storm_threshold=int(getattr(dashboard_config, "cancel_storm_threshold", 20)),
+            dca_stuck_sell_ms=int(getattr(dashboard_config, "dca_stuck_sell_ms", 60000)),
+            alert_eval_interval_sec=int(getattr(dashboard_config, "alert_eval_interval_sec", 5)),
+        )
         self._alert_eval_interval_s = 10
         self._last_alert_eval_ts = 0.0
         self._last_alert_result: Optional[AlertResult] = None
@@ -410,7 +427,12 @@ class SupervisorApp:
         return self.policy_engine.debug_payload()
 
     def ingest_telemetry_event(self, payload: Dict[str, Any]) -> Dict[str, Any]:
-        return self.telemetry.ingest(payload)
+        event = self.telemetry.ingest(payload)
+        try:
+            self.dashboard_store.ingest_event(payload)
+        except Exception as exc:
+            self.logger.debug("Dashboard ingest failed: %s", exc)
+        return event
 
     def get_telemetry_summary(self) -> Dict[str, Any]:
         return self.telemetry.summary()
@@ -562,20 +584,7 @@ class SupervisorApp:
         return {"silenced_until": until}
 
     def audit_recent(self, limit: int = 200) -> List[Dict[str, Any]]:
-        audit_path = self.paths.runtime_dir / "audit" / "autopilot_actions.jsonl"
-        if not audit_path.exists():
-            return []
-        try:
-            lines = audit_path.read_text(encoding="utf-8").splitlines()
-        except OSError:
-            return []
-        items = []
-        for line in lines[-limit:]:
-            try:
-                items.append(json.loads(line))
-            except json.JSONDecodeError:
-                continue
-        return items
+        return self.dashboard_audit_logger.read(limit=limit)
 
     def status(self) -> None:
         running = self.process_manager.is_running()
@@ -1199,19 +1208,7 @@ class SupervisorApp:
 
     # Dashboard facades
     def dashboard_overview(self) -> Dict[str, Any]:
-        if not self.dashboard_service or not self.dashboard_service.enabled:
-            return {"status": "disabled"}
-        overview = self.dashboard_service.get_overview()
-        return {
-            "timestamp": overview.timestamp.isoformat(),
-            "total_pnl": overview.total_pnl,
-            "pnl_1h": overview.pnl_1h,
-            "open_positions": overview.open_positions,
-            "open_orders": overview.open_orders,
-            "strategy_mode": overview.strategy_mode,
-            "market_trend": overview.market_trend,
-            "market_risk_level": overview.market_risk_level,
-        }
+        return self.dashboard_store.overview()
 
     def dashboard_health(self) -> Dict[str, Any]:
         if not self.dashboard_service or not self.dashboard_service.enabled:
@@ -1249,6 +1246,23 @@ class SupervisorApp:
         summary["kill_switch"] = self._read_kill_switch_state()
         return summary
 
+    def dashboard_strategies(self) -> Dict[str, Any]:
+        return {"strategies": self.dashboard_store.strategies()}
+
+    def dashboard_performance(self) -> Dict[str, Any]:
+        return self.dashboard_store.performance()
+
+    def dashboard_alerts(self) -> Dict[str, Any]:
+        payload = self.alerts_snapshot()
+        payload["ts_ms"] = int(time.time() * 1000)
+        return payload
+
+    def dashboard_audit(self, since_ts_ms: Optional[int] = None, limit: int = 200) -> Dict[str, Any]:
+        return self.dashboard_store.audit(since_ts_ms, limit)
+
+    def dashboard_reset_counters(self) -> Dict[str, Any]:
+        return self.dashboard_store.reset_counters()
+
     def _build_alert_summary(self) -> Dict[str, Any]:
         metrics = self.autopilot.collector.collect()
         telemetry_summary = self.telemetry.summary()
@@ -1274,11 +1288,16 @@ class SupervisorApp:
             "summary": summary,
             "telemetry": telemetry_summary,
             "ingest": ingest_status,
+            "dashboard": self.dashboard_store.alert_summary(),
         }
 
     def _evaluate_alerts(self) -> None:
         payload = self._build_alert_summary()
         self._last_alert_result = self.alert_engine.evaluate(payload)
+        try:
+            self.dashboard_store.record_alert_transitions(self._last_alert_result, payload)
+        except Exception as exc:
+            self.logger.debug("Dashboard alert audit failed: %s", exc)
         self._last_alert_eval_ts = time.time()
 
     def _policy_mismatch(self, raw: Dict[str, Any]) -> bool:
@@ -1718,6 +1737,10 @@ def build_app(
     processes_path = Path(supervisor_config.processes_file)
     if not processes_path.is_absolute():
         processes_path = (project_root / processes_path).resolve()
+    if not processes_path.exists():
+        fallback = supervisor_config_dir / processes_path.name
+        if fallback.exists():
+            processes_path = fallback
     process_specs = load_processes_spec(processes_path, paths_config.qe_root)
     risk_config = load_risk_config(supervisor_config_dir / "risk.yaml")
     llm_config = load_llm_supervisor_config(supervisor_config_dir / "llm_supervisor.yaml")

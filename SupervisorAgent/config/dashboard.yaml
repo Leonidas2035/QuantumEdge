@@ -16,3 +16,10 @@ overview:
 health:
   require_snapshot_recent_minutes: 10
   require_heartbeat_recent_seconds: 60
+
+stage9:
+  telemetry_stale_ms: 5000
+  cancel_window_sec: 60
+  cancel_storm_threshold: 20
+  dca_stuck_sell_ms: 60000
+  alert_eval_interval_sec: 5

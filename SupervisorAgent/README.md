@@ -128,6 +128,12 @@ Run from the repo root (`QE_ROOT`):
 ## Stage 9 ??? Dashboard & TSDB (observability)
 - JSON dashboard endpoints:
   - `GET /api/v1/dashboard/overview`
+  - `GET /api/v1/dashboard/strategies`
+  - `GET /api/v1/dashboard/performance`
+  - `GET /api/v1/dashboard/alerts`
+  - `GET /api/v1/dashboard/audit?since_ts_ms=&limit=`
+  - `POST /api/v1/dashboard/reset-counters`
   - `GET /api/v1/dashboard/health`
   - `GET /api/v1/dashboard/events`
 - Optional TSDB pipeline (config/tsdb.yaml) can persist snapshots/orders/trades for charting. A sample ClickHouse schema is provided in `sql/clickhouse_schema.sql`. If TSDB is disabled, the system continues to operate using JSONL events only.
+- Strategy merge precedence: `regime_directive.v1` overrides overlapping fields from `strategy_limits.v1` (e.g., `allow_entries`, `mode`, `risk_state`, `throttle`).

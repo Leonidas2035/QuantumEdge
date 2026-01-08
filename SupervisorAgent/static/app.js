@@ -80,6 +80,16 @@ function renderSummary(summary) {
   }
 }
 
+function renderOverview(overview) {
+  $("overview-strategies").textContent = overview.strategies_total ?? "-";
+  $("overview-alerts").textContent = overview.alerts_active ?? "-";
+  const stale = overview.stale_telemetry || {};
+  $("overview-stale").textContent = `${stale.count ?? "-"} (max ${stale.max_age_ms ?? "-"} ms)`;
+  const perf = overview.performance || {};
+  $("overview-pnl").textContent = perf.net_pnl !== undefined ? perf.net_pnl.toFixed(4) : "-";
+  $("overview-updated").textContent = `Updated ${overview.ts_ms || "-"}`;
+}
+
 function renderList(containerId, items, formatter) {
   const container = $(containerId);
   if (!container) return;
@@ -109,6 +119,28 @@ function renderAlerts(active, recent) {
     return `<div><div>${alert.type} - ${alert.rule || ""}</div><div class="meta">${new Date(
       (alert.ts || 0) * 1000
     ).toISOString()}</div></div>`;
+  });
+}
+
+function renderStrategies(strategies) {
+  renderList("strategies-list", strategies, (item) => {
+    const updates = item.last_update_ts_ms ? new Date(item.last_update_ts_ms).toISOString() : "-";
+    const breaches = (item.limit_breaches || []).join(", ") || "none";
+    return `<div><div>${item.strategy_id} / ${item.symbol}</div><div class="meta">Updated ${updates}</div></div>
+      <div class="meta">Breaches: ${breaches}</div>`;
+  });
+}
+
+function renderPerformance(perf) {
+  const session = perf.session || {};
+  renderList("performance-session", [session], (item) => {
+    return `<div><div>Closed deals: ${item.closed_deals || 0}</div>
+      <div class="meta">Net PnL: ${item.net_pnl || 0} | Wins: ${item.wins || 0} | Losses: ${item.losses || 0}</div></div>`;
+  });
+  renderList("performance-strategies", perf.by_strategy || [], (item) => {
+    return `<div><div>${item.strategy_id} / ${item.symbol}</div><div class="meta">Deals: ${
+      item.closed_deals || 0
+    } Net: ${item.net_pnl || 0}</div></div>`;
   });
 }
 
@@ -184,15 +216,20 @@ async function refreshCharts() {
 
 async function refreshAll() {
   try {
+    const overview = await apiGet("/api/v1/dashboard/overview");
+    renderOverview(overview);
     const summary = await apiGet(`/api/v1/dashboard/summary?symbol=${state.symbol}`);
     renderSummary(summary);
+    const strategies = await apiGet("/api/v1/dashboard/strategies");
+    renderStrategies(strategies.strategies || []);
+    const performance = await apiGet("/api/v1/dashboard/performance");
+    renderPerformance(performance);
     setStatus("Connected", true);
-    const alerts = await apiGet("/api/v1/alerts/active");
-    const recentAlerts = await apiGet("/api/v1/alerts/recent?limit=50");
-    renderAlerts(alerts.active || [], recentAlerts.items || []);
+    const alerts = await apiGet("/api/v1/dashboard/alerts");
+    renderAlerts(alerts.active || [], alerts.recent || []);
     const events = await apiGet("/api/v1/dashboard/events/recent?limit=50");
     renderEvents("events-recent", events.events || []);
-    const audit = await apiGet("/api/v1/dashboard/audit/recent?limit=50");
+    const audit = await apiGet("/api/v1/dashboard/audit?limit=50");
     renderEvents("audit-recent", audit.items || []);
     await refreshCharts();
   } catch (err) {
@@ -237,6 +274,10 @@ function attachHandlers() {
       enabled: target,
       challenge_id: challenge.challenge_id,
     });
+    refreshAll();
+  });
+  $("reset-counters").addEventListener("click", async () => {
+    await apiPost("/api/v1/dashboard/reset-counters", {});
     refreshAll();
   });
   document.body.addEventListener("click", async (event) => {

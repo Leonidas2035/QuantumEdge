@@ -21,6 +21,29 @@
 
     <main class="grid">
       <section class="card">
+        <h2>Overview</h2>
+        <div class="summary-grid">
+          <div>
+            <div class="label">Strategies</div>
+            <div id="overview-strategies" class="value">-</div>
+          </div>
+          <div>
+            <div class="label">Active alerts</div>
+            <div id="overview-alerts" class="value">-</div>
+          </div>
+          <div>
+            <div class="label">Stale telemetry</div>
+            <div id="overview-stale" class="value">-</div>
+          </div>
+          <div>
+            <div class="label">Pnl (net)</div>
+            <div id="overview-pnl" class="value">-</div>
+          </div>
+        </div>
+        <div class="muted" id="overview-updated">-</div>
+      </section>
+
+      <section class="card">
         <h2>Summary</h2>
         <div class="summary-grid">
           <div>
@@ -67,6 +90,18 @@
       </section>
 
       <section class="card">
+        <h2>Strategies</h2>
+        <div id="strategies-list" class="list compact"></div>
+      </section>
+
+      <section class="card">
+        <h2>Performance</h2>
+        <div id="performance-session" class="list"></div>
+        <div class="muted">By strategy</div>
+        <div id="performance-strategies" class="list compact"></div>
+      </section>
+
+      <section class="card">
         <h2>Controls</h2>
         <div class="controls">
           <div class="control-row">
@@ -93,6 +128,10 @@
             <label for="kill-switch">Kill switch</label>
             <button id="kill-switch-toggle" class="danger">Toggle</button>
             <span class="muted">Requires confirmation</span>
+          </div>
+          <div class="control-row">
+            <label for="reset-counters">Performance counters</label>
+            <button id="reset-counters" class="secondary">Reset counters</button>
           </div>
         </div>
       </section>

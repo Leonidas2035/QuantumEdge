@@ -21,6 +21,7 @@ class AlertRecord:
     acknowledged: bool
     ack_note: Optional[str]
     evidence: Dict[str, Any]
+    clear_since: Optional[float] = None
 
     def to_dict(self) -> Dict[str, Any]:
         return {
@@ -34,6 +35,7 @@ class AlertRecord:
             "acknowledged": self.acknowledged,
             "ack_note": self.ack_note,
             "evidence": self.evidence,
+            "clear_since": self.clear_since,
         }
 
 
@@ -67,6 +69,7 @@ class AlertStorage:
                 acknowledged=bool(alert.get("acknowledged", False)),
                 ack_note=alert.get("ack_note"),
                 evidence=alert.get("evidence", {}) if isinstance(alert.get("evidence"), dict) else {},
+                clear_since=alert.get("clear_since"),
             )
             if record.alert_id:
                 result[record.alert_id] = record

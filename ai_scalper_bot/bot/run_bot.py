@@ -30,6 +30,7 @@ from bot.trading.executor import BinanceDemoExecutor
 from bot.trading.bingx_executor import BingXDemoExecutor
 from bot.trading.paper_trader import PaperTrader
 from bot.trading.execution_mode import NormalExecutionMode, ScalpExecutionMode
+from bot.trading.deal_events import DealEventEmitter, ScalpDealTracker
 from bot.trading.order_policy import OrderPolicy
 from bot.trading.trade_stats import TradeStats
 from bot.market_data.data_manager import DataManager
@@ -293,6 +294,7 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
                 "mode": str(config.get("app.mode", "paper")).lower(),
             }
         )
+    deal_emitter = DealEventEmitter(lambda event_type, data, symbol: emit_event(event_type, data, symbol_override=symbol, component="bot"))
     mode = str(config.get("app.mode", "paper")).lower()
     demo_mode = mode == "demo"
     data_source = _resolve_data_source()
@@ -529,6 +531,7 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
             "feature_builder": feature_builder,
             "engine": engine,
             "trader": trader,
+            "scalp_deal_tracker": ScalpDealTracker(deal_emitter),
             "risk_mod": LLMRiskModerator(),
             "llm_enabled": bool(config.get("app.llm_enabled", True)),
             "execution_mode": execution_mode,
@@ -1223,6 +1226,23 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
                                 if entry and supervisor_client is not None:
                                     direction = 1 if entry.get("side") == "buy" else -1
                                     pnl = (price - entry.get("entry_price", price)) * float(entry.get("qty", 0.0)) * direction
+                                    tracker = ctx.get("scalp_deal_tracker")
+                                    if tracker:
+                                        cycle_id = str(entry.get("entry_ts") or ts)
+                                        qty = float(entry.get("qty", 0.0) or 0.0)
+                                        volume_quote = abs(price * qty)
+                                        tracker.record_cycle_closed(
+                                            strategy_id="SCALP",
+                                            symbol=evt_symbol,
+                                            cycle_id=cycle_id,
+                                            pnl=float(pnl),
+                                            fees=0.0,
+                                            volume_quote=volume_quote,
+                                            ts_ms=int(ts),
+                                            entry_price=entry.get("entry_price"),
+                                            exit_price=price,
+                                            qty=qty,
+                                        )
                                     payload = {
                                         "symbol": evt_symbol,
                                         "side": entry.get("side"),

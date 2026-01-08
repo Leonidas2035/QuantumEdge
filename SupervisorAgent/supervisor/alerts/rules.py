@@ -18,6 +18,7 @@ class AlertRule:
     threshold: float
     duration_sec: int
     cooldown_sec: int
+    resolve_after_sec: int = 0
 
 
 def load_alert_rules(path: Path) -> List[AlertRule]:
@@ -38,7 +39,7 @@ def load_alert_rules(path: Path) -> List[AlertRule]:
                 threshold=float(entry.get("threshold", 0)),
                 duration_sec=int(entry.get("duration_sec", 0)),
                 cooldown_sec=int(entry.get("cooldown_sec", 60)),
+                resolve_after_sec=int(entry.get("resolve_after_sec", 0) or 0),
             )
         )
     return [rule for rule in rules if rule.name and rule.field]
-

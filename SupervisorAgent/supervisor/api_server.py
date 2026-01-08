@@ -371,6 +371,14 @@ class ApiServer:
                         logger.exception("Error applying kill switch: %s", exc)
                         self._send_json(500, {"error": "internal_error"})
                     return
+                if self.path == "/api/v1/dashboard/reset-counters":
+                    try:
+                        response = app.dashboard_reset_counters()
+                        self._send_json(200, response)
+                    except Exception as exc:  # pylint: disable=broad-except
+                        logger.exception("Error resetting dashboard counters: %s", exc)
+                        self._send_json(500, {"error": "internal_error"})
+                    return
 
                 self._send_json(404, {"error": "not_found"})
 
@@ -516,6 +524,53 @@ class ApiServer:
                         self._send_json(200, response)
                     except Exception as exc:  # pylint: disable=broad-except
                         logger.exception("Error building overview: %s", exc)
+                        self._send_json(500, {"error": "internal_error"})
+                    return
+                if self.path.startswith("/api/v1/dashboard/strategies"):
+                    try:
+                        response = app.dashboard_strategies()
+                        self._send_json(200, response)
+                    except Exception as exc:  # pylint: disable=broad-except
+                        logger.exception("Error building strategies: %s", exc)
+                        self._send_json(500, {"error": "internal_error"})
+                    return
+                if self.path.startswith("/api/v1/dashboard/performance"):
+                    try:
+                        response = app.dashboard_performance()
+                        self._send_json(200, response)
+                    except Exception as exc:  # pylint: disable=broad-except
+                        logger.exception("Error building performance: %s", exc)
+                        self._send_json(500, {"error": "internal_error"})
+                    return
+                if self.path.startswith("/api/v1/dashboard/alerts"):
+                    try:
+                        response = app.dashboard_alerts()
+                        self._send_json(200, response)
+                    except Exception as exc:  # pylint: disable=broad-except
+                        logger.exception("Error building alerts: %s", exc)
+                        self._send_json(500, {"error": "internal_error"})
+                    return
+                if self.path.startswith("/api/v1/dashboard/audit"):
+                    try:
+                        limit = 200
+                        since_ts_ms = None
+                        if "?" in self.path:
+                            _, query = self.path.split("?", 1)
+                            for part in query.split("&"):
+                                if part.startswith("limit="):
+                                    try:
+                                        limit = int(part.split("=", 1)[1])
+                                    except ValueError:
+                                        limit = 200
+                                if part.startswith("since_ts_ms="):
+                                    try:
+                                        since_ts_ms = int(part.split("=", 1)[1])
+                                    except ValueError:
+                                        since_ts_ms = None
+                        response = app.dashboard_audit(since_ts_ms=since_ts_ms, limit=limit)
+                        self._send_json(200, response)
+                    except Exception as exc:  # pylint: disable=broad-except
+                        logger.exception("Error building audit list: %s", exc)
                         self._send_json(500, {"error": "internal_error"})
                     return
                 if self.path.startswith("/api/v1/dashboard/health"):
