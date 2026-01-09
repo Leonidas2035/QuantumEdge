@@ -20,6 +20,13 @@ from LockBotBTC.lockbot.contracts.lockbot_control_v1 import (
     validate_command,
 )
 from LockBotBTC.lockbot_btc.config import LockbotConfig
+from LockBotBTC.lockbot_btc.ddn.engine import (
+    DDNContext,
+    DDNEngine,
+    DDNIntent,
+    DDNMarketSnapshot,
+    DDNPositionSnapshot,
+)
 from LockBotBTC.lockbot_btc.ipc.control_subscriber import ControlSubscriber
 from LockBotBTC.lockbot_btc.ipc.hub_subscriber import HubSubscriber
 from LockBotBTC.lockbot_btc.ipc.publisher import BotPublisher
@@ -34,8 +41,9 @@ class LockBotService:
         self._cfg = cfg
         self._bot_state = BotState(bot_id=cfg.bot_id, symbol=cfg.symbol)
         self._bot_state.configure_cache(cfg.cmd_cache_size)
-        self._market_state = MarketState()
+        self._market_state = MarketState(volatility_window=cfg.ddn.volatility_window)
         self._account_state = AccountState()
+        self._ddn = DDNEngine(cfg.ddn)
         self._publisher = BotPublisher(cfg.bot_pub_endpoint)
         self._hub_sub = HubSubscriber(cfg.hub_sub_endpoint, cfg.market_topics)
         self._cmd_sub = ControlSubscriber(cfg.supervisor_cmd_sub_endpoint, CMD_TOPIC)
@@ -90,6 +98,24 @@ class LockBotService:
 
         payload = command.get("payload") if isinstance(command.get("payload"), dict) else {}
         cmd_type = payload.get("cmd")
+        intent = self._build_intent(cmd_type, payload)
+        decision = self._ddn.evaluate(self._build_ddn_context(intent))
+        verdict = decision.verdict
+        self._bot_state.record_decision(
+            verdict=verdict,
+            reasons=decision.reasons,
+            step_qty=decision.recommended_step_qty,
+            cost_bps=decision.expected_cost_bps,
+            plans=[plan.__dict__ for plan in decision.order_plans],
+        )
+        if decision.adjusted_target is not None:
+            self._bot_state.ddn_target = decision.adjusted_target
+        if decision.adjusted_band_low is not None:
+            self._bot_state.ddn_band_low = decision.adjusted_band_low
+        if decision.adjusted_band_high is not None:
+            self._bot_state.ddn_band_high = decision.adjusted_band_high
+        if intent.profile:
+            self._bot_state.ddn_profile = intent.profile
         if cmd_type == "SET_REGIME":
             self._bot_state.regime = str(payload.get("regime"))
         elif cmd_type == "PAUSE":
@@ -100,15 +126,14 @@ class LockBotService:
             self._bot_state.mode = "PANIC"
         elif cmd_type == "EXIT_LOCK":
             self._bot_state.mode = "EXITING"
-        elif cmd_type == "EXEC_STEP":
-            if self._bot_state.mode == "IDLE":
-                self._bot_state.mode = "LOCKED"
-        elif cmd_type == "SET_DELTA_TARGET":
+        elif cmd_type in {"EXEC_STEP", "SET_DELTA_TARGET"}:
             if self._bot_state.mode == "IDLE":
                 self._bot_state.mode = "LOCKED"
         self._bot_state.remember_cmd(cmd_id)
         self._bot_state.bump_state()
-        return self._build_ack(cmd_id, "ACCEPTED", state_version=self._bot_state.state_version)
+        ack_status = "ACCEPTED" if verdict in {"ALLOW", "MODIFY", "PANIC_ONLY"} else "REJECTED"
+        error_code = decision.reasons[0] if ack_status == "REJECTED" and decision.reasons else None
+        return self._build_ack(cmd_id, ack_status, error_code=error_code, state_version=self._bot_state.state_version)
 
     def build_status(self) -> StatusEnvelope:
         now_ms = int(time.time() * 1000)
@@ -150,6 +175,13 @@ class LockBotService:
                 "dropped_msgs": self._dropped_msgs,
                 "last_error": self._bot_state.last_error,
             },
+            "ddn": {
+                "last_verdict": self._bot_state.last_ddn_verdict,
+                "last_reasons": self._bot_state.last_ddn_reasons,
+                "last_step_qty": self._bot_state.last_ddn_step_qty,
+                "last_cost_bps": self._bot_state.last_ddn_cost_bps,
+                "order_plans": list(self._bot_state.last_order_plans),
+            },
         }
         self._seq += 1
         return StatusEnvelope(
@@ -167,7 +199,9 @@ class LockBotService:
             self._loop_counter += 1
             ts_event = int(event.ts_event)
             if event.event_type == "mark_price_1s":
-                self._market_state.mark_price = event.payload.get("mark_price")
+                mark_price = event.payload.get("mark_price")
+                if mark_price is not None:
+                    self._market_state.update_mark_price(float(mark_price))
                 self._market_state.funding_rate = event.payload.get("funding_rate")
             elif event.event_type == "vwap_d":
                 self._market_state.vwap_d = event.payload.get("vwap")
@@ -196,10 +230,16 @@ class LockBotService:
                 self._account_state.short_qty = positions.get("short_qty", self._account_state.short_qty)
                 self._account_state.long_avg_px = positions.get("long_avg_px", self._account_state.long_avg_px)
                 self._account_state.short_avg_px = positions.get("short_avg_px", self._account_state.short_avg_px)
+                self._account_state.liq_price_long = positions.get("liq_price_long", self._account_state.liq_price_long)
+                self._account_state.liq_price_short = positions.get("liq_price_short", self._account_state.liq_price_short)
             risk = payload.get("risk")
             if isinstance(risk, dict):
                 self._account_state.margin_usage = risk.get("margin_usage", self._account_state.margin_usage)
                 self._account_state.distance_to_liq_bps = risk.get("distance_to_liq_bps", self._account_state.distance_to_liq_bps)
+                self._account_state.initial_margin = risk.get("initial_margin", self._account_state.initial_margin)
+                self._account_state.maintenance_margin = risk.get("maintenance_margin", self._account_state.maintenance_margin)
+                self._account_state.equity = risk.get("equity", self._account_state.equity)
+                self._account_state.leverage = risk.get("leverage", self._account_state.leverage)
 
     async def _cmd_loop(self) -> None:
         async for cmd in self._cmd_sub.commands():
@@ -248,6 +288,99 @@ class LockBotService:
         self._loop_counter = 0
         self._last_loop_ts = now
         return round(loop_hz, 3)
+
+    def _build_intent(self, cmd_type: str, payload: Dict[str, Any]) -> DDNIntent:
+        if cmd_type == "SET_REGIME":
+            regime = str(payload.get("regime", "")).upper()
+            profile = "neutral"
+            if regime in {"TREND_UP", "TREND_DOWN"}:
+                profile = "trend"
+            elif regime == "CHAOS":
+                profile = "neutral"
+            return DDNIntent(action="SET_REGIME", profile=profile, reason=payload.get("reason"))
+        if cmd_type == "SET_DELTA_TARGET":
+            return DDNIntent(
+                action="SET_DELTA_TARGET",
+                target=payload.get("target"),
+                band_low=payload.get("band_low"),
+                band_high=payload.get("band_high"),
+                reason=payload.get("reason"),
+                expected_edge_bps=payload.get("expected_edge_bps"),
+            )
+        if cmd_type == "EXEC_STEP":
+            return DDNIntent(
+                action=str(payload.get("action")),
+                qty_hint=payload.get("qty_hint"),
+                reason=payload.get("reason"),
+                expected_edge_bps=payload.get("expected_edge_bps"),
+            )
+        if cmd_type == "PANIC_LOCK":
+            return DDNIntent(action="PANIC_LOCK", reason=payload.get("reason"))
+        if cmd_type == "EXIT_LOCK":
+            return DDNIntent(action="EXIT_LOCK", reason=payload.get("reason"))
+        if cmd_type == "PAUSE":
+            return DDNIntent(action="PAUSE", reason=payload.get("reason"))
+        if cmd_type == "RESUME":
+            return DDNIntent(action="RESUME", reason=payload.get("reason"))
+        return DDNIntent(action=str(cmd_type))
+
+    def _build_ddn_context(self, intent: DDNIntent) -> DDNContext:
+        profile = self._cfg.ddn.profiles.get(self._bot_state.ddn_profile) or self._cfg.ddn.profiles.get("neutral")
+        if profile is None:
+            profile = self._cfg.ddn.__class__.default().profiles["neutral"]
+        active_profile = profile
+        use_defaults = False
+        if intent.profile and intent.profile in self._cfg.ddn.profiles:
+            active_profile = self._cfg.ddn.profiles[intent.profile]
+            if intent.action == "SET_REGIME":
+                use_defaults = True
+        target = active_profile.target if use_defaults else self._bot_state.ddn_target
+        band_low = active_profile.band_low if use_defaults else self._bot_state.ddn_band_low
+        band_high = active_profile.band_high if use_defaults else self._bot_state.ddn_band_high
+        active_profile = active_profile.__class__(
+            name=active_profile.name,
+            target=target,
+            band_low=band_low,
+            band_high=band_high,
+            force_hedge=active_profile.force_hedge,
+        )
+        market_lag = _lag_ms(int(time.time() * 1000), self._market_state.last_market_ts)
+        account_lag = _lag_ms(int(time.time() * 1000), self._account_state.last_account_ts)
+        if self._account_sub is None:
+            account_lag = 0
+        margin_usage = self._account_state.margin_usage
+        if margin_usage is None:
+            margin_usage = self._account_state.compute_margin_usage()
+        distance_bps = self._account_state.distance_to_liq_bps
+        if distance_bps is None:
+            distance_bps = self._account_state.compute_distance_to_liq_bps(self._market_state.mark_price)
+        market = DDNMarketSnapshot(
+            mark_price=self._market_state.mark_price,
+            vwap_d=self._market_state.vwap_d,
+            bands={
+                "band_1u": self._market_state.band_1u,
+                "band_1l": self._market_state.band_1l,
+                "band_2u": self._market_state.band_2u,
+                "band_2l": self._market_state.band_2l,
+            },
+            funding_rate=self._market_state.funding_rate,
+            volatility_bps=self._market_state.volatility_bps,
+            market_lag_ms=market_lag,
+        )
+        position = DDNPositionSnapshot(
+            long_qty=self._account_state.long_qty,
+            short_qty=self._account_state.short_qty,
+            margin_usage=margin_usage,
+            distance_to_liq_bps=distance_bps,
+            account_lag_ms=account_lag,
+        )
+        return DDNContext(
+            intent=intent,
+            market=market,
+            position=position,
+            profile=active_profile,
+            max_band_abs=self._cfg.ddn.max_band_abs,
+        )
 
 
 def _lag_ms(now_ms: int, last_ts_ms: Optional[int]) -> Optional[int]:

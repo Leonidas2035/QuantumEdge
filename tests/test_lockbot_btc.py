@@ -21,6 +21,9 @@ def _config() -> LockbotConfig:
 def test_cmd_validation_and_idempotency() -> None:
     cfg = _config()
     service = LockBotService(cfg)
+    now_ms = int(time.time() * 1000)
+    service._market_state.update_mark_price(50000.0)
+    service._market_state.update_timestamp(now_ms)
     cmd = build_command(
         bot_id=cfg.bot_id,
         symbol=cfg.symbol,

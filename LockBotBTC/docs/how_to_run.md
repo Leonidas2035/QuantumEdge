@@ -34,4 +34,5 @@ python -m LockBotBTC.lockbot_btc.main --config LockBotBTC/config/lockbot_btc.yam
 ## Notes
 
 - All market data must come from MarketDataHub topics.
-- No trading/execution logic is enabled at this stage.
+- DDN decisions are computed but only emitted as order-plan previews (no execution).
+- See `LockBotBTC/docs/ddn_layer.md` for guard behavior and config knobs.

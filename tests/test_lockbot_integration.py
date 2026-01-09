@@ -48,6 +48,7 @@ async def test_lockbot_smoke_integration():
             "BTCUSDT:vwap_d",
             "BTCUSDT:vwap_bands_d",
         ],
+        account_topics=["account.snapshot.v1"],
         log_path="runtime/lockbot_btc_test.log",
     )
     service = LockBotService(cfg)
@@ -93,17 +94,27 @@ async def test_lockbot_smoke_integration():
         )
         await pub.send_multipart([f"BTCUSDT:{event_type}".encode("utf-8"), msgspec.msgpack.encode(event)])
 
-    await publish("mark_price_1s", {"mark_price": 100.0}, 1)
+    async def publish_account(payload: dict) -> None:
+        await pub.send_multipart([b"account.snapshot.v1", msgspec.msgpack.encode(payload)])
+
+    await publish("mark_price_1s", {"mark_price": 50000.0}, 1)
     await publish("vwap_d", {"vwap": 99.5, "session": {"type": "UTC_DAY", "start_ts": now_ms, "end_ts": now_ms + 1}}, 2)
     await publish(
         "vwap_bands_d",
         {"band_1u": 101.0, "band_1l": 98.0, "band_2u": 102.0, "band_2l": 97.0},
         3,
     )
+    await publish_account(
+        {
+            "ts_event": now_ms,
+            "positions": {"long_qty": 0.0, "short_qty": 0.0},
+            "risk": {"margin_usage": 0.1, "distance_to_liq_bps": 1000.0, "equity": 10000.0},
+        }
+    )
 
     await asyncio.sleep(0.5)
     cmd_id = client.send_command("SET_REGIME", {"regime": "RANGE", "reason": "test"})
-    await publish("mark_price_1s", {"mark_price": 100.1}, 4)
+    await publish("mark_price_1s", {"mark_price": 50000.1}, 4)
 
     for _ in range(30):
         await asyncio.sleep(0.1)
@@ -116,6 +127,38 @@ async def test_lockbot_smoke_integration():
     assert status.get("payload", {}).get("regime") == "RANGE"
     lags = status.get("payload", {}).get("lags", {})
     assert lags.get("market_lag_ms") is not None
+
+    cmd_id = client.send_command(
+        "EXEC_STEP",
+        {"action": "ADD_LONG", "qty_hint": 0.02, "reason": "ddn-test", "expected_edge_bps": 10.0},
+    )
+    for _ in range(30):
+        await asyncio.sleep(0.1)
+        ack = client.ack(cmd_id)
+        status = client.status()
+        if ack and status and status.get("payload", {}).get("ddn", {}).get("last_verdict"):
+            break
+    assert ack is not None
+    assert status is not None
+    assert status.get("payload", {}).get("ddn", {}).get("last_verdict") in {"ALLOW", "MODIFY"}
+
+    await publish_account(
+        {
+            "ts_event": now_ms + 1000,
+            "positions": {"long_qty": 0.5, "short_qty": 0.0},
+            "risk": {"margin_usage": 0.2, "distance_to_liq_bps": 100.0, "equity": 10000.0},
+        }
+    )
+    await asyncio.sleep(0.2)
+    cmd_id = client.send_command("EXEC_STEP", {"action": "ADD_LONG", "qty_hint": 0.01, "reason": "panic"})
+    for _ in range(30):
+        await asyncio.sleep(0.1)
+        status = client.status()
+        verdict = status.get("payload", {}).get("ddn", {}).get("last_verdict") if status else None
+        if verdict == "PANIC_ONLY":
+            break
+    assert status is not None
+    assert status.get("payload", {}).get("ddn", {}).get("last_verdict") == "PANIC_ONLY"
 
     pub.close()
     client.stop()

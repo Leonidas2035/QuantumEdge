@@ -20,3 +20,35 @@ cmd_cache_size: 256
 
 log_level: "INFO"
 log_path: "runtime/lockbot_btc.log"
+
+ddn:
+  profiles:
+    neutral:
+      target: 0.0
+      band_low: -0.10
+      band_high: 0.10
+    trend:
+      target: 0.0
+      band_low: -0.60
+      band_high: 0.60
+    panic:
+      target: 0.0
+      band_low: -0.05
+      band_high: 0.05
+      force_hedge: true
+  max_band_abs: 0.8
+  max_margin_usage: 0.5
+  min_distance_to_liq_bps: 250
+  max_step_notional_usd: 5000
+  min_step_notional_usd: 50
+  max_steps_per_minute: 6
+  cooldown_ms_after_reject: 1000
+  panic_on_lag_ms: 5000
+  taker_fee_bps: 7.5
+  maker_fee_bps: 2.0
+  expected_slippage_bps_market: 5.0
+  funding_weight: 1.0
+  min_expected_edge_bps: 1.0
+  max_cost_bps_per_step: 20.0
+  volatility_window: 30
+  step_volatility_scale: 1.0
