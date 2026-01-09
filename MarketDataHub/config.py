@@ -93,6 +93,19 @@ class MicrostructureConfig:
 
 
 @dataclass
+class LockbotConfig:
+    enabled: bool = os.getenv("MARKET_DATA_LOCKBOT_ENABLED", "1") in {"1", "true", "True"}
+    vwap_publish_interval_ms: int = int(os.getenv("MARKET_DATA_LOCKBOT_VWAP_MS", "1000"))
+    avwap_publish_interval_ms: int = int(os.getenv("MARKET_DATA_LOCKBOT_AVWAP_MS", "1000"))
+    heatmap_publish_interval_ms: int = int(os.getenv("MARKET_DATA_LOCKBOT_HEATMAP_MS", "2000"))
+    heatmap_window_s: int = int(os.getenv("MARKET_DATA_LOCKBOT_HEATMAP_WINDOW_S", "3600"))
+    heatmap_bin_type: str = os.getenv("MARKET_DATA_LOCKBOT_HEATMAP_BIN_TYPE", "fixed_price")
+    heatmap_bin_size: float = float(os.getenv("MARKET_DATA_LOCKBOT_HEATMAP_BIN_SIZE", "50.0"))
+    heatmap_half_life_s: int = int(os.getenv("MARKET_DATA_LOCKBOT_HEATMAP_HALF_LIFE_S", "900"))
+    heatmap_top_n: int = int(os.getenv("MARKET_DATA_LOCKBOT_HEATMAP_TOP_N", "20"))
+
+
+@dataclass
 class AccountConfig:
     spot_api_key: str = os.getenv("BINANCE_API_KEY", "")
     spot_api_secret: str = os.getenv("BINANCE_API_SECRET", "")
@@ -129,6 +142,7 @@ class HubConfig:
     l2: L2Config = field(default_factory=L2Config)
     orderbook: OrderbookConfig = field(default_factory=OrderbookConfig)
     microstructure: MicrostructureConfig = field(default_factory=MicrostructureConfig)
+    lockbot: LockbotConfig = field(default_factory=LockbotConfig)
     account: "AccountConfig" = field(default_factory=lambda: AccountConfig())
     account_runtime: "AccountRuntimeConfig" = field(default_factory=lambda: AccountRuntimeConfig())
     l0_hwm: int = int(os.getenv("MARKET_DATA_L0_HWM", "2000"))

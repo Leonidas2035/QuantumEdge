@@ -63,6 +63,7 @@ Run from the repo root (`QE_ROOT`):
 ## Control-Plane Docs
 - `docs/orchestration.md`
 - `docs/telemetry.md`
+- `MarketDataHub/docs/contracts_lockbot_md.md` ??? LockBot market-data contract reference.
 # SupervisorAgent
 
 SupervisorAgent is a lightweight controller process for the QuantumEdge trading bot. It launches, monitors, and stops the trading engine from outside the hot trading loop, paving the way for risk controls, LLM oversight, and Meta-Agent strategic cycles.

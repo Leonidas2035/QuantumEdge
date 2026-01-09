@@ -12,6 +12,8 @@ from typing import Any, Dict, Iterable, List, Optional
 
 from MarketDataHub.config import L2Config, TsdbConfig
 from MarketDataHub.models import Bar1sEvent, ENTITY_TABLE_MAP, L1Event, L2Envelope, MarketEvent, MicrostructureEvent
+from MarketDataHub.lockbot.schema import LockbotMarketEvent
+from MarketDataHub.models.lockbot_md_contract import LOCKBOT_TABLE_MAP
 from MarketDataHub.spool.l2_spooler import L2Spooler
 
 
@@ -37,6 +39,7 @@ class QuestILPWriter:
         self._l1_cache: Dict[str, L1Event] = {}
         self._bars_queue: asyncio.Queue[Bar1sEvent] = asyncio.Queue(maxsize=self._config.bars_queue_max)
         self._micro_queue: asyncio.Queue[MicrostructureEvent] = asyncio.Queue(maxsize=self._config.bars_queue_max)
+        self._lockbot_queue: asyncio.Queue[LockbotMarketEvent] = asyncio.Queue(maxsize=self._config.bars_queue_max)
         self._l2_buffer: List[str] = []
         self._l2_buffer_max = self._l2_config.buffer_max
         self._l2_spooler: Optional[L2Spooler] = (
@@ -96,6 +99,16 @@ class QuestILPWriter:
                     self._metrics.dropped_rows += 1
                 except asyncio.QueueEmpty:
                     self._metrics.dropped_rows += 1
+        elif isinstance(event, LockbotMarketEvent):
+            try:
+                self._lockbot_queue.put_nowait(event)
+            except asyncio.QueueFull:
+                try:
+                    self._lockbot_queue.get_nowait()
+                    self._lockbot_queue.put_nowait(event)
+                    self._metrics.dropped_rows += 1
+                except asyncio.QueueEmpty:
+                    self._metrics.dropped_rows += 1
 
     async def enqueue_l2(self, event: L2Envelope) -> None:
         if not self._l2_spooler:
@@ -141,6 +154,8 @@ class QuestILPWriter:
             lines.extend(self._build_bar_lines(self._batch_rows - len(lines)))
         if len(lines) < self._batch_rows:
             lines.extend(self._build_micro_lines(self._batch_rows - len(lines)))
+        if len(lines) < self._batch_rows:
+            lines.extend(self._build_lockbot_lines(self._batch_rows - len(lines)))
         l2_lines = []
         if self._l2_buffer:
             l2_lines = self._drain_l2_buffer(self._batch_rows - len(lines))
@@ -148,7 +163,7 @@ class QuestILPWriter:
         return lines, len(l2_lines)
 
     def queue_depth(self) -> int:
-        return self._bars_queue.qsize() + self._micro_queue.qsize() + len(self._l2_buffer)
+        return self._bars_queue.qsize() + self._micro_queue.qsize() + self._lockbot_queue.qsize() + len(self._l2_buffer)
 
     @staticmethod
     def _format_l1(event: L1Event) -> str:
@@ -223,6 +238,56 @@ class QuestILPWriter:
             if line:
                 lines.append(line)
         return lines
+
+    def _build_lockbot_lines(self, limit: int) -> List[str]:
+        lines: List[str] = []
+        while len(lines) < limit and not self._lockbot_queue.empty():
+            try:
+                event = self._lockbot_queue.get_nowait()
+            except asyncio.QueueEmpty:
+                break
+            line = self._format_lockbot(event)
+            if line:
+                lines.append(line)
+        return lines
+
+    def _format_lockbot(self, event: LockbotMarketEvent) -> str:
+        ts = event.ts_ns
+        table = LOCKBOT_TABLE_MAP.get(event.event_type)
+        if not table:
+            return ""
+        measurement = f"{table},symbol={event.symbol}"
+        fields: Dict[str, Any] = {
+            "schema": event.schema,
+            "topic": event.topic,
+            "source": event.source,
+            "seq": event.seq,
+            "ts_event": event.ts_event,
+            "ts_pub": event.ts_pub,
+        }
+        payload = event.payload or {}
+        if event.event_type in {"mark_price_1s", "funding_rate", "force_order", "trades_agg"}:
+            fields.update(payload)
+        elif event.event_type.startswith("ohlcv_"):
+            fields.update(payload)
+        elif event.event_type in {"vwap_d", "vwap_bands_d"}:
+            fields.update(payload)
+            session = payload.get("session")
+            if isinstance(session, dict):
+                fields["session_json"] = session
+                fields.pop("session", None)
+        elif event.event_type == "avwap":
+            fields["anchors_json"] = payload.get("anchors")
+        elif event.event_type == "liq_heatmap":
+            fields["levels_json"] = payload.get("levels")
+            fields["decay_json"] = payload.get("decay")
+            for key in ("window_s", "bin_type", "bin_size", "last_force_order_ts", "intensity_above", "intensity_below"):
+                if key in payload:
+                    fields[key] = payload.get(key)
+        field_str = self._format_fields(fields)
+        if not field_str:
+            return ""
+        return f"{measurement} {field_str} {ts}"
 
     def _drain_l2_buffer(self, limit: int) -> List[str]:
         drained: List[str] = []

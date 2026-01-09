@@ -33,6 +33,7 @@ from .orderbook import (
 )
 from .snapshots import SnapshotRequest, SnapshotResponse
 from MarketDataHub.microstructure.schema import MicrostructureEvent, MICROSTRUCTURE_EVENT_TYPE
+from MarketDataHub.lockbot.schema import LockbotMarketEvent
 
 __all__ = [
     "MarketEvent",
@@ -63,4 +64,5 @@ __all__ = [
     "decode_l2",
     "MicrostructureEvent",
     "MICROSTRUCTURE_EVENT_TYPE",
+    "LockbotMarketEvent",
 ]

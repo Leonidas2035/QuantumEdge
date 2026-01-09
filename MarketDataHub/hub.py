@@ -28,6 +28,8 @@ from MarketDataHub.models.account_snapshot import AccountSnapshot
 from MarketDataHub.orderbook.aggregator import OrderBookAggregator
 from MarketDataHub.microstructure.ofi import MicrostructureAnalyzer
 from MarketDataHub.microstructure.publisher import MicrostructurePublisher
+from MarketDataHub.lockbot.engine import LockbotDerivedEngine
+from MarketDataHub.lockbot.publisher import LockbotPublisher
 from MarketDataHub.spool.status import summarize_spool
 from MarketDataHub.tsdb.quest_writer import QuestILPWriter
 
@@ -97,6 +99,8 @@ class MarketDataHubService:
         ]
         self.microstructure_analyzer: Optional[MicrostructureAnalyzer] = None
         self.microstructure_publisher: Optional[MicrostructurePublisher] = None
+        self.lockbot_publisher: Optional[LockbotPublisher] = None
+        self.lockbot_engine: Optional[LockbotDerivedEngine] = None
         if self.config.microstructure.enabled:
             self.microstructure_analyzer = MicrostructureAnalyzer(
                 window_n=self.config.microstructure.ofi_window_n,
@@ -108,6 +112,20 @@ class MarketDataHubService:
                 self.bus,
                 self.writer,
                 event_type=self.config.microstructure.publish_topic_suffix,
+            )
+        if self.config.lockbot.enabled:
+            self.lockbot_publisher = LockbotPublisher(self.publisher, self.bus, self.writer)
+            lockbot_cfg = self.config.lockbot
+            self.lockbot_engine = LockbotDerivedEngine(
+                self.lockbot_publisher,
+                vwap_publish_interval_ms=lockbot_cfg.vwap_publish_interval_ms,
+                avwap_publish_interval_ms=lockbot_cfg.avwap_publish_interval_ms,
+                heatmap_publish_interval_ms=lockbot_cfg.heatmap_publish_interval_ms,
+                heatmap_window_s=lockbot_cfg.heatmap_window_s,
+                heatmap_bin_type=lockbot_cfg.heatmap_bin_type,
+                heatmap_bin_size=lockbot_cfg.heatmap_bin_size,
+                heatmap_half_life_s=lockbot_cfg.heatmap_half_life_s,
+                heatmap_top_n=lockbot_cfg.heatmap_top_n,
             )
         self.orderbook: Optional[OrderBookAggregator] = (
             OrderBookAggregator(
@@ -213,6 +231,19 @@ class MarketDataHubService:
             self.publisher.publish(event)
             if self.microstructure_analyzer and isinstance(event, TradeEvent):
                 self.microstructure_analyzer.update_trade(event.ts_ns, event.size)
+            if self.lockbot_engine and isinstance(event, TradeEvent):
+                ts_event_ms = int(event.ts_ns / 1_000_000)
+                taker_side = str(event.taker_side or "").lower()
+                is_buyer_maker = True if taker_side == "sell" else False if taker_side == "buy" else None
+                self.lockbot_engine.on_trade(
+                    symbol=event.symbol,
+                    price=event.price,
+                    qty=event.size,
+                    ts_event_ms=ts_event_ms,
+                    is_buyer_maker=is_buyer_maker,
+                    agg_trade_id=event.seq,
+                    source="binance_ws",
+                )
             if self.writer:
                 await self.writer.enqueue(event)
 
