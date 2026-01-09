@@ -270,6 +270,7 @@ class LockbotControlConfig:
     cmd_topic: str
     ack_topic: str
     status_topic: str
+    exec_topic: str
     stale_after_ms: int
     rcv_hwm: int
     cmd_ttl_ms: int
@@ -882,6 +883,7 @@ def load_lockbot_config(path: Path) -> LockbotControlConfig:
             cmd_topic="LOCKBOT:BTCUSDT:cmd",
             ack_topic="LOCKBOT:BTCUSDT:ack",
             status_topic="LOCKBOT:BTCUSDT:status",
+            exec_topic="LOCKBOT:BTCUSDT:exec",
             stale_after_ms=5000,
             rcv_hwm=1000,
             cmd_ttl_ms=2000,
@@ -897,6 +899,7 @@ def load_lockbot_config(path: Path) -> LockbotControlConfig:
         cmd_topic=str(cfg.get("cmd_topic", "LOCKBOT:BTCUSDT:cmd")),
         ack_topic=str(cfg.get("ack_topic", "LOCKBOT:BTCUSDT:ack")),
         status_topic=str(cfg.get("status_topic", "LOCKBOT:BTCUSDT:status")),
+        exec_topic=str(cfg.get("exec_topic", "LOCKBOT:BTCUSDT:exec")),
         stale_after_ms=int(cfg.get("stale_after_ms", 5000)),
         rcv_hwm=int(cfg.get("rcv_hwm", 1000)),
         cmd_ttl_ms=int(cfg.get("cmd_ttl_ms", 2000)),

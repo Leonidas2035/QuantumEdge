@@ -6,6 +6,7 @@ import msgspec
 import zmq
 
 from LockBotBTC.lockbot.contracts.lockbot_control_v1 import AckEnvelope, StatusEnvelope
+from LockBotBTC.lockbot.contracts.lockbot_exec_v1 import ExecEnvelope
 
 
 class BotPublisher:
@@ -24,6 +25,9 @@ class BotPublisher:
         payload = msgspec.msgpack.encode(status)
         self._socket.send_multipart([topic.encode("utf-8"), payload])
 
+    def publish_exec(self, topic: str, event: ExecEnvelope) -> None:
+        payload = msgspec.msgpack.encode(event)
+        self._socket.send_multipart([topic.encode("utf-8"), payload])
+
     def close(self) -> None:
         self._socket.close()
-

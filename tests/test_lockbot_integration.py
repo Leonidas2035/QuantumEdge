@@ -63,6 +63,7 @@ async def test_lockbot_smoke_integration():
         cmd_topic="LOCKBOT:BTCUSDT:cmd",
         ack_topic="LOCKBOT:BTCUSDT:ack",
         status_topic="LOCKBOT:BTCUSDT:status",
+        exec_topic="LOCKBOT:BTCUSDT:exec",
         stale_after_ms=5000,
         rcv_hwm=1000,
         cmd_ttl_ms=2000,
@@ -120,13 +121,15 @@ async def test_lockbot_smoke_integration():
         await asyncio.sleep(0.1)
         ack = client.ack(cmd_id)
         status = client.status()
-        if ack and status and status.get("payload", {}).get("lags", {}).get("market_lag_ms") is not None:
+        lags = status.get("payload", {}).get("lags", {}) if status else {}
+        if ack and status and lags.get("market_lag_ms") is not None and lags.get("account_lag_ms") is not None:
             break
     assert ack is not None
     assert status is not None
     assert status.get("payload", {}).get("regime") == "RANGE"
     lags = status.get("payload", {}).get("lags", {})
     assert lags.get("market_lag_ms") is not None
+    assert lags.get("account_lag_ms") is not None
 
     cmd_id = client.send_command(
         "EXEC_STEP",

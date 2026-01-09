@@ -28,6 +28,14 @@ class BotState:
     last_ddn_step_qty: Optional[float] = None
     last_ddn_cost_bps: Optional[float] = None
     last_order_plans: Deque[dict] = field(default_factory=deque)
+    execution_armed: bool = False
+    execution_mode: str = "DRY_RUN"
+    execution_disarm_reason: Optional[str] = None
+    execution_last_error: Optional[str] = None
+    execution_error_count: int = 0
+    execution_open_orders: int = 0
+    execution_last_event: Optional[str] = None
+    execution_last_event_ts: Optional[int] = None
     _cmd_cache: Deque[str] = field(default_factory=deque)
     _cmd_cache_size: int = 256
 

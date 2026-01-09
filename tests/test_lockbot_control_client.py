@@ -39,6 +39,7 @@ def test_control_client_send_and_cache() -> None:
         cmd_topic="LOCKBOT:BTCUSDT:cmd",
         ack_topic="LOCKBOT:BTCUSDT:ack",
         status_topic="LOCKBOT:BTCUSDT:status",
+        exec_topic="LOCKBOT:BTCUSDT:exec",
         stale_after_ms=5000,
         rcv_hwm=1000,
         cmd_ttl_ms=2000,

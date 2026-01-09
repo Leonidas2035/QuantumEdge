@@ -10,6 +10,7 @@ from typing import List
 import yaml
 
 from LockBotBTC.lockbot_btc.ddn.config import DDNConfig, DDNProfile
+from LockBotBTC.lockbot_btc.execution.base import ExecutionConfig, ExecutionMode
 
 
 @dataclass
@@ -35,6 +36,7 @@ class LockbotConfig:
     log_level: str = os.getenv("LOCKBOT_LOG_LEVEL", "INFO")
     log_path: str = os.getenv("LOCKBOT_LOG_PATH", "runtime/lockbot_btc.log")
     ddn: DDNConfig = field(default_factory=DDNConfig.default)
+    execution: ExecutionConfig = field(default_factory=ExecutionConfig)
 
     @staticmethod
     def load(path: Path | None = None) -> "LockbotConfig":
@@ -43,7 +45,7 @@ class LockbotConfig:
         data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
         cfg = LockbotConfig()
         for key, value in (data or {}).items():
-            if key == "ddn":
+            if key in {"ddn", "execution"}:
                 continue
             if hasattr(cfg, key):
                 setattr(cfg, key, value)
@@ -78,5 +80,28 @@ class LockbotConfig:
                 max_cost_bps_per_step=float(ddn_cfg.get("max_cost_bps_per_step", cfg.ddn.max_cost_bps_per_step)),
                 volatility_window=int(ddn_cfg.get("volatility_window", cfg.ddn.volatility_window)),
                 step_volatility_scale=float(ddn_cfg.get("step_volatility_scale", cfg.ddn.step_volatility_scale)),
+            )
+        exec_cfg = data.get("execution", {}) if isinstance(data, dict) else {}
+        if isinstance(exec_cfg, dict):
+            mode_raw = exec_cfg.get("mode", cfg.execution.mode.value)
+            try:
+                mode = ExecutionMode(str(mode_raw))
+            except ValueError:
+                mode = ExecutionMode.DRY_RUN
+            cfg.execution = ExecutionConfig(
+                mode=mode,
+                auto_submit_on_allow=bool(exec_cfg.get("auto_submit_on_allow", cfg.execution.auto_submit_on_allow)),
+                allow_live_mainnet=bool(exec_cfg.get("allow_live_mainnet", cfg.execution.allow_live_mainnet)),
+                symbol_whitelist=list(exec_cfg.get("symbol_whitelist", cfg.execution.symbol_whitelist)),
+                max_open_orders=int(exec_cfg.get("max_open_orders", cfg.execution.max_open_orders)),
+                ack_timeout_ms=int(exec_cfg.get("ack_timeout_ms", cfg.execution.ack_timeout_ms)),
+                stale_account_ms=int(exec_cfg.get("stale_account_ms", cfg.execution.stale_account_ms)),
+                error_threshold=int(exec_cfg.get("error_threshold", cfg.execution.error_threshold)),
+                allow_reduce_only_in_panic=bool(exec_cfg.get("allow_reduce_only_in_panic", cfg.execution.allow_reduce_only_in_panic)),
+                ledger_path=str(exec_cfg.get("ledger_path", cfg.execution.ledger_path)),
+                api_key_env=str(exec_cfg.get("api_key_env", cfg.execution.api_key_env)),
+                api_secret_env=str(exec_cfg.get("api_secret_env", cfg.execution.api_secret_env)),
+                base_url=str(exec_cfg.get("base_url", cfg.execution.base_url)),
+                recv_window=int(exec_cfg.get("recv_window", cfg.execution.recv_window)),
             )
         return cfg

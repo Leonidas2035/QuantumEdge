@@ -12,7 +12,9 @@ market_topics:
   - "BTCUSDT:avwap"
   - "BTCUSDT:liq_heatmap"
 
-account_topics: []
+account_topics:
+  - "account:snapshot"
+  - "account:delta:usdm"
 
 heartbeat_interval_ms: 1000
 cmd_ttl_ms: 2000
@@ -52,3 +54,19 @@ ddn:
   max_cost_bps_per_step: 20.0
   volatility_window: 30
   step_volatility_scale: 1.0
+
+execution:
+  mode: "DRY_RUN"
+  auto_submit_on_allow: false
+  allow_live_mainnet: false
+  symbol_whitelist: ["BTCUSDT"]
+  max_open_orders: 5
+  ack_timeout_ms: 8000
+  stale_account_ms: 8000
+  error_threshold: 3
+  allow_reduce_only_in_panic: true
+  ledger_path: "runtime/lockbot_exec_ledger.jsonl"
+  api_key_env: "BINANCE_DEMO_API_KEY"
+  api_secret_env: "BINANCE_DEMO_API_SECRET"
+  base_url: "https://testnet.binancefuture.com"
+  recv_window: 5000

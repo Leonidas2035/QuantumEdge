@@ -20,6 +20,7 @@ from supervisor.contracts.lockbot_control_v1 import (
     build_command,
     validate_command,
 )
+from supervisor.contracts.lockbot_exec_v1 import ExecEnvelope
 
 
 class LockbotControlClient:
@@ -35,6 +36,7 @@ class LockbotControlClient:
         self._sub.setsockopt(zmq.RCVHWM, cfg.rcv_hwm)
         self._sub.setsockopt(zmq.SUBSCRIBE, cfg.ack_topic.encode("utf-8"))
         self._sub.setsockopt(zmq.SUBSCRIBE, cfg.status_topic.encode("utf-8"))
+        self._sub.setsockopt(zmq.SUBSCRIBE, cfg.exec_topic.encode("utf-8"))
         self._sub.connect(cfg.status_endpoint)
         self._stop = threading.Event()
         self._thread: Optional[threading.Thread] = None
@@ -42,6 +44,8 @@ class LockbotControlClient:
         self._last_status: Optional[Dict[str, Any]] = None
         self._last_status_ts: Optional[int] = None
         self._acks: Dict[str, Dict[str, Any]] = {}
+        self._exec_events: list[Dict[str, Any]] = []
+        self._exec_max = 200
         self._last_warning_ts = 0.0
 
     def start(self) -> None:
@@ -82,6 +86,12 @@ class LockbotControlClient:
         with self._lock:
             return self._acks.get(cmd_id)
 
+    def exec_recent(self, limit: int = 20) -> list[Dict[str, Any]]:
+        with self._lock:
+            if limit <= 0:
+                return []
+            return list(self._exec_events)[-limit:]
+
     def _reader_loop(self) -> None:
         poller = zmq.Poller()
         poller.register(self._sub, zmq.POLLIN)
@@ -105,6 +115,12 @@ class LockbotControlClient:
                         self._store_status(msgspec.structs.asdict(status))
                     except Exception:
                         continue
+                elif text == self._cfg.exec_topic:
+                    try:
+                        event = msgspec.msgpack.decode(payload, type=ExecEnvelope)
+                        self._store_exec(msgspec.structs.asdict(event))
+                    except Exception:
+                        continue
             self._check_stale()
 
     def _store_status(self, status: Dict[str, Any]) -> None:
@@ -119,6 +135,12 @@ class LockbotControlClient:
         with self._lock:
             self._acks[cmd_id] = ack
         self._logger.info("Lockbot ack cmd_id=%s status=%s", cmd_id, ack.get("payload", {}).get("status"))
+
+    def _store_exec(self, event: Dict[str, Any]) -> None:
+        with self._lock:
+            self._exec_events.append(event)
+            while len(self._exec_events) > self._exec_max:
+                self._exec_events.pop(0)
 
     def _check_stale(self) -> None:
         if not self._last_status_ts:

@@ -1298,6 +1298,62 @@ class SupervisorApp:
         status = self.lockbot_client.status()
         return {"status": "ok", "payload": status}
 
+    def lockbot_execution_arm(self, mode: str, ttl_s: int, reason: str = "") -> Dict[str, Any]:
+        if not self.lockbot_client:
+            return {"status": "disabled"}
+        payload = {"mode": mode, "ttl_s": ttl_s, "reason": reason}
+        cmd_id = self.lockbot_client.send_command("ARM_EXECUTION", payload)
+        self.dashboard_audit_logger.append(
+            severity="INFO",
+            component="lockbot_exec",
+            strategy_id="LockBotBTC",
+            symbol=self.lockbot_cfg.symbol,
+            event_type="EXEC_ARM",
+            payload=payload,
+            correlation_id=cmd_id,
+        )
+        return {"status": "sent", "cmd_id": cmd_id}
+
+    def lockbot_execution_disarm(self, reason: str = "") -> Dict[str, Any]:
+        if not self.lockbot_client:
+            return {"status": "disabled"}
+        payload = {"reason": reason}
+        cmd_id = self.lockbot_client.send_command("DISARM_EXECUTION", payload)
+        self.dashboard_audit_logger.append(
+            severity="INFO",
+            component="lockbot_exec",
+            strategy_id="LockBotBTC",
+            symbol=self.lockbot_cfg.symbol,
+            event_type="EXEC_DISARM",
+            payload=payload,
+            correlation_id=cmd_id,
+        )
+        return {"status": "sent", "cmd_id": cmd_id}
+
+    def lockbot_execution_cancel_all(self, scope: str = "OPEN_ONLY", reason: str = "") -> Dict[str, Any]:
+        if not self.lockbot_client:
+            return {"status": "disabled"}
+        payload = {"scope": scope, "reason": reason}
+        cmd_id = self.lockbot_client.send_command("CANCEL_ALL", payload)
+        self.dashboard_audit_logger.append(
+            severity="INFO",
+            component="lockbot_exec",
+            strategy_id="LockBotBTC",
+            symbol=self.lockbot_cfg.symbol,
+            event_type="EXEC_CANCEL_ALL",
+            payload=payload,
+            correlation_id=cmd_id,
+        )
+        return {"status": "sent", "cmd_id": cmd_id}
+
+    def lockbot_execution_status(self, limit: int = 20) -> Dict[str, Any]:
+        if not self.lockbot_client:
+            return {"status": "disabled", "events": []}
+        status = self.lockbot_client.status()
+        payload = status.get("payload") if isinstance(status, dict) else None
+        exec_state = payload.get("execution") if isinstance(payload, dict) else None
+        return {"status": "ok", "execution": exec_state, "events": self.lockbot_client.exec_recent(limit)}
+
     def lockbot_policy_status(self) -> Dict[str, Any]:
         if not self.lockbot_policy_runner:
             return {"status": "disabled"}
@@ -1677,6 +1733,10 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
             "lockbot-policy-enable",
             "lockbot-policy-disable",
             "lockbot-policy-decisions",
+            "lockbot-exec-arm",
+            "lockbot-exec-disarm",
+            "lockbot-exec-cancel-all",
+            "lockbot-exec-status",
         ],
         help="Command to execute",
     )
@@ -1732,6 +1792,31 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         type=int,
         default=20,
         help="Limit for list commands (e.g. lockbot-policy-decisions).",
+    )
+    parser.add_argument(
+        "--mode",
+        dest="exec_mode",
+        default="DRY_RUN",
+        help="Execution mode for lockbot-exec-arm (DRY_RUN|DEMO_TESTNET|LIVE_MAINNET).",
+    )
+    parser.add_argument(
+        "--ttl-s",
+        dest="exec_ttl_s",
+        type=int,
+        default=300,
+        help="Execution arm TTL in seconds.",
+    )
+    parser.add_argument(
+        "--reason",
+        dest="exec_reason",
+        default="",
+        help="Reason for execution arm/disarm/cancel.",
+    )
+    parser.add_argument(
+        "--scope",
+        dest="exec_scope",
+        default="OPEN_ONLY",
+        help="Cancel-all scope (OPEN_ONLY|ALL).",
     )
     parser.add_argument(
         "--config",
@@ -2256,6 +2341,14 @@ def main(argv: Optional[list[str]] = None) -> None:
             print(json.dumps(app.lockbot_policy_set_enabled(False), indent=2))
         elif args.command == "lockbot-policy-decisions":
             print(json.dumps(app.lockbot_policy_decisions(args.limit), indent=2))
+        elif args.command == "lockbot-exec-arm":
+            print(json.dumps(app.lockbot_execution_arm(args.exec_mode, args.exec_ttl_s, args.exec_reason), indent=2))
+        elif args.command == "lockbot-exec-disarm":
+            print(json.dumps(app.lockbot_execution_disarm(args.exec_reason), indent=2))
+        elif args.command == "lockbot-exec-cancel-all":
+            print(json.dumps(app.lockbot_execution_cancel_all(args.exec_scope, args.exec_reason), indent=2))
+        elif args.command == "lockbot-exec-status":
+            print(json.dumps(app.lockbot_execution_status(args.limit), indent=2))
     except Exception as exc:
         logging.getLogger(__name__).exception("Command '%s' failed: %s", args.command, exc)
         sys.exit(1)

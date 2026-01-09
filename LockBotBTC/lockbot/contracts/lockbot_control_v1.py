@@ -23,6 +23,9 @@ CMD_TYPES = {
     "EXIT_LOCK",
     "PAUSE",
     "RESUME",
+    "ARM_EXECUTION",
+    "DISARM_EXECUTION",
+    "CANCEL_ALL",
 }
 
 ACK_STATUS = {"ACCEPTED", "REJECTED", "IGNORED_DUPLICATE", "EXPIRED", "ERROR"}
@@ -111,5 +114,11 @@ def validate_command(command: Dict[str, Any]) -> Tuple[bool, str]:
         return False, "force_1to1"
     if cmd == "EXIT_LOCK" and payload.get("mode") not in {"MARKET", "LIMIT_AROUND_VWAP"}:
         return False, "exit_mode"
+    if cmd == "ARM_EXECUTION":
+        if payload.get("mode") not in {"DRY_RUN", "DEMO_TESTNET", "LIVE_MAINNET"}:
+            return False, "mode"
+        if payload.get("ttl_s") is None:
+            return False, "ttl_s"
+    if cmd == "CANCEL_ALL" and payload.get("scope") not in {"OPEN_ONLY", "ALL"}:
+        return False, "scope"
     return True, ""
-

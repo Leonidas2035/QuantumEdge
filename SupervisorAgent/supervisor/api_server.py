@@ -392,6 +392,57 @@ class ApiServer:
                         logger.exception("Error sending lockbot cmd: %s", exc)
                         self._send_json(500, {"error": "internal_error"})
                     return
+                if self.path == "/api/v1/lockbot/btc/execution/arm":
+                    payload = self._parse_json()
+                    if payload is None:
+                        return
+                    if not isinstance(payload, dict):
+                        self._send_json(400, {"error": "bad_payload"})
+                        return
+                    mode = payload.get("mode") or "DRY_RUN"
+                    ttl_s = payload.get("ttl_s") or 0
+                    reason = payload.get("reason") or ""
+                    if not ttl_s:
+                        self._send_json(400, {"error": "missing_ttl"})
+                        return
+                    try:
+                        response = app.lockbot_execution_arm(str(mode), int(ttl_s), str(reason))
+                        self._send_json(200, response)
+                    except Exception as exc:  # pylint: disable=broad-except
+                        logger.exception("Error arming lockbot execution: %s", exc)
+                        self._send_json(500, {"error": "internal_error"})
+                    return
+                if self.path == "/api/v1/lockbot/btc/execution/disarm":
+                    payload = self._parse_json()
+                    if payload is None:
+                        return
+                    if not isinstance(payload, dict):
+                        self._send_json(400, {"error": "bad_payload"})
+                        return
+                    reason = payload.get("reason") or ""
+                    try:
+                        response = app.lockbot_execution_disarm(str(reason))
+                        self._send_json(200, response)
+                    except Exception as exc:  # pylint: disable=broad-except
+                        logger.exception("Error disarming lockbot execution: %s", exc)
+                        self._send_json(500, {"error": "internal_error"})
+                    return
+                if self.path == "/api/v1/lockbot/btc/execution/cancel-all":
+                    payload = self._parse_json()
+                    if payload is None:
+                        return
+                    if not isinstance(payload, dict):
+                        self._send_json(400, {"error": "bad_payload"})
+                        return
+                    scope = payload.get("scope") or "OPEN_ONLY"
+                    reason = payload.get("reason") or ""
+                    try:
+                        response = app.lockbot_execution_cancel_all(str(scope), str(reason))
+                        self._send_json(200, response)
+                    except Exception as exc:  # pylint: disable=broad-except
+                        logger.exception("Error canceling lockbot orders: %s", exc)
+                        self._send_json(500, {"error": "internal_error"})
+                    return
                 if self.path == "/api/v1/lockbot/btc/policy/enable":
                     payload = self._parse_json()
                     if payload is None:
@@ -476,6 +527,23 @@ class ApiServer:
                         self._send_json(200, response)
                     except Exception as exc:  # pylint: disable=broad-except
                         logger.exception("Error building lockbot status: %s", exc)
+                        self._send_json(500, {"error": "internal_error"})
+                    return
+                if self.path == "/api/v1/lockbot/btc/execution/status":
+                    try:
+                        limit = 20
+                        if "?" in self.path:
+                            _, query = self.path.split("?", 1)
+                            for part in query.split("&"):
+                                if part.startswith("limit="):
+                                    try:
+                                        limit = int(part.split("=", 1)[1])
+                                    except ValueError:
+                                        limit = 20
+                        response = app.lockbot_execution_status(limit)
+                        self._send_json(200, response)
+                    except Exception as exc:  # pylint: disable=broad-except
+                        logger.exception("Error building lockbot execution status: %s", exc)
                         self._send_json(500, {"error": "internal_error"})
                     return
                 if self.path == "/api/v1/lockbot/btc/policy/status":
