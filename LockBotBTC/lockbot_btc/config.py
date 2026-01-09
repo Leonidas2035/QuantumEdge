@@ -43,6 +43,8 @@ class LockbotConfig:
         data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
         cfg = LockbotConfig()
         for key, value in (data or {}).items():
+            if key == "ddn":
+                continue
             if hasattr(cfg, key):
                 setattr(cfg, key, value)
         ddn_cfg = data.get("ddn", {}) if isinstance(data, dict) else {}

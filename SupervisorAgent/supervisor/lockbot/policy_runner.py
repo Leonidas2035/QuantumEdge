@@ -91,6 +91,13 @@ class LockbotPolicyRunner:
         self._hub_sub.stop()
         self._thread = None
 
+    def ingest_market_event(self, event: Any) -> None:
+        """Ingest a market event (used by replay adapters)."""
+        try:
+            self._market_cache.update_event(event)
+        except Exception:
+            return
+
     def set_enabled(self, enabled: bool) -> None:
         self._enabled = bool(enabled)
         if enabled:

@@ -37,18 +37,19 @@ from LockBotBTC.lockbot_btc.state.market_state import MarketState
 
 
 class LockBotService:
-    def __init__(self, cfg: LockbotConfig) -> None:
+    def __init__(self, cfg: LockbotConfig, *, ipc_enabled: bool = True) -> None:
         self._cfg = cfg
         self._bot_state = BotState(bot_id=cfg.bot_id, symbol=cfg.symbol)
         self._bot_state.configure_cache(cfg.cmd_cache_size)
         self._market_state = MarketState(volatility_window=cfg.ddn.volatility_window)
         self._account_state = AccountState()
         self._ddn = DDNEngine(cfg.ddn)
-        self._publisher = BotPublisher(cfg.bot_pub_endpoint)
-        self._hub_sub = HubSubscriber(cfg.hub_sub_endpoint, cfg.market_topics)
-        self._cmd_sub = ControlSubscriber(cfg.supervisor_cmd_sub_endpoint, CMD_TOPIC)
+        self._ipc_enabled = ipc_enabled
+        self._publisher = BotPublisher(cfg.bot_pub_endpoint) if ipc_enabled else _NullPublisher()
+        self._hub_sub = HubSubscriber(cfg.hub_sub_endpoint, cfg.market_topics) if ipc_enabled else None
+        self._cmd_sub = ControlSubscriber(cfg.supervisor_cmd_sub_endpoint, CMD_TOPIC) if ipc_enabled else None
         self._account_sub: Optional[RawSubscriber] = None
-        if cfg.account_topics:
+        if ipc_enabled and cfg.account_topics:
             self._account_sub = RawSubscriber(cfg.hub_sub_endpoint, cfg.account_topics)
         self._tasks: list[asyncio.Task] = []
         self._stop = asyncio.Event()
@@ -59,16 +60,20 @@ class LockBotService:
         self._dropped_msgs = 0
 
     async def start(self) -> None:
-        await self._hub_sub.start()
-        await self._cmd_sub.start()
+        if self._hub_sub:
+            await self._hub_sub.start()
+        if self._cmd_sub:
+            await self._cmd_sub.start()
         if self._account_sub:
             await self._account_sub.start()
         self._stop.clear()
-        self._tasks = [
-            asyncio.create_task(self._market_loop()),
-            asyncio.create_task(self._cmd_loop()),
-            asyncio.create_task(self._heartbeat_loop()),
-        ]
+        self._tasks = []
+        if self._hub_sub:
+            self._tasks.append(asyncio.create_task(self._market_loop()))
+        if self._cmd_sub:
+            self._tasks.append(asyncio.create_task(self._cmd_loop()))
+        if self._ipc_enabled:
+            self._tasks.append(asyncio.create_task(self._heartbeat_loop()))
         if self._account_sub:
             self._tasks.append(asyncio.create_task(self._account_loop()))
 
@@ -76,32 +81,34 @@ class LockBotService:
         self._stop.set()
         for task in self._tasks:
             task.cancel()
-        await self._hub_sub.stop()
-        await self._cmd_sub.stop()
+        if self._hub_sub:
+            await self._hub_sub.stop()
+        if self._cmd_sub:
+            await self._cmd_sub.stop()
         if self._account_sub:
             await self._account_sub.stop()
         self._publisher.close()
 
-    def process_command(self, command: Dict[str, Any]) -> AckEnvelope:
+    def process_command(self, command: Dict[str, Any], *, now_ms: Optional[int] = None) -> AckEnvelope:
         ok, reason = validate_command(command)
         cmd_id = str(command.get("cmd_id") or "")
-        now_ms = int(time.time() * 1000)
+        now_ms = now_ms if now_ms is not None else int(time.time() * 1000)
         ttl_ms = int(command.get("ttl_ms") or self._cfg.cmd_ttl_ms)
         if self._bot_state.is_duplicate(cmd_id):
-            return self._build_ack(cmd_id, "IGNORED_DUPLICATE", state_version=self._bot_state.state_version)
+            return self._build_ack(cmd_id, "IGNORED_DUPLICATE", state_version=self._bot_state.state_version, now_ms=now_ms)
         if not ok:
-            return self._build_ack(cmd_id, "REJECTED", error_code=reason, state_version=self._bot_state.state_version)
+            return self._build_ack(cmd_id, "REJECTED", error_code=reason, state_version=self._bot_state.state_version, now_ms=now_ms)
         ts_cmd = int(command.get("ts_cmd") or 0)
         if ts_cmd + ttl_ms < now_ms:
             self._bot_state.remember_cmd(cmd_id)
-            return self._build_ack(cmd_id, "EXPIRED", error_code="ttl", state_version=self._bot_state.state_version)
+            return self._build_ack(cmd_id, "EXPIRED", error_code="ttl", state_version=self._bot_state.state_version, now_ms=now_ms)
 
         payload = command.get("payload") if isinstance(command.get("payload"), dict) else {}
         cmd_type = payload.get("cmd")
         if cmd_type:
             self._bot_state.record_command(cmd_id, str(cmd_type), now_ms, payload)
         intent = self._build_intent(cmd_type, payload)
-        decision = self._ddn.evaluate(self._build_ddn_context(intent))
+        decision = self._ddn.evaluate(self._build_ddn_context(intent, now_ms=now_ms))
         verdict = decision.verdict
         self._bot_state.record_decision(
             verdict=verdict,
@@ -135,10 +142,10 @@ class LockBotService:
         self._bot_state.bump_state()
         ack_status = "ACCEPTED" if verdict in {"ALLOW", "MODIFY", "PANIC_ONLY"} else "REJECTED"
         error_code = decision.reasons[0] if ack_status == "REJECTED" and decision.reasons else None
-        return self._build_ack(cmd_id, ack_status, error_code=error_code, state_version=self._bot_state.state_version)
+        return self._build_ack(cmd_id, ack_status, error_code=error_code, state_version=self._bot_state.state_version, now_ms=now_ms)
 
-    def build_status(self) -> StatusEnvelope:
-        now_ms = int(time.time() * 1000)
+    def build_status(self, *, now_ms: Optional[int] = None) -> StatusEnvelope:
+        now_ms = now_ms if now_ms is not None else int(time.time() * 1000)
         market_lag = _lag_ms(now_ms, self._market_state.last_market_ts)
         account_lag = _lag_ms(now_ms, self._account_state.last_account_ts)
         loop_hz = self._calc_loop_hz()
@@ -206,54 +213,68 @@ class LockBotService:
             payload=payload,
         )
 
+    def handle_market_event(self, event: Any) -> None:
+        event_type = getattr(event, "event_type", None) or event.get("event_type")
+        payload = getattr(event, "payload", None) or event.get("payload", {})
+        ts_event = getattr(event, "ts_event", None) or event.get("ts_event") or 0
+        if event_type == "mark_price_1s":
+            mark_price = payload.get("mark_price")
+            if mark_price is not None:
+                self._market_state.update_mark_price(float(mark_price))
+            if "funding_rate" in payload:
+                self._market_state.funding_rate = payload.get("funding_rate")
+        elif event_type == "vwap_d":
+            self._market_state.vwap_d = payload.get("vwap")
+        elif event_type == "vwap_bands_d":
+            self._market_state.band_1u = payload.get("band_1u")
+            self._market_state.band_1l = payload.get("band_1l")
+            self._market_state.band_2u = payload.get("band_2u")
+            self._market_state.band_2l = payload.get("band_2l")
+        elif event_type == "avwap":
+            self._market_state.avwap = payload
+        elif event_type == "liq_heatmap":
+            self._market_state.liq_heatmap = payload
+        if ts_event:
+            self._market_state.update_timestamp(int(ts_event))
+
     async def _market_loop(self) -> None:
+        if not self._hub_sub:
+            return
         async for _topic, event in self._hub_sub.events():
             self._loop_counter += 1
-            ts_event = int(event.ts_event)
-            if event.event_type == "mark_price_1s":
-                mark_price = event.payload.get("mark_price")
-                if mark_price is not None:
-                    self._market_state.update_mark_price(float(mark_price))
-                self._market_state.funding_rate = event.payload.get("funding_rate")
-            elif event.event_type == "vwap_d":
-                self._market_state.vwap_d = event.payload.get("vwap")
-            elif event.event_type == "vwap_bands_d":
-                self._market_state.band_1u = event.payload.get("band_1u")
-                self._market_state.band_1l = event.payload.get("band_1l")
-                self._market_state.band_2u = event.payload.get("band_2u")
-                self._market_state.band_2l = event.payload.get("band_2l")
-            elif event.event_type == "avwap":
-                self._market_state.avwap = event.payload
-            elif event.event_type == "liq_heatmap":
-                self._market_state.liq_heatmap = event.payload
-            self._market_state.update_timestamp(ts_event)
+            self.handle_market_event(event)
+
+    def handle_account_payload(self, payload: Dict[str, Any]) -> None:
+        ts_event = payload.get("ts_event") or payload.get("ts_ms")
+        if ts_event is not None:
+            self._account_state.update_timestamp(int(ts_event))
+        positions = payload.get("positions")
+        if isinstance(positions, dict):
+            self._account_state.long_qty = positions.get("long_qty", self._account_state.long_qty)
+            self._account_state.short_qty = positions.get("short_qty", self._account_state.short_qty)
+            self._account_state.long_avg_px = positions.get("long_avg_px", self._account_state.long_avg_px)
+            self._account_state.short_avg_px = positions.get("short_avg_px", self._account_state.short_avg_px)
+            self._account_state.liq_price_long = positions.get("liq_price_long", self._account_state.liq_price_long)
+            self._account_state.liq_price_short = positions.get("liq_price_short", self._account_state.liq_price_short)
+        risk = payload.get("risk")
+        if isinstance(risk, dict):
+            self._account_state.margin_usage = risk.get("margin_usage", self._account_state.margin_usage)
+            self._account_state.distance_to_liq_bps = risk.get("distance_to_liq_bps", self._account_state.distance_to_liq_bps)
+            self._account_state.initial_margin = risk.get("initial_margin", self._account_state.initial_margin)
+            self._account_state.maintenance_margin = risk.get("maintenance_margin", self._account_state.maintenance_margin)
+            self._account_state.equity = risk.get("equity", self._account_state.equity)
+            self._account_state.leverage = risk.get("leverage", self._account_state.leverage)
 
     async def _account_loop(self) -> None:
         if not self._account_sub:
             return
         async for _topic, payload in self._account_sub.events():
             self._loop_counter += 1
-            ts_event = payload.get("ts_event") or payload.get("ts_ms")
-            if ts_event is not None:
-                self._account_state.update_timestamp(int(ts_event))
-            positions = payload.get("positions")
-            if isinstance(positions, dict):
-                self._account_state.long_qty = positions.get("long_qty", self._account_state.long_qty)
-                self._account_state.short_qty = positions.get("short_qty", self._account_state.short_qty)
-                self._account_state.long_avg_px = positions.get("long_avg_px", self._account_state.long_avg_px)
-                self._account_state.short_avg_px = positions.get("short_avg_px", self._account_state.short_avg_px)
-                self._account_state.liq_price_long = positions.get("liq_price_long", self._account_state.liq_price_long)
-                self._account_state.liq_price_short = positions.get("liq_price_short", self._account_state.liq_price_short)
-            risk = payload.get("risk")
-            if isinstance(risk, dict):
-                self._account_state.margin_usage = risk.get("margin_usage", self._account_state.margin_usage)
-                self._account_state.distance_to_liq_bps = risk.get("distance_to_liq_bps", self._account_state.distance_to_liq_bps)
-                self._account_state.initial_margin = risk.get("initial_margin", self._account_state.initial_margin)
-                self._account_state.maintenance_margin = risk.get("maintenance_margin", self._account_state.maintenance_margin)
-                self._account_state.equity = risk.get("equity", self._account_state.equity)
-                self._account_state.leverage = risk.get("leverage", self._account_state.leverage)
+            self.handle_account_payload(payload)
 
     async def _cmd_loop(self) -> None:
+        if not self._cmd_sub:
+            return
         async for cmd in self._cmd_sub.commands():
             self._loop_counter += 1
             command = msgspec.structs.asdict(cmd)
@@ -277,6 +298,7 @@ class LockBotService:
         error_code: Optional[str] = None,
         error_detail: Optional[str] = None,
         state_version: int = 0,
+        now_ms: Optional[int] = None,
     ) -> AckEnvelope:
         payload = {"status": status, "state_version": state_version}
         if error_code:
@@ -289,7 +311,7 @@ class LockBotService:
             bot_id=self._cfg.bot_id,
             symbol=self._cfg.symbol,
             cmd_id=cmd_id,
-            ts_ack=int(time.time() * 1000),
+            ts_ack=now_ms if now_ms is not None else int(time.time() * 1000),
             payload=payload,
         )
 
@@ -336,7 +358,7 @@ class LockBotService:
             return DDNIntent(action="RESUME", reason=payload.get("reason"))
         return DDNIntent(action=str(cmd_type))
 
-    def _build_ddn_context(self, intent: DDNIntent) -> DDNContext:
+    def _build_ddn_context(self, intent: DDNIntent, *, now_ms: Optional[int] = None) -> DDNContext:
         profile = self._cfg.ddn.profiles.get(self._bot_state.ddn_profile) or self._cfg.ddn.profiles.get("neutral")
         if profile is None:
             profile = self._cfg.ddn.__class__.default().profiles["neutral"]
@@ -356,8 +378,9 @@ class LockBotService:
             band_high=band_high,
             force_hedge=active_profile.force_hedge,
         )
-        market_lag = _lag_ms(int(time.time() * 1000), self._market_state.last_market_ts)
-        account_lag = _lag_ms(int(time.time() * 1000), self._account_state.last_account_ts)
+        now_ms = now_ms if now_ms is not None else int(time.time() * 1000)
+        market_lag = _lag_ms(now_ms, self._market_state.last_market_ts)
+        account_lag = _lag_ms(now_ms, self._account_state.last_account_ts)
         if self._account_sub is None:
             account_lag = 0
         margin_usage = self._account_state.margin_usage
@@ -399,6 +422,17 @@ def _lag_ms(now_ms: int, last_ts_ms: Optional[int]) -> Optional[int]:
     if last_ts_ms is None:
         return None
     return max(0, now_ms - int(last_ts_ms))
+
+
+class _NullPublisher:
+    def publish_ack(self, _topic: str, _ack: AckEnvelope) -> None:
+        return None
+
+    def publish_status(self, _topic: str, _status: StatusEnvelope) -> None:
+        return None
+
+    def close(self) -> None:
+        return None
 
 
 async def _run(config_path: Optional[Path]) -> None:

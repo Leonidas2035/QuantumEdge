@@ -35,11 +35,11 @@ class MarketDataCache:
         self.ohlcv_5m = deque(maxlen=max_bars)
         self.ohlcv_15m = deque(maxlen=max_bars)
 
-    def update_event(self, event: LockbotMarketEvent) -> None:
+    def update_event(self, event: LockbotMarketEvent | dict) -> None:
         with self._lock:
-            event_type = str(event.event_type)
-            payload = event.payload or {}
-            ts_event = int(event.ts_event)
+            event_type = _event_attr(event, "event_type", "")
+            payload = _event_attr(event, "payload", {}) or {}
+            ts_event = int(_event_attr(event, "ts_event", 0))
             if event_type == "mark_price_1s":
                 price = payload.get("mark_price")
                 if price is not None:
@@ -213,3 +213,9 @@ def _summarize_heatmap(payload: dict, mark_price: Optional[float], ts_event: int
         else:
             below += intensity
     return LiqHeatmapSummary(intensity_above=above, intensity_below=below, last_ts=ts_event)
+
+
+def _event_attr(event: LockbotMarketEvent | dict, key: str, default: object) -> object:
+    if isinstance(event, dict):
+        return event.get(key, default)
+    return getattr(event, key, default)
