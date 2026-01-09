@@ -392,6 +392,20 @@ class ApiServer:
                         logger.exception("Error sending lockbot cmd: %s", exc)
                         self._send_json(500, {"error": "internal_error"})
                     return
+                if self.path == "/api/v1/lockbot/btc/policy/enable":
+                    payload = self._parse_json()
+                    if payload is None:
+                        return
+                    enabled = True
+                    if isinstance(payload, dict) and "enabled" in payload:
+                        enabled = bool(payload.get("enabled"))
+                    try:
+                        response = app.lockbot_policy_set_enabled(enabled)
+                        self._send_json(200, response)
+                    except Exception as exc:  # pylint: disable=broad-except
+                        logger.exception("Error toggling lockbot policy: %s", exc)
+                        self._send_json(500, {"error": "internal_error"})
+                    return
                 if self.path == "/api/v1/dashboard/reset-counters":
                     try:
                         response = app.dashboard_reset_counters()
@@ -462,6 +476,31 @@ class ApiServer:
                         self._send_json(200, response)
                     except Exception as exc:  # pylint: disable=broad-except
                         logger.exception("Error building lockbot status: %s", exc)
+                        self._send_json(500, {"error": "internal_error"})
+                    return
+                if self.path == "/api/v1/lockbot/btc/policy/status":
+                    try:
+                        response = app.lockbot_policy_status()
+                        self._send_json(200, response)
+                    except Exception as exc:  # pylint: disable=broad-except
+                        logger.exception("Error building lockbot policy status: %s", exc)
+                        self._send_json(500, {"error": "internal_error"})
+                    return
+                if self.path.startswith("/api/v1/lockbot/btc/policy/decisions"):
+                    limit = 20
+                    if "?" in self.path:
+                        _, query = self.path.split("?", 1)
+                        for part in query.split("&"):
+                            if part.startswith("limit="):
+                                try:
+                                    limit = int(part.split("=", 1)[1])
+                                except ValueError:
+                                    limit = 20
+                    try:
+                        response = app.lockbot_policy_decisions(limit)
+                        self._send_json(200, response)
+                    except Exception as exc:  # pylint: disable=broad-except
+                        logger.exception("Error building lockbot policy decisions: %s", exc)
                         self._send_json(500, {"error": "internal_error"})
                     return
                 if self.path.startswith("/api/v1/events/tail"):

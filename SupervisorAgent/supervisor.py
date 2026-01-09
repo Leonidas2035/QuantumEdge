@@ -98,6 +98,8 @@ from supervisor.alerts.engine import AlertEngine, AlertResult
 from supervisor.security import is_path_allowed, validate_kill_switch_challenge
 from supervisor.process_spec import ProcessSpec
 from supervisor.lockbot.control_client import LockbotControlClient
+from supervisor.lockbot.models import PolicyRunnerConfig, load_lockbot_policy_config
+from supervisor.lockbot.policy_runner import LockbotPolicyRunner
 
 try:
     from tools.qe_config import get_qe_paths
@@ -121,6 +123,7 @@ class SupervisorApp:
         meta_config: MetaSupervisorConfig,
         dashboard_config: DashboardConfig,
         lockbot_cfg: LockbotControlConfig,
+        lockbot_policy_cfg: PolicyRunnerConfig,
         tsdb_config: TsdbConfig,
         tsdb_retention: TsdbRetentionConfig,
         regime_cfg: RegimeConfig,
@@ -144,6 +147,7 @@ class SupervisorApp:
         self.tsdb_config = tsdb_config
         self.dashboard_config = dashboard_config
         self.lockbot_cfg = lockbot_cfg
+        self.lockbot_policy_cfg = lockbot_policy_cfg
         self.logger = logger or logging.getLogger(__name__)
         self.autopilot_cfg = autopilot_cfg
         self.process_specs = process_specs
@@ -309,6 +313,12 @@ class SupervisorApp:
         if self.lockbot_cfg.enabled:
             self.lockbot_client = LockbotControlClient(self.lockbot_cfg, self.logger)
             self.lockbot_client.start()
+        self.lockbot_policy_runner: Optional[LockbotPolicyRunner] = None
+        if self.lockbot_policy_cfg.enabled:
+            if not self.lockbot_client:
+                self.logger.warning("Lockbot policy enabled but lockbot control client is disabled.")
+            else:
+                self.lockbot_policy_runner = LockbotPolicyRunner(self.lockbot_policy_cfg, self.lockbot_client, self.logger)
 
     def _build_tsdb_writer(self, tsdb_config: TsdbConfig) -> Optional[TsdbWriter]:
         self.tsdb_backend = "none"
@@ -660,6 +670,8 @@ class SupervisorApp:
                 continue
         if self.api_server:
             self.api_server.start()
+        if self.lockbot_policy_runner:
+            self.lockbot_policy_runner.start()
         try:
             while not self._stop_requested:
                 self.process_manager.tick()
@@ -782,6 +794,8 @@ class SupervisorApp:
                 self.run_context.write_artifacts_manifest()
             if self.api_server:
                 self.api_server.stop()
+            if self.lockbot_policy_runner:
+                self.lockbot_policy_runner.stop()
             self.process_manager.stop_all()
 
     def risk_status(self) -> None:
@@ -1284,6 +1298,22 @@ class SupervisorApp:
         status = self.lockbot_client.status()
         return {"status": "ok", "payload": status}
 
+    def lockbot_policy_status(self) -> Dict[str, Any]:
+        if not self.lockbot_policy_runner:
+            return {"status": "disabled"}
+        return {"status": "ok", "payload": self.lockbot_policy_runner.status()}
+
+    def lockbot_policy_set_enabled(self, enabled: bool) -> Dict[str, Any]:
+        if not self.lockbot_policy_runner:
+            return {"status": "disabled"}
+        self.lockbot_policy_runner.set_enabled(enabled)
+        return {"status": "ok", "enabled": bool(enabled)}
+
+    def lockbot_policy_decisions(self, limit: int = 20) -> Dict[str, Any]:
+        if not self.lockbot_policy_runner:
+            return {"status": "disabled", "decisions": []}
+        return {"status": "ok", "decisions": self.lockbot_policy_runner.decisions(limit)}
+
     def _build_alert_summary(self) -> Dict[str, Any]:
         metrics = self.autopilot.collector.collect()
         telemetry_summary = self.telemetry.summary()
@@ -1643,6 +1673,10 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
             "policy-list",
             "policy-rollout",
             "policy-rollback",
+            "lockbot-policy-status",
+            "lockbot-policy-enable",
+            "lockbot-policy-disable",
+            "lockbot-policy-decisions",
         ],
         help="Command to execute",
     )
@@ -1691,6 +1725,13 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         "--bucket",
         dest="bucket",
         help="Report bucket (e.g. 1m, 5m, 1h).",
+    )
+    parser.add_argument(
+        "--limit",
+        dest="limit",
+        type=int,
+        default=20,
+        help="Limit for list commands (e.g. lockbot-policy-decisions).",
     )
     parser.add_argument(
         "--config",
@@ -1772,6 +1813,12 @@ def build_app(
     meta_config = load_meta_supervisor_config(supervisor_config_dir / "meta_supervisor.yaml", paths_config)
     dashboard_config = load_dashboard_config(supervisor_config_dir / "dashboard.yaml")
     lockbot_cfg = load_lockbot_config(supervisor_config_dir / "lockbot.yaml")
+    policy_cfg_path = project_root / "configs" / "lockbot_btc_policy.yaml"
+    if not policy_cfg_path.exists():
+        fallback = supervisor_config_dir / "lockbot_btc_policy.yaml"
+        if fallback.exists():
+            policy_cfg_path = fallback
+    lockbot_policy_cfg = load_lockbot_policy_config(policy_cfg_path)
     tsdb_config = load_tsdb_config(supervisor_config_dir / "tsdb.yaml")
     tsdb_retention = load_tsdb_retention_config(supervisor_config_dir / "tsdb_retention.yaml")
     autopilot_cfg = load_autopilot_config(supervisor_config_dir / "autopilot.yaml")
@@ -1791,6 +1838,7 @@ def build_app(
         meta_config,
         dashboard_config,
         lockbot_cfg,
+        lockbot_policy_cfg,
         tsdb_config,
         tsdb_retention,
         regime_cfg,
@@ -2200,6 +2248,14 @@ def main(argv: Optional[list[str]] = None) -> None:
         elif args.command == "policy-rollback":
             manager = app.policy_manager_for(args.symbol)
             print(json.dumps(policy_rollback(manager, reason="manual_rollback", audit=app.autopilot.audit), indent=2))
+        elif args.command == "lockbot-policy-status":
+            print(json.dumps(app.lockbot_policy_status(), indent=2))
+        elif args.command == "lockbot-policy-enable":
+            print(json.dumps(app.lockbot_policy_set_enabled(True), indent=2))
+        elif args.command == "lockbot-policy-disable":
+            print(json.dumps(app.lockbot_policy_set_enabled(False), indent=2))
+        elif args.command == "lockbot-policy-decisions":
+            print(json.dumps(app.lockbot_policy_decisions(args.limit), indent=2))
     except Exception as exc:
         logging.getLogger(__name__).exception("Command '%s' failed: %s", args.command, exc)
         sys.exit(1)

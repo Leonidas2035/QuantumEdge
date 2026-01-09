@@ -41,3 +41,7 @@ Optional fields used by the DDN layer:
 
 The status cache is updated from bot heartbeats and can be inspected via `/api/v1/lockbot/btc/status`.
 DDN decisions are included under `payload.ddn.*`.
+
+## Policy runner (Stage 4)
+
+See `SupervisorAgent/docs/lockbot_policy.md` for regime/strategy orchestration, config, and API endpoints.

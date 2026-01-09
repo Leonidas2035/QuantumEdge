@@ -19,6 +19,10 @@ class BotState:
     ddn_band_high: float = 0.10
     state_version: int = 0
     last_error: Optional[str] = None
+    last_cmd_id: Optional[str] = None
+    last_cmd_type: Optional[str] = None
+    last_cmd_ts: Optional[int] = None
+    last_cmd_payload: Optional[dict] = None
     last_ddn_verdict: Optional[str] = None
     last_ddn_reasons: list[str] = field(default_factory=list)
     last_ddn_step_qty: Optional[float] = None
@@ -52,3 +56,9 @@ class BotState:
             self.last_order_plans.append(plan)
         while len(self.last_order_plans) > 20:
             self.last_order_plans.popleft()
+
+    def record_command(self, cmd_id: str, cmd_type: str, ts_ms: int, payload: dict) -> None:
+        self.last_cmd_id = cmd_id
+        self.last_cmd_type = cmd_type
+        self.last_cmd_ts = ts_ms
+        self.last_cmd_payload = dict(payload)

@@ -36,3 +36,4 @@ python -m LockBotBTC.lockbot_btc.main --config LockBotBTC/config/lockbot_btc.yam
 - All market data must come from MarketDataHub topics.
 - DDN decisions are computed but only emitted as order-plan previews (no execution).
 - See `LockBotBTC/docs/ddn_layer.md` for guard behavior and config knobs.
+- Supervisor policy runner (Stage 4) is configured in `SupervisorAgent/configs/lockbot_btc_policy.yaml`.

@@ -65,6 +65,7 @@ Run from the repo root (`QE_ROOT`):
 - `docs/telemetry.md`
 - `MarketDataHub/docs/contracts_lockbot_md.md` ??? LockBot market-data contract reference.
 - `docs/lockbot_control.md` ??? LockBotBTC command + status control plane.
+- `docs/lockbot_policy.md` ??? LockBotBTC regime/strategy policy runner.
 # SupervisorAgent
 
 SupervisorAgent is a lightweight controller process for the QuantumEdge trading bot. It launches, monitors, and stops the trading engine from outside the hot trading loop, paving the way for risk controls, LLM oversight, and Meta-Agent strategic cycles.

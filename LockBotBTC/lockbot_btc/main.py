@@ -98,6 +98,8 @@ class LockBotService:
 
         payload = command.get("payload") if isinstance(command.get("payload"), dict) else {}
         cmd_type = payload.get("cmd")
+        if cmd_type:
+            self._bot_state.record_command(cmd_id, str(cmd_type), now_ms, payload)
         intent = self._build_intent(cmd_type, payload)
         decision = self._ddn.evaluate(self._build_ddn_context(intent))
         verdict = decision.verdict
@@ -181,6 +183,16 @@ class LockBotService:
                 "last_step_qty": self._bot_state.last_ddn_step_qty,
                 "last_cost_bps": self._bot_state.last_ddn_cost_bps,
                 "order_plans": list(self._bot_state.last_order_plans),
+            },
+            "policy": {
+                "last_cmd_type": self._bot_state.last_cmd_type,
+                "last_cmd_id": self._bot_state.last_cmd_id,
+                "last_cmd_ts": self._bot_state.last_cmd_ts,
+                "last_cmd_payload": self._bot_state.last_cmd_payload,
+                "ddn_profile": self._bot_state.ddn_profile,
+                "ddn_target": self._bot_state.ddn_target,
+                "ddn_band_low": self._bot_state.ddn_band_low,
+                "ddn_band_high": self._bot_state.ddn_band_high,
             },
         }
         self._seq += 1
