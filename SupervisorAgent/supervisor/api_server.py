@@ -371,6 +371,27 @@ class ApiServer:
                         logger.exception("Error applying kill switch: %s", exc)
                         self._send_json(500, {"error": "internal_error"})
                     return
+                if self.path == "/api/v1/lockbot/btc/cmd":
+                    payload = self._parse_json()
+                    if payload is None:
+                        return
+                    if not isinstance(payload, dict):
+                        self._send_json(400, {"error": "bad_payload"})
+                        return
+                    cmd = payload.get("cmd")
+                    if not cmd:
+                        self._send_json(400, {"error": "missing_cmd"})
+                        return
+                    cmd_payload = payload.get("payload")
+                    if not isinstance(cmd_payload, dict):
+                        cmd_payload = {k: v for k, v in payload.items() if k != "cmd"}
+                    try:
+                        response = app.lockbot_send_cmd(str(cmd), cmd_payload)
+                        self._send_json(200, response)
+                    except Exception as exc:  # pylint: disable=broad-except
+                        logger.exception("Error sending lockbot cmd: %s", exc)
+                        self._send_json(500, {"error": "internal_error"})
+                    return
                 if self.path == "/api/v1/dashboard/reset-counters":
                     try:
                         response = app.dashboard_reset_counters()
@@ -433,6 +454,14 @@ class ApiServer:
                         self._send_json(200, response)
                     except Exception as exc:  # pylint: disable=broad-except
                         logger.exception("Error building bot status: %s", exc)
+                        self._send_json(500, {"error": "internal_error"})
+                    return
+                if self.path == "/api/v1/lockbot/btc/status":
+                    try:
+                        response = app.lockbot_status()
+                        self._send_json(200, response)
+                    except Exception as exc:  # pylint: disable=broad-except
+                        logger.exception("Error building lockbot status: %s", exc)
                         self._send_json(500, {"error": "internal_error"})
                     return
                 if self.path.startswith("/api/v1/events/tail"):

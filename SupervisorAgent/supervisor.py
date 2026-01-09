@@ -28,6 +28,7 @@ from supervisor.config import (
     load_trading_behavior_config,
     load_snapshot_scheduler_config,
     load_dashboard_config,
+    load_lockbot_config,
     load_tsdb_config,
     load_tsdb_retention_config,
     PathsConfig,
@@ -40,6 +41,7 @@ from supervisor.config import (
     TradingBehaviorConfig,
     SnapshotSchedulerConfig,
     DashboardConfig,
+    LockbotControlConfig,
     TsdbConfig,
     TsdbRetentionConfig,
     AutopilotConfig,
@@ -95,6 +97,7 @@ from supervisor.alerts.storage import AlertStorage
 from supervisor.alerts.engine import AlertEngine, AlertResult
 from supervisor.security import is_path_allowed, validate_kill_switch_challenge
 from supervisor.process_spec import ProcessSpec
+from supervisor.lockbot.control_client import LockbotControlClient
 
 try:
     from tools.qe_config import get_qe_paths
@@ -117,6 +120,7 @@ class SupervisorApp:
         snapshot_config: SnapshotSchedulerConfig,
         meta_config: MetaSupervisorConfig,
         dashboard_config: DashboardConfig,
+        lockbot_cfg: LockbotControlConfig,
         tsdb_config: TsdbConfig,
         tsdb_retention: TsdbRetentionConfig,
         regime_cfg: RegimeConfig,
@@ -139,6 +143,7 @@ class SupervisorApp:
         self.project_root = project_root
         self.tsdb_config = tsdb_config
         self.dashboard_config = dashboard_config
+        self.lockbot_cfg = lockbot_cfg
         self.logger = logger or logging.getLogger(__name__)
         self.autopilot_cfg = autopilot_cfg
         self.process_specs = process_specs
@@ -300,6 +305,10 @@ class SupervisorApp:
         self._last_alert_eval_ts = 0.0
         self._last_alert_result: Optional[AlertResult] = None
         self._kill_switch_challenge: Optional[Dict[str, Any]] = None
+        self.lockbot_client: Optional[LockbotControlClient] = None
+        if self.lockbot_cfg.enabled:
+            self.lockbot_client = LockbotControlClient(self.lockbot_cfg, self.logger)
+            self.lockbot_client.start()
 
     def _build_tsdb_writer(self, tsdb_config: TsdbConfig) -> Optional[TsdbWriter]:
         self.tsdb_backend = "none"
@@ -1263,6 +1272,18 @@ class SupervisorApp:
     def dashboard_reset_counters(self) -> Dict[str, Any]:
         return self.dashboard_store.reset_counters()
 
+    def lockbot_send_cmd(self, cmd: str, payload: Dict[str, Any]) -> Dict[str, Any]:
+        if not self.lockbot_client:
+            raise RuntimeError("lockbot_control_disabled")
+        cmd_id = self.lockbot_client.send_command(cmd, payload)
+        return {"status": "sent", "cmd_id": cmd_id}
+
+    def lockbot_status(self) -> Dict[str, Any]:
+        if not self.lockbot_client:
+            return {"status": "disabled"}
+        status = self.lockbot_client.status()
+        return {"status": "ok", "payload": status}
+
     def _build_alert_summary(self) -> Dict[str, Any]:
         metrics = self.autopilot.collector.collect()
         telemetry_summary = self.telemetry.summary()
@@ -1750,6 +1771,7 @@ def build_app(
     snapshot_config = load_snapshot_scheduler_config(supervisor_config_path)
     meta_config = load_meta_supervisor_config(supervisor_config_dir / "meta_supervisor.yaml", paths_config)
     dashboard_config = load_dashboard_config(supervisor_config_dir / "dashboard.yaml")
+    lockbot_cfg = load_lockbot_config(supervisor_config_dir / "lockbot.yaml")
     tsdb_config = load_tsdb_config(supervisor_config_dir / "tsdb.yaml")
     tsdb_retention = load_tsdb_retention_config(supervisor_config_dir / "tsdb_retention.yaml")
     autopilot_cfg = load_autopilot_config(supervisor_config_dir / "autopilot.yaml")
@@ -1768,6 +1790,7 @@ def build_app(
         snapshot_config,
         meta_config,
         dashboard_config,
+        lockbot_cfg,
         tsdb_config,
         tsdb_retention,
         regime_cfg,

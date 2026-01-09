@@ -1,0 +1,12 @@
+lockbot:
+  enabled: true
+  bot_id: "LockBotBTC"
+  symbol: "BTCUSDT"
+  cmd_endpoint: "ipc:///tmp/lockbot_cmd.ipc"
+  status_endpoint: "ipc:///tmp/lockbot_status.ipc"
+  cmd_topic: "LOCKBOT:BTCUSDT:cmd"
+  ack_topic: "LOCKBOT:BTCUSDT:ack"
+  status_topic: "LOCKBOT:BTCUSDT:status"
+  stale_after_ms: 5000
+  rcv_hwm: 1000
+  cmd_ttl_ms: 2000

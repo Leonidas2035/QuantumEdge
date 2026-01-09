@@ -1,0 +1,2 @@
+"""State containers for LockBotBTC."""
+

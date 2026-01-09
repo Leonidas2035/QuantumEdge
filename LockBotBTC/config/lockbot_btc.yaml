@@ -1,0 +1,22 @@
+bot_id: "LockBotBTC"
+symbol: "BTCUSDT"
+
+hub_sub_endpoint: "ipc:///tmp/quantum_market_data.ipc"
+supervisor_cmd_sub_endpoint: "ipc:///tmp/lockbot_cmd.ipc"
+bot_pub_endpoint: "ipc:///tmp/lockbot_status.ipc"
+
+market_topics:
+  - "BTCUSDT:mark_price_1s"
+  - "BTCUSDT:vwap_d"
+  - "BTCUSDT:vwap_bands_d"
+  - "BTCUSDT:avwap"
+  - "BTCUSDT:liq_heatmap"
+
+account_topics: []
+
+heartbeat_interval_ms: 1000
+cmd_ttl_ms: 2000
+cmd_cache_size: 256
+
+log_level: "INFO"
+log_path: "runtime/lockbot_btc.log"

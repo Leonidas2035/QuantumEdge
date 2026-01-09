@@ -1,0 +1,122 @@
+import asyncio
+import socket
+import sys
+import time
+from pathlib import Path
+
+import msgspec
+import pytest
+import zmq
+import zmq.asyncio
+
+from LockBotBTC.lockbot_btc.config import LockbotConfig
+from LockBotBTC.lockbot_btc.main import LockBotService
+from MarketDataHub.lockbot.schema import LockbotMarketEvent
+from MarketDataHub.models import Priority
+ROOT = Path(__file__).resolve().parents[1]
+SUPERVISOR_DIR = ROOT / "SupervisorAgent"
+if str(SUPERVISOR_DIR) not in sys.path:
+    sys.path.insert(0, str(SUPERVISOR_DIR))
+
+from supervisor.config import LockbotControlConfig
+from supervisor.lockbot.control_client import LockbotControlClient
+
+
+def _free_port() -> int:
+    sock = socket.socket()
+    sock.bind(("127.0.0.1", 0))
+    port = sock.getsockname()[1]
+    sock.close()
+    return port
+
+
+@pytest.mark.asyncio
+async def test_lockbot_smoke_integration():
+    hub_port = _free_port()
+    cmd_port = _free_port()
+    status_port = _free_port()
+    hub_endpoint = f"tcp://127.0.0.1:{hub_port}"
+    cmd_endpoint = f"tcp://127.0.0.1:{cmd_port}"
+    status_endpoint = f"tcp://127.0.0.1:{status_port}"
+
+    cfg = LockbotConfig(
+        hub_sub_endpoint=hub_endpoint,
+        supervisor_cmd_sub_endpoint=cmd_endpoint,
+        bot_pub_endpoint=status_endpoint,
+        market_topics=[
+            "BTCUSDT:mark_price_1s",
+            "BTCUSDT:vwap_d",
+            "BTCUSDT:vwap_bands_d",
+        ],
+        log_path="runtime/lockbot_btc_test.log",
+    )
+    service = LockBotService(cfg)
+    await service.start()
+
+    control_cfg = LockbotControlConfig(
+        enabled=True,
+        bot_id="LockBotBTC",
+        symbol="BTCUSDT",
+        cmd_endpoint=cmd_endpoint,
+        status_endpoint=status_endpoint,
+        cmd_topic="LOCKBOT:BTCUSDT:cmd",
+        ack_topic="LOCKBOT:BTCUSDT:ack",
+        status_topic="LOCKBOT:BTCUSDT:status",
+        stale_after_ms=5000,
+        rcv_hwm=1000,
+        cmd_ttl_ms=2000,
+    )
+    client = LockbotControlClient(control_cfg)
+    client.start()
+
+    ctx = zmq.asyncio.Context.instance()
+    pub = ctx.socket(zmq.PUB)
+    pub.setsockopt(zmq.LINGER, 0)
+    pub.bind(hub_endpoint)
+
+    await asyncio.sleep(0.5)
+    now_ms = int(time.time() * 1000)
+
+    async def publish(event_type: str, payload: dict, seq: int) -> None:
+        event = LockbotMarketEvent(
+            ts_ns=now_ms * 1_000_000,
+            symbol="BTCUSDT",
+            event_type=event_type,
+            seq=seq,
+            priority=Priority.L1,
+            schema="lockbot_md.v1",
+            topic=f"BTCUSDT:{event_type}",
+            ts_event=now_ms,
+            ts_pub=now_ms,
+            source="hub_derived",
+            payload=payload,
+        )
+        await pub.send_multipart([f"BTCUSDT:{event_type}".encode("utf-8"), msgspec.msgpack.encode(event)])
+
+    await publish("mark_price_1s", {"mark_price": 100.0}, 1)
+    await publish("vwap_d", {"vwap": 99.5, "session": {"type": "UTC_DAY", "start_ts": now_ms, "end_ts": now_ms + 1}}, 2)
+    await publish(
+        "vwap_bands_d",
+        {"band_1u": 101.0, "band_1l": 98.0, "band_2u": 102.0, "band_2l": 97.0},
+        3,
+    )
+
+    await asyncio.sleep(0.5)
+    cmd_id = client.send_command("SET_REGIME", {"regime": "RANGE", "reason": "test"})
+    await publish("mark_price_1s", {"mark_price": 100.1}, 4)
+
+    for _ in range(30):
+        await asyncio.sleep(0.1)
+        ack = client.ack(cmd_id)
+        status = client.status()
+        if ack and status and status.get("payload", {}).get("lags", {}).get("market_lag_ms") is not None:
+            break
+    assert ack is not None
+    assert status is not None
+    assert status.get("payload", {}).get("regime") == "RANGE"
+    lags = status.get("payload", {}).get("lags", {})
+    assert lags.get("market_lag_ms") is not None
+
+    pub.close()
+    client.stop()
+    await service.stop()

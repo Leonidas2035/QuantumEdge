@@ -8,6 +8,7 @@ from supervisor.config import (
     load_llm_supervisor_config,
     load_market_risk_config,
     load_meta_supervisor_config,
+    load_lockbot_config,
     load_paths_config,
     load_risk_config,
     load_snapshot_scheduler_config,
@@ -81,6 +82,8 @@ def _build_test_app(tmp_path: Path):
     snapshot_config = load_snapshot_scheduler_config(config_dir / "supervisor.yaml")
     meta_config = load_meta_supervisor_config(config_dir / "meta_supervisor.yaml", paths)
     dashboard_config = load_dashboard_config(config_dir / "dashboard.yaml")
+    lockbot_cfg = load_lockbot_config(config_dir / "lockbot.yaml")
+    lockbot_cfg = replace(lockbot_cfg, enabled=False)
     tsdb_config = load_tsdb_config(config_dir / "tsdb.yaml")
     tsdb_retention = load_tsdb_retention_config(config_dir / "tsdb_retention.yaml")
     autopilot_cfg = load_autopilot_config(config_dir / "autopilot.yaml")
@@ -100,6 +103,7 @@ def _build_test_app(tmp_path: Path):
         snapshot_config,
         meta_config,
         dashboard_config,
+        lockbot_cfg,
         tsdb_config,
         tsdb_retention,
         regime_cfg,

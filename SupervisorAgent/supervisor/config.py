@@ -259,6 +259,23 @@ class DashboardConfig:
 
 
 @dataclass
+class LockbotControlConfig:
+    """Configuration for LockBotBTC control plane."""
+
+    enabled: bool
+    bot_id: str
+    symbol: str
+    cmd_endpoint: str
+    status_endpoint: str
+    cmd_topic: str
+    ack_topic: str
+    status_topic: str
+    stale_after_ms: int
+    rcv_hwm: int
+    cmd_ttl_ms: int
+
+
+@dataclass
 class TsdbConfig:
     """Configuration for TSDB layer."""
 
@@ -851,6 +868,38 @@ def load_dashboard_config(path: Path) -> DashboardConfig:
         cancel_storm_threshold=int(stage9.get("cancel_storm_threshold", 20)),
         dca_stuck_sell_ms=int(stage9.get("dca_stuck_sell_ms", 60000)),
         alert_eval_interval_sec=int(stage9.get("alert_eval_interval_sec", 5)),
+    )
+
+
+def load_lockbot_config(path: Path) -> LockbotControlConfig:
+    if not path.exists():
+        return LockbotControlConfig(
+            enabled=False,
+            bot_id="LockBotBTC",
+            symbol="BTCUSDT",
+            cmd_endpoint="ipc:///tmp/lockbot_cmd.ipc",
+            status_endpoint="ipc:///tmp/lockbot_status.ipc",
+            cmd_topic="LOCKBOT:BTCUSDT:cmd",
+            ack_topic="LOCKBOT:BTCUSDT:ack",
+            status_topic="LOCKBOT:BTCUSDT:status",
+            stale_after_ms=5000,
+            rcv_hwm=1000,
+            cmd_ttl_ms=2000,
+        )
+    raw = _load_yaml(path)
+    cfg = raw.get("lockbot", raw) if isinstance(raw, dict) else {}
+    return LockbotControlConfig(
+        enabled=bool(cfg.get("enabled", True)),
+        bot_id=str(cfg.get("bot_id", "LockBotBTC")),
+        symbol=str(cfg.get("symbol", "BTCUSDT")),
+        cmd_endpoint=str(cfg.get("cmd_endpoint", "ipc:///tmp/lockbot_cmd.ipc")),
+        status_endpoint=str(cfg.get("status_endpoint", "ipc:///tmp/lockbot_status.ipc")),
+        cmd_topic=str(cfg.get("cmd_topic", "LOCKBOT:BTCUSDT:cmd")),
+        ack_topic=str(cfg.get("ack_topic", "LOCKBOT:BTCUSDT:ack")),
+        status_topic=str(cfg.get("status_topic", "LOCKBOT:BTCUSDT:status")),
+        stale_after_ms=int(cfg.get("stale_after_ms", 5000)),
+        rcv_hwm=int(cfg.get("rcv_hwm", 1000)),
+        cmd_ttl_ms=int(cfg.get("cmd_ttl_ms", 2000)),
     )
 
 
