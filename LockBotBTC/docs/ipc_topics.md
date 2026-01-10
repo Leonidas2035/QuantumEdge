@@ -16,7 +16,8 @@ Account topics (optional, configurable):
 - Use `account_topics` in `LockBotBTC/config/lockbot_btc.yaml` to map to existing Hub account feeds.
 - Recommended for reconciliation:
   - `account:snapshot`
-  - `account:delta:usdm`
+  - `account:delta:usdm_ws`
+  - `account:delta:usdm` (alias for backward compatibility)
 
 ## Published topics
 

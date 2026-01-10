@@ -23,7 +23,9 @@
 **Account Streams (for reconciliation)**
 - Configure `account_topics` in `LockBotBTC/config/lockbot_btc.yaml` to include:
   - `account:snapshot`
-  - `account:delta:usdm`
+  - `account:delta:usdm_ws`
+  - `account:delta:usdm` (alias for backward compatibility)
+  - Note: MarketDataHub publishes account deltas as `account:delta:{delta.src}` (usdm -> `account:delta:usdm_ws`).
 
 **Exec Events**
 - Topic: `LOCKBOT:BTCUSDT:exec` (schema `lockbot_exec.v1`)

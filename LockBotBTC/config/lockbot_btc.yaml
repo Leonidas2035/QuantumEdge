@@ -14,6 +14,7 @@ market_topics:
 
 account_topics:
   - "account:snapshot"
+  - "account:delta:usdm_ws"
   - "account:delta:usdm"
 
 heartbeat_interval_ms: 1000
