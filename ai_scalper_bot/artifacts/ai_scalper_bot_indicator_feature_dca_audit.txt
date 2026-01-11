@@ -1,0 +1,314 @@
+Title: ai_scalper_bot - Indicators/Features/DCA Audit
+Date: 2026-01-11
+Commit hash (git rev-parse HEAD): 7e2ae2eb5fd78a79063ade119db006525ac22496
+Environment notes (OS, python version if relevant): Windows (PowerShell), Python 3.14.2
+
+0) Executive Summary (max 20 lines)
+- Scalping (main ML path): 24-feature vector from FEATURE_NAMES (returns, volatility, VWAP, EMA slopes, imbalance, volume spikes, regime_tag, microstructure ofi_z/ofi_ma5/spread_bps/top_qty_sum/trade_rate_1s/volume_1s) computed in bot/ml/features/builder.py and used in runtime via bot/run_bot.py.
+- Scalping (spot_scalper mode, if enabled): uses spread_bps, volume_imbalance, short_vol_bps, trend_score, exp_move_bps from book top; only runs when spot_scalper.enabled is true in config.
+- DCA: NOT IMPLEMENTED (only a DcaDealTracker helper exists; no strategy wiring, config, or runtime entrypoints).
+- Biggest gaps: missing import for EnsembleSignalModel in bot/run_bot.py; feature index mismatches in EnsembleSignalModel.filter_blocks and DecisionEngine regime_tag usage; warmup config key mismatch; pandas resample/rolling in hot loop (O(n) per tick).
+
+1) Repo Map (relevant folders/files only)
+- run_bot.py
+- bot/run_bot.py
+- bot/run_service.py
+- bot/spot_scalper.py
+- bot/engine/decision_engine.py
+- bot/ml/feature_schema.py
+- bot/ml/features/builder.py
+- bot/ml/signal_model/online_features.py
+- bot/ml/signal_model/model.py
+- bot/ml/runtime/model_manager.py
+- bot/ml/runtime/aggregator.py
+- bot/ml/ensemble.py
+- bot/market_data/ws_manager.py
+- bot/market_data/hub_source.py
+- bot/market_data/microstructure_cache.py
+- bot/trading/execution_mode.py
+- bot/trading/deal_events.py
+- config/settings.yaml
+- tests/test_feature_schema.py
+- tests/test_runtime_models.py
+- tests/test_risk_limits.py
+- tests/test_scalp_gate.py
+
+2) Runtime Entry Points & Dataflow
+2.1 Entry points
+- CLI entry: run_bot.py:24, run_bot.py:27 (dispatches to bot.run_bot.main).
+- Service entry: bot/run_service.py:86, bot/run_service.py:78 (wraps bot.run_bot.main with config overrides + signal handlers).
+- Primary runtime loop: bot/run_bot.py:216 (async def main).
+- Conditional spot scalper path: bot/run_bot.py:218-223 (dispatches to bot.spot_scalper.run_spot_scalper at bot/spot_scalper.py:484).
+
+2.2 Hot path dataflow (sequence diagram in text)
+- Market data source -> event stream
+  - WSManager for Binance trade + depth events (bot/market_data/ws_manager.py:14-103) or HubMarketDataSource (bot/market_data/hub_source.py:70-145) or MockWSManager (bot/run_bot.py:155-209).
+- Event parsing -> freshness/microstructure update
+  - bot/run_bot.py:640-706 updates DataFreshnessMonitor and OrderPolicy; microstructure events handled at bot/run_bot.py:648-667 using MicrostructureCache (bot/market_data/microstructure_cache.py:20-37).
+- Feature computation
+  - OnlineFeatureBuilder.add_tick called at bot/run_bot.py:773; implementation in bot/ml/signal_model/online_features.py:19-29 -> FeatureBuilder.add_tick (bot/ml/features/builder.py:147-153) -> build_feature_frame (bot/ml/features/builder.py:45-122) -> build_feature_vector (bot/ml/features/builder.py:125-132).
+- Signal/model inference
+  - ModelManager.predict called at bot/run_bot.py:784; ModelManager checks schema/feature_names in bot/ml/runtime/model_manager.py:64-86 and uses SignalModel.predict_proba (bot/ml/signal_model/model.py:34-56).
+  - Multi-horizon aggregation in bot/ml/runtime/aggregator.py:12-86 and build_ensemble_output at bot/run_bot.py:785.
+- Decision & gating
+  - DecisionEngine.decide at bot/run_bot.py:861-868 with regime policy in bot/engine/decision_engine.py:169-188.
+  - ScalpExecutionMode evaluate_entry gate (if scalp mode) at bot/run_bot.py:947-957, implemented in bot/trading/execution_mode.py:151-216.
+- Execution + state/telemetry
+  - execution_mode.execute_trade at bot/run_bot.py:1136-1148 -> trader actions; OrderRecord persisted at bot/run_bot.py:1096-1107; telemetry/events via EventWriter and TelemetryEmitter at bot/run_bot.py:118-134 and 1294-1305.
+
+3) Scalping Strategy - Indicators/Features Used NOW
+3.A Main ML scalper (default runtime path)
+Feature computation path:
+- Data source: tick trades (event fields p=price, q=qty, m=side) and optional microstructure events; event parsing in bot/run_bot.py:640-773.
+- Online feature vector: computed in bot/ml/features/builder.py:45-132 with names in bot/ml/feature_schema.py:19-43; invoked from bot/run_bot.py:773.
+
+Returns / volatility features (tick -> 1s bars):
+- Names: ret_1s, ret_5s, ret_30s, ret_60s
+  - Type: return indicators
+  - Source data: tick price aggregated to 1s bars (build_feature_frame, bot/ml/features/builder.py:63-77)
+  - Implementation: bot/ml/features/builder.py:74-77
+  - Called from: bot/run_bot.py:773 -> bot/ml/features/builder.py:158-173
+  - Parameters/windows: pct_change(1/5/30/60)
+  - Output: float (part of np.ndarray feature vector)
+  - Performance: computed via pandas resample + rolling each tick (O(n) per tick)
+- Names: vol_5s, vol_30s, vol_60s
+  - Type: volatility indicators
+  - Source data: ret_1s rolling std on 1s bars
+  - Implementation: bot/ml/features/builder.py:78-80
+  - Called from: bot/run_bot.py:773 -> bot/ml/features/builder.py:158-173
+  - Parameters/windows: rolling std(5/30/60)
+  - Output: float
+  - Performance: rolling std recomputed each tick (O(n) per tick)
+
+VWAP / trend features:
+- Names: vwap_1s, vwap_5s, vwap_30s, vwap_60s
+  - Type: VWAP indicators
+  - Source data: bar price/qty
+  - Implementation: bot/ml/features/builder.py:69-90 (roll_vwap windows 5/30/60; vwap_1s uses 1s bar)
+  - Called from: bot/run_bot.py:773
+  - Parameters/windows: rolling sum windows 5/30/60
+  - Output: float
+  - Performance: rolling sums per tick
+- Names: ema_slope_5s, ema_slope_30s
+  - Type: trend indicators (EMA slope)
+  - Source data: 1s bar price
+  - Implementation: bot/ml/features/builder.py:92-95 (EMA spans 5/30; slopes are diffs)
+  - Called from: bot/run_bot.py:773
+  - Parameters/windows: EMA span 5/30
+  - Output: float
+
+Order-flow / imbalance features:
+- Names: imb_5s, imb_30s
+  - Type: order-flow imbalance indicators
+  - Source data: side_sign and qty on 1s bars
+  - Implementation: bot/ml/features/builder.py:97-103 (rolling window 5/30)
+  - Called from: bot/run_bot.py:773
+  - Parameters/windows: rolling sum over 5/30 seconds
+  - Output: float
+
+Volume / liquidity features:
+- Names: vol_spike_5s, vol_spike_30s
+  - Type: volume spike ratios
+  - Source data: bar qty
+  - Implementation: bot/ml/features/builder.py:105-107 (rolling means / 30s mean)
+  - Called from: bot/run_bot.py:773
+  - Parameters/windows: rolling mean 5/30 vs 30s mean
+  - Output: float
+
+Regime feature:
+- Name: regime_tag
+  - Type: regime classification (numeric)
+  - Source data: vol_30s + ema_slope_30s
+  - Implementation: bot/ml/features/builder.py:33-41 (rules), applied at bot/ml/features/builder.py:109
+  - Called from: bot/run_bot.py:773
+  - Parameters: vol_30s threshold 0.002; slope sign
+  - Output: int-like float in vector
+
+Microstructure features (from MarketDataHub microstructure events, cached):
+- Names: ofi_z, ofi_ma5, spread_bps, top_qty_sum, trade_rate_1s, volume_1s
+  - Type: orderflow/microstructure indicators
+  - Source data: microstructure events via HubMarketDataSource; cached in bot/market_data/microstructure_cache.py:20-37
+  - Implementation: injected into bars in bot/ml/features/builder.py:111-120
+  - Called from: bot/run_bot.py:648-667 (cache update) and bot/run_bot.py:771-773 (feature builder update)
+  - Parameters: none in builder; cache max_age_ms from config (config/settings.yaml:26-29)
+  - Output: float
+
+Additional runtime feature usage (non-ML gating, still in scalper path):
+- Pre-trade block filter uses feature indices [0], [7], [10] (bot/ml/ensemble.py:104-114) called at bot/run_bot.py:779. Intended to use ret_1 and ret_std_10/vol_sum_10; see Issues for schema mismatch.
+- LLM risk moderator uses shock = abs(features[0]) (bot/run_bot.py:837-842), so ret_1s impacts approve/deny.
+- ScalpExecutionMode gate uses spread_bps and depth_usd from last_event (bot/trading/execution_mode.py:178-185) and ofi_ma5 from microstructure (bot/trading/execution_mode.py:189-199); called at bot/run_bot.py:947-957.
+
+3.B Spot scalper mode (only if spot_scalper.enabled is true)
+- Entry routing: bot/run_bot.py:218-223 checks config and calls bot/spot_scalper.py:484.
+- Features computed from top-of-book (bid/ask + qty):
+  - spread_bps: BookTop.spread_bps (bot/spot_scalper.py:39-43)
+  - volume_imbalance: _volume_imbalance from bid/ask qty (bot/spot_scalper.py:110-121)
+  - short_vol_bps: rolling std of mid returns (bot/spot_scalper.py:93-113)
+  - trend_score: EMA fast/slow slope on mid price (bot/spot_scalper.py:100-115)
+  - exp_move_bps: short_vol_bps * (1 + abs(volume_imbalance)) (bot/spot_scalper.py:116)
+- Parameters/windows: vol_window, ema_fast/ema_slow, thresholds configured at config/settings.yaml:34-41 and applied in bot/spot_scalper.py:519-529.
+- Output shape/type: TopFeatures dataclass of floats (bot/spot_scalper.py:46-53).
+
+3.1 Feature vector schema
+- Final feature order defined in bot/ml/feature_schema.py:19-43 and used in bot/ml/features/builder.py:125-132.
+- Feature vector indices (used by SignalModel.predict_proba):
+  - 0 ret_1s
+  - 1 ret_5s
+  - 2 ret_30s
+  - 3 ret_60s
+  - 4 vol_5s
+  - 5 vol_30s
+  - 6 vol_60s
+  - 7 vwap_1s
+  - 8 vwap_5s
+  - 9 vwap_30s
+  - 10 vwap_60s
+  - 11 ema_slope_5s
+  - 12 ema_slope_30s
+  - 13 imb_5s
+  - 14 imb_30s
+  - 15 vol_spike_5s
+  - 16 vol_spike_30s
+  - 17 regime_tag
+  - 18 ofi_z
+  - 19 ofi_ma5
+  - 20 spread_bps
+  - 21 top_qty_sum
+  - 22 trade_rate_1s
+  - 23 volume_1s
+- Missing values handling: build_feature_vector returns None if any NaN (bot/ml/features/builder.py:125-131), and bot/run_bot.py:776-778 skips trading when features is None.
+- Normalization/standardization: none in runtime; DriftMonitor uses feature_stats mean/std only for monitoring (bot/run_bot.py:484-493, bot/run_bot.py:831-833).
+- Schema/versioning: schema_version() and schema_hash() in bot/ml/features/builder.py:17-30.
+
+3.2 ML model coupling (if used)
+- Model type: XGBoost binary classifier wrapper (SignalModel docstring, bot/ml/signal_model/model.py:19-24).
+- Feature mapping: SignalModel.predict_proba enforces len(FEATURE_NAMES) (bot/ml/signal_model/model.py:35-43) and expects order from bot/ml/feature_schema.py:19-43.
+- Model loading: ModelManager.load validates manifest schema_hash and feature_names (bot/ml/runtime/model_manager.py:64-86) and predict() called at bot/run_bot.py:784.
+- Prediction influence on orders: MultiHorizonAggregator produces gate decision (bot/ml/runtime/aggregator.py:34-86) used in bot/run_bot.py:893-906; DecisionEngine.decide uses ensemble meta_edge and horizons (bot/engine/decision_engine.py:149-198), then ScalpExecutionMode or NormalExecutionMode executes at bot/run_bot.py:1136-1148.
+
+4) Scalping - Indicators/Features Present But Unused
+- bot/indicators/orderflow.py:1-39, bot/indicators/volatility.py:1-39, bot/indicators/ohlcv_indicators.py:1-39, bot/indicators/feature_builder.py:1-39 are deprecated wrappers to SupervisorAgent.research.offline.* and are not imported anywhere in ai_scalper_bot.
+  - Evidence: rg -n "bot\.indicators|indicators\." -S bot -> only hits inside those files.
+- bot/ml/signal_model/dataset_builder.py:1-39 is a deprecated wrapper to SupervisorAgent.research.offline.signal_model.dataset_builder and is not referenced in runtime.
+  - Evidence: no runtime imports; rg hits limited to its own file (see command log).
+- bot/ml/features/diag_schema.py (CLI helper) is not called from runtime; no import references found by rg "diag_schema" (manual inspection of rg --files list).
+
+5) DCA Strategy - Existence & Wiring Check
+5.1 Search evidence
+- rg -n "(?i)dca|dollar\s*cost|cost\s*averag|accumulat|ladder|sip|periodic\s*buy" -S .
+  - Hit: bot/ml/eval/simulate.py:107 ("accumulate" in drawdown calc; not DCA).
+- rg -n "(?i)strategy.*dca|mode.*dca|DCA[A-Za-z_]*" -S .
+  - Hits: bot/trading/deal_events.py:21 (DcaDealTracker), bot/trading/deal_events.py:51 (dca_deal_closed.v1 emission).
+- rg -n "(?i)rebalanc|portfolio|allocation" -S .
+  - No hits (rg exit code 1).
+- Additional check: rg -n "(?i)dca" -S config bot -> no hits.
+
+5.2 DCA NOT IMPLEMENTED
+- No strategy module: only DcaDealTracker exists (bot/trading/deal_events.py:20-52); no DCA decision/execution loop found in bot/run_bot.py or bot/spot_scalper.py.
+- No config mode: config/settings.yaml has no DCA keys (search results above).
+- No state separation: StateStore is used only for generic orders in bot/run_bot.py:1020-1107; no DCA state or lot registry wired.
+- No scheduling/trigger mechanism: no timers or dip-buy rules referencing DCA in runtime entrypoints (search results above).
+- No order tagging: client_order_id uses StateStore.generate_client_order_id without DCA prefixes (bot/run_bot.py:1020-1030).
+- No tests: no DCA tests found by rg DCA (see command log).
+
+6) Tests & Observability Relevant to Features/Strategies
+- Feature schema tests: tests/test_feature_schema.py:1-8 (feature_names + schema_hash contract).
+- Runtime model manifest validation: tests/test_runtime_models.py:18-53 (feature_names + schema_version embedded in manifest).
+- Decision risk behavior uses FEATURE_NAMES vector: tests/test_risk_limits.py:7-22.
+- Scalp execution gate (spread/depth): tests/test_scalp_gate.py:1-14.
+- Observability: EventWriter + TelemetryEmitter emit status/prediction/gate events (bot/run_bot.py:118-134, bot/run_bot.py:800-809, bot/run_bot.py:916-927).
+- Gaps: no unit tests assert per-feature correctness in bot/ml/features/builder.py or microstructure cache freshness; no tests for spot_scalper feature math.
+
+7) Issues Found (Actionable)
+- Missing import for EnsembleSignalModel causes NameError at runtime when features are present. Evidence: bot/run_bot.py:779 uses EnsembleSignalModel.filter_blocks but bot/run_bot.py:20 only imports EnsembleOutput.
+- Feature index mismatch in EnsembleSignalModel.filter_blocks: features[7] and features[10] are treated as ret_std_10 and vol_sum_10 (bot/ml/ensemble.py:104-114), but schema index 7 is vwap_1s and 10 is vwap_60s (bot/ml/feature_schema.py:29-33). Gate logic uses wrong inputs.
+- Regime tag lookup uses features[-1] in DecisionEngine (bot/engine/decision_engine.py:169-175), but feature schema appends microstructure features after regime_tag; features[-1] is volume_1s (bot/ml/feature_schema.py:19-43). Regime gating is effectively reading microstructure volume, not regime_tag.
+- Warmup configuration mismatch: runtime uses config.get("ml.warmup_seconds", 600) at bot/run_bot.py:501, but config/settings.yaml has app.warmup_seconds and no ml.warmup_seconds (config/settings.yaml:1-17). Warmup may be unintentionally fixed to 600s.
+- Performance hazard: FeatureBuilder._compute rebuilds a pandas DataFrame and resamples/rolls on every tick (bot/ml/features/builder.py:158-172 and :63-107). This is O(n) per tick and can become a hot-path bottleneck under high tick rates.
+- NaN handling: build_feature_vector returns None if any NaN (bot/ml/features/builder.py:125-131), causing bot/run_bot.py:776-778 to skip trading; this may lead to extended no-trade periods after data gaps.
+
+8) Appendix
+A) Command log (exact commands run)
+- Get-ChildItem -Force
+- rg --files
+- Get-Content -TotalCount 200 run_bot.py
+- Get-Content -TotalCount 240 botun_bot.py
+- rg -n "OnlineFeatureBuilder|DecisionEngine|feature" botun_bot.py
+- @'...python -' (print bot/run_bot.py lines 300-940)
+- @'...python -' (print bot/run_bot.py lines 940-1340)
+- Get-Content -TotalCount 240 bot\ml\signal_model\online_features.py
+- Get-Content -TotalCount 260 bot\mleaturesuilder.py
+- Get-Content -TotalCount 240 bot\mleature_schema.py
+- rg -n "Microstructure|microstructure" bot -S
+- Get-Content -TotalCount 200 bot\market_data\microstructure_cache.py
+- rg -n "indicators" bot -S
+- rg -n "bot\.indicators|indicators\." -S bot
+- Get-Content -TotalCount 260 bot\spot_scalper.py
+- rg -n "run_spot_scalper" -S bot\spot_scalper.py botun_bot.py
+- @'...python -' (print bot/spot_scalper.py lines 430-640)
+- @'...python -' (print bot/ml/features/builder.py line numbers)
+- @'...python -' (print bot/ml/feature_schema.py line numbers)
+- Get-Content -TotalCount 260 bot\mluntime\model_manager.py
+- Get-Content -TotalCount 240 bot\ml\signal_model\model.py
+- Get-Content -TotalCount 240 config\settings.yaml
+- @'...python -' (print bot/ml/signal_model/online_features.py line numbers)
+- python --version
+- git rev-parse HEAD
+- Get-Date -Format "yyyy-MM-dd"
+- rg -n "(?i)dca|dollar\s*cost|cost\s*averag|accumulat|ladder|sip|periodic\s*buy" -S .
+- rg -n "(?i)strategy.*dca|mode.*dca|DCA[A-Za-z_]*" -S .
+- rg -n "(?i)rebalanc|portfolio|allocation" -S .
+- Get-Content -TotalCount 200 bot	rading\deal_events.py
+- rg -n "DcaDealTracker" -S .
+- rg -n "(?i)dca" -S config bot
+- Get-Content -TotalCount 200 bot\main.py
+- Get-Content -TotalCount 200 botun_service.py
+- Get-Content -TotalCount 120 botun_dry.py
+- rg -n "feature" tests -S
+- Get-Content -TotalCount 200 tests	est_feature_schema.py
+- Get-Content -TotalCount 200 tests	est_scalp_gate.py
+- @'...python -' (print bot/trading/execution_mode.py lines 130-280)
+- Get-Content -TotalCount 240 bot\market_data\ws_manager.py
+- @'...python -' (print bot/market_data/hub_source.py lines 1-160)
+- Get-Content -TotalCount 260 bot\mluntimeggregator.py
+- @'...python -' (print FEATURE_NAMES with indices)
+- Get-Content -Encoding UTF8 bot\indicators\orderflow.py (line-numbered)
+- Get-Content -Encoding UTF8 bot\indicatorsolatility.py (line-numbered)
+- Get-Content -Encoding UTF8 bot\indicators\ohlcv_indicators.py (line-numbered)
+- Get-Content -Encoding UTF8 bot\indicatorseature_builder.py (line-numbered)
+- Get-Content -Encoding UTF8 bot\ml\signal_model\dataset_builder.py (line-numbered)
+- Get-Content -Encoding UTF8 bot\engine\decision_engine.py (line-numbered)
+- Get-Content -Encoding UTF8 bot\ml\ensemble.py (line-numbered)
+- Get-Content -Encoding UTF8 bot\market_data\microstructure_cache.py (line-numbered)
+- Get-Content -Encoding UTF8 config\settings.yaml (line-numbered)
+- Get-Content -Encoding UTF8 tests	est_runtime_models.py (line-numbered)
+- Get-Content -Encoding UTF8 tests	est_risk_limits.py (line-numbered)
+- Get-Content -Encoding UTF8 bot\ml\eval\simulate.py (line-numbered)
+
+B) Grep hit summaries (top 20 relevant hits with file:line)
+- bot/run_bot.py:16 (DecisionEngine import)
+- bot/run_bot.py:22 (OnlineFeatureBuilder import)
+- bot/run_bot.py:25 (ml_feature_names import)
+- bot/run_bot.py:343 (ml_feature_list = ml_feature_names())
+- bot/run_bot.py:502 (feature_builder = OnlineFeatureBuilder(...))
+- bot/run_bot.py:656 (feature_builder.update_microstructure on micro events)
+- bot/run_bot.py:773 (features = feature_builder.add_tick(...))
+- bot/run_bot.py:779 (EnsembleSignalModel.filter_blocks(features))
+- bot/run_bot.py:784 (model_manager.predict(features))
+- bot/run_bot.py:861 (engine.decide(..., features=features, ...))
+- bot/run_bot.py:947 (execution_mode.evaluate_entry(... microstructure=...))
+- bot/trading/execution_mode.py:195 (ofi_ma5 gate)
+- bot/ml/features/builder.py:74 (ret_1s calc)
+- bot/ml/features/builder.py:92 (ema_short calc)
+- bot/ml/features/builder.py:102 (imb_5s calc)
+- bot/ml/features/builder.py:109 (regime_tag calc)
+- bot/ml/feature_schema.py:19 (FEATURE_NAMES list)
+- bot/market_data/microstructure_cache.py:30 (ofi_z parsed)
+- bot/trading/deal_events.py:21 (DcaDealTracker)
+- bot/ml/eval/simulate.py:107 (accumulate in drawdown calc; not DCA)
+
+C) Optional: Minimal recommendations (ONLY if clearly supported by code evidence)
+- Import EnsembleSignalModel in bot/run_bot.py or remove the call to filter_blocks if not needed.
+- Align DecisionEngine regime_tag indexing with FEATURE_NAMES (use index 17) or move regime_tag to last position if intended.
+- Update EnsembleSignalModel.filter_blocks indices to match FEATURE_NAMES or derive by name instead of hard-coded positions.
+- Consider adding a lightweight rolling-feature cache to avoid full pandas resample on every tick.
