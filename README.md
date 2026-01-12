@@ -57,6 +57,7 @@ python meta_agent.py ui
 - Architecture: `docs/architecture.md`
 - Operations runbook: `docs/operations.md`
 - Task contract: `docs/tasks_contract.md`
+- LLM engine (Stage 1): `llm_engine/README.md`
 - Scheduler: `docs/scheduler.md`
 - Control Center UI: `docs/control_center.md`
 - Security: `docs/security.md`

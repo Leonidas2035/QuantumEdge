@@ -24,6 +24,12 @@ storage/models/
 meta_agent/output/
 meta_agent/reports/
 meta_agent/patches/
+llm_engine/artifacts/*
+!llm_engine/artifacts/.gitkeep
+supervisor_llm/runtime/*.jsonl
+supervisor_llm/runtime/*.log
+supervisor_llm/runtime/distill/*.jsonl
+supervisor_llm/runtime/cache/*.sqlite
 
 # Secrets and encrypted files
 **/secrets.env
@@ -57,3 +63,6 @@ build/
 # Allow repo-scoped VS Code settings
 !/.vscode/
 !/.vscode/*.json
+
+# Allow tracked calibration prompts
+!llm_engine/configs/calib_prompts.jsonl
