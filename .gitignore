@@ -66,3 +66,4 @@ build/
 
 # Allow tracked calibration prompts
 !llm_engine/configs/calib_prompts.jsonl
+.env
