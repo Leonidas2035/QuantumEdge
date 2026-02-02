@@ -11,8 +11,8 @@ import zmq.asyncio
 
 from LockBotBTC.lockbot_btc.config import LockbotConfig
 from LockBotBTC.lockbot_btc.main import LockBotService
-from MarketDataHub.lockbot.schema import LockbotMarketEvent
-from MarketDataHub.models import Priority
+from market_data.lockbot.schema import LockbotMarketEvent
+from market_data.models import Priority
 ROOT = Path(__file__).resolve().parents[1]
 SUPERVISOR_DIR = ROOT / "SupervisorAgent"
 if str(SUPERVISOR_DIR) not in sys.path:

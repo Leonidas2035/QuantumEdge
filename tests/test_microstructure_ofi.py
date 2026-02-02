@@ -1,4 +1,4 @@
-from MarketDataHub.microstructure.ofi import MicrostructureAnalyzer
+from market_data.microstructure.ofi import MicrostructureAnalyzer
 
 
 def test_ofi_qty_change_same_price():

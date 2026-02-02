@@ -10,12 +10,12 @@ BOT_ROOT = ROOT / "ai_scalper_bot"
 if str(BOT_ROOT) not in sys.path:
     sys.path.insert(0, str(BOT_ROOT))
 
-from MarketDataHub.bus.event_bus import EventBus
-from MarketDataHub.config import HubConfig
-from MarketDataHub.ipc.publisher import ZmqPublisher
-from MarketDataHub.microstructure.ofi import MicrostructureAnalyzer
-from MarketDataHub.microstructure.publisher import MicrostructurePublisher
-from MarketDataHub.microstructure.schema import MICROSTRUCTURE_EVENT_TYPE
+from market_data.bus.event_bus import EventBus
+from market_data.config import HubConfig
+from market_data.ipc.publisher import ZmqPublisher
+from market_data.microstructure.ofi import MicrostructureAnalyzer
+from market_data.microstructure.publisher import MicrostructurePublisher
+from market_data.microstructure.schema import MICROSTRUCTURE_EVENT_TYPE
 from bot.market_data.hub_source import HubMarketDataSource
 from bot.ml.features.builder import feature_names
 from bot.ml.signal_model.online_features import OnlineFeatureBuilder

@@ -1,7 +1,7 @@
 import asyncio
-from MarketDataHub.config import L2Config, TsdbConfig
-from MarketDataHub.models import Bar1sEvent, L1Event, Priority
-from MarketDataHub.tsdb.quest_writer import QuestILPWriter
+from market_data.config import L2Config, TsdbConfig
+from market_data.models import Bar1sEvent, L1Event, Priority
+from market_data.tsdb.quest_writer import QuestILPWriter
 
 
 def test_format_lines_for_l1_and_bar() -> None:

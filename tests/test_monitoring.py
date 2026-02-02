@@ -1,8 +1,8 @@
 import time
 
-from SupervisorAgent.monitoring.aggregator import TelemetryAggregator
-from SupervisorAgent.monitoring.alerts import AlertManager
-from SupervisorAgent.monitoring.api import normalize_event
+from supervisor.monitoring.aggregator import TelemetryAggregator
+from supervisor.monitoring.alerts import AlertManager
+from supervisor.monitoring.api import normalize_event
 
 
 def test_event_normalization_defaults():

@@ -2,8 +2,8 @@ import asyncio
 
 import pytest
 
-from MarketDataHub.bus.event_bus import EventBus
-from MarketDataHub.models import L1Event, Priority, TradeEvent, encode_event, decode_event
+from market_data.bus.event_bus import EventBus
+from market_data.models import L1Event, Priority, TradeEvent, encode_event, decode_event
 
 
 def test_msgpack_roundtrip_trade_event() -> None:

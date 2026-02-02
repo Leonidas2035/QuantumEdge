@@ -2,9 +2,9 @@ import json
 from pathlib import Path
 from unittest.mock import MagicMock
 
-from MarketDataHub.account.account_state import AccountState
-from MarketDataHub.account.rest_snapshot import BinanceAccountRestSnapshotBuilder
-from MarketDataHub.config import AccountConfig
+from market_data.account.account_state import AccountState
+from market_data.account.rest_snapshot import BinanceAccountRestSnapshotBuilder
+from market_data.config import AccountConfig
 
 FIXTURES_ROOT = Path("tests/fixtures")
 

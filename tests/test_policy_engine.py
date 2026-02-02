@@ -7,10 +7,10 @@ SUPERVISOR_ROOT = ROOT / "SupervisorAgent"
 if str(SUPERVISOR_ROOT) not in sys.path:
     sys.path.insert(0, str(SUPERVISOR_ROOT))
 
-from SupervisorAgent.policy.circuit_breaker import CircuitBreaker
-from SupervisorAgent.policy.heuristics import HeuristicDecision, HeuristicThresholds, apply_heuristics
-from SupervisorAgent.policy.policy_engine import PolicyEngine, PolicyEngineConfig, HysteresisConfig, PolicyHysteresis
-from SupervisorAgent.policy.signals import Signals
+from supervisor.policy.circuit_breaker import CircuitBreaker
+from supervisor.policy.heuristics import HeuristicDecision, HeuristicThresholds, apply_heuristics
+from supervisor.policy.policy_engine import PolicyEngine, PolicyEngineConfig, HysteresisConfig, PolicyHysteresis
+from supervisor.policy.signals import Signals
 
 
 def _base_signals(**overrides) -> Signals:
@@ -88,7 +88,7 @@ def test_llm_failure_falls_back(monkeypatch, tmp_path: Path):
     def fake_collect_signals(*_args, **_kwargs):
         return _base_signals(pnl_day=0.0)
 
-    from SupervisorAgent.policy import policy_engine as policy_engine_module
+    from supervisor.policy import policy_engine as policy_engine_module
 
     monkeypatch.setattr(policy_engine_module, "collect_signals", fake_collect_signals)
 

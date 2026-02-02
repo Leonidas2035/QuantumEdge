@@ -3,6 +3,17 @@
   "editor.formatOnSave": true,
   "python.analysis.typeCheckingMode": "basic",
   "python.linting.enabled": true,
-  "python.defaultInterpreterPath": "${workspaceFolder}/.venv/Scripts/python.exe",
-  "terminal.integrated.cwd": "${workspaceFolder}"
+  "python.defaultInterpreterPath": "${workspaceFolder}/venv/bin/python",
+  "terminal.integrated.cwd": "${workspaceFolder}",
+  "mcpServers": {
+    "quantum-orchestrator": {
+      "command": "/home/l_garnatko/QuantumEdge/venv/bin/python",
+      "args": [
+        "/home/l_garnatko/QuantumEdge/quantum-edge-infra/tools/mcp_server.py"
+      ],
+      "env": {
+        "PYTHONUNBUFFERED": "1"
+      }
+    }
+  }
 }

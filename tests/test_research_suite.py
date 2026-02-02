@@ -2,10 +2,10 @@ import hashlib
 import json
 from pathlib import Path
 
-from SupervisorAgent.research.backtest.engine import BacktestConfig, BacktestEngine
-from SupervisorAgent.research.replay.adapters import MarketEvent, load_events
-from SupervisorAgent.research.scenarios.definitions import get_scenario
-from SupervisorAgent.research.scenarios.injector import inject_scenario
+from supervisor.research.backtest.engine import BacktestConfig, BacktestEngine
+from supervisor.research.replay.adapters import MarketEvent, load_events
+from supervisor.research.scenarios.definitions import get_scenario
+from supervisor.research.scenarios.injector import inject_scenario
 
 
 def _result_hash(result) -> str:

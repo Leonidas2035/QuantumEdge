@@ -2,9 +2,9 @@ import gzip
 import json
 from pathlib import Path
 
-from MarketDataHub.config import L2Config
-from MarketDataHub.models import L2Envelope
-from MarketDataHub.spool.l2_spooler import L2Spooler
+from market_data.config import L2Config
+from market_data.models import L2Envelope
+from market_data.spool.l2_spooler import L2Spooler
 
 
 class MockClock:

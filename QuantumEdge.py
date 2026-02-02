@@ -16,6 +16,11 @@ from typing import Iterable, Optional
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+# [MIGRATION] Add module roots to path
+sys.path.append(str(Path(__file__).parent / "quantum-edge-core"))
+sys.path.append(str(Path(__file__).parent / "quantum-edge-ml"))
+sys.path.append(str(Path(__file__).parent / "quantum-edge-infra"))
+
 from tools.qe_config import load_config_file
 from tools.qe_doctor import run_doctor
 from tools.qe_paths import ensure_dirs, get_paths
@@ -266,6 +271,9 @@ def _build_env(paths: dict, supervisor_settings: dict, config_paths: dict) -> di
 
     py_paths = [
         str(paths["qe_root"]),
+        str(paths["qe_root"] / "quantum-edge-core"),
+        str(paths["qe_root"] / "quantum-edge-ml"),
+        str(paths["qe_root"] / "quantum-edge-infra"),
         str(paths["bot_dir"]),
         str(paths["supervisor_dir"]),
         str(paths["meta_agent_dir"]),
@@ -672,12 +680,12 @@ def main() -> int:
     _ensure_dirs(paths)
 
     qe_root = Path(paths["qe_root"])
-    global_config_path = _resolve_cli_path(args.global_config, "config/quantumedge.yaml", qe_root)
+    global_config_path = _resolve_cli_path(args.global_config, "quantum-edge-core/config/quantumedge.yaml", qe_root)
     config_paths = {
         "global": global_config_path,
-        "supervisor": _resolve_config_path(args.supervisor_config, "SUPERVISOR_CONFIG", "config/supervisor.yaml", qe_root),
-        "bot": _resolve_config_path(args.bot_config, "QE_CONFIG_PATH", "config/bot.yaml", qe_root),
-        "meta": _resolve_config_path(args.meta_config, "META_AGENT_CONFIG", "config/meta_agent.yaml", qe_root),
+        "supervisor": _resolve_config_path(args.supervisor_config, "SUPERVISOR_CONFIG", "quantum-edge-core/config/supervisor.yaml", qe_root),
+        "bot": _resolve_config_path(args.bot_config, "QE_CONFIG_PATH", "quantum-edge-core/config/bot.yaml", qe_root),
+        "meta": _resolve_config_path(args.meta_config, "META_AGENT_CONFIG", "quantum-edge-core/config/meta_agent.yaml", qe_root),
     }
 
     logger = _configure_logger(_log_path(paths, "quantumedge"))
