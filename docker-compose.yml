@@ -1,0 +1,33 @@
+version: '3.8'
+
+services:
+  market-hub:
+    image: market-hub:latest # Assuming existing
+    # ... existing config ...
+    healthcheck:
+      test: [ "CMD", "curl", "-f", "http://localhost:8080/health" ]
+      interval: 10s
+      timeout: 5s
+      retries: 3
+
+  supervisor:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: quantum_supervisor
+    restart: unless-stopped
+    depends_on:
+      market-hub:
+        condition: service_healthy
+    environment:
+      - MODE=paper
+      - LOG_LEVEL=INFO
+    volumes:
+      - ./config:/app/config:ro
+      - ./logs:/app/logs
+    networks:
+      - quantum_net
+
+networks:
+  quantum_net:
+    driver: bridge

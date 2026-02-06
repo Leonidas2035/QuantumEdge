@@ -1,0 +1,37 @@
+"""Stub implementation for a Binance futures feed."""
+
+from __future__ import annotations
+
+import asyncio
+import logging
+import time
+
+from quantum_edge_core.market_data.bus.event_bus import EventBus
+from quantum_edge_core.market_data.config import HubConfig
+from quantum_edge_core.market_data.feeds.base import BaseFeed
+from quantum_edge_core.market_data.models import HeartbeatEvent, Priority
+
+
+class BinanceFuturesFeed(BaseFeed):
+    """Binance futures feed placeholder."""
+
+    def __init__(self, config: HubConfig, bus: EventBus) -> None:
+        super().__init__(config, bus)
+        self.symbols = config.symbols
+
+    async def _run(self) -> None:
+        attempt = 0
+        while not self._stop_event.is_set():
+            attempt += 1
+            logging.debug("BinanceFuturesFeed publishing stub attempt=%s", attempt)
+            event = HeartbeatEvent(
+                ts_ns=time.time_ns(),
+                symbol=self.symbols[0],
+                event_type="heartbeat",
+                seq=self.bus.assign_sequence(self.symbols[0], "heartbeat"),
+                priority=Priority.L2,
+                peer="binance-futures",
+                extra={"status": "stub"},
+            )
+            await self.bus.publish(event)
+            await asyncio.sleep(1.5)

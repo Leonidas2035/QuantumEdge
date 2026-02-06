@@ -1,69 +1,33 @@
-# Virtual envs
-**/venv/
-**/.venv/
-**/env/
-
-# Python caches
+# Python & System
 __pycache__/
-*.pyc
+*.py[cod]
+*$py.class
+.DS_Store
+Thumbs.db
 
-# Logs/runtime/data outputs
-/logs/
-/runtime/
-/data/
-/archive/
-SupervisorAgent/runtime/
-**/logs/
-**/data/
-**/runtime/
+# Environments
+venv/
+env/
+.env
+
+# Runtime Data (Logics, DBs, PIDs)
+runtime/
+logs/
+data/
 *.log
-*.jsonl
-/artifacts/
-storage/models/
-**/storage/models/
-meta_agent/output/
-meta_agent/reports/
-meta_agent/patches/
-llm_engine/artifacts/*
-!llm_engine/artifacts/.gitkeep
-supervisor_llm/runtime/*.jsonl
-supervisor_llm/runtime/*.log
-supervisor_llm/runtime/distill/*.jsonl
-supervisor_llm/runtime/cache/*.sqlite
-
-# Secrets and encrypted files
-**/secrets.env
-**/.env
-**/*.env
-**/secrets*
-**/*.enc
-**/*.key
-**/*.pem
-**/*.pfx
-**/*.p12
-**/backup_secrets/
-**/secrets/
-**/config/secrets*
-
-# Allow tracked secrets templates
-!config/secrets.local.env.example
+*.sqlite
+*.db
+*.ipc
 
 # IDE
 .vscode/
 .idea/
 
-# Build/test caches
-.pytest_cache/
-.mypy_cache/
-.ruff_cache/
-dist/
-build/
-*.egg-info/
+# Secret & Configs (Security)
+config/secrets.yaml
+config/api_keys.json
+scripts/secrets.enc
 
-# Allow repo-scoped VS Code settings
-!/.vscode/
-!/.vscode/*.json
-
-# Allow tracked calibration prompts
-!llm_engine/configs/calib_prompts.jsonl
-.env
+# Temporary output
+output/
+patches/

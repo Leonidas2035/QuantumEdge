@@ -1,31 +1,34 @@
+# Core dependencies for QuantumEdge project
 # Generated manually (pip-tools not run in this stage).
-# Keep in sync with requirements.in.
 
+# Infrastructure & Utilities
 PyYAML>=6.0
 requests
+python-dotenv
+cryptography>=46.0.0
+psycopg>=3.1.0
+
+# Web & Async
+fastapi>=0.110.0
+uvicorn>=0.27.0
 websockets>=11.0
+httpx>=0.26.0
+msgspec>=0.18.0
+pyzmq>=25.0.0
+
+# Data Science & Trading
 numpy
 pandas
 python-binance
 xgboost
-cryptography>=42.0.0
+questdb
+
+# AI / ML / LLM
 openai>=1.30
-msgspec>=0.18.0
-httpx>=0.26.0
-fastapi>=0.110.0
-uvicorn>=0.27.0
-psycopg>=3.1.0
-questdb-ingress>=1.0.0
-# Core dependencies for QuantumEdge project
-python-dotenv
-asyncio # Для асинхронного програмування
-# LLM (Gemma) dependencies
+google-generativeai
 transformers
 torch
 accelerate
-bitsandbytes # Якщо ви використовуєте квантизацію для оптимізації пам'яті/швидкості
-fastapi
-google Cloud SDK
+bitsandbytes
 google-cloud-storage
-google-auth 
-
+google-auth

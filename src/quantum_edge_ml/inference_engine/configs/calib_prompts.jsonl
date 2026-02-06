@@ -1,0 +1,10 @@
+{"text":"Summarize the supervisor decision for a latency spike and propose a rollback checklist.","prompt":"Summarize the supervisor decision for a latency spike and propose a rollback checklist."}
+{"text":"Given this JSON policy snippet, identify missing keys: {\"risk_limit\": 0.02, \"max_orders\": 5}.","prompt":"Given this JSON policy snippet, identify missing keys: {\"risk_limit\": 0.02, \"max_orders\": 5}."}
+{"text":"Classify the risk level (low/medium/high) for a 7% drawdown in 5 minutes and explain in one sentence.","prompt":"Classify the risk level (low/medium/high) for a 7% drawdown in 5 minutes and explain in one sentence."}
+{"text":"Convert the following into a structured incident note with fields: time, symptom, suspected_cause, action: 'Orderbook feed stale for 12s during peak.'","prompt":"Convert the following into a structured incident note with fields: time, symptom, suspected_cause, action: 'Orderbook feed stale for 12s during peak.'"}
+{"text":"Review this trade guard rule and suggest one improvement: 'Block if funding_rate > 0.5%'.","prompt":"Review this trade guard rule and suggest one improvement: 'Block if funding_rate > 0.5%'."}
+{"text":"Explain why paged KV cache reduces memory fragmentation for batch=1 serving.","prompt":"Explain why paged KV cache reduces memory fragmentation for batch=1 serving."}
+{"text":"Given a supervisor alert 'p95 latency 420ms', propose three mitigation steps.","prompt":"Given a supervisor alert 'p95 latency 420ms', propose three mitigation steps."}
+{"text":"Create a short JSON response for a risk check: {\"allow\": false, \"reason\": ""}.","prompt":"Create a short JSON response for a risk check: {\"allow\": false, \"reason\": ""}."}
+{"text":"Summarize in 2 sentences: The model is quantized to INT4 AWQ for 8GB VRAM constraints.","prompt":"Summarize in 2 sentences: The model is quantized to INT4 AWQ for 8GB VRAM constraints."}
+{"text":"Draft a concise change log entry for enabling TensorRT-LLM engine builds.","prompt":"Draft a concise change log entry for enabling TensorRT-LLM engine builds."}

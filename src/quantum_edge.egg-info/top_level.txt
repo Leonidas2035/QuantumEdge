@@ -1,0 +1,3 @@
+quantum_edge_core
+quantum_edge_infra
+quantum_edge_ml

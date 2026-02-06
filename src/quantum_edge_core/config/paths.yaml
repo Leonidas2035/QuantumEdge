@@ -1,0 +1,14 @@
+# Shared path aliases (relative to QE_ROOT).
+paths:
+  qe_root: "."
+  config_dir: "config"
+  runtime_dir: "runtime"
+  logs_dir: "logs"
+  data_dir: "data"
+  artifacts_dir: "artifacts"
+  bot_dir: "quantum-edge-core/strategies/scalper_v1"
+  supervisor_dir: "quantum-edge-core/supervisor"
+  meta_agent_dir: "quantum-edge-infra/automation/meta_agent"
+  bot_config_dir: "quantum-edge-core/strategies/scalper_v1/config"
+  supervisor_config_dir: "quantum-edge-core/supervisor/config"
+  meta_agent_config_dir: "quantum-edge-core/config"
