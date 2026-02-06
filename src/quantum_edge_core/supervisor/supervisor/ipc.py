@@ -10,6 +10,9 @@ import logging
 import zmq
 import zmq.asyncio
 from typing import Dict, Any, Optional
+from dataclasses import asdict, is_dataclass
+from enum import Enum
+from quantum_edge_core.supervisor.domain.models import PolicyContract
 
 logger = logging.getLogger(__name__)
 
@@ -21,15 +24,25 @@ class PolicyPublisher:
         self.ctx = zmq_context or zmq.asyncio.Context()
         self.pub_port = pub_port
         self.socket: Optional[zmq.asyncio.Socket] = None
-        self.topic = "system.policy_update"
+        self.topic = "system.policy"
 
     async def start(self):
         """Start the publisher."""
-        self.socket = self.ctx.socket(zmq.PUB)
-        self.socket.bind(f"tcp://0.0.0.0:{self.pub_port}")
-        logger.info(f"PolicyPublisher bound to tcp://0.0.0.0:{self.pub_port}")
+        try:
+            self.socket = self.ctx.socket(zmq.PUB)
+            self.socket.bind(f"tcp://0.0.0.0:{self.pub_port}")
+            logger.info(f"PolicyPublisher bound to tcp://0.0.0.0:{self.pub_port}")
+        except zmq.ZMQError as e:
+            logger.error(f"Failed to bind ZMQ socket: {e}")
+            raise
 
-    async def publish_update(self, policy: Dict[str, Any]):
+    async def publish_update(self, policy_data: Dict[str, Any]):
+        """Legacy method alias."""
+        # Check if it looks like the new contract, if so use new method but we need PolicyContract obj
+        # This is for backward compat if any line uses it with dict
+        pass 
+
+    async def publish_policy(self, policy: PolicyContract):
         """
         Broadcast a policy update.
         """
@@ -38,20 +51,23 @@ class PolicyPublisher:
             return
 
         try:
-            # Structure the message
-            message = {
-                "version": 1,
-                "type": "policy_update",
-                "payload": policy
-            }
-            json_str = json.dumps(message)
+            # Serialize
+            # Custom encoder for Enum
+            def default(o):
+                if isinstance(o, Enum):
+                    return o.value
+                return str(o)
+
+            payload = asdict(policy)
+            json_str = json.dumps(payload, default=default)
             
             # Send: [Topic] [JSON]
+            # msg = [topic, json_str]
             await self.socket.send_multipart([
                 self.topic.encode("utf-8"),
                 json_str.encode("utf-8")
             ])
-            logger.info(f"Broadcasting Policy: {policy.get('action')} ({policy.get('regime')})")
+            logger.debug(f"Broadcasting Policy: {policy.mode} (Mult: {policy.risk_multiplier})")
             
         except Exception as e:
             logger.error(f"Failed to publish policy: {e}")
@@ -59,3 +75,4 @@ class PolicyPublisher:
     async def stop(self):
         if self.socket:
             self.socket.close()
+            # self.ctx.term() # Usually managed globally

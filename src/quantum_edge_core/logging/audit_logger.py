@@ -13,6 +13,8 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Any, Optional
 import threading
+from dataclasses import asdict, is_dataclass
+from enum import Enum
 
 logger = logging.getLogger(__name__)
 
@@ -43,17 +45,29 @@ class AuditLogger:
         except Exception as e:
             logger.error(f"Failed to write audit log: {e}")
 
-    def log_ai_event(self, context: Dict[str, Any], decision: Dict[str, Any], latency_ms: float):
+    def log_ai_event(self, context: Dict[str, Any], decision: Any, latency_ms: float):
         """
         Log an AI decision event.
+        decision: Can be PolicyContract (dataclass) or dict.
         """
-        entry = {
-            "type": "AI_DECISION",
-            "latency_ms": latency_ms,
-            "input": context, # This might be large, maybe sanitize or trim in prod
-            "output": decision
-        }
-        self._write_entry(entry)
+        try:
+             # Convert dataclass to dict if needed
+            if is_dataclass(decision):
+                 output_data = asdict(decision)
+                 # Handle Enum
+                 output_data["mode"] = output_data["mode"].value if hasattr(output_data["mode"], "value") else str(output_data["mode"])
+            else:
+                 output_data = decision
+
+            entry = {
+                "type": "AI_DECISION",
+                "latency_ms": latency_ms,
+                "input": context, 
+                "output": output_data
+            }
+            self._write_entry(entry)
+        except Exception as e:
+            logger.error(f"Failed to log AI event: {e}")
 
     def log_kill_event(self, reason: str, triggering_metric: str, limit_val: float):
         """

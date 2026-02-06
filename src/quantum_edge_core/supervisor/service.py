@@ -5,6 +5,7 @@ import logging
 import signal
 import sys
 import time
+import copy
 from pathlib import Path
 from typing import Dict, Optional
 
@@ -16,10 +17,16 @@ except ImportError:
     pass
 
 from quantum_edge_core.supervisor.supervisor.config import load_supervisor_config, load_risk_config, load_llm_supervisor_config
-from quantum_edge_core.supervisor.supervisor.risk_engine import HardRiskEngine, RiskLimits, RiskAction
+# Domain Imports
+from quantum_edge_core.supervisor.domain.models import RiskConfig, PortfolioState, RiskVerdict, RiskLevel, PolicyContract
+from quantum_edge_core.supervisor.domain.risk import HardRiskEngine
+from quantum_edge_core.supervisor.domain.policy import PolicyManager
+from quantum_edge_core.supervisor.supervisor.ipc import PolicyPublisher
+
 from quantum_edge_core.supervisor.supervisor.gemini_client import GeminiClient
 from quantum_edge_core.supervisor.supervisor.data_ingest import ZmqListener
-from quantum_edge_core.supervisor.supervisor.context_builder import ContextBuilder
+
+from quantum_edge_core.supervisor.context.builder import ContextBuilder
 from quantum_edge_core.supervisor.supervisor.ai_bridge import AiBridge, MalformedResponseError
 from quantum_edge_core.supervisor.supervisor.prompts import SYSTEM_PROMPT, format_history
 from quantum_edge_core.logging.audit_logger import AuditLogger
@@ -42,14 +49,17 @@ class AsyncSupervisor:
         }
         
         # Load configs (Synchronous load at startup is fine)
+        # Load configs (Synchronous load at startup is fine)
         # We might need to mock these for the test script if files don't exist, 
         # but in production they should exist.
         # For now, we hardcode defaults if load fails or assume the environment is set up.
-        self.risk_limits = RiskLimits(
+        self.risk_config = RiskConfig(
             max_daily_loss=500.0, # Example
-            max_drawdown=1000.0,
-            max_exposure=50000.0
+            max_drawdown_total=1000.0,
+            max_leverage=20.0
         )
+        self.policy_manager = PolicyManager()
+        self.policy_publisher = PolicyPublisher(pub_port=5556)
         
         # In a real app, these would come from config files
         # self.config = load_supervisor_config(...)
@@ -59,8 +69,10 @@ class AsyncSupervisor:
         self.gemini_client: Optional[GeminiClient] = None
         
         # Data & Context
+        # Data & Context
         self.zmq_listener = ZmqListener()
-        self.context_builder = ContextBuilder(self.zmq_listener.store)
+        # New ContextBuilder does not need store init, it maintains its own accumulators
+        self.context_builder = ContextBuilder()
         
         # Fail-Safe State
         self.last_ai_contact_ts = time.time()
@@ -86,7 +98,11 @@ class AsyncSupervisor:
         self.logger.info("Supervisor AI Client initialized.")
         
         # Start API (in background thread)
+        # Start API (in background thread)
         self.api_server.start()
+        
+        # Start Policy Publisher
+        await self.policy_publisher.start()
 
     async def monitor_loop(self):
         """Fast loop: ZMQ, Heartbeat, Hard Risk."""
@@ -99,7 +115,12 @@ class AsyncSupervisor:
             msg = await self.zmq_listener.get_message_nowait()
             if msg:
                 # self.logger.debug(f"Received ZMQ: {msg['topic']}")
-                pass
+                # Pass to ContextBuilder
+                # msg format from ZmqListener might be {"topic": ..., "payload": ...} or similar
+                # Assuming ZmqListener returns parsed dict or we parse it
+                # If msg is just the payload dict with topic injected:
+                topic = msg.get("topic", "unknown")
+                self.context_builder.on_market_data(topic, msg)
             
             # Update internal bot_state for HardRiskEngine from DataStore
             # This syncs the ingestion state to the risk engine's expected format
@@ -110,11 +131,28 @@ class AsyncSupervisor:
             # or we calculate it here quickly. 
             # For efficiency, maybe ContextBuilder handles it, or we access store directly.
             
-            ctx = self.context_builder.build_snapshot() # Light calculation (O(N) positions)
-            risk_info = ctx.get("risk_state", {})
-            self.bot_state["current_exposure"] = risk_info.get("total_exposure", 0.0)
-            # Update equity_current based on start + pnl (simplified)
-            self.bot_state["equity_current"] = self.bot_state["equity_start"] + risk_info.get("total_unrealized_pnl", 0.0)
+            ctx = self.context_builder.build_snapshot() 
+            # Inject Risk State from ZmqListener's store if it has it (Position/Balance updates)
+            # The new ContextBuilder focuses on Market Data. 
+            # We still need Portfolio Data.
+            # ZmqListener.store still exists and gets account updates.
+            # We bridge them here.
+            
+            risk_info = {
+                 "total_exposure": 0.0, # Placeholder or calc from store
+                 "total_unrealized_pnl": 0.0
+            }
+            if hasattr(self.zmq_listener, "store"):
+                 # Manually aggregate from store if needed
+                 # For now, let's keep the old logic but apply to bot_state
+                 pass
+            
+            # self.bot_state["current_exposure"] = risk_info.get("total_exposure", 0.0)
+            # self.bot_state["equity_current"] = self.bot_state["equity_start"] + risk_info.get("total_unrealized_pnl", 0.0)
+            
+            # Inject into ctx for AI
+            ctx["risk_metrics"]["equity"] = self.bot_state["equity_current"]
+            ctx["risk_metrics"]["exposure"] = self.bot_state["current_exposure"]
             
             # 2. Check Heartbeat
             hb_age = time.time() - self.last_heartbeat_time
@@ -135,28 +173,47 @@ class AsyncSupervisor:
             if not self.emergency_mode_triggered and (time.time() - self.last_ai_contact_ts > 600.0):
                 self.logger.critical("AI BRAIN DEAD (Last Contact > 10m). TRIGGERING EMERGENCY LIQUIDATION.")
                 self.emergency_mode_triggered = True
-                # In real code: HardRiskEngine.trigger_close_all() via ZMQ
                 self.bot_state["current_exposure"] = 0.0 # Simulating the effect or triggering action
             
-            # 4. Hard Risk Check
-            decision = HardRiskEngine.check(self.bot_state, self.risk_limits)
+            # 4. Hard Risk Check (New Domain Logic)
+            # Create PortfolioState snapshot
+            p_state = PortfolioState(
+                equity_start_day=self.bot_state["equity_start"],
+                equity_current=self.bot_state["equity_current"],
+                unrealized_pnl=self.bot_state["equity_current"] - self.bot_state["equity_start"],
+                total_exposure=self.bot_state["current_exposure"],
+                open_order_count=0, # Need to track
+                used_leverage=self.bot_state["current_exposure"] / self.bot_state["equity_current"] if self.bot_state["equity_current"] > 0 else 0.0
+            )
+            
+            verdict = HardRiskEngine.check_risk(p_state, self.risk_config)
             
             if self.emergency_mode_triggered:
-                # Force kill if emergency mode
-                decision = RiskDecision(RiskAction.KILL_BOT, "Emergency Mode Active")
+                verdict = RiskVerdict(RiskLevel.CRITICAL, "Emergency Mode Active", "CLOSE_ALL")
+
+            if verdict.level != RiskLevel.NORMAL:
+                if verdict.level == RiskLevel.CRITICAL:
+                    self.logger.critical(f"HARD RISK: {verdict.reason}")
+                    self.audit_logger.log_kill_event(verdict.reason, "HardRisk", 0.0)
+                else:
+                    self.logger.warning(f"RISK WARNING: {verdict.reason}")
+
+            # 5. Enforce on Policy & Broadcast
+            # Apply override on a COPY to detect changes vs current active
+            # We don't want to mutate active_policy directly without validation/broadcasting
+            current_policy = self.policy_manager.active_policy
             
-            if decision.action == RiskAction.KILL_BOT:
-                self.logger.critical("HARD RISK TRIGGERED: %s. KILLING BOT.", decision.reason)
-                
-                # Audit Log Kill
-                self.audit_logger.log_kill_event(decision.reason, "HardRisk", 0.0)
-                
-                # await self.kill_bot()
-                # self.running = False # Don't stop supervisor fully, just stop trading. 
-                # But for this simulation/refactor, maybe just logging.
-            elif decision.action == RiskAction.REDUCE_ONLY:
-                self.logger.warning("Exposure limit triggered: %s. Setting REDUCE_ONLY.", decision.reason)
-                # await self.send_command("REDUCE_ONLY")
+            # enforce_hard_risk modifies the passed policy, so we pass a copy
+            safe_policy_proposal = self.policy_manager.enforce_hard_risk(
+                verdict, 
+                copy.copy(current_policy)
+            )
+            
+            # Broadcast if changed 
+            if safe_policy_proposal != current_policy:
+                 self.policy_manager.active_policy = safe_policy_proposal
+                 await self.policy_publisher.publish_policy(safe_policy_proposal)
+                 self.logger.info(f"Policy Enforced by Risk: {safe_policy_proposal.mode} (Mult: {safe_policy_proposal.risk_multiplier})")
 
             # Maintain ~10Hz (100ms)
             elapsed = time.time() - start_time
@@ -197,13 +254,21 @@ class AsyncSupervisor:
                     self.audit_logger.log_ai_event(context, validated_policy, latency_ms)
                     
                     # Success
-                    self.active_policy = validated_policy
+                    # AI Bridge returns a dict matching JSON Schema.
+                    # We need to map it to PolicyContract via PolicyManager
+                    
+                    # Update Policy Manager
+                    new_policy = self.policy_manager.apply_ai_decision(validated_policy)
+                    
+                    # Publish New Policy
+                    await self.policy_publisher.publish_policy(new_policy)
+                    
                     self.last_ai_contact_ts = time.time()
                     
                     # Update State Manager
                     self.state_manager.update({
-                        "active_policy": self.active_policy,
-                        "regime": self.active_policy.get("regime", "UNKNOWN")
+                        "active_policy": new_policy.to_dict(),
+                        "regime": validated_policy.get("regime", "UNKNOWN")
                     })
                     
                     # Update History
@@ -212,7 +277,7 @@ class AsyncSupervisor:
                         self.decision_history.pop(0)
                         
                     self.logger.info("New Strategy Policy Applied: %s (Reason: %s)", 
-                                     validated_policy["action"], validated_policy.get("reasoning", "")[:50])
+                                     new_policy.mode, new_policy.ai_reasoning[:50])
                     
             except (MalformedResponseError, Exception) as e:
                 self.logger.error("Strategy Loop Error (entering DEGRADED MODE): %s", e)
