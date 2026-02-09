@@ -84,7 +84,7 @@ class ZmqListener:
         self.socket.connect(self.sub_address)
         
         # Topics to subscribe to
-        topics = ["market.enriched", "hub.account_snapshot", "hub.account_delta"]
+        topics = ["market.enriched", "hub.account_snapshot", "hub.account_delta", "market.liquidation"]
         for t in topics:
             self.socket.setsockopt_string(zmq.SUBSCRIBE, t)
             

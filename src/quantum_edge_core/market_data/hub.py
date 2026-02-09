@@ -31,6 +31,7 @@ from quantum_edge_core.market_data.config import HubConfig
 from quantum_edge_core.market_data.feeds.binance_futures import BinanceFuturesFeed
 from quantum_edge_core.market_data.feeds.binance_spot import BinanceSpotFeed
 from quantum_edge_core.market_data.feeds.mock_feed import MockLiveFeed
+from quantum_edge_core.market_data.feeds.liquidations import LiquidationFeed
 # from quantum_edge_core.market_data.analytics.microstructure import MicrostructureAnalyzer
 from quantum_edge_core.market_data.analytics.alpha_engine import AlphaEngine
 from quantum_edge_core.market_data.ipc.publisher import ZmqPublisher
@@ -112,7 +113,11 @@ class MarketDataHubService(BaseService):
         #     BinanceSpotFeed(self.config, self.bus),
         #     BinanceFuturesFeed(self.config, self.bus),
         # ]
-        self.feeds = [MockLiveFeed(self.config, self.bus)]
+     
+        self.feeds = [
+            MockLiveFeed(self.config, self.bus),
+            LiquidationFeed(self.config, self.bus)
+        ]
         
         self.alpha_engine = AlphaEngine(symbol="BTCUSDT") # Default symbol
         self.last_metrics_pub = 0.0
@@ -292,6 +297,14 @@ class MarketDataHubService(BaseService):
                 if self.writer:
                     self._persist_trade(event)
 
+            if ev_type == "liquidation":
+                # Publish to ZMQ
+                await self.publisher.publish(topic, event)
+                
+                # Persist to QuestDB
+                if self.writer:
+                    self._persist_liquidation(event)
+
 
     def _persist_trade(self, event: Any) -> None:
         # Map event to ILP structure
@@ -306,6 +319,27 @@ class MarketDataHubService(BaseService):
             table="trades", 
             symbols={"symbol": symbol, "side": side}, 
             columns={"price": price, "qty": qty}
+        )
+
+    def _persist_liquidation(self, event: Dict[str, Any]) -> None:
+        # Map liquidation event to ILP
+        # { "symbol": "BTCUSDT", "side": "SELL", "price": ..., "qty": ..., "usd_size": ..., "timestamp": ... }
+        symbol = event.get("symbol", "unknown")
+        side = event.get("side", "unknown")
+        price = event.get("price", 0.0)
+        qty = event.get("qty", 0.0)
+        usd_size = event.get("usd_size", 0.0)
+        timestamp_ms = event.get("timestamp", 0) # ms
+        
+        # Convert ms to ns for ILP
+        # We need to pass this timestamp to enqueue
+        ts_ns = timestamp_ms * 1_000_000 if timestamp_ms else None
+
+        self.writer.enqueue(
+            table="liquidations",
+            symbols={"symbol": symbol, "side": side},
+            columns={"price": price, "qty": qty, "usd_size": usd_size},
+            timestamp_ns=ts_ns
         )
 
     async def _status_loop(self) -> None:

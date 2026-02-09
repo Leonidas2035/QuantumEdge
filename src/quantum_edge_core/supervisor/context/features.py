@@ -54,6 +54,34 @@ class FeatureEngine:
             return {"cvd_absolute": 0.0, "cvd_slope": 0.0}
 
     @staticmethod
+    def calc_liquidation_pressure(acc: MarketAccumulator) -> Dict[str, float]:
+        """
+        Aggregate liquidation volume from rolling buffer.
+        """
+        liq_buy_vol = 0.0
+        liq_sell_vol = 0.0
+        
+        try:
+            for event in list(acc.liquidations):
+                side = event.get("side", "")
+                usd = float(event.get("usd_size", 0.0))
+                
+                if side == "BUY":
+                    liq_buy_vol += usd
+                elif side == "SELL":
+                    liq_sell_vol += usd
+                    
+            liq_net = liq_buy_vol - liq_sell_vol
+            
+            return {
+                "liq_buy_vol_1m": liq_buy_vol,
+                "liq_sell_vol_1m": liq_sell_vol,
+                "liq_net_1m": liq_net
+            }
+        except Exception:
+            return {"liq_buy_vol_1m": 0.0, "liq_sell_vol_1m": 0.0, "liq_net_1m": 0.0}
+
+    @staticmethod
     def calc_vwap_metrics(acc: MarketAccumulator) -> Dict[str, float]:
         """
         Calculate VWAP Z-Score over the trade buffer.
@@ -117,6 +145,70 @@ class FeatureEngine:
              
         except Exception:
             return 0.0
+
+    @staticmethod
+    def calc_atr(acc: MarketAccumulator, window: int = 14) -> float:
+        """
+        Calculate Average True Range (ATR).
+        TR = max(High-Low, abs(High-ClosePrev), abs(Low-ClosePrev))
+        ATR = Rolling Mean of TR.
+        """
+        if len(acc.candles) < window + 1:
+            return 0.0
+            
+        try:
+            # Convert to numpy for vectorized speed
+            candles = list(acc.candles)[-(window+1):] # Take enough for lookback
+            
+            highs = np.array([c.high for c in candles])
+            lows = np.array([c.low for c in candles])
+            closes = np.array([c.close for c in candles])
+            
+            # True Range Calculation
+            # TR[i] = max(H[i]-L[i], abs(H[i]-C[i-1]), abs(L[i]-C[i-1]))
+            # We need previous close, so align arrays
+            # Current (i): 1 to end
+            # Prev (i-1): 0 to end-1
+            
+            h = highs[1:]
+            l = lows[1:]
+            prev_c = closes[:-1]
+            
+            tr1 = h - l
+            tr2 = np.abs(h - prev_c)
+            tr3 = np.abs(l - prev_c)
+            
+            tr = np.maximum(tr1, np.maximum(tr2, tr3))
+            
+            # ATR = Mean of TR over window
+            # If we want Wilder's smoothing (EMA-like), we need more history.
+            # For simplicity/speed here: Simple Moving Average (SMA) of TR
+            atr = np.mean(tr)
+            
+            return float(atr)
+            
+        except Exception:
+            return 0.0
+
+    @staticmethod
+    def calc_volatility_scalar(acc: MarketAccumulator, baseline_atr: float = 100.0) -> float:
+        """
+        Calculate Position Sizing Scalar based on Volatility.
+        Scalar = Baseline / CurrentATR.
+        Clamped between 0.2 and 2.0.
+        """
+        current_atr = FeatureEngine.calc_atr(acc)
+        
+        if current_atr <= 0:
+            return 1.0 # Default if unknown
+            
+        # Inverse relationship: Higher Vol -> Lower Size
+        scalar = baseline_atr / current_atr
+        
+        # Clamp
+        scalar = max(0.2, min(scalar, 2.0))
+        
+        return float(scalar)
 
     @staticmethod
     def calc_order_book_imbalance(acc: MarketAccumulator) -> float:

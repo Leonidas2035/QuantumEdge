@@ -1,150 +1,117 @@
-from decimal import Decimal
+"""
+Tests for Smart Executor Logic.
+"""
 
-import pytest
+import unittest
+from unittest.mock import MagicMock, AsyncMock
+import asyncio
+import sys
 
-from quantumedge.execution.policies import FallbackPolicy, Market, OrderPolicy, OrderSide, OrderState
-from quantumedge.execution.smart_executor import OrderSession, SmartMakerExecutor
-from quantumedge.execution.types import BookState, ExecutionReport, OrderAck, OrderPlacement, OrderRequest, SmartMakerConfig
+# Mock binance before importing smart_executor
+mock_binance = MagicMock()
+mock_exceptions = MagicMock()
+mock_exceptions.BinanceAPIException = Exception
+sys.modules["binance"] = mock_binance
+sys.modules["binance.exceptions"] = mock_exceptions
 
+from quantum_edge_core.strategies.scalper_v1.bot.trading.smart_executor import SmartExecutor
 
-class FakeClient:
-    def __init__(self, fill_on_place: bool = False):
-        self.placements = []
-        self.cancels = []
-        self._fill_on_place = fill_on_place
+class TestSmartExecutor(unittest.IsolatedAsyncioTestCase):
+    
+    async def test_high_urgency_market(self):
+        """Test HIGH urgency places Market order immediately."""
+        client = AsyncMock()
+        client.futures_create_order.return_value = {"status": "FILLED", "orderId": "123"}
+        
+        executor = SmartExecutor(client)
+        res = await executor.execute_order("BTCUSDT", "BUY", 1.0, urgency="HIGH")
+        
+        self.assertEqual(res["status"], "FILLED")
+        client.futures_create_order.assert_called_once()
+        args, kwargs = client.futures_create_order.call_args
+        self.assertEqual(kwargs["type"], "MARKET")
 
-    async def place_order(self, placement: OrderPlacement) -> OrderAck:
-        self.placements.append(placement)
-        filled = placement.quantity if self._fill_on_place and placement.order_type == "MARKET" else None
-        return OrderAck(order_id=f"oid-{len(self.placements)}", client_order_id=placement.client_order_id, status="NEW", filled_qty=filled)
+    async def test_limit_chase_success(self):
+        """Test MEDIUM urgency places Limit and fills."""
+        client = AsyncMock()
+        # Mock BBO
+        client.futures_order_book_ticker.return_value = {"bidPrice": "50000", "askPrice": "50100"}
+        # Mock Limit Order
+        client.futures_create_order.return_value = {"status": "NEW", "orderId": "1001", "origQty": "1.0"}
+        # Mock Status Check -> FILLED
+        client.futures_get_order.return_value = {"status": "FILLED", "executedQty": "1.0"}
+        
+        executor = SmartExecutor(client, config={"execution": {"chase_interval_ms": 10}}) # Fast chase for test
+        
+        res = await executor.execute_order("BTCUSDT", "BUY", 1.0, urgency="MEDIUM")
+        
+        self.assertEqual(res["status"], "FILLED")
+        
+        # Verify flows
+        client.futures_order_book_ticker.assert_called()
+        client.futures_create_order.assert_called()
+        # Should be LIMIT
+        args, kwargs = client.futures_create_order.call_args
+        self.assertEqual(kwargs["type"], "LIMIT")
+        self.assertEqual(kwargs["price"], 50000.0) # Best Bid for Buy
 
-    async def cancel_order(self, *, symbol: str, order_id: str | None = None, client_order_id: str | None = None) -> bool:
-        self.cancels.append((symbol, order_id, client_order_id))
-        return True
+    async def test_limit_chase_retry(self):
+        """Test Chase logic: Order 1 not filled -> Cancel -> Order 2 (New price)."""
+        client = AsyncMock()
+        
+        # Sequence of BBOs: 50000 -> 50010 (Price moved up)
+        client.futures_order_book_ticker.side_effect = [
+            {"bidPrice": "50000", "askPrice": "50100"}, # 1st
+            {"bidPrice": "50010", "askPrice": "50110"}, # 2nd (Check inside loop)
+            {"bidPrice": "50010", "askPrice": "50110"}
+        ]
+        
+        # Sequence of Order Creations
+        client.futures_create_order.side_effect = [
+            {"status": "NEW", "orderId": "1001"}, # 1st Order
+            {"status": "NEW", "orderId": "1002"}  # 2nd Order
+        ]
+        
+        # Sequence of Status Checks
+        # 1st order check -> NEW (Not filled)
+        # 2nd order check -> FILLED
+        client.futures_get_order.side_effect = [
+            {"status": "NEW", "executedQty": "0.0", "orderId": "1001", "origQty": "1.0"},
+            {"status": "FILLED", "executedQty": "1.0", "orderId": "1002", "origQty": "1.0"}
+        ]
+        
+        executor = SmartExecutor(client, config={"execution": {"chase_interval_ms": 10, "max_chase_attempts": 3}})
+        
+        res = await executor.execute_order("BTCUSDT", "BUY", 1.0, urgency="MEDIUM")
+        
+        self.assertEqual(res["status"], "FILLED")
+        self.assertEqual(client.futures_cancel_order.call_count, 1) # Should cancel 1st order
+        self.assertEqual(client.futures_create_order.call_count, 2) # 2 placements
+        
+    async def test_fallback_to_market(self):
+        """Test max retries reached -> Fallback to Market."""
+        client = AsyncMock()
+        client.futures_order_book_ticker.return_value = {"bidPrice": "50000", "askPrice": "50100"}
+        client.futures_create_order.return_value = {"status": "NEW", "orderId": "999"}
+        client.futures_get_order.return_value = {"status": "NEW", "executedQty": "0.0", "origQty": "1.0"}
+        
+        # Last call (Market)
+        def side_effect(*args, **kwargs):
+            if kwargs.get("type") == "MARKET":
+                return {"status": "FILLED", "type": "MARKET"}
+            return {"status": "NEW", "orderId": "999"}
+            
+        client.futures_create_order.side_effect = side_effect
+        
+        executor = SmartExecutor(client, config={"execution": {"chase_interval_ms": 1, "max_chase_attempts": 2}})
+        
+        res = await executor.execute_order("BTCUSDT", "BUY", 1.0, urgency="MEDIUM")
+        
+        # Should eventually call Market
+        # Calls: Limit 1, Limit 2, Market
+        # assert client.futures_create_order called with market
+        market_calls = [c for c in client.futures_create_order.mock_calls if c.kwargs.get("type") == "MARKET"]
+        self.assertTrue(len(market_calls) > 0)
 
-
-def _book(bid: str, ask: str, bid_qty: str = "1", ask_qty: str = "1", ts_ms: int = 0) -> BookState:
-    return BookState(
-        symbol="BTCUSDT",
-        best_bid_px=Decimal(bid),
-        best_bid_qty=Decimal(bid_qty),
-        best_ask_px=Decimal(ask),
-        best_ask_qty=Decimal(ask_qty),
-        ts_ms=ts_ms,
-        tick_size=Decimal("1"),
-    )
-
-
-def test_reprice_respects_interval_and_max():
-    client = FakeClient()
-    cfg = SmartMakerConfig(min_reprice_interval_ms=100, max_reprices=1, reprice_ticks=1)
-    executor = SmartMakerExecutor(client, cfg, clock_ms=lambda: 1050)
-    session = OrderSession(
-        state=OrderState.LIVE,
-        order_id="oid",
-        client_order_id="cid",
-        side=OrderSide.BUY,
-        price=Decimal("100"),
-        filled_qty=Decimal("0"),
-        remaining_qty=Decimal("1"),
-        avg_fill_price=None,
-        fees=None,
-        reprices=0,
-        chase_count=0,
-        last_mid=Decimal("100.5"),
-        last_reprice_ts=1000,
-        last_replace_ts=0,
-        maker_start_ts=0,
-    )
-    book = _book("99", "101")
-    assert executor._should_reprice(session, book) is False
-    session.last_reprice_ts = 900
-    assert executor._should_reprice(session, book) is True
-    session.reprices = 1
-    assert executor._should_reprice(session, book) is False
-
-
-def test_partial_fill_reduces_remaining_qty():
-    client = FakeClient()
-    cfg = SmartMakerConfig()
-    executor = SmartMakerExecutor(client, cfg)
-    session = OrderSession(
-        state=OrderState.LIVE,
-        order_id="oid",
-        client_order_id="cid",
-        side=OrderSide.BUY,
-        price=Decimal("100"),
-        filled_qty=Decimal("0"),
-        remaining_qty=Decimal("1"),
-        avg_fill_price=None,
-        fees=None,
-        reprices=0,
-        chase_count=0,
-        last_mid=None,
-        last_reprice_ts=0,
-        last_replace_ts=0,
-        maker_start_ts=0,
-    )
-    report = ExecutionReport(order_id="oid", client_order_id="cid", status="PARTIALLY_FILLED", filled_qty=Decimal("0.4"))
-    executor._apply_report(session, report)
-    assert session.remaining_qty == Decimal("0.6")
-
-
-@pytest.mark.asyncio
-async def test_slippage_guard_aborts():
-    client = FakeClient()
-    cfg = SmartMakerConfig(max_slippage_bps=Decimal("5"), order_policy=OrderPolicy.MAKER_ONLY, fallback_policy=FallbackPolicy.NONE)
-    executor = SmartMakerExecutor(client, cfg)
-    request = OrderRequest(
-        symbol="BTCUSDT",
-        side=OrderSide.BUY,
-        quantity=Decimal("1"),
-        signal_price=Decimal("100"),
-        market=Market.USDM,
-    )
-    book = _book("110", "111")
-    result = await executor.execute(request, book_provider=lambda: book)
-    assert result.status == "aborted"
-    assert result.reason == "slippage_guard"
-
-
-@pytest.mark.asyncio
-async def test_maker_timeout_triggers_market_fallback():
-    client = FakeClient(fill_on_place=True)
-    cfg = SmartMakerConfig(
-        maker_timeout_ms=0,
-        order_policy=OrderPolicy.MAKER_FIRST,
-        fallback_policy=FallbackPolicy.MARKET,
-        max_lifetime_ms=500,
-    )
-    executor = SmartMakerExecutor(client, cfg)
-    request = OrderRequest(
-        symbol="BTCUSDT",
-        side=OrderSide.BUY,
-        quantity=Decimal("1"),
-        signal_price=Decimal("100"),
-        market=Market.USDM,
-    )
-    book = _book("100", "101")
-    result = await executor.execute(request, book_provider=lambda: book)
-    assert result.status == "done"
-    assert result.reason == "fallback_market"
-    assert any(order.order_type == "MARKET" for order in client.placements)
-
-
-@pytest.mark.asyncio
-async def test_market_quality_guard_blocks():
-    client = FakeClient()
-    cfg = SmartMakerConfig(spread_max_bps=Decimal("1"))
-    executor = SmartMakerExecutor(client, cfg)
-    request = OrderRequest(
-        symbol="BTCUSDT",
-        side=OrderSide.BUY,
-        quantity=Decimal("1"),
-        signal_price=Decimal("100"),
-        market=Market.USDM,
-    )
-    book = _book("100", "105")
-    result = await executor.execute(request, book_provider=lambda: book)
-    assert result.status == "aborted"
-    assert result.reason == "market_quality"
+if __name__ == '__main__':
+    unittest.main()

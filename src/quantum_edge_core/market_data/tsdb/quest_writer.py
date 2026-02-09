@@ -45,20 +45,21 @@ class QuestILPWriter:
             self.writer.close()
             await self.writer.wait_closed()
 
-    def enqueue(self, table: str, symbols: Dict[str, Any], columns: Dict[str, Any]):
+    def enqueue(self, table: str, symbols: Dict[str, Any], columns: Dict[str, Any], timestamp_ns: int = None):
         """
         Convert to ILP and enqueue.
         Format: table,sym1=val,sym2=val col1=val,col2=val timestamp\n
+        timestamp_ns: Optional nanosecond timestamp. If None, server uses ingest time.
         """
         try:
-            line = self._format_ilp(table, symbols, columns)
+            line = self._format_ilp(table, symbols, columns, timestamp_ns)
             self.queue.put_nowait(line)
         except asyncio.QueueFull:
             self.logger.warning("QuestDB Queue Full - Dropping metric", table=table)
         except Exception as e:
             self.logger.error("Failed to format/enqueue ILP", error=str(e))
 
-    def _format_ilp(self, table: str, symbols: Dict[str, Any], columns: Dict[str, Any]) -> str:
+    def _format_ilp(self, table: str, symbols: Dict[str, Any], columns: Dict[str, Any], timestamp_ns: int = None) -> str:
         # 1. Table
         sb = [table]
         
@@ -69,7 +70,8 @@ class QuestILPWriter:
             # For HFT, we control inputs, so we skip heavy regex for speed, but handle basic string casting.
             sorted_syms = sorted(symbols.items())
             for k, v in sorted_syms:
-                sb.append(f",{k}={v}")
+                val = str(v).replace(" ", "\\ ").replace(",", "\\,").replace("=", "\\=")
+                sb.append(f",{k}={val}")
                 
         # 3. Separator
         sb.append(" ")
@@ -84,20 +86,22 @@ class QuestILPWriter:
                 elif isinstance(v, float):
                     val_str = f"{v}"
                 elif isinstance(v, str):
-                    val_str = f'"{v}"' # Quoted string
+                    s = v.replace('"', '\\"')
+                    val_str = f'"{s}"' # Quoted string
                 elif isinstance(v, bool):
                     val_str = "T" if v else "F"
                 else:
-                    val_str = f'"{str(v)}"'
+                    s = str(v).replace('"', '\\"')
+                    val_str = f'"{s}"'
                 
                 parts.append(f"{k}={val_str}")
             sb.append(",".join(parts))
             
-        # 5. Timestamp (Server ingestion time is usually fine, but strictly ILP allows passing nanos)
-        # We let QuestDB apply server timestamp for max ingestion speed unless specified. 
-        # But if we wanted to pass one: sb.append(f" {ts_ns}")
-        # For this implementation, we append newline.
-        sb.append("\n")
+        # 5. Timestamp
+        if timestamp_ns is not None:
+             sb.append(f" {timestamp_ns}\n")
+        else:
+             sb.append("\n")
         
         return "".join(sb)
 

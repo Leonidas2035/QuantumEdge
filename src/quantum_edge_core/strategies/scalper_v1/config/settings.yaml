@@ -232,6 +232,9 @@ ml:
 
 execution:
   mode: "normal"                # "normal" | "scalp"
+  default_urgency: "MEDIUM"     # LOW | MEDIUM | HIGH
+  chase_interval_ms: 500
+  max_chase_attempts: 3
   default_time_in_force_ms: 3000
   shadow: false
 

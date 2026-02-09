@@ -8,7 +8,9 @@ from __future__ import annotations
 import logging
 from typing import Dict, Any
 from quantum_edge_core.supervisor.context.accumulator import MarketAccumulator
+from quantum_edge_core.supervisor.context.accumulator import MarketAccumulator
 from quantum_edge_core.supervisor.context.features import FeatureEngine
+from quantum_edge_core.supervisor.context.heatmap import LiquidationHeatmap
 
 logger = logging.getLogger(__name__)
 
@@ -22,6 +24,10 @@ class ContextBuilder:
         # Initialize default
         self.accumulators["BTCUSDT"] = MarketAccumulator()
         self.active_symbol = "BTCUSDT"
+        
+        # Heatmap (One per symbol ideally, but one global for now or mapped)
+        self.heatmaps: Dict[str, LiquidationHeatmap] = {}
+        self.heatmaps["BTCUSDT"] = LiquidationHeatmap(bin_size=10.0)
 
     def get_accumulator(self, symbol: str) -> MarketAccumulator:
         if symbol not in self.accumulators:
@@ -49,6 +55,12 @@ class ContextBuilder:
             acc.add_candle(kline)
         elif "depth" in msg_type or "book" in topic:
             acc.add_book_snapshot(msg)
+        elif "liquidation" in msg_type or "liquidation" in topic:
+            acc.on_liquidation(msg)
+            # Update Heatmap
+            hm = self.heatmaps.get(symbol)
+            if hm:
+                hm.on_liquidation(msg)
 
     def build_snapshot(self, symbol: str = None) -> Dict[str, Any]:
         """
@@ -61,7 +73,9 @@ class ContextBuilder:
         cvd_metrics = FeatureEngine.calc_cvd(acc)
         vwap_metrics = FeatureEngine.calc_vwap_metrics(acc)
         volatility = FeatureEngine.calc_volatility(acc)
+        volatility = FeatureEngine.calc_volatility(acc)
         imbalance = FeatureEngine.calc_order_book_imbalance(acc)
+        liquidation = FeatureEngine.calc_liquidation_pressure(acc)
         
         # Current Price (Tail of trades or from book)
         current_price = 0.0
@@ -80,7 +94,9 @@ class ContextBuilder:
             "microstructure": {
                 "cvd_absolute": cvd_metrics.get("cvd_absolute", 0.0),
                 "cvd_slope": cvd_metrics.get("cvd_slope", 0.0),
-                "order_book_imbalance": imbalance
+                "order_book_imbalance": imbalance,
+                "liquidation_pressure": liquidation,
+                "liquidation_clusters": self.heatmaps.get(sym, LiquidationHeatmap()).get_top_clusters(n=5)
             },
             "risk_metrics": {
                 # This part likely needs injection from Portfolio/Position State 

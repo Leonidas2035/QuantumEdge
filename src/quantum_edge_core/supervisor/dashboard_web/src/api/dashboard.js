@@ -31,3 +31,8 @@ export async function fetchTsdbStatus() {
   const res = await fetch(`${BASE}/api/v1/tsdb/status`);
   return handleResponse(res);
 }
+
+export async function fetchStatus() {
+  const res = await fetch(`${BASE}/api/v1/status`);
+  return handleResponse(res);
+}

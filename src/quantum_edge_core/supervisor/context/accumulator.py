@@ -38,6 +38,9 @@ class MarketAccumulator:
         # Latest L2 Snapshot (simplified)
         self._book_snapshot: Dict[str, Any] = {}
         self.last_update_time: float = 0.0
+        
+        # Liquidations Buffer (Rolling 1m)
+        self.liquidations: Deque[Dict[str, Any]] = deque(maxlen=1000)
 
     def add_trade(self, trade_msg: Dict[str, Any]):
         """
@@ -67,6 +70,21 @@ class MarketAccumulator:
             
         except (ValueError, KeyError):
             pass
+
+    def on_liquidation(self, event: Dict[str, Any]):
+        """
+        Buffer liquidation event and prune old ones > 60s.
+        """
+        self.liquidations.append(event)
+        
+        # Prune
+        cutoff_ms = (time.time() * 1000) - 60000
+        while self.liquidations:
+            # Check head
+            if self.liquidations[0].get("timestamp", 0) < cutoff_ms:
+                self.liquidations.popleft()
+            else:
+                break
 
     def add_candle(self, candle_msg: Dict[str, Any]):
          """Add a 1m candle update."""

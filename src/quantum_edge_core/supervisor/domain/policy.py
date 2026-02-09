@@ -25,6 +25,7 @@ class PolicyManager:
             min_order_size=10.0,
             max_position_size=1000.0,
             risk_multiplier=1.0,
+            volatility_scalar=1.0,
             close_only=False
         )
     
@@ -47,6 +48,7 @@ class PolicyManager:
         # Reset constraints
         proposal.close_only = False
         proposal.risk_multiplier = 1.0 # Reset to default, let Risk Engine clamp it down again if needed
+        proposal.volatility_scalar = float(ai_output.get("volatility_scalar", 1.0))
         proposal.ai_reasoning = ai_output.get("reasoning", "")
         proposal.ai_confidence = float(ai_output.get("confidence", 0.0))
         
@@ -102,6 +104,7 @@ class PolicyManager:
             policy.short_allowed = False
             policy.max_position_size = 0.0 
             policy.risk_multiplier = 0.0
+            policy.volatility_scalar = 0.0 # Force zero
             policy.ai_reasoning = f"CRITICAL RISK HALT: {verdict.reason}"
             
         return policy

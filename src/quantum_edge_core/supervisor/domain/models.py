@@ -68,6 +68,7 @@ class PolicyContract:
     min_order_size: float
     max_position_size: float
     risk_multiplier: float = 1.0
+    volatility_scalar: float = 1.0
     
     # AI Metadata (Reasons)
     ai_confidence: float = 0.0
@@ -85,6 +86,7 @@ class PolicyContract:
             "min_order_size": self.min_order_size,
             "max_position_size": self.max_position_size,
             "risk_multiplier": self.risk_multiplier,
+            "volatility_scalar": self.volatility_scalar,
             "close_only": self.close_only,
             "ai_meta": {
                 "confidence": self.ai_confidence,
