@@ -23,7 +23,9 @@ class AlertEngine:
         self.storage = storage
         self._last_fired: Dict[str, float] = {}
 
-    def evaluate(self, summary: Dict[str, Any], *, now: Optional[float] = None) -> AlertResult:
+    def evaluate(
+        self, summary: Dict[str, Any], *, now: Optional[float] = None
+    ) -> AlertResult:
         now = now if now is not None else time.time()
         active = self.storage.load_active()
         silenced = self._active_silences(now)
@@ -32,7 +34,9 @@ class AlertEngine:
                 continue
             match = _eval_rule(summary, rule)
             key = rule.name
-            existing = next((alert for alert in active.values() if alert.rule == key), None)
+            existing = next(
+                (alert for alert in active.values() if alert.rule == key), None
+            )
             if match:
                 if existing is None:
                     record = AlertRecord(
@@ -73,7 +77,10 @@ class AlertEngine:
                 if existing:
                     if existing.clear_since is None:
                         existing.clear_since = now
-                    if existing.active and now - existing.clear_since >= rule.resolve_after_sec:
+                    if (
+                        existing.active
+                        and now - existing.clear_since >= rule.resolve_after_sec
+                    ):
                         existing.active = False
                         existing.last_seen = now
                         self.storage.append_history(

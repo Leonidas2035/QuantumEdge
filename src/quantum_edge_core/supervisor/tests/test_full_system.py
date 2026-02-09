@@ -2,16 +2,12 @@
 End-to-End System Test.
 Verifies the integration of Context Builder, Risk Engine, Policy Manager, and IPC.
 """
-import asyncio
-import logging
 import time
-import json
 import pytest
 from unittest.mock import MagicMock, patch
 
 from quantum_edge_core.supervisor.service import AsyncSupervisor
-from quantum_edge_core.supervisor.domain.models import RiskLevel, TradingMode, PolicyContract, RiskVerdict
-from quantum_edge_core.supervisor.supervisor.data_ingest import ZmqListener
+from quantum_edge_core.supervisor.domain.models import RiskLevel
 
 # Mock Zmq
 @pytest.fixture

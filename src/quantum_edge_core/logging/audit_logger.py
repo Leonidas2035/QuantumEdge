@@ -7,14 +7,11 @@ from __future__ import annotations
 
 import json
 import logging
-import time
-import os
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 import threading
 from dataclasses import asdict, is_dataclass
-from enum import Enum
 
 logger = logging.getLogger(__name__)
 
@@ -38,9 +35,8 @@ class AuditLogger:
             
             json_str = json.dumps(entry)
             
-            with self._lock:
-                with open(self.log_file, "a", encoding="utf-8") as f:
-                    f.write(json_str + "\n")
+            with self._lock, open(self.log_file, "a", encoding="utf-8") as f:
+                f.write(json_str + "\n")
                     
         except Exception as e:
             logger.error(f"Failed to write audit log: {e}")
@@ -91,9 +87,8 @@ class AuditLogger:
         # Simplified tail - reads all and slices. 
         # For huge files, use seek from end.
         try:
-            with self._lock:
-                with open(self.log_file, "r", encoding="utf-8") as f:
-                    lines = f.readlines()
+            with self._lock, open(self.log_file, "r", encoding="utf-8") as f:
+                lines = f.readlines()
             
             return [json.loads(line) for line in lines[-n:]]
         except Exception as e:

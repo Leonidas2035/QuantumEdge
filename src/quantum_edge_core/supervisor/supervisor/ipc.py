@@ -10,7 +10,7 @@ import logging
 import zmq
 import zmq.asyncio
 from typing import Dict, Any, Optional
-from dataclasses import asdict, is_dataclass
+from dataclasses import asdict
 from enum import Enum
 from quantum_edge_core.supervisor.domain.models import PolicyContract
 

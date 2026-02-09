@@ -6,17 +6,13 @@ import argparse
 import asyncio
 import json
 import logging
-import signal
-import signal
 import sys
 import time
 from contextlib import suppress
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-import structlog
 
-import uvloop
 from quantum_edge_core.core.service import BaseService
 from quantum_edge_core.logging_setup import setup_logging
 from quantum_edge_core.utils.async_runner import run_service
@@ -28,8 +24,6 @@ from quantum_edge_core.market_data.account.binance_usdm_userstream import Binanc
 from quantum_edge_core.market_data.account.publisher import AccountPublisher
 from quantum_edge_core.market_data.bus.event_bus import EventBus
 from quantum_edge_core.market_data.config import HubConfig
-from quantum_edge_core.market_data.feeds.binance_futures import BinanceFuturesFeed
-from quantum_edge_core.market_data.feeds.binance_spot import BinanceSpotFeed
 from quantum_edge_core.market_data.feeds.mock_feed import MockLiveFeed
 from quantum_edge_core.market_data.feeds.liquidations import LiquidationFeed
 # from quantum_edge_core.market_data.analytics.microstructure import MicrostructureAnalyzer

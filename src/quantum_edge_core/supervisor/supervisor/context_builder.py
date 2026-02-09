@@ -5,8 +5,7 @@ Transforms raw data into an 'AI Context Contract'.
 
 from __future__ import annotations
 
-import math
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 from quantum_edge_core.supervisor.supervisor.data_ingest import DataStore
 
 class ContextBuilder:

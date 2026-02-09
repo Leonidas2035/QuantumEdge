@@ -76,10 +76,7 @@ class MockExchange:
                 continue
                 
             if order.type == "LIMIT":
-                if order.side == "BUY" and price <= order.price:
-                    self._fill_order(order, price, is_maker=True)
-                    filled_ids.append(oid)
-                elif order.side == "SELL" and price >= order.price:
+                if (order.side == "BUY" and price <= order.price) or (order.side == "SELL" and price >= order.price):
                     self._fill_order(order, price, is_maker=True)
                     filled_ids.append(oid)
                     

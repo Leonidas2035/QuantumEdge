@@ -6,7 +6,12 @@ from dataclasses import dataclass
 from decimal import Decimal
 from typing import Callable, Optional, Protocol
 
-from quantumedge.execution.policies import FallbackPolicy, Market, OrderPolicy, OrderSide
+from quantumedge.execution.policies import (
+    FallbackPolicy,
+    Market,
+    OrderPolicy,
+    OrderSide,
+)
 
 
 @dataclass(frozen=True)
@@ -118,11 +123,17 @@ class SmartMakerConfig:
     def from_dict(cls, raw: dict) -> "SmartMakerConfig":
         data = raw or {}
         try:
-            order_policy = OrderPolicy(str(data.get("order_policy", OrderPolicy.MAKER_FIRST)).lower())
+            order_policy = OrderPolicy(
+                str(data.get("order_policy", OrderPolicy.MAKER_FIRST)).lower()
+            )
         except ValueError:
             order_policy = OrderPolicy.MAKER_FIRST
         try:
-            fallback_policy = FallbackPolicy(str(data.get("fallback_policy", FallbackPolicy.AGGRESSIVE_LIMIT)).lower())
+            fallback_policy = FallbackPolicy(
+                str(
+                    data.get("fallback_policy", FallbackPolicy.AGGRESSIVE_LIMIT)
+                ).lower()
+            )
         except ValueError:
             fallback_policy = FallbackPolicy.AGGRESSIVE_LIMIT
         return cls(
@@ -133,24 +144,35 @@ class SmartMakerConfig:
             reprice_ticks=int(data.get("reprice_ticks", cls.reprice_ticks)),
             max_reprices=int(data.get("max_reprices", cls.max_reprices)),
             max_lifetime_ms=int(data.get("max_lifetime_ms", cls.max_lifetime_ms)),
-            min_reprice_interval_ms=int(data.get("min_reprice_interval_ms", cls.min_reprice_interval_ms)),
+            min_reprice_interval_ms=int(
+                data.get("min_reprice_interval_ms", cls.min_reprice_interval_ms)
+            ),
             maker_timeout_ms=int(data.get("maker_timeout_ms", cls.maker_timeout_ms)),
-            aggressive_limit_offset_ticks=int(data.get("aggressive_limit_offset_ticks", cls.aggressive_limit_offset_ticks)),
-            aggressive_limit_ttl_ms=int(data.get("aggressive_limit_ttl_ms", cls.aggressive_limit_ttl_ms)),
+            aggressive_limit_offset_ticks=int(
+                data.get(
+                    "aggressive_limit_offset_ticks", cls.aggressive_limit_offset_ticks
+                )
+            ),
+            aggressive_limit_ttl_ms=int(
+                data.get("aggressive_limit_ttl_ms", cls.aggressive_limit_ttl_ms)
+            ),
             spread_max_bps=cls._as_decimal(data.get("spread_max_bps")),
             min_top_depth_qty=cls._as_decimal(data.get("min_top_depth_qty")),
             min_top_depth_usd=cls._as_decimal(data.get("min_top_depth_usd")),
             min_remaining_qty=cls._as_decimal(data.get("min_remaining_qty")),
             min_notional=cls._as_decimal(data.get("min_notional")),
-            enable_cancel_replace_throttle=bool(data.get("enable_cancel_replace_throttle", cls.enable_cancel_replace_throttle)),
+            enable_cancel_replace_throttle=bool(
+                data.get(
+                    "enable_cancel_replace_throttle", cls.enable_cancel_replace_throttle
+                )
+            ),
             throttle_ms=int(data.get("throttle_ms", cls.throttle_ms)),
             poll_interval_ms=int(data.get("poll_interval_ms", cls.poll_interval_ms)),
         )
 
 
 class ExecutionClient(Protocol):
-    async def place_order(self, placement: OrderPlacement) -> OrderAck:
-        ...
+    async def place_order(self, placement: OrderPlacement) -> OrderAck: ...
 
     async def cancel_order(
         self,
@@ -158,8 +180,7 @@ class ExecutionClient(Protocol):
         symbol: str,
         order_id: Optional[str] = None,
         client_order_id: Optional[str] = None,
-    ) -> bool:
-        ...
+    ) -> bool: ...
 
 
 BookProvider = Callable[[], Optional[BookState]]

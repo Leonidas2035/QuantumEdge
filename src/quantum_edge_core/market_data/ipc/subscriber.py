@@ -56,7 +56,7 @@ class ZmqSubscriber:
             try:
                 event = EventCodec.decode(payload)
                 return event
-            except Exception as e:
+            except Exception:
                 # Log but don't crash
                 # self.logger.debug("Decode failed", error=str(e))
                 return None

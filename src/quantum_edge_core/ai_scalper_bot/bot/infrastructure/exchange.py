@@ -1,5 +1,4 @@
 import ccxt.async_support as ccxt
-import asyncio
 import logging
 from quantum_edge_core.ai_scalper_bot.bot.execution.strategy_core import TradeAction
 

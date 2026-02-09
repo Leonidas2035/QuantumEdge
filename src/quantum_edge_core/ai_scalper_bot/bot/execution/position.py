@@ -3,7 +3,7 @@ Position Manager.
 Tracks the virtual state of the bot's position (Inventory).
 Responsible for PnL tracking and local state updates before Exchange confirmation.
 """
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 
 @dataclass
 class PositionState:

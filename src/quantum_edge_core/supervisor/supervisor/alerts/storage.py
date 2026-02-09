@@ -68,7 +68,11 @@ class AlertStorage:
                 active=bool(alert.get("active", False)),
                 acknowledged=bool(alert.get("acknowledged", False)),
                 ack_note=alert.get("ack_note"),
-                evidence=alert.get("evidence", {}) if isinstance(alert.get("evidence"), dict) else {},
+                evidence=(
+                    alert.get("evidence", {})
+                    if isinstance(alert.get("evidence"), dict)
+                    else {}
+                ),
                 clear_since=alert.get("clear_since"),
             )
             if record.alert_id:
@@ -127,7 +131,9 @@ class AlertStorage:
         record.last_seen = time.time()
         alerts[alert_id] = record
         self.save_active(alerts)
-        self.append_history({"ts": time.time(), "type": "ALERT_ACK", "alert_id": alert_id, "note": note})
+        self.append_history(
+            {"ts": time.time(), "type": "ALERT_ACK", "alert_id": alert_id, "note": note}
+        )
         return True
 
     def silence(self, rule: str, minutes: int) -> float:
@@ -136,5 +142,7 @@ class AlertStorage:
         silences = self.load_silences()
         silences[rule] = until
         self.save_silences(silences)
-        self.append_history({"ts": now, "type": "ALERT_SILENCE", "rule": rule, "until": until})
+        self.append_history(
+            {"ts": now, "type": "ALERT_SILENCE", "rule": rule, "until": until}
+        )
         return until

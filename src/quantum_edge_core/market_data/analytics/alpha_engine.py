@@ -5,13 +5,12 @@ Alpha Engine: Comprehensive Market Analytics & Regime Switching.
 """
 
 import time
-import math
 import collections
 import statistics
 import structlog
-from typing import Optional, Deque, List
+from typing import Optional, Deque
 
-from quantum_edge_core.events import MarketTrade, OrderBookUpdate, LargeBlockEvent, MarketMetrics
+from quantum_edge_core.events import MarketTrade, LargeBlockEvent, MarketMetrics
 
 logger = structlog.get_logger()
 
