@@ -6,7 +6,7 @@ Fetches historical data via HTTP API.
 import requests
 import csv
 import logging
-from typing import Iterator, Dict, Any, Optional, List
+from typing import Iterator, Dict, Any, List
 from datetime import datetime
 import io
 

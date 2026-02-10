@@ -3,7 +3,6 @@ Prompts and JSON Schema for the Supervisor AI.
 Defines the "Persona" and the "Contract".
 """
 
-import json
 from typing import List, Dict, Any
 
 SYSTEM_PROMPT = """

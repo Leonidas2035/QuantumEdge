@@ -10,7 +10,7 @@ from typing import Optional, Any
 from quantum_edge_core.strategies.base import BaseStrategy, TradeSignal
 from quantum_edge_core.strategies.mean_reversion import MeanReversionStrategy
 from quantum_edge_core.strategies.whale_follower import WhaleFollowerStrategy
-from quantum_edge_core.events import MarketMetrics, MarketTrade
+from quantum_edge_core.events import MarketMetrics
 
 logger = structlog.get_logger()
 

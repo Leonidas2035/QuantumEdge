@@ -2,8 +2,8 @@
 Core data structures for the AI Scalper Bot.
 Optimized for memory efficiency and high-frequency access using slots.
 """
-from dataclasses import dataclass, field
-from typing import List, Optional
+from dataclasses import dataclass
+from typing import List
 
 @dataclass(slots=True)
 class MarketTick:

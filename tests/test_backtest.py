@@ -5,9 +5,7 @@ Runs the full runner with mocked data loader.
 
 import unittest
 from unittest.mock import MagicMock, patch
-from unittest.mock import MagicMock, patch
 from datetime import datetime, timedelta
-import numpy as np
 import sys
 import os
 

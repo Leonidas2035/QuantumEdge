@@ -6,7 +6,6 @@ Automates Port Cleanup, Mock Environment, and Bot Execution.
 import subprocess
 import time
 import os
-import signal
 import sys
 import threading
 from typing import IO

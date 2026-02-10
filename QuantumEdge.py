@@ -79,8 +79,14 @@ class ProcessManager:
 
         env = os.environ.copy()
         python_path = env.get("PYTHONPATH", "")
-        src_path = str(Path(project_root) / "src")
-        extra_paths = [project_root, src_path]
+        src_path = Path(project_root) / "src"
+        extra_paths = [
+            project_root,
+            str(src_path),
+            str(src_path / "quantum_edge_core"),
+            str(src_path / "quantum_edge_infra"),
+            str(src_path / "quantum_edge_ml"),
+        ]
 
         new_python_path = ":".join(extra_paths)
         if python_path:

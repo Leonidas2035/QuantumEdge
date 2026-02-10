@@ -703,8 +703,6 @@ def main() -> int:
         "meta": _resolve_config_path(args.meta_config, "META_AGENT_CONFIG", "src/quantum_edge_core/config/meta_agent.yaml", qe_root),
     }
 
-    }
-
     setup_logging()
     # logger already initialized globally or we can get it here
     logger = structlog.get_logger("quantumedge")

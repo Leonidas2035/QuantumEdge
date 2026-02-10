@@ -5,15 +5,12 @@ Async Gemini Client with Circuit Breaker.
 Wraps Google GenAI API calls to prevent blocking the event loop and handle failures gracefully.
 """
 
-import asyncio
 import time
 import structlog
 import httpx
 from enum import Enum
-from typing import Optional, Dict, Any
+from typing import Optional
 
-import google.generativeai as genai
-from google.generativeai.types import HarmCategory, HarmBlockThreshold
 
 logger = structlog.get_logger()
 

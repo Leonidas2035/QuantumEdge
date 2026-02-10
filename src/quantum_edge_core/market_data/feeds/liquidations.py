@@ -10,11 +10,10 @@ import asyncio
 import json
 import logging
 import time
-from typing import Dict, Any, Set
+from typing import Set
 
 import websockets
 
-from quantum_edge_core.core.service import BaseService
 from quantum_edge_core.market_data.bus.event_bus import EventBus
 from quantum_edge_core.market_data.config import HubConfig
 from quantum_edge_core.market_data.feeds.base import BaseFeed

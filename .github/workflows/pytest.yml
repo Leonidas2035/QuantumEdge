@@ -8,6 +8,8 @@ on:
 jobs:
   lint:
     runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: src:src/quantum_edge_core:src/quantum_edge_infra:src/quantum_edge_ml:.
     steps:
       - uses: actions/checkout@v4
       - name: Set up Python
@@ -20,10 +22,12 @@ jobs:
           python -m pip install -r requirements/requirements-dev.txt
       - name: Ruff
         run: |
-          python -m ruff check meta_agent scripts tools
+          python -m ruff check src scripts tests QuantumEdge.py
 
   pytest:
     runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: src:src/quantum_edge_core:src/quantum_edge_infra:src/quantum_edge_ml:.
     steps:
       - uses: actions/checkout@v4
       - name: Set up Python
@@ -44,6 +48,8 @@ jobs:
 
   smoke:
     runs-on: ubuntu-latest
+    env:
+      PYTHONPATH: src:src/quantum_edge_core:src/quantum_edge_infra:src/quantum_edge_ml:.
     steps:
       - uses: actions/checkout@v4
       - name: Set up Python
@@ -56,4 +62,4 @@ jobs:
           python -m pip install -e .
       - name: Smoke E2E
         run: |
-          python tools/smoke_e2e.py
+          python src/quantum_edge_infra/tools/smoke_e2e.py

@@ -6,10 +6,7 @@ Async Binance WebSocket Feed with robust reconnection logic.
 
 import asyncio
 import json
-import time
-import structlog
 import websockets
-from websockets.exceptions import ConnectionClosed
 
 from quantum_edge_core.core.service import BaseService
 from quantum_edge_core.events import MarketTrade

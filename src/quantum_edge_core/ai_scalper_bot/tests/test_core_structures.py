@@ -3,9 +3,8 @@ import pytest
 import numpy as np
 from unittest.mock import MagicMock, patch
 import zmq
-import ujson
 
-from quantum_edge_core.ai_scalper_bot.bot.core.models import MarketTick, OrderBookState, MarketState
+from quantum_edge_core.ai_scalper_bot.bot.core.models import MarketTick
 from quantum_edge_core.ai_scalper_bot.bot.core.orderbook import OrderBookCache
 from quantum_edge_core.ai_scalper_bot.bot.infrastructure.zmq_adapter import ZmqSubStream
 

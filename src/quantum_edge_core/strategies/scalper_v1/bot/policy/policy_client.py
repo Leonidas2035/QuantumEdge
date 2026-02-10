@@ -11,7 +11,7 @@ import logging
 import time
 import zmq
 import zmq.asyncio
-from typing import Optional, Dict, Any
+from typing import Dict, Any
 from dataclasses import dataclass
 
 # Attempt import from domain, else define local fallback or fail

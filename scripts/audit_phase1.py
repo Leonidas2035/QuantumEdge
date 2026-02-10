@@ -1,5 +1,4 @@
 
-import os
 import sys
 import importlib.util
 from pathlib import Path
@@ -28,7 +27,6 @@ def check_logging():
         
         from quantum_edge_core.logging_setup import setup_logging
         import structlog
-        import logging
 
         # Create temp file
         with tempfile.NamedTemporaryFile(delete=False) as tmp:
