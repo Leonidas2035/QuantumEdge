@@ -1,5 +1,5 @@
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from typing import List, Optional
 
 from task_schema import Task, TaskParseError, parse_task_file
@@ -30,7 +30,7 @@ def generate_task_id(project: str, task_type: str) -> str:
     TYPE_PREFIX uses the first letter of task_type.
     """
     prefix = (task_type[:1] or "t").upper()
-    timestamp = datetime.utcnow().strftime("%Y%m%d_%H%M%S")
+    timestamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     project_slug = _slugify(project)
     return f"{prefix}{timestamp}_{project_slug}"
 
@@ -60,7 +60,7 @@ def create_task(
     """
     _ensure_tasks_dir()
     resolved_task_id = task_id or generate_task_id(project, task_type)
-    created_at_value = created_at or datetime.utcnow().isoformat() + "Z"
+    created_at_value = created_at or datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
 
     header_lines = [
         f"TASK_ID: {resolved_task_id}",

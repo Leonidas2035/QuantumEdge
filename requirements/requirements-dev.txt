@@ -2,5 +2,6 @@
 # Keep in sync with requirements-dev.in.
 
 pytest
+pytest-asyncio
 ruff==0.7.4
 black==24.4.2

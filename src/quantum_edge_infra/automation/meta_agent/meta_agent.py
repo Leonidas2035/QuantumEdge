@@ -512,8 +512,8 @@ class MetaAgent:
                     change_set = build_change_set_from_response(target_project, response)
                     outcome = apply_change_set_with_policy(change_set, PATCHES_DIR)
 
-                    started_at = datetime.utcnow().isoformat() + "Z"
-                    finished_at = datetime.utcnow().isoformat() + "Z"
+                    started_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+                    finished_at = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
                     summary = (
                         f"Stage {name} completed with {len(outcome.changed_files) + len(outcome.created_files)} file changes."
                         if outcome.changed_files or outcome.created_files

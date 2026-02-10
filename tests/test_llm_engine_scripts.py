@@ -24,7 +24,7 @@ PY_SCRIPTS = [
 
 def test_scripts_exist_and_executable():
     root = Path(__file__).resolve().parents[1]
-    scripts_dir = root / "llm_engine" / "scripts"
+    scripts_dir = root / "src" / "quantum_edge_ml" / "inference_engine" / "scripts"
     assert scripts_dir.is_dir()
 
     for script in SHELL_SCRIPTS:
@@ -48,7 +48,9 @@ def test_scripts_exist_and_executable():
 )
 def test_detect_kv_cache_flags(help_text, expected):
     root = Path(__file__).resolve().parents[1]
-    module_path = root / "llm_engine" / "scripts" / "trtllm_flags.py"
+    module_path = (
+        root / "src" / "quantum_edge_ml" / "inference_engine" / "scripts" / "trtllm_flags.py"
+    )
     spec = importlib.util.spec_from_file_location("trtllm_flags", module_path)
     module = importlib.util.module_from_spec(spec)
     assert spec.loader is not None
@@ -60,7 +62,9 @@ def test_detect_kv_cache_flags(help_text, expected):
 
 def test_engine_defaults_ngc_image_pinned():
     root = Path(__file__).resolve().parents[1]
-    env_path = root / "llm_engine" / "configs" / "engine_defaults.env"
+    env_path = (
+        root / "src" / "quantum_edge_ml" / "inference_engine" / "configs" / "engine_defaults.env"
+    )
     content = env_path.read_text(encoding="utf-8")
     assert "NGC_IMAGE=" in content
     assert "<TAG>" not in content
@@ -68,6 +72,6 @@ def test_engine_defaults_ngc_image_pinned():
 
 def test_env_check_driver_warning_present():
     root = Path(__file__).resolve().parents[1]
-    env_check = root / "llm_engine" / "scripts" / "env_check.sh"
+    env_check = root / "src" / "quantum_edge_ml" / "inference_engine" / "scripts" / "env_check.sh"
     content = env_check.read_text(encoding="utf-8")
     assert "WARNING: Driver" in content

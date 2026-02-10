@@ -610,7 +610,7 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
             summary_any = None
         trader_summary = summary_any["trader"].summary() if summary_any else {"position": 0.0, "trades": 0}
         status_payload = {
-            "ts": datetime.utcnow().replace(tzinfo=timezone.utc).isoformat(),
+            "ts": datetime.now(timezone.utc).isoformat(),
             "is_running": True,
             "is_trading": False if observer_mode else bool(trader_summary.get("position")),
             "open_positions": sum(1 for ctx in engines.values() if ctx["trader"].position),

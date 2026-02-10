@@ -1,5 +1,6 @@
 from typing import Optional
 
+from meta_core import run_task
 from inbox_processor import process_inbox_once as _process_inbox_once
 
 

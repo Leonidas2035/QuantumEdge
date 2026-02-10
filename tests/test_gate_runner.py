@@ -3,7 +3,7 @@ import sys
 from pathlib import Path
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
-META_AGENT_DIR = ROOT_DIR / "meta_agent"
+META_AGENT_DIR = ROOT_DIR / "src" / "quantum_edge_infra" / "automation" / "meta_agent"
 if str(META_AGENT_DIR) not in sys.path:
     sys.path.insert(0, str(META_AGENT_DIR))
 

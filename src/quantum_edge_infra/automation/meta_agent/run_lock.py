@@ -1,7 +1,7 @@
 import json
 import os
 from dataclasses import dataclass
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Optional
 
@@ -20,7 +20,7 @@ class RunLock:
 
         payload = {
             "pid": os.getpid(),
-            "started_at": datetime.utcnow().isoformat() + "Z",
+            "started_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         }
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
             json.dump(payload, handle)
