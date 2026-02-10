@@ -5,14 +5,14 @@ import sys
 
 DOC_PATHS = [
     "README.md",
-    "docs/architecture.md",
-    "docs/operations.md",
-    "docs/tasks_contract.md",
-    "docs/scheduler.md",
-    "docs/control_center.md",
-    "docs/security.md",
-    "docs/CHANGELOG.md",
-    "docs/upgrade.md",
+    "docs/Documentation/architecture.md",
+    "docs/Documentation/operations.md",
+    "docs/Documentation/tasks_contract.md",
+    "docs/Documentation/scheduler.md",
+    "docs/Documentation/control_center.md",
+    "docs/Documentation/security.md",
+    "docs/Documentation/CHANGELOG.md",
+    "docs/Documentation/upgrade.md",
 ]
 
 SUBCOMMANDS = [

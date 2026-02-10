@@ -67,9 +67,12 @@ def _resolve_base_dir() -> str:
             return str(get_qe_paths()["qe_root"])
         except Exception:
             pass
-    parent = os.path.abspath(os.path.join(BASE_DIR, os.pardir))
-    if os.path.isdir(os.path.join(parent, "config")) and os.path.isdir(os.path.join(parent, "ai_scalper_bot")):
-        return parent
+    # Try to find root by looking for AGENTS.md or src directory
+    curr = BASE_DIR
+    for _ in range(5):
+        if os.path.exists(os.path.join(curr, "AGENTS.md")) or os.path.exists(os.path.join(curr, "src")):
+            return curr
+        curr = os.path.abspath(os.path.join(curr, os.pardir))
     return BASE_DIR
 
 
@@ -90,7 +93,8 @@ def _resolve_runtime_dir() -> str:
 def _resolve_meta_config_path(path: Optional[str]) -> str:
     base = _resolve_base_dir()
     env_override = os.getenv("META_AGENT_CONFIG")
-    candidate = env_override or path or "config/meta_agent.yaml"
+    # Updated default for src-layout
+    candidate = env_override or path or "src/quantum_edge_core/config/meta_agent.yaml"
     if os.path.isabs(candidate):
         return candidate
     return os.path.abspath(os.path.join(base, candidate))
@@ -170,14 +174,19 @@ def run_diag() -> int:
                         break
                     resolved = Path(prompt_file)
                     if not resolved.is_absolute():
-                        resolved = Path(STAGES_PATH).parent / prompt_file
+                        # Try relative to STAGES_PATH or absolute from REPO_ROOT (if it starts with docs/)
+                        if prompt_file.startswith("docs/"):
+                            resolved = base_dir / prompt_file
+                        else:
+                            resolved = Path(STAGES_PATH).parent / prompt_file
+
                     if not resolved.exists():
                         fallback = Path(PROMPTS_DIR) / Path(prompt_file).name
                         if fallback.exists():
                             resolved = fallback
                         else:
                             stage_ok = False
-                            stage_detail = f"missing prompt: {prompt_file}"
+                            stage_detail = f"missing prompt: {prompt_file} (tried {resolved} and {fallback})"
                             break
             except Exception as exc:
                 stage_ok = False
@@ -705,9 +714,9 @@ def _resolve_path_under_base(path: str) -> str:
     base_abs = os.path.abspath(base)
     candidate = path if os.path.isabs(path) else os.path.join(base_abs, path)
     candidate = os.path.abspath(candidate)
-    if os.path.commonpath([candidate, base_abs]) != base_abs:
-        raise ValueError("Path escapes repo root")
-    return candidate
+    if os.path.commonpath([candidate, base_abs]) == base_abs:
+        return candidate
+    raise ValueError("Path escapes repo root")
 
 
 def _status_cli(limit: int, show_last: bool, json_mode: bool, quiet: bool) -> int:

@@ -12,7 +12,8 @@ try:
 except Exception:  # pragma: no cover - fallback for legacy runs
     get_qe_paths = None
 
-DEFAULT_PROJECTS_PATH = os.path.join("config", "projects.yaml")
+# Updated for src-layout
+DEFAULT_PROJECTS_PATH = os.path.join("src", "quantum_edge_core", "config", "projects.yaml")
 
 
 @dataclass
@@ -41,21 +42,19 @@ def _ensure_default_config(path: str = DEFAULT_PROJECTS_PATH) -> None:
         return
     os.makedirs(os.path.dirname(path), exist_ok=True)
     default_yaml = {
-        "default": "ai_scalper_bot",
-        "projects": {
-            "ai_scalper_bot": {
-                "path": "ai_scalper_bot",
-                "description": "QuantumEdge trading engine",
+        "default": "meta_agent",
+        "projects": [
+            {
+                "id": "meta_agent",
+                "root": "src/quantum_edge_infra/automation/meta_agent",
+                "label": "Meta-Agent"
             },
-            "supervisor_agent": {
-                "path": "SupervisorAgent",
-                "description": "Supervisor control plane",
-            },
-            "meta_agent": {
-                "path": "meta_agent",
-                "description": "Meta-Agent orchestrator",
-            },
-        },
+            {
+                "id": "supervisor_agent",
+                "root": "src/quantum_edge_core/supervisor",
+                "label": "Supervisor Agent"
+            }
+        ]
     }
     with open(path, "w", encoding="utf-8") as handle:
         yaml.safe_dump(default_yaml, handle, allow_unicode=True, sort_keys=False)
@@ -102,12 +101,15 @@ def _resolve_base_dir() -> Path:
         return Path(env_root)
     if get_qe_paths:
         try:
-            return get_qe_paths()["qe_root"]
+            return Path(get_qe_paths()["qe_root"])
         except Exception:
             pass
-    parent = Path(BASE_DIR).parent
-    if (parent / "config").is_dir() and (parent / "ai_scalper_bot").is_dir():
-        return parent
+    # Search up for root
+    curr = Path(BASE_DIR)
+    for _ in range(5):
+        if (curr / "AGENTS.md").exists() or (curr / "src").exists():
+            return curr
+        curr = curr.parent
     return Path(BASE_DIR)
 
 
@@ -121,7 +123,8 @@ def _resolve_config_path(path: str) -> str:
 
 def _load_meta_agent_defaults() -> Dict[str, str]:
     base = _resolve_base_dir()
-    cfg_path = Path(os.getenv("META_AGENT_CONFIG") or (base / "config" / "meta_agent.yaml"))
+    # Updated default for src-layout
+    cfg_path = Path(os.getenv("META_AGENT_CONFIG") or (base / "src" / "quantum_edge_core" / "config" / "meta_agent.yaml"))
     if not cfg_path.exists():
         return {}
     try:

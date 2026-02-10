@@ -1,34 +1,24 @@
-# Core dependencies for QuantumEdge project
-# Generated manually (pip-tools not run in this stage).
-
-# Infrastructure & Utilities
-PyYAML>=6.0
-requests
+# Core dependencies for QuantumEdge
+PyYAML
+structlog
+openai
+msgspec
+pydantic
+aiohttp
 python-dotenv
-cryptography>=46.0.0
-psycopg>=3.1.0
-
-# Web & Async
-fastapi>=0.110.0
-uvicorn>=0.27.0
-websockets>=11.0
-httpx>=0.26.0
-msgspec>=0.18.0
-pyzmq>=25.0.0
-
-# Data Science & Trading
-numpy
+asyncio
+pyzmq
 pandas
-python-binance
-xgboost
+numpy
+structlog
+ruff
+black
+pytest
+pytest-asyncio
+httpx
+fastapi
+uvicorn
+jinja2
+clickhouse-driver
 questdb
-
-# AI / ML / LLM
-openai>=1.30
-google-generativeai
-transformers
-torch
-accelerate
-bitsandbytes
-google-cloud-storage
-google-auth
+	# note: using a specific version might be safer but for now just the names

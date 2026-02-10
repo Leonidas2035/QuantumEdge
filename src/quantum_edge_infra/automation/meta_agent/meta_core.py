@@ -36,7 +36,8 @@ from write_engine import apply_change_set_with_policy
 import yaml
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
-CONFIG_PATH = os.path.join("config", "meta_agent.yaml")
+# Updated CONFIG_PATH for src-layout
+CONFIG_PATH = os.path.join("src", "quantum_edge_core", "config", "meta_agent.yaml")
 TASKS_DIR = os.path.join(BASE_DIR, "tasks")
 
 try:
@@ -54,9 +55,12 @@ def _resolve_base_dir() -> str:
             return str(get_qe_paths()["qe_root"])
         except Exception:
             pass
-    parent = os.path.abspath(os.path.join(BASE_DIR, os.pardir))
-    if os.path.isdir(os.path.join(parent, "config")) and os.path.isdir(os.path.join(parent, "ai_scalper_bot")):
-        return parent
+    # Try to find root by looking for AGENTS.md or src directory
+    curr = BASE_DIR
+    for _ in range(5):
+        if os.path.exists(os.path.join(curr, "AGENTS.md")) or os.path.exists(os.path.join(curr, "src")):
+            return curr
+        curr = os.path.abspath(os.path.join(curr, os.pardir))
     return BASE_DIR
 
 

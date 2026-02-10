@@ -1,0 +1,1181 @@
+PROJECT DIRECTORY TREE
+======================
+.                                                  # Корінь проекту
+├── AGENTS.md                                     # Інструкції та правила для автономних агентів
+├── Dockerfile                                    # Опис Docker-образу для контейнеризації
+├── FULL_SYSTEM_CONTEXT.txt                       # Технічний або інформаційний текстовий файл
+├── Makefile                                      # Файл з командами для автоматизації (make)
+├── QuantumEdge.code-workspace                    # Файл проекту
+├── README.md                                     # Основна документація проекту
+├── ai_scalper_bot/                               # Компоненти скальпінг-бота
+│   ├── bot/                                      # Директорія з компонентами модуля
+│   │   ├── core/                                 # Директорія з компонентами модуля
+│   │   │   ├── config.py                         # Логіка завантаження та обробки конфігураційних файлів
+│   │   │   ├── models.py                         # Визначення моделей даних та структур (Data Models)
+│   │   │   └── orderbook.py                      # Скрипт Python з функціональною логікою
+│   │   ├── execution/                            # Директорія з компонентами модуля
+│   │   │   └── strategy_core.py                  # Скрипт Python з функціональною логікою
+│   │   ├── features/                             # Директорія з компонентами модуля
+│   │   │   ├── ofi.py                            # Скрипт Python з функціональною логікою
+│   │   │   └── vpin.py                           # Скрипт Python з функціональною логікою
+│   │   └── infrastructure/                       # Директорія з компонентами модуля
+│   │       ├── exchange.py                       # Скрипт Python з функціональною логікою
+│   │       ├── reporter.py                       # Скрипт Python з функціональною логікою
+│   │       └── zmq_adapter.py                    # Скрипт Python з функціональною логікою
+│   └── run_bot.py                                # Скрипт для запуску торгового бота-скальпера
+├── docker-compose.yml                            # Конфігурація Docker Compose для запуску сервісів
+├── docs/                                         # Директорія з документацією проекту
+│   ├── Documentation/                            # Централізоване сховище технічної документації та звітів
+│   │   ├── AI Supervisor над ML моделями.txt     # Технічний або інформаційний текстовий файл
+│   │   ├── Audit_DCA_QuantumEdge.txt             # Технічний або інформаційний текстовий файл
+│   │   ├── Audit_ai_scalper_bot.txt              # Технічний або інформаційний текстовий файл
+│   │   ├── CHANGELOG.md                          # Документація модуля у форматі Markdown
+│   │   ├── CLEANUP_REPORT.md                     # Документація модуля у форматі Markdown
+│   │   ├── CODE_AUDIT_REPORT.txt                 # Технічний або інформаційний текстовий файл
+│   │   ├── CONFIG.md                             # Документація модуля у форматі Markdown
+│   │   ├── FULL_SYSTEM_CONTEXT.md                # Документація модуля у форматі Markdown
+│   │   ├── ML Для Скаальп бота.txt               # Технічний або інформаційний текстовий файл
+│   │   ├── PowerShell-скрипт .docx               # Файл проекту
+│   │   ├── QuantumEdge_structure.txt             # Технічний або інформаційний текстовий файл
+│   │   ├── README.md                             # Основна документація проекту
+│   │   ├── SOURCES.txt                           # Технічний або інформаційний текстовий файл
+│   │   ├── SUPERVISORAGENT_WORK_REPORT.md        # Документація модуля у форматі Markdown
+│   │   ├── Trading Intelligence Engine.txt       # Технічний або інформаційний текстовий файл
+│   │   ├── account_events.md                     # Документація модуля у форматі Markdown
+│   │   ├── account_field_sources_btcusdt.md      # Документація модуля у форматі Markdown
+│   │   ├── account_mode.md                       # Документація модуля у форматі Markdown
+│   │   ├── ai_scalper_bot_indicator_feature_dca_audit.txt # Технічний або інформаційний текстовий файл
+│   │   ├── alerts.md                             # Документація модуля у форматі Markdown
+│   │   ├── architecture.md                       # Документація модуля у форматі Markdown
+│   │   ├── audit_quantumedge_pro_mode.md         # Документація модуля у форматі Markdown
+│   │   ├── audit_report_supervisor.md            # Документація модуля у форматі Markdown
+│   │   ├── audit_stage9_1_9_4_report.txt         # Технічний або інформаційний текстовий файл
+│   │   ├── audit_supervisoragent_pro_mode.md     # Документація модуля у форматі Markdown
+│   │   ├── baseline_template.md                  # Документація модуля у форматі Markdown
+│   │   ├── bot_structure.txt                     # Технічний або інформаційний текстовий файл
+│   │   ├── contracts_lockbot_md.md               # Документація модуля у форматі Markdown
+│   │   ├── control_center.md                     # Документація модуля у форматі Markdown
+│   │   ├── dashboard.md                          # Документація модуля у форматі Markdown
+│   │   ├── dashboard_queries.md                  # Документація модуля у форматі Markdown
+│   │   ├── data_model_tsdb.md                    # Документація модуля у форматі Markdown
+│   │   ├── ddn_layer.md                          # Документація модуля у форматі Markdown
+│   │   ├── dependency_links.txt                  # Технічний або інформаційний текстовий файл
+│   │   ├── execution.md                          # Документація модуля у форматі Markdown
+│   │   ├── execution_smart_maker.md              # Документація модуля у форматі Markdown
+│   │   ├── go_live_checklist.md                  # Документація модуля у форматі Markdown
+│   │   ├── hardening_stage0.md                   # Документація модуля у форматі Markdown
+│   │   ├── how_to_run.md                         # Документація модуля у форматі Markdown
+│   │   ├── ipc_topics.md                         # Документація модуля у форматі Markdown
+│   │   ├── legacy_windows_meta_agent_infra_ops_nssm_README.md # Документація модуля у форматі Markdown
+│   │   ├── llm_contracts_decision_v1.md          # Документація модуля у форматі Markdown
+│   │   ├── llm_router_stage3.md                  # Документація модуля у форматі Markdown
+│   │   ├── llm_stage4_questdb_context.md         # Документація модуля у форматі Markdown
+│   │   ├── lockbot_control.md                    # Документація модуля у форматі Markdown
+│   │   ├── lockbot_policy.md                     # Документація модуля у форматі Markdown
+│   │   ├── marketdata_subscriptions.md           # Документація модуля у форматі Markdown
+│   │   ├── meta_agent_architecture.md            # Документація модуля у форматі Markdown
+│   │   ├── meta_agent_audit_report.md            # Документація модуля у форматі Markdown
+│   │   ├── meta_agent_runbook.md                 # Документація модуля у форматі Markdown
+│   │   ├── meta_agent_technical_reference.md     # Документація модуля у форматі Markdown
+│   │   ├── microstructure_ofi.md                 # Документація модуля у форматі Markdown
+│   │   ├── ml_scalp_v1.md                        # Документація модуля у форматі Markdown
+│   │   ├── ml_stage2.md                          # Документація модуля у форматі Markdown
+│   │   ├── operations.md                         # Документація модуля у форматі Markdown
+│   │   ├── ops_runbook.md                        # Документація модуля у форматі Markdown
+│   │   ├── orchestration.md                      # Документація модуля у форматі Markdown
+│   │   ├── perf_tsdb.md                          # Документація модуля у форматі Markdown
+│   │   ├── phase1_summary.md                     # Документація модуля у форматі Markdown
+│   │   ├── project_map.txt                       # Технічний або інформаційний текстовий файл
+│   │   ├── reliability_l2.md                     # Документація модуля у форматі Markdown
+│   │   ├── replay_backtest.md                    # Документація модуля у форматі Markdown
+│   │   ├── requires.txt                          # Технічний або інформаційний текстовий файл
+│   │   ├── retention_policy.md                   # Документація модуля у форматі Markdown
+│   │   ├── runbook_almalinux.md                  # Документація модуля у форматі Markdown
+│   │   ├── scheduler.md                          # Документація модуля у форматі Markdown
+│   │   ├── security.md                           # Документація модуля у форматі Markdown
+│   │   ├── spot_scalper.md                       # Документація модуля у форматі Markdown
+│   │   ├── src_quantum_edge_core_market_data_README.md # Документація модуля у форматі Markdown
+│   │   ├── src_quantum_edge_core_strategies_scalper_v1_README.md # Документація модуля у форматі Markdown
+│   │   ├── src_quantum_edge_core_supervisor_README.md # Документація модуля у форматі Markdown
+│   │   ├── src_quantum_edge_infra_automation_meta_agent_Documentation_meta_agent_architecture.md # Документація модуля у форматі Markdown
+│   │   ├── src_quantum_edge_infra_automation_meta_agent_Documentation_meta_agent_runbook.md # Документація модуля у форматі Markdown
+│   │   ├── src_quantum_edge_infra_automation_meta_agent_infra_ops_README.md # Документація модуля у форматі Markdown
+│   │   ├── src_quantum_edge_infra_automation_meta_agent_infra_ops_linux_README.md # Документація модуля у форматі Markdown
+│   │   ├── src_quantum_edge_infra_k8s_questdb_README.md # Документація модуля у форматі Markdown
+│   │   ├── src_quantum_edge_ml_inference_engine_README.md # Документація модуля у форматі Markdown
+│   │   ├── src_quantum_edge_ml_model_router_README.md # Документація модуля у форматі Markdown
+│   │   ├── stage_01_multiple_projects.md         # Документація модуля у форматі Markdown
+│   │   ├── stage_02_Meta-Agent_audit_&_technical_docs.md # Документація модуля у форматі Markdown
+│   │   ├── structure.txt                         # Технічний або інформаційний текстовий файл
+│   │   ├── supervisor_run_history.md             # Документація модуля у форматі Markdown
+│   │   ├── supervisor_runner_utf8.txt            # Технічний або інформаційний текстовий файл
+│   │   ├── tasks_contract.md                     # Документація модуля у форматі Markdown
+│   │   ├── telemetry.md                          # Документація модуля у форматі Markdown
+│   │   ├── top_level.txt                         # Технічний або інформаційний текстовий файл
+│   │   ├── tsdb_queries.md                       # Документація модуля у форматі Markdown
+│   │   ├── tsdb_setup_questdb.md                 # Документація модуля у форматі Markdown
+│   │   ├── upgrade.md                            # Документація модуля у форматі Markdown
+│   │   ├── windows_launch_checklist.md           # Документація модуля у форматі Markdown
+│   │   ├── Виокремлення скальпера від супервайзера.txt # Технічний або інформаційний текстовий файл
+│   │   ├── Етап створення 1-3.docx               # Файл проекту
+│   │   ├── Етапи покращення для Meta-agenta.txt  # Технічний або інформаційний текстовий файл
+│   │   ├── Звіт з аудиту коду Meta-Agent (QuantumEdge Meta-Agent).txt # Технічний або інформаційний текстовий файл
+│   │   ├── Йдемо в “pro mode”.txt                # Технічний або інформаційний текстовий файл
+│   │   ├── Новий Текстовий документ.txt          # Технічний або інформаційний текстовий файл
+│   │   ├── Оптимізація під Лінукс та і7 14700.txt # Технічний або інформаційний текстовий файл
+│   │   ├── Поетапний план створення Supervisor агента.txt # Технічний або інформаційний текстовий файл
+│   │   ├── Покращення для QuantumEdge.txt        # Технічний або інформаційний текстовий файл
+│   │   ├── Що роблять «найкращі» торгові боти.txt # Технічний або інформаційний текстовий файл
+│   │   ├── Що таке QuantumEdge.docx              # Файл проекту
+│   │   ├── максимально “заточити” бота під Intel Core i9 Ultra..docx # Файл проекту
+│   │   └── прозорість рішень Supervisor.txt      # Технічний або інформаційний текстовий файл
+│   ├── ai_scalper_bot/                           # Компоненти скальпінг-бота
+│   ├── policy_schema_v1.json                     # Файл даних або конфігурації JSON
+│   └── reports/                                  # Директорія з компонентами модуля
+├── examples/                                     # Приклади завдань та конфігурацій
+│   ├── schedules/                                # Директорія з компонентами модуля
+│   │   └── 001_nightly_maintenance.yaml          # Файл налаштувань у форматі YAML
+│   └── tasks/                                    # Директорія з компонентами модуля
+│       ├── 001_refactor_small.yaml               # Файл налаштувань у форматі YAML
+│       ├── 002_docs_update.yaml                  # Файл налаштувань у форматі YAML
+│       └── 003_shadow_gates_demo.yaml            # Файл налаштувань у форматі YAML
+├── invoke_mcp_tool.py                            # Скрипт Python з функціональною логікою
+├── legacy/                                       # Застарілі компоненти системи
+│   └── windows/                                  # Директорія з компонентами модуля
+│       ├── Documentation/                        # Директорія з компонентами модуля
+│       │   └── create_structure.ps1              # Файл проекту
+│       ├── ai_scalper_bot/                       # Компоненти скальпінг-бота
+│       │   ├── Output/                           # Директорія з компонентами модуля
+│       │   │   ├── ai_scalper_bot_installer.exe  # Файл проекту
+│       │   │   └── ai_scalper_bot_installer.rar  # Файл проекту
+│       │   ├── legacy/                           # Застарілі компоненти системи
+│       │   │   ├── ai_scalper_bot.iss            # Файл проекту
+│       │   │   ├── build_installer.bat           # Файл проекту
+│       │   │   ├── build_runbot_exe.ps1          # Файл проекту
+│       │   │   ├── create_structure.ps1          # Файл проекту
+│       │   │   ├── installer.ps1                 # Файл проекту
+│       │   │   ├── run_bot.cmd                   # Файл проекту
+│       │   │   ├── setup_bot.ps1                 # Файл проекту
+│       │   │   └── start_bot.cmd                 # Файл проекту
+│       │   ├── python-3.12.10-amd64.exe          # Файл проекту
+│       │   └── run_bot.exe                       # Файл проекту
+│       ├── meta_agent/                           # Директорія з компонентами модуля
+│       │   ├── infra/                            # Директорія з компонентами модуля
+│       │   │   └── ops/                          # Операційні конфігурації (Systemd, Windows сервіси)
+│       │   │       ├── install_services.ps1      # Файл проекту
+│       │   │       ├── nssm/                     # Директорія з компонентами модуля
+│       │   │       ├── start_services.ps1        # Файл проекту
+│       │   │       ├── stop_services.ps1         # Файл проекту
+│       │   │       ├── uninstall_services.ps1    # Файл проекту
+│       │   │       └── windows.env.example       # Файл проекту
+│       │   └── legacy/                           # Застарілі компоненти системи
+│       │       ├── check_health.ps1              # Файл проекту
+│       │       ├── git_commit_push.ps1           # Файл проекту
+│       │       └── run_meta_agent.ps1            # Файл проекту
+│       └── scripts/                              # Скрипти для запуску та обслуговування системи
+│           ├── qe_diag.ps1                       # Файл проекту
+│           ├── qe_start.ps1                      # Файл проекту
+│           ├── qe_stop.ps1                       # Файл проекту
+│           ├── run.ps1                           # Файл проекту
+│           ├── secrets.ps1                       # Файл проекту
+│           └── setup.ps1                         # Файл проекту
+├── meta_agent.py                                 # Оркестратор змін (Meta-Agent) для автоматизації розробки
+├── ops/                                          # Операційні конфігурації (Systemd, Windows сервіси)
+│   ├── env.example                               # Файл проекту
+│   ├── systemd/                                  # Директорія з компонентами модуля
+│   │   └── meta-agent-watch.service              # Файл проекту
+│   └── windows/                                  # Директорія з компонентами модуля
+│       └── nssm_install.ps1                      # Файл проекту
+├── pyproject.toml                                # Конфігурація інструментів розробки (ruff, black тощо)
+├── pytest.ini                                    # Конфігурація середовища тестування pytest
+├── quantumedge/                                  # Директорія з компонентами модуля
+│   ├── __init__.py                               # Файл ініціалізації пакету Python
+│   ├── __main__.py                               # Скрипт Python з функціональною логікою
+│   └── execution/                                # Директорія з компонентами модуля
+│       ├── __init__.py                           # Файл ініціалізації пакету Python
+│       ├── policies.py                           # Скрипт Python з функціональною логікою
+│       ├── smart_executor.py                     # Скрипт Python з функціональною логікою
+│       └── types.py                              # Скрипт Python з функціональною логікою
+├── reports/                                      # Директорія з компонентами модуля
+├── requirements/                                 # Директорія з компонентами модуля
+│   ├── requirements-dev.in                       # Файл проекту
+│   ├── requirements-dev.txt                      # Технічний або інформаційний текстовий файл
+│   ├── requirements-runtime.in                   # Файл проекту
+│   ├── requirements-runtime.txt                  # Технічний або інформаційний текстовий файл
+│   ├── requirements.in                           # Файл проекту
+│   └── requirements.txt                          # Основні залежності Python для проекту
+├── requirements.txt                              # Основні залежності Python для проекту
+├── scripts/                                      # Скрипти для запуску та обслуговування системи
+│   ├── audit_phase1.py                           # Скрипт Python з функціональною логікою
+│   ├── bingx_feed.py                             # Скрипт Python з функціональною логікою
+│   ├── coinbase_feed.py                          # Скрипт Python з функціональною логікою
+│   ├── debug_msgspec.py                          # Скрипт Python з функціональною логікою
+│   ├── docs_check.py                             # Скрипт Python з функціональною логікою
+│   ├── generate_v3_context.py                    # Скрипт Python з функціональною логікою
+│   ├── linux/                                    # Директорія з компонентами модуля
+│   │   ├── qe_diag.sh                            # Діагностика стану системи QuantumEdge на Linux
+│   │   ├── qe_start.sh                           # Скрипт для запуску всієї системи QuantumEdge на Linux
+│   │   ├── qe_stop.sh                            # Зупинка всіх компонентів системи QuantumEdge на Linux
+│   │   ├── run.sh                                # Скрипт автоматизації для командної оболонки Bash
+│   │   ├── run_bot.sh                            # Скрипт автоматизації для командної оболонки Bash
+│   │   ├── run_supervisor.sh                     # Скрипт автоматизації для командної оболонки Bash
+│   │   ├── secrets.sh                            # Скрипт автоматизації для командної оболонки Bash
+│   │   └── setup.sh                              # Скрипт автоматизації для командної оболонки Bash
+│   ├── run_backtest.py                           # Скрипт Python з функціональною логікою
+│   ├── run_bot.py                                # Скрипт Python з функціональною логікою
+│   ├── run_live_demo.py                          # Скрипт Python з функціональною логікою
+│   ├── run_orchestrator.py                       # Скрипт Python з функціональною логікою
+│   ├── run_uat_system.py                         # Скрипт Python з функціональною логікою
+│   ├── system_audit.py                           # Скрипт Python з функціональною логікою
+│   ├── test_alpha_engine.py                      # Автоматизований тест для alpha_engine
+│   ├── test_async_isolation.py                   # Автоматизований тест для async_isolation
+│   ├── test_bot_integration.py                   # Автоматизований тест для bot_integration
+│   ├── test_circuit_breaker.py                   # Автоматизований тест для circuit_breaker
+│   ├── test_events.py                            # Автоматизований тест для events
+│   ├── test_hub_connection.py                    # Автоматизований тест для hub_connection
+│   ├── test_logging.py                           # Автоматизований тест для logging
+│   ├── test_mock_hub.py                          # Автоматизований тест для mock_hub
+│   ├── test_strategy_integration.py              # Автоматизований тест для strategy_integration
+│   ├── test_whale_detection.py                   # Автоматизований тест для whale_detection
+│   ├── test_zmq_listener.py                      # Автоматизований тест для zmq_listener
+│   └── verify_bot_isolation.py                   # Скрипт Python з функціональною логікою
+├── src/                                          # Вихідний код системи (src-layout)
+│   ├── quantum_edge.egg-info/                    # Директорія з компонентами модуля
+│   │   └── PKG-INFO                              # Файл проекту
+│   ├── quantum_edge_core/                        # Ядро системи: стратегії, ринкові дані та супервізор
+│   │   ├── ai_scalper_bot/                       # Компоненти скальпінг-бота
+│   │   │   ├── bot/                              # Директорія з компонентами модуля
+│   │   │   │   ├── __init__.py                   # Файл ініціалізації пакету Python
+│   │   │   │   ├── core/                         # Директорія з компонентами модуля
+│   │   │   │   │   ├── __init__.py               # Файл ініціалізації пакету Python
+│   │   │   │   │   ├── config.py                 # Логіка завантаження та обробки конфігураційних файлів
+│   │   │   │   │   ├── models.py                 # Визначення моделей даних та структур (Data Models)
+│   │   │   │   │   └── orderbook.py              # Скрипт Python з функціональною логікою
+│   │   │   │   ├── execution/                    # Директорія з компонентами модуля
+│   │   │   │   │   ├── position.py               # Скрипт Python з функціональною логікою
+│   │   │   │   │   ├── strategy_core.py          # Скрипт Python з функціональною логікою
+│   │   │   │   │   └── volatility.py             # Скрипт Python з функціональною логікою
+│   │   │   │   ├── features/                     # Директорія з компонентами модуля
+│   │   │   │   │   ├── facade.py                 # Скрипт Python з функціональною логікою
+│   │   │   │   │   ├── ofi.py                    # Скрипт Python з функціональною логікою
+│   │   │   │   │   └── vpin.py                   # Скрипт Python з функціональною логікою
+│   │   │   │   └── infrastructure/               # Директорія з компонентами модуля
+│   │   │   │       ├── __init__.py               # Файл ініціалізації пакету Python
+│   │   │   │       ├── exchange.py               # Скрипт Python з функціональною логікою
+│   │   │   │       ├── reporter.py               # Скрипт Python з функціональною логікою
+│   │   │   │       └── zmq_adapter.py            # Скрипт Python з функціональною логікою
+│   │   │   ├── run_bot.py                        # Скрипт Python з функціональною логікою
+│   │   │   ├── state/                            # Директорія з компонентами модуля
+│   │   │   │   └── kill_switch.json              # Файл даних або конфігурації JSON
+│   │   │   └── tests/                            # Набір системних та юніт-тестів
+│   │   │       ├── test_core_structures.py       # Автоматизований тест для core_structures
+│   │   │       ├── test_execution.py             # Автоматизований тест для execution
+│   │   │       ├── test_features.py              # Автоматизований тест для features
+│   │   │       └── test_integration.py           # Автоматизований тест для integration
+│   │   ├── backtesting/                          # Директорія з компонентами модуля
+│   │   │   ├── loader.py                         # Скрипт Python з функціональною логікою
+│   │   │   ├── metrics.py                        # Скрипт Python з функціональною логікою
+│   │   │   ├── mock_exchange.py                  # Скрипт Python з функціональною логікою
+│   │   │   └── runner.py                         # Скрипт Python з функціональною логікою
+│   │   ├── bot/                                  # Директорія з компонентами модуля
+│   │   │   ├── config_manager.py                 # Скрипт Python з функціональною логікою
+│   │   │   └── service.py                        # Скрипт Python з функціональною логікою
+│   │   ├── config/                               # Директорія з компонентами модуля
+│   │   │   ├── bot.yaml                          # Файл налаштувань у форматі YAML
+│   │   │   ├── env.example                       # Файл проекту
+│   │   │   ├── meta_agent.yaml                   # Файл налаштувань у форматі YAML
+│   │   │   ├── paths.yaml                        # Файл налаштувань у форматі YAML
+│   │   │   ├── projects.yaml                     # Файл налаштувань у форматі YAML
+│   │   │   ├── quantumedge.yaml                  # Файл налаштувань у форматі YAML
+│   │   │   ├── secrets.local.env.example         # Файл проекту
+│   │   │   ├── supervisor.yaml                   # Файл налаштувань у форматі YAML
+│   │   │   └── tsdb.yaml                         # Файл налаштувань у форматі YAML
+│   │   ├── core/                                 # Директорія з компонентами модуля
+│   │   │   └── service.py                        # Скрипт Python з функціональною логікою
+│   │   ├── events.py                             # Скрипт Python з функціональною логікою
+│   │   ├── logging/                              # Директорія з компонентами модуля
+│   │   │   └── audit_logger.py                   # Скрипт Python з функціональною логікою
+│   │   ├── logging_setup.py                      # Скрипт Python з функціональною логікою
+│   │   ├── market_data/                          # Модуль обробки та дистрибуції ринкових даних
+│   │   │   ├── __init__.py                       # Файл ініціалізації пакету Python
+│   │   │   ├── account/                          # Директорія з компонентами модуля
+│   │   │   │   ├── account_state.py              # Скрипт Python з функціональною логікою
+│   │   │   │   ├── binance_spot_userstream.py    # Скрипт Python з функціональною логікою
+│   │   │   │   ├── binance_usdm_userstream.py    # Скрипт Python з функціональною логікою
+│   │   │   │   ├── binance_userstream_base.py    # Скрипт Python з функціональною логікою
+│   │   │   │   ├── publisher.py                  # Скрипт Python з функціональною логікою
+│   │   │   │   └── rest_snapshot.py              # Скрипт Python з функціональною логікою
+│   │   │   ├── analytics/                        # Директорія з компонентами модуля
+│   │   │   │   ├── alpha_engine.py               # Скрипт Python з функціональною логікою
+│   │   │   │   └── microstructure.py             # Скрипт Python з функціональною логікою
+│   │   │   ├── bus/                              # Директорія з компонентами модуля
+│   │   │   │   └── event_bus.py                  # Скрипт Python з функціональною логікою
+│   │   │   ├── config.py                         # Логіка завантаження та обробки конфігураційних файлів
+│   │   │   ├── docs/                             # Директорія з документацією проекту
+│   │   │   ├── feeds/                            # Директорія з компонентами модуля
+│   │   │   │   ├── base.py                       # Скрипт Python з функціональною логікою
+│   │   │   │   ├── binance_feed.py               # Скрипт Python з функціональною логікою
+│   │   │   │   ├── binance_futures.py            # Скрипт Python з функціональною логікою
+│   │   │   │   ├── binance_spot.py               # Скрипт Python з функціональною логікою
+│   │   │   │   ├── liquidations.py               # Скрипт Python з функціональною логікою
+│   │   │   │   └── mock_feed.py                  # Скрипт Python з функціональною логікою
+│   │   │   ├── hub.py                            # Скрипт Python з функціональною логікою
+│   │   │   ├── ipc/                              # Директорія з компонентами модуля
+│   │   │   │   ├── publisher.py                  # Скрипт Python з функціональною логікою
+│   │   │   │   ├── snapshot_server.py            # Скрипт Python з функціональною логікою
+│   │   │   │   └── subscriber.py                 # Скрипт Python з функціональною логікою
+│   │   │   ├── lockbot/                          # Директорія з компонентами модуля
+│   │   │   │   ├── __init__.py                   # Файл ініціалізації пакету Python
+│   │   │   │   ├── engine.py                     # Скрипт Python з функціональною логікою
+│   │   │   │   ├── publisher.py                  # Скрипт Python з функціональною логікою
+│   │   │   │   └── schema.py                     # Скрипт Python з функціональною логікою
+│   │   │   ├── microstructure/                   # Директорія з компонентами модуля
+│   │   │   │   ├── __init__.py                   # Файл ініціалізації пакету Python
+│   │   │   │   ├── ofi.py                        # Скрипт Python з функціональною логікою
+│   │   │   │   ├── publisher.py                  # Скрипт Python з функціональною логікою
+│   │   │   │   └── schema.py                     # Скрипт Python з функціональною логікою
+│   │   │   ├── models/                           # Директорія з компонентами модуля
+│   │   │   │   ├── __init__.py                   # Файл ініціалізації пакету Python
+│   │   │   │   ├── account_delta.py              # Скрипт Python з функціональною логікою
+│   │   │   │   ├── account_snapshot.py           # Скрипт Python з функціональною логікою
+│   │   │   │   ├── events.py                     # Скрипт Python з функціональною логікою
+│   │   │   │   ├── l2.py                         # Скрипт Python з функціональною логікою
+│   │   │   │   ├── l2_contract.py                # Скрипт Python з функціональною логікою
+│   │   │   │   ├── lockbot_md_contract.py        # Скрипт Python з функціональною логікою
+│   │   │   │   ├── orderbook.py                  # Скрипт Python з функціональною логікою
+│   │   │   │   └── snapshots.py                  # Скрипт Python з функціональною логікою
+│   │   │   ├── orderbook/                        # Директорія з компонентами модуля
+│   │   │   │   ├── aggregator.py                 # Скрипт Python з функціональною логікою
+│   │   │   │   └── book.py                       # Скрипт Python з функціональною логікою
+│   │   │   ├── spool/                            # Директорія з компонентами модуля
+│   │   │   │   ├── __init__.py                   # Файл ініціалізації пакету Python
+│   │   │   │   ├── l2_spooler.py                 # Скрипт Python з функціональною логікою
+│   │   │   │   └── status.py                     # Скрипт Python з функціональною логікою
+│   │   │   └── tsdb/                             # Директорія з компонентами модуля
+│   │   │       └── quest_writer.py               # Скрипт Python з функціональною логікою
+│   │   ├── strategies/                           # Торгові стратегії системи
+│   │   │   ├── __init__.py                       # Файл ініціалізації пакету Python
+│   │   │   ├── base.py                           # Скрипт Python з функціональною логікою
+│   │   │   ├── legacy/                           # Застарілі компоненти системи
+│   │   │   │   ├── __init__.py                   # Файл ініціалізації пакету Python
+│   │   │   │   └── lockbot/                      # Директорія з компонентами модуля
+│   │   │   │       ├── __init__.py               # Файл ініціалізації пакету Python
+│   │   │   │       ├── config/                   # Директорія з компонентами модуля
+│   │   │   │       │   └── lockbot_btc.yaml      # Файл налаштувань у форматі YAML
+│   │   │   │       ├── consumer_stub.py          # Скрипт Python з функціональною логікою
+│   │   │   │       ├── docs/                     # Директорія з документацією проекту
+│   │   │   │       ├── lockbot/                  # Директорія з компонентами модуля
+│   │   │   │       │   ├── __init__.py           # Файл ініціалізації пакету Python
+│   │   │   │       │   └── contracts/            # Директорія з компонентами модуля
+│   │   │   │       │       ├── __init__.py       # Файл ініціалізації пакету Python
+│   │   │   │       │       ├── lockbot_control_v1.py # Скрипт Python з функціональною логікою
+│   │   │   │       │       └── lockbot_exec_v1.py # Скрипт Python з функціональною логікою
+│   │   │   │       ├── lockbot_btc/              # Директорія з компонентами модуля
+│   │   │   │       │   ├── __init__.py           # Файл ініціалізації пакету Python
+│   │   │   │       │   ├── config.py             # Логіка завантаження та обробки конфігураційних файлів
+│   │   │   │       │   ├── ddn/                  # Директорія з компонентами модуля
+│   │   │   │       │   │   ├── __init__.py       # Файл ініціалізації пакету Python
+│   │   │   │       │   │   ├── config.py         # Логіка завантаження та обробки конфігураційних файлів
+│   │   │   │       │   │   └── engine.py         # Скрипт Python з функціональною логікою
+│   │   │   │       │   ├── execution/            # Директорія з компонентами модуля
+│   │   │   │       │   │   ├── __init__.py       # Файл ініціалізації пакету Python
+│   │   │   │       │   │   ├── base.py           # Скрипт Python з функціональною логікою
+│   │   │   │       │   │   ├── binance_futures.py # Скрипт Python з функціональною логікою
+│   │   │   │       │   │   ├── ledger.py         # Скрипт Python з функціональною логікою
+│   │   │   │       │   │   └── manager.py        # Скрипт Python з функціональною логікою
+│   │   │   │       │   ├── ipc/                  # Директорія з компонентами модуля
+│   │   │   │       │   │   ├── __init__.py       # Файл ініціалізації пакету Python
+│   │   │   │       │   │   ├── control_subscriber.py # Скрипт Python з функціональною логікою
+│   │   │   │       │   │   ├── hub_subscriber.py # Скрипт Python з функціональною логікою
+│   │   │   │       │   │   ├── publisher.py      # Скрипт Python з функціональною логікою
+│   │   │   │       │   │   └── raw_subscriber.py # Скрипт Python з функціональною логікою
+│   │   │   │       │   ├── main.py               # Скрипт Python з функціональною логікою
+│   │   │   │       │   ├── replay/               # Директорія з компонентами модуля
+│   │   │   │       │   │   ├── __init__.py       # Файл ініціалізації пакету Python
+│   │   │   │       │   │   ├── bot_adapter.py    # Скрипт Python з функціональною логікою
+│   │   │   │       │   │   ├── bus.py            # Скрипт Python з функціональною логікою
+│   │   │   │       │   │   ├── clock.py          # Скрипт Python з функціональною логікою
+│   │   │   │       │   │   ├── metrics.py        # Скрипт Python з функціональною логікою
+│   │   │   │       │   │   ├── runner.py         # Скрипт Python з функціональною логікою
+│   │   │   │       │   │   └── scenarios/        # Директорія з компонентами модуля
+│   │   │   │       │   │       ├── __init__.py   # Файл ініціалізації пакету Python
+│   │   │   │       │   │       └── generators.py # Скрипт Python з функціональною логікою
+│   │   │   │       │   └── state/                # Директорія з компонентами модуля
+│   │   │   │       │       ├── __init__.py       # Файл ініціалізації пакету Python
+│   │   │   │       │       ├── account_state.py  # Скрипт Python з функціональною логікою
+│   │   │   │       │       ├── bot_state.py      # Скрипт Python з функціональною логікою
+│   │   │   │       │       ├── market_state.py   # Скрипт Python з функціональною логікою
+│   │   │   │       │       └── order_tracker.py  # Скрипт Python з функціональною логікою
+│   │   │   │       └── tools/                    # Директорія з компонентами модуля
+│   │   │   │           └── lockbot_replay.py     # Скрипт Python з функціональною логікою
+│   │   │   ├── mean_reversion.py                 # Скрипт Python з функціональною логікою
+│   │   │   ├── router.py                         # Скрипт Python з функціональною логікою
+│   │   │   ├── scalper_v1/                       # Директорія з компонентами модуля
+│   │   │   │   ├── CODcleanup.py                 # Скрипт Python з функціональною логікою
+│   │   │   │   ├── __init__.py                   # Файл ініціалізації пакету Python
+│   │   │   │   ├── bot/                          # Директорія з компонентами модуля
+│   │   │   │   │   ├── __init__.py               # Файл ініціалізації пакету Python
+│   │   │   │   │   ├── ai/                       # Директорія з компонентами модуля
+│   │   │   │   │   │   ├── __init__.py           # Файл ініціалізації пакету Python
+│   │   │   │   │   │   └── risk_moderator.py     # Скрипт Python з функціональною логікою
+│   │   │   │   │   ├── ai_llm/                   # Директорія з компонентами модуля
+│   │   │   │   │   │   ├── llm_cache.py          # Скрипт Python з функціональною логікою
+│   │   │   │   │   │   ├── llm_client.py         # Скрипт Python з функціональною логікою
+│   │   │   │   │   │   └── llm_prompt_builder.py # Скрипт Python з функціональною логікою
+│   │   │   │   │   ├── backtester/               # Директорія з компонентами модуля
+│   │   │   │   │   │   ├── backtest_model.py     # Автоматизований тест для backmodel
+│   │   │   │   │   │   ├── metrics.py            # Скрипт Python з функціональною логікою
+│   │   │   │   │   │   ├── simulator.py          # Скрипт Python з функціональною логікою
+│   │   │   │   │   │   └── tick_replay.py        # Скрипт Python з функціональною логікою
+│   │   │   │   │   ├── core/                     # Директорія з компонентами модуля
+│   │   │   │   │   │   ├── config_loader.py      # Скрипт Python з функціональною логікою
+│   │   │   │   │   │   ├── constants.py          # Скрипт Python з функціональною логікою
+│   │   │   │   │   │   ├── cpu_affinity.py       # Скрипт Python з функціональною логікою
+│   │   │   │   │   │   ├── exceptions.py         # Скрипт Python з функціональною логікою
+│   │   │   │   │   │   ├── gui_password_prompt.py # Скрипт Python з функціональною логікою
+│   │   │   │   │   │   ├── logging_setup.py      # Скрипт Python з функціональною логікою
+│   │   │   │   │   │   ├── secret_store.py       # Скрипт Python з функціональною логікою
+│   │   │   │   │   │   ├── state.py              # Скрипт Python з функціональною логікою
+│   │   │   │   │   │   └── utils.py              # Скрипт Python з функціональною логікою
+│   │   │   │   │   ├── engine/                   # Директорія з компонентами модуля
+│   │   │   │   │   │   ├── __init__.py           # Файл ініціалізації пакету Python
+│   │   │   │   │   │   ├── decision_engine.py    # Скрипт Python з функціональною логікою
+│   │   │   │   │   │   ├── decision_types.py     # Скрипт Python з функціональною логікою
+│   │   │   │   │   │   └── regime_policy.py      # Скрипт Python з функціональною логікою
+│   │   │   │   │   ├── exchanges/                # Директорія з компонентами модуля
+│   │   │   │   │   │   ├── __init__.py           # Файл ініціалізації пакету Python
+│   │   │   │   │   │   └── bingx_swap/           # Директорія з компонентами модуля
+│   │   │   │   │   │       ├── __init__.py       # Файл ініціалізації пакету Python
+│   │   │   │   │   │       ├── client.py         # Скрипт Python з функціональною логікою
+│   │   │   │   │   │       ├── execution.py      # Скрипт Python з функціональною логікою
+│   │   │   │   │   │       ├── mapper.py         # Скрипт Python з функціональною логікою
+│   │   │   │   │   │       ├── marketdata.py     # Скрипт Python з функціональною логікою
+│   │   │   │   │   │       ├── models.py         # Визначення моделей даних та структур (Data Models)
+│   │   │   │   │   │       └── smoke_test.py     # Скрипт Python з функціональною логікою
+│   │   │   │   │   ├── indicators/               # Директорія з компонентами модуля
+│   │   │   │   │   │   ├── feature_builder.py    # Скрипт Python з функціональною логікою
+│   │   │   │   │   │   ├── ohlcv_indicators.py   # Скрипт Python з функціональною логікою
+│   │   │   │   │   │   ├── orderflow.py          # Скрипт Python з функціональною логікою
+│   │   │   │   │   │   └── volatility.py         # Скрипт Python з функціональною логікою
+│   │   │   │   │   ├── integrations/             # Директорія з компонентами модуля
+│   │   │   │   │   │   └── supervisor_snapshot_client.py # Скрипт Python з функціональною логікою
+│   │   │   │   │   ├── main.py                   # Скрипт Python з функціональною логікою
+│   │   │   │   │   ├── market_data/              # Директорія з компонентами модуля
+│   │   │   │   │   │   ├── __init__.py           # Файл ініціалізації пакету Python
+│   │   │   │   │   │   ├── binance_ws.py         # Скрипт Python з функціональною логікою
+│   │   │   │   │   │   ├── bingx_ws.py           # Скрипт Python з функціональною логікою
+│   │   │   │   │   │   ├── data_manager.py       # Скрипт Python з функціональною логікою
+│   │   │   │   │   │   ├── hub_source.py         # Скрипт Python з функціональною логікою
+│   │   │   │   │   │   ├── microstructure_cache.py # Скрипт Python з функціональною логікою
+│   │   │   │   │   │   ├── mock_ws_manager.py    # Скрипт Python з функціональною логікою
+│   │   │   │   │   │   ├── offline_simulator.py  # Скрипт Python з функціональною логікою
+│   │   │   │   │   │   └── ws_manager.py         # Скрипт Python з функціональною логікою
+│   │   │   │   │   ├── ml/                       # Директорія з компонентами модуля
+│   │   │   │   │   │   ├── __init__.py           # Файл ініціалізації пакету Python
+│   │   │   │   │   │   ├── calibration.py        # Скрипт Python з функціональною логікою
+│   │   │   │   │   │   ├── confidence_model/     # Директорія з компонентами модуля
+│   │   │   │   │   │   │   └── __init__.py       # Файл ініціалізації пакету Python
+│   │   │   │   │   │   ├── datasets/             # Директорія з компонентами модуля
+│   │   │   │   │   │   │   ├── __init__.py       # Файл ініціалізації пакету Python
+│   │   │   │   │   │   │   ├── build_from_scenarios.py # Скрипт Python з функціональною логікою
+│   │   │   │   │   │   │   ├── io.py             # Скрипт Python з функціональною логікою
+│   │   │   │   │   │   │   ├── report.py         # Скрипт Python з функціональною логікою
+│   │   │   │   │   │   │   └── validate.py       # Скрипт Python з функціональною логікою
+│   │   │   │   │   │   ├── drift_monitor.py      # Скрипт Python з функціональною логікою
+│   │   │   │   │   │   ├── ensemble.py           # Скрипт Python з функціональною логікою
+│   │   │   │   │   │   ├── eval/                 # Директорія з компонентами модуля
+│   │   │   │   │   │   │   ├── __init__.py       # Файл ініціалізації пакету Python
+│   │   │   │   │   │   │   ├── calibrate.py      # Скрипт Python з функціональною логікою
+│   │   │   │   │   │   │   ├── metrics.py        # Скрипт Python з функціональною логікою
+│   │   │   │   │   │   │   ├── report.py         # Скрипт Python з функціональною логікою
+│   │   │   │   │   │   │   ├── run.py            # Скрипт Python з функціональною логікою
+│   │   │   │   │   │   │   ├── simulate.py       # Скрипт Python з функціональною логікою
+│   │   │   │   │   │   │   └── tune_policy.py    # Скрипт Python з функціональною логікою
+│   │   │   │   │   │   ├── execution_model/      # Директорія з компонентами модуля
+│   │   │   │   │   │   │   └── __init__.py       # Файл ініціалізації пакету Python
+│   │   │   │   │   │   ├── feature_schema.py     # Скрипт Python з функціональною логікою
+│   │   │   │   │   │   ├── features/             # Директорія з компонентами модуля
+│   │   │   │   │   │   │   ├── __init__.py       # Файл ініціалізації пакету Python
+│   │   │   │   │   │   │   ├── builder.py        # Скрипт Python з функціональною логікою
+│   │   │   │   │   │   │   └── diag_schema.py    # Скрипт Python з функціональною логікою
+│   │   │   │   │   │   ├── inference_backend.py  # Скрипт Python з функціональною логікою
+│   │   │   │   │   │   ├── labels/               # Директорія з компонентами модуля
+│   │   │   │   │   │   │   ├── __init__.py       # Файл ініціалізації пакету Python
+│   │   │   │   │   │   │   └── builder.py        # Скрипт Python з функціональною логікою
+│   │   │   │   │   │   ├── runtime_models.py     # Скрипт Python з функціональною логікою
+│   │   │   │   │   │   └── signal_model/         # Директорія з компонентами модуля
+│   │   │   │   │   │       ├── dataset.py        # Скрипт Python з функціональною логікою
+│   │   │   │   │   │       ├── dataset_builder.py # Скрипт Python з функціональною логікою
+│   │   │   │   │   │       ├── model.py          # Скрипт Python з функціональною логікою
+│   │   │   │   │   │       ├── online_features.py # Скрипт Python з функціональною логікою
+│   │   │   │   │   │       ├── registry.py       # Скрипт Python з функціональною логікою
+│   │   │   │   │   │       ├── test_inference.py # Автоматизований тест для inference
+│   │   │   │   │   │       ├── train.py          # Скрипт Python з функціональною логікою
+│   │   │   │   │   │       └── train_all.py      # Скрипт Python з функціональною логікою
+│   │   │   │   │   ├── monitoring/               # Директорія з компонентами модуля
+│   │   │   │   │   │   └── supervisor_snapshot_monitor.py # Скрипт Python з функціональною логікою
+│   │   │   │   │   ├── ops/                      # Операційні конфігурації (Systemd, Windows сервіси)
+│   │   │   │   │   │   ├── metrics.py            # Скрипт Python з функціональною логікою
+│   │   │   │   │   │   ├── smoke.py              # Скрипт Python з функціональною логікою
+│   │   │   │   │   │   └── status_writer.py      # Скрипт Python з функціональною логікою
+│   │   │   │   │   ├── policy/                   # Директорія з компонентами модуля
+│   │   │   │   │   │   ├── __init__.py           # Файл ініціалізації пакету Python
+│   │   │   │   │   │   ├── policy_client.py      # Скрипт Python з функціональною логікою
+│   │   │   │   │   │   ├── policy_contract.py    # Скрипт Python з функціональною логікою
+│   │   │   │   │   │   └── policy_gate.py        # Скрипт Python з функціональною логікою
+│   │   │   │   │   ├── risk/                     # Директорія з компонентами модуля
+│   │   │   │   │   │   ├── __init__.py           # Файл ініціалізації пакету Python
+│   │   │   │   │   │   ├── circuit_breakers.py   # Скрипт Python з функціональною логікою
+│   │   │   │   │   │   ├── safety_gate.py        # Скрипт Python з функціональною логікою
+│   │   │   │   │   │   └── scalp_guards.py       # Скрипт Python з функціональною логікою
+│   │   │   │   │   ├── run_bot.py                # Скрипт Python з функціональною логікою
+│   │   │   │   │   ├── run_dry.py                # Скрипт Python з функціональною логікою
+│   │   │   │   │   ├── run_service.py            # Скрипт Python з функціональною логікою
+│   │   │   │   │   ├── sandbox/                  # Директорія з компонентами модуля
+│   │   │   │   │   │   ├── __init__.py           # Файл ініціалізації пакету Python
+│   │   │   │   │   │   ├── generate_synthetic_ticks.py # Скрипт Python з функціональною логікою
+│   │   │   │   │   │   └── offline_loop.py       # Скрипт Python з функціональною логікою
+│   │   │   │   │   ├── scenarios/                # Директорія з компонентами модуля
+│   │   │   │   │   │   ├── __init__.py           # Файл ініціалізації пакету Python
+│   │   │   │   │   │   ├── build.py              # Скрипт Python з функціональною логікою
+│   │   │   │   │   │   ├── cli.py                # Скрипт Python з функціональною логікою
+│   │   │   │   │   │   ├── cutter.py             # Скрипт Python з функціональною логікою
+│   │   │   │   │   │   ├── features_proxy.py     # Скрипт Python з функціональною логікою
+│   │   │   │   │   │   ├── io.py                 # Скрипт Python з функціональною логікою
+│   │   │   │   │   │   ├── report.py             # Скрипт Python з функціональною логікою
+│   │   │   │   │   │   ├── specs.py              # Скрипт Python з функціональною логікою
+│   │   │   │   │   │   └── validate.py           # Скрипт Python з функціональною логікою
+│   │   │   │   │   ├── spot_scalper.py           # Скрипт Python з функціональною логікою
+│   │   │   │   │   ├── state/                    # Директорія з компонентами модуля
+│   │   │   │   │   │   ├── __init__.py           # Файл ініціалізації пакету Python
+│   │   │   │   │   │   ├── recovery.py           # Скрипт Python з функціональною логікою
+│   │   │   │   │   │   └── store.py              # Скрипт Python з функціональною логікою
+│   │   │   │   │   ├── storage/                  # Директорія з компонентами модуля
+│   │   │   │   │   │   ├── __init__.py           # Файл ініціалізації пакету Python
+│   │   │   │   │   │   ├── event_bus.py          # Скрипт Python з функціональною логікою
+│   │   │   │   │   │   ├── spool_replay.py       # Скрипт Python з функціональною логікою
+│   │   │   │   │   │   ├── spooler.py            # Скрипт Python з функціональною логікою
+│   │   │   │   │   │   ├── tsdb/                 # Директорія з компонентами модуля
+│   │   │   │   │   │   │   ├── __init__.py       # Файл ініціалізації пакету Python
+│   │   │   │   │   │   │   ├── publisher.py      # Скрипт Python з функціональною логікою
+│   │   │   │   │   │   │   ├── questdb_ilp_writer.py # Скрипт Python з функціональною логікою
+│   │   │   │   │   │   │   └── sink.py           # Скрипт Python з функціональною логікою
+│   │   │   │   │   │   └── tsdb_config.py        # Скрипт Python з функціональною логікою
+│   │   │   │   │   ├── supervisor_client.py      # Скрипт Python з функціональною логікою
+│   │   │   │   │   ├── telemetry/                # Директорія з компонентами модуля
+│   │   │   │   │   │   ├── event_writer.py       # Скрипт Python з функціональною логікою
+│   │   │   │   │   │   └── reasons.py            # Скрипт Python з функціональною логікою
+│   │   │   │   │   └── trading/                  # Директорія з компонентами модуля
+│   │   │   │   │       ├── bingx_executor.py     # Скрипт Python з функціональною логікою
+│   │   │   │   │       ├── deal_events.py        # Скрипт Python з функціональною логікою
+│   │   │   │   │       ├── execution_mode.py     # Скрипт Python з функціональною логікою
+│   │   │   │   │       ├── executor.py           # Скрипт Python з функціональною логікою
+│   │   │   │   │       ├── hedging.py            # Скрипт Python з функціональною логікою
+│   │   │   │   │       ├── order_manager.py      # Скрипт Python з функціональною логікою
+│   │   │   │   │       ├── order_policy.py       # Скрипт Python з функціональною логікою
+│   │   │   │   │       ├── paper_trader.py       # Скрипт Python з функціональною логікою
+│   │   │   │   │       ├── position_manager.py   # Скрипт Python з функціональною логікою
+│   │   │   │   │       ├── risk_engine.py        # Скрипт Python з функціональною логікою
+│   │   │   │   │       ├── smart_executor.py     # Скрипт Python з функціональною логікою
+│   │   │   │   │       ├── smart_executor_adapter.py # Скрипт Python з функціональною логікою
+│   │   │   │   │       ├── test_execution_safety.py # Автоматизований тест для execution_safety
+│   │   │   │   │       └── trade_stats.py        # Скрипт Python з функціональною логікою
+│   │   │   │   ├── bot_icon.ico                  # Файл проекту
+│   │   │   │   ├── cleanup.py                    # Скрипт Python з функціональною логікою
+│   │   │   │   ├── config/                       # Директорія з компонентами модуля
+│   │   │   │   │   ├── pairs.yaml                # Файл налаштувань у форматі YAML
+│   │   │   │   │   ├── scenarios.yaml            # Файл налаштувань у форматі YAML
+│   │   │   │   │   └── settings.yaml             # Файл налаштувань у форматі YAML
+│   │   │   │   ├── docs/                         # Директорія з документацією проекту
+│   │   │   │   ├── policy/                       # Директорія з компонентами модуля
+│   │   │   │   │   ├── __init__.py               # Файл ініціалізації пакету Python
+│   │   │   │   │   ├── policy_client.py          # Скрипт Python з функціональною логікою
+│   │   │   │   │   ├── policy_contract.py        # Скрипт Python з функціональною логікою
+│   │   │   │   │   └── policy_gate.py            # Скрипт Python з функціональною логікою
+│   │   │   │   ├── reports/                      # Директорія з компонентами модуля
+│   │   │   │   ├── requirements.txt              # Основні залежності Python для проекту
+│   │   │   │   ├── telemetry/                    # Директорія з компонентами модуля
+│   │   │   │   │   ├── __init__.py               # Файл ініціалізації пакету Python
+│   │   │   │   │   └── emitter.py                # Скрипт Python з функціональною логікою
+│   │   │   │   ├── test_features.py              # Автоматизований тест для features
+│   │   │   │   ├── tests/                        # Набір системних та юніт-тестів
+│   │   │   │   │   ├── test_bingx_utils.py       # Автоматизований тест для bingx_utils
+│   │   │   │   │   ├── test_circuit_breakers.py  # Автоматизований тест для circuit_breakers
+│   │   │   │   │   ├── test_data_manager.py      # Автоматизований тест для data_manager
+│   │   │   │   │   ├── test_feature_schema.py    # Автоматизований тест для feature_schema
+│   │   │   │   │   ├── test_metrics_tracker.py   # Автоматизований тест для metrics_tracker
+│   │   │   │   │   ├── test_ml_labels.py         # Автоматизований тест для ml_labels
+│   │   │   │   │   ├── test_ml_runtime_aggregator.py # Автоматизований тест для ml_runtime_aggregator
+│   │   │   │   │   ├── test_ml_runtime_model_manager.py # Автоматизований тест для ml_runtime_model_manager
+│   │   │   │   │   ├── test_ml_stage2_pipeline.py # Автоматизований тест для ml_stage2_pipeline
+│   │   │   │   │   ├── test_ml_stage3_calibration.py # Автоматизований тест для ml_stage3_calibration
+│   │   │   │   │   ├── test_ml_stage3_eval_outputs.py # Автоматизований тест для ml_stage3_eval_outputs
+│   │   │   │   │   ├── test_ml_stage3_policy_schema.py # Автоматизований тест для ml_stage3_policy_schema
+│   │   │   │   │   ├── test_ml_stage3_tuner.py   # Автоматизований тест для ml_stage3_tuner
+│   │   │   │   │   ├── test_policy_client.py     # Автоматизований тест для policy_client
+│   │   │   │   │   ├── test_policy_contract.py   # Автоматизований тест для policy_contract
+│   │   │   │   │   ├── test_policy_gate.py       # Автоматизований тест для policy_gate
+│   │   │   │   │   ├── test_risk_limits.py       # Автоматизований тест для risk_limits
+│   │   │   │   │   ├── test_runtime_import_guard.py # Автоматизований тест для runtime_import_guard
+│   │   │   │   │   ├── test_runtime_models.py    # Автоматизований тест для runtime_models
+│   │   │   │   │   ├── test_safety_gate.py       # Автоматизований тест для safety_gate
+│   │   │   │   │   ├── test_scalp_gate.py        # Автоматизований тест для scalp_gate
+│   │   │   │   │   ├── test_scenarios.py         # Автоматизований тест для scenarios
+│   │   │   │   │   ├── test_shadow_skip.py       # Автоматизований тест для shadow_skip
+│   │   │   │   │   ├── test_state_store.py       # Автоматизований тест для state_store
+│   │   │   │   │   ├── test_tsdb_event_bus.py    # Автоматизований тест для tsdb_event_bus
+│   │   │   │   │   └── test_tsdb_ilp_writer.py   # Автоматизований тест для tsdb_ilp_writer
+│   │   │   │   └── tools/                        # Директорія з компонентами модуля
+│   │   │   │       ├── check_secrets.py          # Скрипт Python з функціональною логікою
+│   │   │   │       ├── init_secrets.py           # Скрипт Python з функціональною логікою
+│   │   │   │       └── load_secrets.py           # Скрипт Python з функціональною логікою
+│   │   │   └── whale_follower.py                 # Скрипт Python з функціональною логікою
+│   │   ├── supervisor/                           # Модуль Агента-Супервайзера для моніторингу
+│   │   │   ├── Supervisor agent.code-workspace   # Файл проекту
+│   │   │   ├── __init__.py                       # Файл ініціалізації пакету Python
+│   │   │   ├── config/                           # Директорія з компонентами модуля
+│   │   │   │   ├── alerts.yaml                   # Файл налаштувань у форматі YAML
+│   │   │   │   ├── autopilot.yaml                # Файл налаштувань у форматі YAML
+│   │   │   │   ├── dashboard.yaml                # Файл налаштувань у форматі YAML
+│   │   │   │   ├── llm_market_risk.yaml          # Файл налаштувань у форматі YAML
+│   │   │   │   ├── llm_supervisor.yaml           # Файл налаштувань у форматі YAML
+│   │   │   │   ├── llm_trading_behavior.yaml     # Файл налаштувань у форматі YAML
+│   │   │   │   ├── llm_trend_evaluator.yaml      # Файл налаштувань у форматі YAML
+│   │   │   │   ├── lockbot.yaml                  # Файл налаштувань у форматі YAML
+│   │   │   │   ├── meta_supervisor.yaml          # Файл налаштувань у форматі YAML
+│   │   │   │   ├── ops.yaml                      # Файл налаштувань у форматі YAML
+│   │   │   │   ├── paths.yaml                    # Файл налаштувань у форматі YAML
+│   │   │   │   ├── policy.yaml                   # Файл налаштувань у форматі YAML
+│   │   │   │   ├── processes.yaml                # Файл налаштувань у форматі YAML
+│   │   │   │   ├── risk.yaml                     # Файл налаштувань у форматі YAML
+│   │   │   │   ├── supervisor.yaml               # Файл налаштувань у форматі YAML
+│   │   │   │   ├── tsdb.yaml                     # Файл налаштувань у форматі YAML
+│   │   │   │   └── tsdb_retention.yaml           # Файл налаштувань у форматі YAML
+│   │   │   ├── configs/                          # Директорія з компонентами модуля
+│   │   │   │   └── lockbot_btc_policy.yaml       # Файл налаштувань у форматі YAML
+│   │   │   ├── context/                          # Директорія з компонентами модуля
+│   │   │   │   ├── accumulator.py                # Скрипт Python з функціональною логікою
+│   │   │   │   ├── builder.py                    # Скрипт Python з функціональною логікою
+│   │   │   │   ├── features.py                   # Скрипт Python з функціональною логікою
+│   │   │   │   └── heatmap.py                    # Скрипт Python з функціональною логікою
+│   │   │   ├── dashboard_web/                    # Директорія з компонентами модуля
+│   │   │   │   ├── index.html                    # Файл проекту
+│   │   │   │   ├── package.json                  # Файл даних або конфігурації JSON
+│   │   │   │   ├── src/                          # Вихідний код системи (src-layout)
+│   │   │   │   │   ├── App.jsx                   # Файл проекту
+│   │   │   │   │   ├── api/                      # Директорія з компонентами модуля
+│   │   │   │   │   │   └── dashboard.js          # Файл проекту
+│   │   │   │   │   ├── components/               # Директорія з компонентами модуля
+│   │   │   │   │   │   ├── EventsTable.jsx       # Файл проекту
+│   │   │   │   │   │   ├── HealthStatus.jsx      # Файл проекту
+│   │   │   │   │   │   ├── MarketFeatures.jsx    # Файл проекту
+│   │   │   │   │   │   ├── OverviewCard.jsx      # Файл проекту
+│   │   │   │   │   │   └── TsdbStatus.jsx        # Файл проекту
+│   │   │   │   │   ├── main.jsx                  # Файл проекту
+│   │   │   │   │   └── styles.css                # Файл проекту
+│   │   │   │   └── vite.config.js                # Файл проекту
+│   │   │   ├── docs/                             # Директорія з документацією проекту
+│   │   │   ├── domain/                           # Директорія з компонентами модуля
+│   │   │   │   ├── models.py                     # Визначення моделей даних та структур (Data Models)
+│   │   │   │   ├── policy.py                     # Скрипт Python з функціональною логікою
+│   │   │   │   └── risk.py                       # Скрипт Python з функціональною логікою
+│   │   │   ├── episodes/                         # Директорія з компонентами модуля
+│   │   │   │   └── scenarios_v1.yaml             # Файл налаштувань у форматі YAML
+│   │   │   ├── gemini_client.py                  # Скрипт Python з функціональною логікою
+│   │   │   ├── mlops/                            # Директорія з компонентами модуля
+│   │   │   │   ├── __init__.py                   # Файл ініціалізації пакету Python
+│   │   │   │   ├── cli.py                        # Скрипт Python з функціональною логікою
+│   │   │   │   ├── dataset_builder.py            # Скрипт Python з функціональною логікою
+│   │   │   │   ├── manifest.py                   # Скрипт Python з функціональною логікою
+│   │   │   │   ├── publisher.py                  # Скрипт Python з функціональною логікою
+│   │   │   │   ├── registry.py                   # Скрипт Python з функціональною логікою
+│   │   │   │   ├── trainer.py                    # Скрипт Python з функціональною логікою
+│   │   │   │   └── validator.py                  # Скрипт Python з функціональною логікою
+│   │   │   ├── monitoring/                       # Директорія з компонентами модуля
+│   │   │   │   ├── __init__.py                   # Файл ініціалізації пакету Python
+│   │   │   │   ├── aggregator.py                 # Скрипт Python з функціональною логікою
+│   │   │   │   ├── alerts.py                     # Скрипт Python з функціональною логікою
+│   │   │   │   ├── api.py                        # Скрипт Python з функціональною логікою
+│   │   │   │   ├── cli.py                        # Скрипт Python з функціональною логікою
+│   │   │   │   └── event_store.py                # Скрипт Python з функціональною логікою
+│   │   │   ├── policy/                           # Директорія з компонентами модуля
+│   │   │   │   ├── __init__.py                   # Файл ініціалізації пакету Python
+│   │   │   │   ├── circuit_breaker.py            # Скрипт Python з функціональною логікою
+│   │   │   │   ├── heuristics.py                 # Скрипт Python з функціональною логікою
+│   │   │   │   ├── llm_moderator.py              # Скрипт Python з функціональною логікою
+│   │   │   │   ├── policy_contract.py            # Скрипт Python з функціональною логікою
+│   │   │   │   ├── policy_engine.py              # Скрипт Python з функціональною логікою
+│   │   │   │   ├── policy_publisher.py           # Скрипт Python з функціональною логікою
+│   │   │   │   ├── policy_store.py               # Скрипт Python з функціональною логікою
+│   │   │   │   └── signals.py                    # Скрипт Python з функціональною логікою
+│   │   │   ├── reports/                          # Директорія з компонентами модуля
+│   │   │   │   ├── __init__.py                   # Файл ініціалізації пакету Python
+│   │   │   │   ├── sql_templates.py              # Скрипт Python з функціональною логікою
+│   │   │   │   └── tsdb_reports.py               # Скрипт Python з функціональною логікою
+│   │   │   ├── requirements.txt                  # Основні залежності Python для проекту
+│   │   │   ├── research/                         # Директорія з компонентами модуля
+│   │   │   │   ├── __init__.py                   # Файл ініціалізації пакету Python
+│   │   │   │   ├── backtest/                     # Директорія з компонентами модуля
+│   │   │   │   │   ├── __init__.py               # Файл ініціалізації пакету Python
+│   │   │   │   │   ├── backtest_model.py         # Автоматизований тест для backmodel
+│   │   │   │   │   ├── engine.py                 # Скрипт Python з функціональною логікою
+│   │   │   │   │   ├── metrics.py                # Скрипт Python з функціональною логікою
+│   │   │   │   │   ├── report.py                 # Скрипт Python з функціональною логікою
+│   │   │   │   │   ├── simulator.py              # Скрипт Python з функціональною логікою
+│   │   │   │   │   └── tick_replay.py            # Скрипт Python з функціональною логікою
+│   │   │   │   ├── cli.py                        # Скрипт Python з функціональною логікою
+│   │   │   │   ├── offline/                      # Директорія з компонентами модуля
+│   │   │   │   │   ├── __init__.py               # Файл ініціалізації пакету Python
+│   │   │   │   │   ├── indicators/               # Директорія з компонентами модуля
+│   │   │   │   │   │   ├── __init__.py           # Файл ініціалізації пакету Python
+│   │   │   │   │   │   ├── feature_builder.py    # Скрипт Python з функціональною логікою
+│   │   │   │   │   │   ├── ohlcv_indicators.py   # Скрипт Python з функціональною логікою
+│   │   │   │   │   │   ├── orderflow.py          # Скрипт Python з функціональною логікою
+│   │   │   │   │   │   └── volatility.py         # Скрипт Python з функціональною логікою
+│   │   │   │   │   ├── offline_simulator.py      # Скрипт Python з функціональною логікою
+│   │   │   │   │   ├── signal_model/             # Директорія з компонентами модуля
+│   │   │   │   │   │   ├── __init__.py           # Файл ініціалізації пакету Python
+│   │   │   │   │   │   ├── dataset.py            # Скрипт Python з функціональною логікою
+│   │   │   │   │   │   ├── dataset_builder.py    # Скрипт Python з функціональною логікою
+│   │   │   │   │   │   ├── test_inference.py     # Автоматизований тест для inference
+│   │   │   │   │   │   ├── train.py              # Скрипт Python з функціональною логікою
+│   │   │   │   │   │   └── train_all.py          # Скрипт Python з функціональною логікою
+│   │   │   │   │   └── test_features.py          # Автоматизований тест для features
+│   │   │   │   ├── replay/                       # Директорія з компонентами модуля
+│   │   │   │   │   ├── __init__.py               # Файл ініціалізації пакету Python
+│   │   │   │   │   ├── adapters.py               # Скрипт Python з функціональною логікою
+│   │   │   │   │   └── replayer.py               # Скрипт Python з функціональною логікою
+│   │   │   │   ├── sandbox/                      # Директорія з компонентами модуля
+│   │   │   │   │   ├── __init__.py               # Файл ініціалізації пакету Python
+│   │   │   │   │   ├── generate_synthetic_ticks.py # Скрипт Python з функціональною логікою
+│   │   │   │   │   └── offline_loop.py           # Скрипт Python з функціональною логікою
+│   │   │   │   └── scenarios/                    # Директорія з компонентами модуля
+│   │   │   │       ├── __init__.py               # Файл ініціалізації пакету Python
+│   │   │   │       ├── definitions.py            # Скрипт Python з функціональною логікою
+│   │   │   │       ├── injector.py               # Скрипт Python з функціональною логікою
+│   │   │   │       └── runner.py                 # Скрипт Python з функціональною логікою
+│   │   │   ├── service.py                        # Скрипт Python з функціональною логікою
+│   │   │   ├── sql/                              # Директорія з компонентами модуля
+│   │   │   │   ├── clickhouse_retention.sql      # Файл проекту
+│   │   │   │   ├── clickhouse_schema.sql         # Файл проекту
+│   │   │   │   ├── questdb_retention.sql         # Файл проекту
+│   │   │   │   └── questdb_schema.sql            # Файл проекту
+│   │   │   ├── state/                            # Директорія з компонентами модуля
+│   │   │   │   └── process_state.json            # Файл даних або конфігурації JSON
+│   │   │   ├── state_manager.py                  # Скрипт Python з функціональною логікою
+│   │   │   ├── static/                           # Директорія з компонентами модуля
+│   │   │   │   ├── app.js                        # Файл проекту
+│   │   │   │   ├── index.html                    # Файл проекту
+│   │   │   │   └── styles.css                    # Файл проекту
+│   │   │   ├── supervisor/                       # Директорія з компонентами модуля
+│   │   │   │   ├── __init__.py                   # Файл ініціалізації пакету Python
+│   │   │   │   ├── action_ledger.py              # Скрипт Python з функціональною логікою
+│   │   │   │   ├── ai_bridge.py                  # Скрипт Python з функціональною логікою
+│   │   │   │   ├── alerts/                       # Директорія з компонентами модуля
+│   │   │   │   │   ├── __init__.py               # Файл ініціалізації пакету Python
+│   │   │   │   │   ├── engine.py                 # Скрипт Python з функціональною логікою
+│   │   │   │   │   ├── rules.py                  # Скрипт Python з функціональною логікою
+│   │   │   │   │   └── storage.py                # Скрипт Python з функціональною логікою
+│   │   │   │   ├── api.py                        # Скрипт Python з функціональною логікою
+│   │   │   │   ├── api_server.py                 # Скрипт Python з функціональною логікою
+│   │   │   │   ├── audit_report.py               # Скрипт Python з функціональною логікою
+│   │   │   │   ├── autopilot/                    # Директорія з компонентами модуля
+│   │   │   │   │   ├── __init__.py               # Файл ініціалізації пакету Python
+│   │   │   │   │   ├── audit.py                  # Скрипт Python з функціональною логікою
+│   │   │   │   │   ├── cli.py                    # Скрипт Python з функціональною логікою
+│   │   │   │   │   ├── collector.py              # Скрипт Python з функціональною логікою
+│   │   │   │   │   ├── policy_manager.py         # Скрипт Python з функціональною логікою
+│   │   │   │   │   ├── quality.py                # Скрипт Python з функціональною логікою
+│   │   │   │   │   ├── remediation.py            # Скрипт Python з функціональною логікою
+│   │   │   │   │   └── state_machine.py          # Скрипт Python з функціональною логікою
+│   │   │   │   ├── config.py                     # Логіка завантаження та обробки конфігураційних файлів
+│   │   │   │   ├── config_loader.py              # Скрипт Python з функціональною логікою
+│   │   │   │   ├── context_builder.py            # Скрипт Python з функціональною логікою
+│   │   │   │   ├── contracts/                    # Директорія з компонентами модуля
+│   │   │   │   │   ├── __init__.py               # Файл ініціалізації пакету Python
+│   │   │   │   │   ├── lockbot_control_v1.py     # Скрипт Python з функціональною логікою
+│   │   │   │   │   └── lockbot_exec_v1.py        # Скрипт Python з функціональною логікою
+│   │   │   │   ├── dashboard/                    # Директорія з компонентами модуля
+│   │   │   │   │   ├── audit_log.py              # Скрипт Python з функціональною логікою
+│   │   │   │   │   ├── models.py                 # Визначення моделей даних та структур (Data Models)
+│   │   │   │   │   ├── service.py                # Скрипт Python з функціональною логікою
+│   │   │   │   │   └── state_store.py            # Скрипт Python з функціональною логікою
+│   │   │   │   ├── data_ingest.py                # Скрипт Python з функціональною логікою
+│   │   │   │   ├── episodes/                     # Директорія з компонентами модуля
+│   │   │   │   │   ├── __init__.py               # Файл ініціалізації пакету Python
+│   │   │   │   │   ├── cli.py                    # Скрипт Python з функціональною логікою
+│   │   │   │   │   ├── cutter.py                 # Скрипт Python з функціональною логікою
+│   │   │   │   │   ├── io.py                     # Скрипт Python з функціональною логікою
+│   │   │   │   │   ├── report.py                 # Скрипт Python з функціональною логікою
+│   │   │   │   │   ├── runner.py                 # Скрипт Python з функціональною логікою
+│   │   │   │   │   └── synthetic_ticks.py        # Скрипт Python з функціональною логікою
+│   │   │   │   ├── events.py                     # Скрипт Python з функціональною логікою
+│   │   │   │   ├── gemini_client.py              # Скрипт Python з функціональною логікою
+│   │   │   │   ├── guards.py                     # Скрипт Python з функціональною логікою
+│   │   │   │   ├── heartbeat.py                  # Скрипт Python з функціональною логікою
+│   │   │   │   ├── ingest/                       # Директорія з компонентами модуля
+│   │   │   │   │   ├── __init__.py               # Файл ініціалізації пакету Python
+│   │   │   │   │   ├── backfill.py               # Скрипт Python з функціональною логікою
+│   │   │   │   │   ├── parsers.py                # Скрипт Python з функціональною логікою
+│   │   │   │   │   ├── pipeline.py               # Скрипт Python з функціональною логікою
+│   │   │   │   │   └── tailer.py                 # Скрипт Python з функціональною логікою
+│   │   │   │   ├── ipc.py                        # Скрипт Python з функціональною логікою
+│   │   │   │   ├── llm/                          # Директорія з компонентами модуля
+│   │   │   │   │   ├── chat_client.py            # Скрипт Python з функціональною логікою
+│   │   │   │   │   ├── market_risk_monitor.py    # Скрипт Python з функціональною логікою
+│   │   │   │   │   ├── trading_behavior_analyzer.py # Скрипт Python з функціональною логікою
+│   │   │   │   │   └── trend_evaluator.py        # Скрипт Python з функціональною логікою
+│   │   │   │   ├── llm_supervisor.py             # Скрипт Python з функціональною логікою
+│   │   │   │   ├── lockbot/                      # Директорія з компонентами модуля
+│   │   │   │   │   ├── __init__.py               # Файл ініціалізації пакету Python
+│   │   │   │   │   ├── control_client.py         # Скрипт Python з функціональною логікою
+│   │   │   │   │   ├── hub_subscriber.py         # Скрипт Python з функціональною логікою
+│   │   │   │   │   ├── models.py                 # Визначення моделей даних та структур (Data Models)
+│   │   │   │   │   ├── policy_runner.py          # Скрипт Python з функціональною логікою
+│   │   │   │   │   ├── regime_detector.py        # Скрипт Python з функціональною логікою
+│   │   │   │   │   ├── replay/                   # Директорія з компонентами модуля
+│   │   │   │   │   │   ├── __init__.py           # Файл ініціалізації пакету Python
+│   │   │   │   │   │   └── policy_adapter.py     # Скрипт Python з функціональною логікою
+│   │   │   │   │   ├── strategy_range.py         # Скрипт Python з функціональною логікою
+│   │   │   │   │   └── strategy_trend.py         # Скрипт Python з функціональною логікою
+│   │   │   │   ├── logging_setup.py              # Скрипт Python з функціональною логікою
+│   │   │   │   ├── meta_supervisor.py            # Скрипт Python з функціональною логікою
+│   │   │   │   ├── ops/                          # Операційні конфігурації (Systemd, Windows сервіси)
+│   │   │   │   │   ├── __init__.py               # Файл ініціалізації пакету Python
+│   │   │   │   │   ├── autotuner.py              # Скрипт Python з функціональною логікою
+│   │   │   │   │   ├── config.py                 # Логіка завантаження та обробки конфігураційних файлів
+│   │   │   │   │   ├── daily_report.py           # Скрипт Python з функціональною логікою
+│   │   │   │   │   └── regression_gates.py       # Скрипт Python з функціональною логікою
+│   │   │   │   ├── policy_store.py               # Скрипт Python з функціональною логікою
+│   │   │   │   ├── process_manager.py            # Скрипт Python з функціональною логікою
+│   │   │   │   ├── process_spec.py               # Скрипт Python з функціональною логікою
+│   │   │   │   ├── prompts.py                    # Скрипт Python з функціональною логікою
+│   │   │   │   ├── regime_sm.py                  # Скрипт Python з функціональною логікою
+│   │   │   │   ├── risk_engine.py                # Скрипт Python з функціональною логікою
+│   │   │   │   ├── run_context.py                # Скрипт Python з функціональною логікою
+│   │   │   │   ├── security.py                   # Скрипт Python з функціональною логікою
+│   │   │   │   ├── snapshot_models.py            # Скрипт Python з функціональною логікою
+│   │   │   │   ├── state.py                      # Скрипт Python з функціональною логікою
+│   │   │   │   ├── stats.py                      # Скрипт Python з функціональною логікою
+│   │   │   │   ├── tasks/                        # Директорія з компонентами модуля
+│   │   │   │   │   └── snapshot_scheduler.py     # Скрипт Python з функціональною логікою
+│   │   │   │   ├── tsdb/                         # Директорія з компонентами модуля
+│   │   │   │   │   ├── __init__.py               # Файл ініціалізації пакету Python
+│   │   │   │   │   ├── backfill.py               # Скрипт Python з функціональною логікою
+│   │   │   │   │   ├── base.py                   # Скрипт Python з функціональною логікою
+│   │   │   │   │   ├── clickhouse.py             # Скрипт Python з функціональною логікою
+│   │   │   │   │   ├── maintenance.py            # Скрипт Python з функціональною логікою
+│   │   │   │   │   ├── mappers.py                # Скрипт Python з функціональною логікою
+│   │   │   │   │   ├── migrations/               # Директорія з компонентами модуля
+│   │   │   │   │   │   └── 0001_init.sql         # Файл проекту
+│   │   │   │   │   ├── migrations.py             # Скрипт Python з функціональною логікою
+│   │   │   │   │   ├── noop.py                   # Скрипт Python з функціональною логікою
+│   │   │   │   │   ├── query.py                  # Скрипт Python з функціональною логікою
+│   │   │   │   │   ├── questdb.py                # Скрипт Python з функціональною логікою
+│   │   │   │   │   └── writer.py                 # Скрипт Python з функціональною логікою
+│   │   │   │   └── utils/                        # Директорія з компонентами модуля
+│   │   │   │       ├── cache.py                  # Скрипт Python з функціональною логікою
+│   │   │   │       └── rate_limit.py             # Скрипт Python з функціональною логікою
+│   │   │   ├── supervisor.py                     # Скрипт Python з функціональною логікою
+│   │   │   ├── tests/                            # Набір системних та юніт-тестів
+│   │   │   │   ├── conftest.py                   # Скрипт Python з функціональною логікою
+│   │   │   │   ├── test_alerts_engine.py         # Автоматизований тест для alerts_engine
+│   │   │   │   ├── test_autopilot_state_machine.py # Автоматизований тест для autopilot_state_machine
+│   │   │   │   ├── test_dashboard_api.py         # Автоматизований тест для dashboard_api
+│   │   │   │   ├── test_dashboard_auth.py        # Автоматизований тест для dashboard_auth
+│   │   │   │   ├── test_dashboard_state_store.py # Автоматизований тест для dashboard_state_store
+│   │   │   │   ├── test_events_tail.py           # Автоматизований тест для events_tail
+│   │   │   │   ├── test_full_system.py           # Автоматизований тест для full_system
+│   │   │   │   ├── test_healthchecks.py          # Автоматизований тест для healthchecks
+│   │   │   │   ├── test_ingest_parser.py         # Автоматизований тест для ingest_parser
+│   │   │   │   ├── test_ingest_tailer.py         # Автоматизований тест для ingest_tailer
+│   │   │   │   ├── test_kill_switch_challenge.py # Автоматизований тест для kill_switch_challenge
+│   │   │   │   ├── test_metrics_collector.py     # Автоматизований тест для metrics_collector
+│   │   │   │   ├── test_policy_manager.py        # Автоматизований тест для policy_manager
+│   │   │   │   ├── test_policy_path_allowlist.py # Автоматизований тест для policy_path_allowlist
+│   │   │   │   ├── test_process_manager_idempotent.py # Автоматизований тест для process_manager_idempotent
+│   │   │   │   ├── test_process_spec_validation.py # Автоматизований тест для process_spec_validation
+│   │   │   │   ├── test_rate_limiter.py          # Автоматизований тест для rate_limiter
+│   │   │   │   ├── test_tsdb_query_allowlist.py  # Автоматизований тест для tsdb_query_allowlist
+│   │   │   │   └── test_tsdb_writer_batch.py     # Автоматизований тест для tsdb_writer_batch
+│   │   │   ├── tools/                            # Директорія з компонентами модуля
+│   │   │   │   ├── __init__.py                   # Файл ініціалізації пакету Python
+│   │   │   │   └── audit_stage9.py               # Скрипт Python з функціональною логікою
+│   │   │   └── tsdb/                             # Директорія з компонентами модуля
+│   │   │       ├── __init__.py                   # Файл ініціалізації пакету Python
+│   │   │       └── questdb_client.py             # Скрипт Python з функціональною логікою
+│   │   └── utils/                                # Директорія з компонентами модуля
+│   │       └── async_runner.py                   # Скрипт Python з функціональною логікою
+│   ├── quantum_edge_infra/                       # Інфраструктурні компоненти та автоматизація
+│   │   ├── automation/                           # Скрипти автоматизації та Meta-Agent
+│   │   │   └── meta_agent/                       # Директорія з компонентами модуля
+│   │   │       ├── __init__.py                   # Файл ініціалізації пакету Python
+│   │   │       ├── approval_engine.py            # Скрипт Python з функціональною логікою
+│   │   │       ├── cli_entry.py                  # Скрипт Python з функціональною логікою
+│   │   │       ├── codex_client.py               # Скрипт Python з функціональною логікою
+│   │   │       ├── config/                       # Директорія з компонентами модуля
+│   │   │       │   ├── offmarket_schedule.yaml   # Файл налаштувань у форматі YAML
+│   │   │       │   └── projects.yaml             # Файл налаштувань у форматі YAML
+│   │   │       ├── config.json                   # Файл даних або конфігурації JSON
+│   │   │       ├── control_center.py             # Скрипт Python з функціональною логікою
+│   │   │       ├── control_center_server.py      # Скрипт Python з функціональною логікою
+│   │   │       ├── env_crypto.py                 # Скрипт Python з функціональною логікою
+│   │   │       ├── file_manager.py               # Скрипт Python з функціональною логікою
+│   │   │       ├── file_writer.py                # Скрипт Python з функціональною логікою
+│   │   │       ├── gate_runner.py                # Скрипт Python з функціональною логікою
+│   │   │       ├── inbox_processor.py            # Скрипт Python з функціональною логікою
+│   │   │       ├── infra/                        # Директорія з компонентами модуля
+│   │   │       │   └── ops/                      # Операційні конфігурації (Systemd, Windows сервіси)
+│   │   │       │       └── linux/                # Директорія з компонентами модуля
+│   │   │       │           ├── install_systemd.sh # Скрипт автоматизації для командної оболонки Bash
+│   │   │       │           ├── quantumedge.service # Файл проекту
+│   │   │       │           ├── supervisoragent.service # Файл проекту
+│   │   │       │           └── uninstall_systemd.sh # Скрипт автоматизації для командної оболонки Bash
+│   │   │       ├── logger.py                     # Скрипт Python з функціональною логікою
+│   │   │       ├── meta_agent.py                 # Точка входу для Meta-Agent (оркестратор змін)
+│   │   │       ├── meta_core.py                  # Скрипт Python з функціональною логікою
+│   │   │       ├── meta_gui.py                   # Скрипт Python з функціональною логікою
+│   │   │       ├── offmarket_config.py           # Скрипт Python з функціональною логікою
+│   │   │       ├── offmarket_runner.py           # Скрипт Python з функціональною логікою
+│   │   │       ├── offmarket_scheduler.py        # Скрипт Python з функціональною логікою
+│   │   │       ├── offmarket_state.py            # Скрипт Python з функціональною логікою
+│   │   │       ├── paths.py                      # Скрипт Python з функціональною логікою
+│   │   │       ├── project_scanner.py            # Скрипт Python з функціональною логікою
+│   │   │       ├── projects_config.py            # Скрипт Python з функціональною логікою
+│   │   │       ├── projects_registry.py          # Скрипт Python з функціональною логікою
+│   │   │       ├── prompt_builder.py             # Скрипт Python з функціональною логікою
+│   │   │       ├── prompts/                      # Директорія з компонентами модуля
+│   │   │       ├── repo_meta_agent/              # Директорія з компонентами модуля
+│   │   │       │   ├── codex_client.py           # Скрипт Python з функціональною логікою
+│   │   │       │   ├── file_manager.py           # Скрипт Python з функціональною логікою
+│   │   │       │   ├── file_writer.py            # Скрипт Python з функціональною логікою
+│   │   │       │   ├── meta_agent.py             # Точка входу для Meta-Agent (оркестратор змін)
+│   │   │       │   ├── project_scanner.py        # Скрипт Python з функціональною логікою
+│   │   │       │   ├── prompt_builder.py         # Скрипт Python з функціональною логікою
+│   │   │       │   └── stages.yaml               # Файл налаштувань у форматі YAML
+│   │   │       ├── report_schema.py              # Скрипт Python з функціональною логікою
+│   │   │       ├── requirements.txt              # Основні залежності Python для проекту
+│   │   │       ├── run_lock.py                   # Скрипт Python з функціональною логікою
+│   │   │       ├── safety_policy.py              # Скрипт Python з функціональною логікою
+│   │   │       ├── schedule_contract.py          # Скрипт Python з функціональною логікою
+│   │   │       ├── scripts/                      # Скрипти для запуску та обслуговування системи
+│   │   │       │   └── check_health.sh           # Скрипт автоматизації для командної оболонки Bash
+│   │   │       ├── secret_masking.py             # Скрипт Python з функціональною логікою
+│   │   │       ├── shadow_workspace.py           # Скрипт Python з функціональною логікою
+│   │   │       ├── stages.yaml                   # Файл налаштувань у форматі YAML
+│   │   │       ├── strategy_agent.py             # Скрипт Python з функціональною логікою
+│   │   │       ├── supervisor_runner.py          # Скрипт Python з функціональною логікою
+│   │   │       ├── task_archiver.py              # Скрипт Python з функціональною логікою
+│   │   │       ├── task_contract.py              # Скрипт Python з функціональною логікою
+│   │   │       ├── task_manager.py               # Скрипт Python з функціональною логікою
+│   │   │       ├── task_schema.py                # Скрипт Python з функціональною логікою
+│   │   │       ├── ui/                           # Веб-інтерфейс управління системою
+│   │   │       │   ├── app.js                    # Файл проекту
+│   │   │       │   ├── index.html                # Файл проекту
+│   │   │       │   └── styles.css                # Файл проекту
+│   │   │       ├── version.py                    # Скрипт Python з функціональною логікою
+│   │   │       ├── watch.py                      # Скрипт Python з функціональною логікою
+│   │   │       └── write_engine.py               # Скрипт Python з функціональною логікою
+│   │   ├── k8s/                                  # Директорія з компонентами модуля
+│   │   │   ├── questdb/                          # Директорія з компонентами модуля
+│   │   │   │   ├── conf/                         # Директорія з компонентами модуля
+│   │   │   │   │   └── server.conf               # Файл проекту
+│   │   │   │   ├── docker-compose.yml            # Конфігурація Docker Compose для запуску сервісів
+│   │   │   │   ├── down.sh                       # Скрипт автоматизації для командної оболонки Bash
+│   │   │   │   ├── init.sql                      # Файл проекту
+│   │   │   │   ├── schema.sql                    # Файл проекту
+│   │   │   │   └── up.sh                         # Скрипт автоматизації для командної оболонки Bash
+│   │   │   └── systemd/                          # Директорія з компонентами модуля
+│   │   │       ├── install.sh                    # Скрипт автоматизації для командної оболонки Bash
+│   │   │       ├── marketdatahub.service         # Файл проекту
+│   │   │       ├── quantumedge-bot@.service      # Файл проекту
+│   │   │       ├── quantumedge-l2-replay.service # Файл проекту
+│   │   │       ├── quantumedge-l2-replay.timer   # Файл проекту
+│   │   │       ├── quantumedge-supervisor.service # Файл проекту
+│   │   │       └── questdb.service               # Файл проекту
+│   │   └── tools/                                # Директорія з компонентами модуля
+│   │       ├── __init__.py                       # Файл ініціалізації пакету Python
+│   │       ├── audit_stage9.py                   # Скрипт Python з функціональною логікою
+│   │       ├── audit_vm.py                       # Скрипт Python з функціональною логікою
+│   │       ├── boot_smoke.py                     # Скрипт Python з функціональною логікою
+│   │       ├── load/                             # Директорія з компонентами модуля
+│   │       │   ├── __init__.py                   # Файл ініціалізації пакету Python
+│   │       │   ├── generate_market_events.py     # Скрипт Python з функціональною логікою
+│   │       │   └── run_ingestion_benchmark.py    # Скрипт Python з функціональною логікою
+│   │       ├── mcp_server.py                     # Скрипт Python з функціональною логікою
+│   │       ├── perf/                             # Директорія з компонентами модуля
+│   │       │   └── cpu_layout.sh                 # Скрипт автоматизації для командної оболонки Bash
+│   │       ├── prune_spool.py                    # Скрипт Python з функціональною логікою
+│   │       ├── qe_cli.py                         # Скрипт Python з функціональною логікою
+│   │       ├── qe_config.py                      # Скрипт Python з функціональною логікою
+│   │       ├── qe_config_loader.py               # Скрипт Python з функціональною логікою
+│   │       ├── qe_doctor.py                      # Скрипт Python з функціональною логікою
+│   │       ├── qe_paths.py                       # Скрипт Python з функціональною логікою
+│   │       ├── questdb_apply_schema.sh           # Скрипт автоматизації для командної оболонки Bash
+│   │       ├── replay_spool.py                   # Скрипт Python з функціональною логікою
+│   │       ├── secure_env.py                     # Скрипт Python з функціональною логікою
+│   │       ├── setup_hft_env.sh                  # Скрипт автоматизації для командної оболонки Bash
+│   │       ├── smoke_e2e.py                      # Скрипт Python з функціональною логікою
+│   │       ├── smoke_e2e_stack.py                # Скрипт Python з функціональною логікою
+│   │       ├── smoke_l2_spool.py                 # Скрипт Python з функціональною логікою
+│   │       ├── smoke_l2_wal_first.py             # Скрипт Python з функціональною логікою
+│   │       ├── smoke_questdb_ilp.py              # Скрипт Python з функціональною логікою
+│   │       ├── smoke_zmq_hub_to_bot.py           # Скрипт Python з функціональною логікою
+│   │       ├── spool_status.py                   # Скрипт Python з функціональною логікою
+│   │       └── tsdb/                             # Директорія з компонентами модуля
+│   │           ├── export_parquet.py             # Скрипт Python з функціональною логікою
+│   │           └── purge_partitions.py           # Скрипт Python з функціональною логікою
+│   └── quantum_edge_ml/                          # Компоненти машинного навчання та LLM інференсу
+│       ├── inference_engine/                     # Двигун для виконання ML моделей
+│       │   ├── configs/                          # Директорія з компонентами модуля
+│       │   │   ├── calib_prompts.jsonl           # Файл проекту
+│       │   │   └── engine_defaults.env           # Файл проекту
+│       │   ├── reports/                          # Директорія з компонентами модуля
+│       │   └── scripts/                          # Скрипти для запуску та обслуговування системи
+│       │       ├── bench.sh                      # Скрипт автоматизації для командної оболонки Bash
+│       │       ├── build_engine.sh               # Скрипт автоматизації для командної оболонки Bash
+│       │       ├── collect_versions.sh           # Скрипт автоматизації для командної оболонки Bash
+│       │       ├── download_model.sh             # Скрипт автоматизації для командної оболонки Bash
+│       │       ├── env_check.sh                  # Скрипт автоматизації для командної оболонки Bash
+│       │       ├── prepare_calib.py              # Скрипт Python з функціональною логікою
+│       │       ├── quantize_awq.sh               # Скрипт автоматизації для командної оболонки Bash
+│       │       ├── serve.sh                      # Скрипт автоматизації для командної оболонки Bash
+│       │       ├── smoke_local.py                # Скрипт Python з функціональною логікою
+│       │       └── trtllm_flags.py               # Скрипт Python з функціональною логікою
+│       └── model_router/                         # Роутер для управління запитами до LLM
+│           ├── __init__.py                       # Файл ініціалізації пакету Python
+│           ├── api/                              # Директорія з компонентами модуля
+│           │   ├── __init__.py                   # Файл ініціалізації пакету Python
+│           │   └── app.py                        # Скрипт Python з функціональною логікою
+│           ├── audit/                            # Директорія з компонентами модуля
+│           │   ├── __init__.py                   # Файл ініціалізації пакету Python
+│           │   ├── events.py                     # Скрипт Python з функціональною логікою
+│           │   └── questdb_ilp.py                # Скрипт Python з функціональною логікою
+│           ├── backends/                         # Директорія з компонентами модуля
+│           │   ├── __init__.py                   # Файл ініціалізації пакету Python
+│           │   ├── base.py                       # Скрипт Python з функціональною логікою
+│           │   ├── google_gemini.py              # Скрипт Python з функціональною логікою
+│           │   ├── openai_chat.py                # Скрипт Python з функціональною логікою
+│           │   ├── openai_responses.py           # Скрипт Python з функціональною логікою
+│           │   ├── trtllm_local.py               # Скрипт Python з функціональною логікою
+│           │   └── trtllm_openai_compat.py       # Скрипт Python з функціональною логікою
+│           ├── cli.py                            # Скрипт Python з функціональною логікою
+│           ├── context/                          # Директорія з компонентами модуля
+│           │   ├── __init__.py                   # Файл ініціалізації пакету Python
+│           │   ├── cache.py                      # Скрипт Python з функціональною логікою
+│           │   ├── fetcher.py                    # Скрипт Python з функціональною логікою
+│           │   ├── formatter.py                  # Скрипт Python з функціональною логікою
+│           │   ├── models.py                     # Визначення моделей даних та структур (Data Models)
+│           │   └── sql_templates.py              # Скрипт Python з функціональною логікою
+│           ├── contracts/                        # Директорія з компонентами модуля
+│           │   ├── __init__.py                   # Файл ініціалізації пакету Python
+│           │   └── decision_v1.py                # Скрипт Python з функціональною логікою
+│           ├── decoding/                         # Директорія з компонентами модуля
+│           │   ├── __init__.py                   # Файл ініціалізації пакету Python
+│           │   ├── enforce.py                    # Скрипт Python з функціональною логікою
+│           │   └── repair_prompts.py             # Скрипт Python з функціональною логікою
+│           ├── router/                           # Директорія з компонентами модуля
+│           │   ├── __init__.py                   # Файл ініціалізації пакету Python
+│           │   ├── budgets.py                    # Скрипт Python з функціональною логікою
+│           │   ├── cache.py                      # Скрипт Python з функціональною логікою
+│           │   ├── circuit.py                    # Скрипт Python з функціональною логікою
+│           │   ├── distill.py                    # Скрипт Python з функціональною логікою
+│           │   ├── policy.py                     # Скрипт Python з функціональною логікою
+│           │   ├── redaction.py                  # Скрипт Python з функціональною логікою
+│           │   └── router.py                     # Скрипт Python з функціональною логікою
+│           └── tests/                            # Набір системних та юніт-тестів
+│               ├── conftest.py                   # Скрипт Python з функціональною логікою
+│               ├── test_api_context_audit.py     # Автоматизований тест для api_context_audit
+│               ├── test_audit_fallback.py        # Автоматизований тест для audit_fallback
+│               ├── test_backend_interface.py     # Автоматизований тест для backend_interface
+│               ├── test_budget_enforcement.py    # Автоматизований тест для budget_enforcement
+│               ├── test_cache_determinism.py     # Автоматизований тест для cache_determinism
+│               ├── test_circuit_breaker.py       # Автоматизований тест для circuit_breaker
+│               ├── test_cli_routed.py            # Автоматизований тест для cli_routed
+│               ├── test_context_pack.py          # Автоматизований тест для context_pack
+│               ├── test_contract_decision_v1.py  # Автоматизований тест для contract_decision_v1
+│               ├── test_distill_writer.py        # Автоматизований тест для distill_writer
+│               ├── test_enforce_validation.py    # Автоматизований тест для enforce_validation
+│               ├── test_gemini_integration.py    # Автоматизований тест для gemini_integration
+│               ├── test_openai_payloads.py       # Автоматизований тест для openai_payloads
+│               ├── test_repair_loop.py           # Автоматизований тест для repair_loop
+│               ├── test_router_flow.py           # Автоматизований тест для router_flow
+│               └── test_router_policy.py         # Автоматизований тест для router_policy
+├── tests/                                        # Набір системних та юніт-тестів
+│   ├── conftest.py                               # Скрипт Python з функціональною логікою
+│   ├── fixtures/                                 # Директорія з компонентами модуля
+│   │   ├── account_rest/                         # Директорія з компонентами модуля
+│   │   │   ├── premium_index.json                # Файл даних або конфігурації JSON
+│   │   │   ├── spot_account.json                 # Файл даних або конфігурації JSON
+│   │   │   ├── spot_open_orders.json             # Файл даних або конфігурації JSON
+│   │   │   ├── ticker_price.json                 # Файл даних або конфігурації JSON
+│   │   │   ├── usdm_account.json                 # Файл даних або конфігурації JSON
+│   │   │   ├── usdm_open_orders.json             # Файл даних або конфігурації JSON
+│   │   │   └── usdm_position_risk.json           # Файл даних або конфігурації JSON
+│   │   └── account_ws/                           # Директорія з компонентами модуля
+│   │       ├── spot_execution_report_filled.json # Файл даних або конфігурації JSON
+│   │       ├── spot_execution_report_new.json    # Файл даних або конфігурації JSON
+│   │       ├── spot_outbound_position.json       # Файл даних або конфігурації JSON
+│   │       ├── usdm_account_update.json          # Файл даних або конфігурації JSON
+│   │       ├── usdm_order_trade_update_filled.json # Файл даних або конфігурації JSON
+│   │       └── usdm_order_trade_update_new.json  # Файл даних або конфігурації JSON
+│   ├── sanity_check.py                           # Скрипт Python з функціональною логікою
+│   ├── test_account_rest_snapshot.py             # Автоматизований тест для account_rest_snapshot
+│   ├── test_account_state.py                     # Автоматизований тест для account_state
+│   ├── test_adaptive_sizing.py                   # Автоматизований тест для adaptive_sizing
+│   ├── test_api_integration.py                   # Автоматизований тест для api_integration
+│   ├── test_backtest.py                          # Автоматизований тест для backtest
+│   ├── test_bot_hub_source.py                    # Автоматизований тест для bot_hub_source
+│   ├── test_context_builder.py                   # Автоматизований тест для context_builder
+│   ├── test_control_center.py                    # Автоматизований тест для control_center
+│   ├── test_deal_events.py                       # Автоматизований тест для deal_events
+│   ├── test_encryption.py                        # Автоматизований тест для encryption
+│   ├── test_failsafe.py                          # Автоматизований тест для failsafe
+│   ├── test_gate_runner.py                       # Автоматизований тест для gate_runner
+│   ├── test_heatmap.py                           # Автоматизований тест для heatmap
+│   ├── test_l2_spooler.py                        # Автоматизований тест для l2_spooler
+│   ├── test_llm_engine_scripts.py                # Автоматизований тест для llm_engine_scripts
+│   ├── test_lockbot_btc.py                       # Автоматизований тест для lockbot_btc
+│   ├── test_lockbot_control_client.py            # Автоматизований тест для lockbot_control_client
+│   ├── test_lockbot_ddn_engine.py                # Автоматизований тест для lockbot_ddn_engine
+│   ├── test_lockbot_ddn_state.py                 # Автоматизований тест для lockbot_ddn_state
+│   ├── test_lockbot_execution_manager.py         # Автоматизований тест для lockbot_execution_manager
+│   ├── test_lockbot_integration.py               # Автоматизований тест для lockbot_integration
+│   ├── test_lockbot_md.py                        # Автоматизований тест для lockbot_md
+│   ├── test_lockbot_policy_integration.py        # Автоматизований тест для lockbot_policy_integration
+│   ├── test_lockbot_policy_regime.py             # Автоматизований тест для lockbot_policy_regime
+│   ├── test_lockbot_policy_runner.py             # Автоматизований тест для lockbot_policy_runner
+│   ├── test_lockbot_policy_strategy_range.py     # Автоматизований тест для lockbot_policy_strategy_range
+│   ├── test_lockbot_policy_strategy_trend.py     # Автоматизований тест для lockbot_policy_strategy_trend
+│   ├── test_lockbot_replay_determinism.py        # Автоматизований тест для lockbot_replay_determinism
+│   ├── test_lockbot_replay_safety.py             # Автоматизований тест для lockbot_replay_safety
+│   ├── test_lockbot_replay_smoke.py              # Автоматизований тест для lockbot_replay_smoke
+│   ├── test_marketdatahub.py                     # Автоматизований тест для marketdatahub
+│   ├── test_meta_agent_hardening.py              # Автоматизований тест для meta_agent_hardening
+│   ├── test_microstructure_integration.py        # Автоматизований тест для microstructure_integration
+│   ├── test_microstructure_ofi.py                # Автоматизований тест для microstructure_ofi
+│   ├── test_mlops_manifest.py                    # Автоматизований тест для mlops_manifest
+│   ├── test_mlops_publish_reload.py              # Автоматизований тест для mlops_publish_reload
+│   ├── test_monitoring.py                        # Автоматизований тест для monitoring
+│   ├── test_ops_cli.py                           # Автоматизований тест для ops_cli
+│   ├── test_orderbook.py                         # Автоматизований тест для orderbook
+│   ├── test_policy_engine.py                     # Автоматизований тест для policy_engine
+│   ├── test_policy_integration.py                # Автоматизований тест для policy_integration
+│   ├── test_qe_config.py                         # Автоматизований тест для qe_config
+│   ├── test_qe_config_loader.py                  # Автоматизований тест для qe_config_loader
+│   ├── test_qe_paths.py                          # Автоматизований тест для qe_paths
+│   ├── test_quest_writer.py                      # Автоматизований тест для quest_writer
+│   ├── test_replay_spool.py                      # Автоматизований тест для replay_spool
+│   ├── test_research_suite.py                    # Автоматизований тест для research_suite
+│   ├── test_scheduler.py                         # Автоматизований тест для scheduler
+│   ├── test_smart_executor.py                    # Автоматизований тест для smart_executor
+│   ├── test_spot_scalper.py                      # Автоматизований тест для spot_scalper
+│   ├── test_task_contract_and_run.py             # Автоматизований тест для task_contract_and_run
+│   └── verify_liquidation_flow.py                # Скрипт Python з функціональною логікою
+├── tools/                                        # Директорія з компонентами модуля
+│   ├── generate_full_context.py                  # Скрипт Python з функціональною логікою
+│   └── migrate_to_src.py                         # Скрипт Python з функціональною логікою
+└── ui/                                           # Веб-інтерфейс управління системою
+    ├── app.js                                    # Файл проекту
+    ├── index.html                                # Файл проекту
+    └── styles.css                                # Файл проекту

@@ -700,7 +700,7 @@ def load_llm_supervisor_config(path: Path) -> LlmSupervisorConfig:
         max_multiplier=max_mul,
     )
 
-    cb = llm_section.get("circuit_breaker", {}) or {}
+    cb = raw.get("circuit_breaker", {}) or {}
     circuit_breaker = CircuitBreakerConfig(
         failures=int(cb.get("failures", 3)),
         window_sec=int(cb.get("window_sec", 300)),

@@ -26,3 +26,6 @@ QuantumEdge is a high-frequency trading system running on the Google Antigravity
 
 ## 7. DOCUMENTATION MAINTENANCE RULE
 Strict Rule: Any code modification, module refactoring, or architectural change MUST be accompanied by an update to the corresponding documentation. If a module changes, its specific documentation in `docs/Documentation` must be revised. The `FULL_SYSTEM_CONTEXT` file must be kept in sync with the file structure.
+
+## 8. GIT WORKFLOW
+Strict Rule: Once any refactoring or task is complete, you MUST commit the changes to git with a descriptive message (e.g., 'Refactor docs structure') and push to origin main.

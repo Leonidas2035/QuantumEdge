@@ -1,12 +1,10 @@
 projects:
   - id: "meta_agent"
-    root: "."
+    root: "src/quantum_edge_infra/automation/meta_agent"
     label: "Meta-Agent"
     default_include_globs:
       - "**/*.py"
       - "**/*.md"
-      - "docs/**/*.md"
-      - "examples/**/*.yaml"
     deny_globs:
       - "**/.git/**"
       - "**/venv/**"
@@ -15,9 +13,9 @@ projects:
       - "**/artifacts/**"
       - "**/*.env"
       - "**/secrets*"
-  - id: "quantumedge"
-    root: "quantumedge"
-    label: "QuantumEdge (placeholder)"
+  - id: "supervisor_agent"
+    root: "src/quantum_edge_core/supervisor"
+    label: "Supervisor Agent"
     default_include_globs:
       - "**/*.py"
       - "**/*.md"
@@ -29,3 +27,15 @@ projects:
       - "**/artifacts/**"
       - "**/*.env"
       - "**/secrets*"
+  - id: "quantumedge_core"
+    root: "src/quantum_edge_core"
+    label: "QuantumEdge Core"
+    default_include_globs:
+      - "**/*.py"
+      - "**/*.md"
+  - id: "quantumedge_infra"
+    root: "src/quantum_edge_infra"
+    label: "QuantumEdge Infra"
+  - id: "quantumedge_ml"
+    root: "src/quantum_edge_ml"
+    label: "QuantumEdge ML"

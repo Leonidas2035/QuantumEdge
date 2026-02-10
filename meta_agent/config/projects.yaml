@@ -1,0 +1,8 @@
+default: meta_agent
+projects:
+- id: meta_agent
+  root: src/quantum_edge_infra/automation/meta_agent
+  label: Meta-Agent
+- id: supervisor_agent
+  root: src/quantum_edge_core/supervisor
+  label: Supervisor Agent
