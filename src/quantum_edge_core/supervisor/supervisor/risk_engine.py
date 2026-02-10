@@ -13,6 +13,29 @@ class RiskAction(str, Enum):
     KILL_BOT = "KILL_BOT"  # Hard stop
 
 
+class OrderSide(str, Enum):
+    BUY = "BUY"
+    SELL = "SELL"
+
+
+class OrderType(str, Enum):
+    MARKET = "MARKET"
+    LIMIT = "LIMIT"
+    LIMIT_MAKER = "LIMIT_MAKER"
+
+
+@dataclass
+class OrderRequest:
+    symbol: str
+    side: OrderSide
+    order_type: OrderType
+    quantity: float
+    price: Optional[float] = None
+    notional: Optional[float] = None
+    leverage: Optional[float] = None
+    is_reduce_only: bool = False
+
+
 @dataclass
 class RiskLimits:
     max_daily_loss: Optional[float] = None

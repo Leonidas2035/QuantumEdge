@@ -9,7 +9,7 @@ jobs:
   lint-test:
     runs-on: ubuntu-latest
     env:
-      PYTHONPATH: src:src/quantum_edge_core:src/quantum_edge_infra:src/quantum_edge_ml:.
+      PYTHONPATH: src:src/quantum_edge_core:src/quantum_edge_infra:src/quantum_edge_ml:src/quantum_edge_core/ai_scalper_bot:src/quantum_edge_core/supervisor:.
     strategy:
       matrix:
         python-version: ["3.11"]

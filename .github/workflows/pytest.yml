@@ -9,7 +9,7 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     env:
-      PYTHONPATH: src:src/quantum_edge_core:src/quantum_edge_infra:src/quantum_edge_ml:.
+      PYTHONPATH: src:src/quantum_edge_core:src/quantum_edge_infra:src/quantum_edge_ml:src/quantum_edge_core/ai_scalper_bot:src/quantum_edge_core/supervisor:.
     steps:
       - uses: actions/checkout@v4
       - name: Set up Python
@@ -19,6 +19,7 @@ jobs:
       - name: Install dependencies
         run: |
           python -m pip install --upgrade pip
+          python -m pip install -r requirements/requirements.txt
           python -m pip install -r requirements/requirements-dev.txt
       - name: Ruff
         run: |
@@ -27,7 +28,7 @@ jobs:
   pytest:
     runs-on: ubuntu-latest
     env:
-      PYTHONPATH: src:src/quantum_edge_core:src/quantum_edge_infra:src/quantum_edge_ml:.
+      PYTHONPATH: src:src/quantum_edge_core:src/quantum_edge_infra:src/quantum_edge_ml:src/quantum_edge_core/ai_scalper_bot:src/quantum_edge_core/supervisor:.
     steps:
       - uses: actions/checkout@v4
       - name: Set up Python
@@ -49,7 +50,7 @@ jobs:
   smoke:
     runs-on: ubuntu-latest
     env:
-      PYTHONPATH: src:src/quantum_edge_core:src/quantum_edge_infra:src/quantum_edge_ml:.
+      PYTHONPATH: src:src/quantum_edge_core:src/quantum_edge_infra:src/quantum_edge_ml:src/quantum_edge_core/ai_scalper_bot:src/quantum_edge_core/supervisor:.
     steps:
       - uses: actions/checkout@v4
       - name: Set up Python
@@ -59,6 +60,7 @@ jobs:
       - name: Install package
         run: |
           python -m pip install --upgrade pip
+          python -m pip install -r requirements/requirements.txt
           python -m pip install -e .
       - name: Smoke E2E
         run: |
