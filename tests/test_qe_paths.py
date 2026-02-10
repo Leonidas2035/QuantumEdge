@@ -11,7 +11,7 @@ def test_find_repo_root_from_any_cwd(tmp_path: Path):
         root = find_repo_root()
     finally:
         os.chdir(cwd)
-    assert (root / "QuantumEdge.py").exists()
+    assert (root / "scripts" / "run_orchestrator.py").exists()
 
 
 def test_get_paths_contains_artifacts():
