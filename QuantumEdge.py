@@ -80,17 +80,20 @@ class ProcessManager:
         env = os.environ.copy()
         python_path = env.get("PYTHONPATH", "")
         src_path = Path(project_root) / "src"
+        core_path = src_path / "quantum_edge_core"
         extra_paths = [
             project_root,
             str(src_path),
-            str(src_path / "quantum_edge_core"),
+            str(core_path),
             str(src_path / "quantum_edge_infra"),
             str(src_path / "quantum_edge_ml"),
+            str(core_path / "ai_scalper_bot"),
+            str(core_path / "supervisor"),
         ]
 
-        new_python_path = ":".join(extra_paths)
+        new_python_path = os.pathsep.join(extra_paths)
         if python_path:
-            new_python_path = f"{new_python_path}:{python_path}"
+            new_python_path = f"{new_python_path}{os.pathsep}{python_path}"
         env["PYTHONPATH"] = new_python_path
 
         # Based on instructions: All Python modules must be launched from project root.
