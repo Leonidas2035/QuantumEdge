@@ -8,7 +8,8 @@ def test_qe_paths_defaults():
     assert "qe_root" in paths
     assert "config_dir" in paths
     assert Path(paths["config_dir"]).name == "config"
-    assert Path(paths["config_dir"]).parent == Path(paths["qe_root"])
+    # In src-layout, config is deeper
+    assert Path(paths["qe_root"]) in Path(paths["config_dir"]).parents
 
 
 def test_qe_config_supervisor_defaults():

@@ -2,7 +2,6 @@ import os
 import runpy
 import sys
 
-
 def main() -> int:
     base = os.path.abspath(os.path.dirname(__file__))
 
@@ -11,14 +10,14 @@ def main() -> int:
     if src_path not in sys.path:
         sys.path.insert(0, src_path)
 
-    # Add module roots as well for convenience and compatibility
+    # Add module roots for convenience
     sys.path.append(os.path.join(src_path, "quantum_edge_core"))
     sys.path.append(os.path.join(src_path, "quantum_edge_infra"))
     sys.path.append(os.path.join(src_path, "quantum_edge_ml"))
 
-    target = os.path.join(src_path, "quantum_edge_infra", "automation", "meta_agent", "meta_agent.py")
+    target = os.path.join(src_path, "quantum_edge_infra", "tools", "qe_cli.py")
     if not os.path.exists(target):
-        print(f"[ERROR] meta_agent entrypoint not found: {target}")
+        print(f"[ERROR] qe_cli entrypoint not found: {target}")
         return 1
 
     # Also add the target's directory to path so it can find its siblings
@@ -26,7 +25,6 @@ def main() -> int:
 
     runpy.run_path(target, run_name="__main__")
     return 0
-
 
 if __name__ == "__main__":
     sys.exit(main())

@@ -11,7 +11,9 @@ def test_find_repo_root_from_any_cwd(tmp_path: Path):
         root = find_repo_root()
     finally:
         os.chdir(cwd)
-    assert (root / "QuantumEdge.py").exists()
+    # Check for a reliable marker of the repo root
+    assert (root / "README.md").exists()
+    assert (root / "src" / "quantum_edge_core").exists()
 
 
 def test_get_paths_contains_artifacts():
