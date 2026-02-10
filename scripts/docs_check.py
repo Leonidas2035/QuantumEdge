@@ -30,11 +30,7 @@ SUBCOMMANDS = [
 
 
 def check_docs_exist() -> list[str]:
-    missing = []
-    for path in DOC_PATHS:
-        if not os.path.exists(path):
-            missing.append(path)
-    return missing
+    return [path for path in DOC_PATHS if not os.path.exists(path)]
 
 
 def check_subcommands() -> list[str]:

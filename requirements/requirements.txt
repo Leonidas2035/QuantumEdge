@@ -3,6 +3,7 @@
 
 # Infrastructure & Utilities
 PyYAML>=6.0
+structlog>=24.1.0
 requests
 python-dotenv
 cryptography>=46.0.0

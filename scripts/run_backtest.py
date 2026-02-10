@@ -6,7 +6,7 @@ Usage: python scripts/run_backtest.py --symbol BTCUSDT --days 7
 
 import argparse
 import logging
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import sys
 import os
 
@@ -43,11 +43,16 @@ def main():
 
     # Time Range
     if args.start:
-        start_time = datetime.strptime(args.start, "%Y-%m-%d")
+        start_time = datetime.strptime(args.start, "%Y-%m-%d").replace(
+            tzinfo=timezone.utc
+        )
     else:
-        start_time = datetime.utcnow() - timedelta(days=args.days)
+        start_time = datetime.now(timezone.utc) - timedelta(days=args.days)
 
-    end_time = datetime.strptime(args.end, "%Y-%m-%d") if args.end else datetime.utcnow()
+    if args.end:
+        end_time = datetime.strptime(args.end, "%Y-%m-%d").replace(tzinfo=timezone.utc)
+    else:
+        end_time = datetime.now(timezone.utc)
 
     logger.info(f"Backtesting {args.symbol} from {start_time} to {end_time}")
 
