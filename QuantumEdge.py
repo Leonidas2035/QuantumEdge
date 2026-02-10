@@ -1,0 +1,219 @@
+#!/usr/bin/env python3
+import sys
+import os
+import subprocess
+import yaml
+import logging
+import logging.config
+import argparse
+import time
+import signal
+from pathlib import Path
+
+class ProcessManager:
+    def __init__(self, config_path, logging_config_path):
+        self.config_path = Path(config_path)
+        self.logging_config_path = Path(logging_config_path)
+        self.runtime_dir = Path("runtime")
+        self.runtime_dir.mkdir(exist_ok=True)
+        self.logs_dir = Path("logs")
+        self.logs_dir.mkdir(exist_ok=True)
+
+        self.config = self._load_yaml(self.config_path)
+        self._setup_logging(self.logging_config_path)
+        self.logger = logging.getLogger("QuantumEdge")
+
+    def _load_yaml(self, path):
+        if not path.exists():
+            print(f"Error: Configuration file {path} not found.")
+            sys.exit(1)
+        with open(path, 'r') as f:
+            return yaml.safe_load(f)
+
+    def _setup_logging(self, path):
+        if path.exists():
+            with open(path, 'r') as f:
+                config = yaml.safe_load(f)
+                logging.config.dictConfig(config)
+        else:
+            logging.basicConfig(
+                level=logging.INFO,
+                format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+            )
+
+    def _get_pid_path(self, name):
+        return self.runtime_dir / f"{name}.pid"
+
+    def _get_log_path(self, name):
+        return self.logs_dir / f"{name}.log"
+
+    def _is_running(self, pid):
+        if pid <= 0:
+            return False
+        try:
+            os.kill(pid, 0)
+        except ProcessLookupError:
+            return False
+        except PermissionError:
+            return True
+        return True
+
+    def start_service(self, name, script_path):
+        pid_path = self._get_pid_path(name)
+        if pid_path.exists():
+            try:
+                pid = int(pid_path.read_text().strip())
+                if self._is_running(pid):
+                    self.logger.info(f"Service '{name}' is already running (PID: {pid})")
+                    return
+            except ValueError:
+                pass
+            pid_path.unlink()
+
+        log_path = self._get_log_path(name)
+        self.logger.info(f"Starting service '{name}' using {script_path}...")
+
+        # Ensure we use absolute path for the script and set PYTHONPATH
+        abs_script_path = str(Path(script_path).absolute())
+        project_root = str(Path(__file__).parent.absolute())
+
+        env = os.environ.copy()
+        python_path = env.get("PYTHONPATH", "")
+        src_path = str(Path(project_root) / "src")
+        extra_paths = [project_root, src_path]
+
+        new_python_path = ":".join(extra_paths)
+        if python_path:
+            new_python_path = f"{new_python_path}:{python_path}"
+        env["PYTHONPATH"] = new_python_path
+
+        # Based on instructions: All Python modules must be launched from project root.
+        # We use absolute paths to avoid sys.path issues.
+        try:
+            with open(log_path, "a") as log_file:
+                proc = subprocess.Popen(
+                    [sys.executable, abs_script_path],
+                    stdout=log_file,
+                    stderr=log_file,
+                    cwd=project_root,
+                    env=env,
+                    start_new_session=True
+                )
+                pid_path.write_text(str(proc.pid))
+                self.logger.info(f"Service '{name}' started with PID: {proc.pid}")
+        except Exception as e:
+            self.logger.error(f"Failed to start service '{name}': {e}")
+
+    def stop_service(self, name):
+        pid_path = self._get_pid_path(name)
+        if not pid_path.exists():
+            self.logger.info(f"Service '{name}' is not running (no PID file).")
+            return
+
+        try:
+            pid = int(pid_path.read_text().strip())
+        except ValueError:
+            self.logger.warning(f"Invalid PID file for '{name}'. Removing.")
+            pid_path.unlink()
+            return
+
+        if self._is_running(pid):
+            self.logger.info(f"Stopping service '{name}' (PID: {pid})...")
+            try:
+                os.kill(pid, signal.SIGTERM)
+                # Grace period
+                for _ in range(20):
+                    if not self._is_running(pid):
+                        break
+                    time.sleep(0.5)
+
+                if self._is_running(pid):
+                    self.logger.warning(
+                        f"Service '{name}' (PID: {pid}) did not terminate, killing..."
+                    )
+                    os.kill(pid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+        else:
+            self.logger.info(f"Service '{name}' (PID: {pid}) is already stopped.")
+
+        if pid_path.exists():
+            pid_path.unlink()
+        self.logger.info(f"Service '{name}' stopped.")
+
+    def status(self):
+        print(f"\n{'Service':<20} | {'Status':<10} | {'PID':<10}")
+        print("-" * 45)
+        services = {
+            "supervisor": self.config.get("supervisor_path"),
+            "hub": self.config.get("hub_path"),
+            "bot": self.config.get("bot_path")
+        }
+        for name, script_path in services.items():
+            if not script_path:
+                print(f"{name:<20} | NOT CONFIG | -")
+                continue
+            pid_path = self._get_pid_path(name)
+            status = "STOPPED"
+            pid_str = "-"
+            if pid_path.exists():
+                try:
+                    pid = int(pid_path.read_text().strip())
+                    if self._is_running(pid):
+                        status = "RUNNING"
+                        pid_str = str(pid)
+                    else:
+                        pid_path.unlink()
+                except ValueError:
+                    pid_path.unlink()
+            print(f"{name:<20} | {status:<10} | {pid_str:<10}")
+        print()
+
+    def start_all(self):
+        self.start_service("supervisor", self.config.get("supervisor_path"))
+        self.start_service("hub", self.config.get("hub_path"))
+        self.start_service("bot", self.config.get("bot_path"))
+
+    def stop_all(self):
+        # Stop in reverse order
+        self.stop_service("bot")
+        self.stop_service("hub")
+        self.stop_service("supervisor")
+
+def main():
+    parser = argparse.ArgumentParser(description="QuantumEdge Orchestrator")
+    parser.add_argument(
+        "command",
+        choices=["start", "stop", "status", "restart"],
+        help="Action to perform"
+    )
+    parser.add_argument(
+        "--config",
+        default="config/system_config.yaml",
+        help="Path to system config"
+    )
+    parser.add_argument(
+        "--logging",
+        default="config/logging.yaml",
+        help="Path to logging config"
+    )
+
+    args = parser.parse_args()
+
+    pm = ProcessManager(args.config, args.logging)
+
+    if args.command == "start":
+        pm.start_all()
+    elif args.command == "stop":
+        pm.stop_all()
+    elif args.command == "status":
+        pm.status()
+    elif args.command == "restart":
+        pm.stop_all()
+        time.sleep(2)
+        pm.start_all()
+
+if __name__ == "__main__":
+    import contextlib
+    with contextlib.suppress(KeyboardInterrupt):
+        main()
