@@ -38,7 +38,9 @@ def dashboard_auth_token() -> Optional[str]:
     return os.getenv("DASHBOARD_TOKEN")
 
 
-def validate_kill_switch_challenge(challenge: Optional[Dict[str, Any]], challenge_id: str, now: float) -> Optional[str]:
+def validate_kill_switch_challenge(
+    challenge: Optional[Dict[str, Any]], challenge_id: str, now: float
+) -> Optional[str]:
     if not challenge or challenge.get("challenge_id") != challenge_id:
         return "challenge_mismatch"
     expires_at = challenge.get("expires_at", 0)

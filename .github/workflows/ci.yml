@@ -24,16 +24,19 @@ jobs:
           python -m pip install -r requirements/requirements-dev.txt
       - name: Lint (ruff)
         run: |
-          python -m ruff check tools quantumedge SupervisorAgent/supervisor/alerts SupervisorAgent/supervisor/security.py
+          python -m ruff check --ignore E501 tools scripts src/quantum_edge_core/supervisor/supervisor/alerts src/quantum_edge_core/supervisor/supervisor/security.py
       - name: Format (black)
         run: |
-          python -m black --check tools quantumedge SupervisorAgent/supervisor/alerts SupervisorAgent/supervisor/security.py
+          python -m black --check tools scripts src/quantum_edge_core/supervisor/supervisor/alerts src/quantum_edge_core/supervisor/supervisor/security.py
       - name: Unit tests
         run: |
+          export PYTHONPATH=$PYTHONPATH:$(pwd)/src:$(pwd)/src/quantum_edge_core:$(pwd)/src/quantum_edge_infra:$(pwd)/src/quantum_edge_ml
           python -m pytest -q
       - name: Offline smoke (research backtest)
         run: |
-          python supervisor.py research backtest --data_file tests/data/ticks_small.csv --limit_rows 200 --no_equity_curve --no_trades
+          export PYTHONPATH=$PYTHONPATH:$(pwd)/src:$(pwd)/src/quantum_edge_core:$(pwd)/src/quantum_edge_infra:$(pwd)/src/quantum_edge_ml
+          python src/quantum_edge_core/supervisor/supervisor.py research backtest --data_file tests/data/ticks_small.csv --limit_rows 200 --no_equity_curve --no_trades
       - name: TSDB benchmark (noop)
         run: |
-          python tools/load/run_ingestion_benchmark.py --duration-sec 5 --writer-mode noop --trades-per-sec 5 --l1-per-sec 5 --no-spool
+          export PYTHONPATH=$PYTHONPATH:$(pwd)/src:$(pwd)/src/quantum_edge_core:$(pwd)/src/quantum_edge_infra:$(pwd)/src/quantum_edge_ml
+          python src/quantum_edge_infra/tools/load/run_ingestion_benchmark.py --duration-sec 5 --writer-mode noop --trades-per-sec 5 --l1-per-sec 5 --no-spool
