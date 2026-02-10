@@ -254,7 +254,7 @@ def run_replay(
                     pending.append((rel, idx))
                     total_lines += 1
                 now = time.time()
-                if len(batch) >= batch_rows or (now - last_flush) * 1000 >= flush_interval_ms:
+                if (len(batch) >= batch_rows or (now - last_flush) * 1000 >= flush_interval_ms) and batch:
                     if client.send(batch):
                         for file_checkpoint, file_line in pending:
                             state.update(file_checkpoint, file_line)
@@ -266,13 +266,12 @@ def run_replay(
                         logging.warning("Retrying batch after failure")
                         time.sleep(1)
         files_processed += 1
-    if batch:
-        if client.send(batch):
-            for file_checkpoint, file_line in pending:
-                state.update(file_checkpoint, file_line)
-            state.persist()
-            pending.clear()
-            batch.clear()
+    if batch and client.send(batch):
+        for file_checkpoint, file_line in pending:
+            state.update(file_checkpoint, file_line)
+        state.persist()
+        pending.clear()
+        batch.clear()
     if verify_http:
         _verify_http(quest_host, http_port)
     logging.info("Replay completed: %d files, %d lines", files_processed, total_lines)

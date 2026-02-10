@@ -46,15 +46,14 @@ def list_project_structure() -> str:
     Допомагає агенту зрозуміти, де лежать конфіги.
     """
     structure = []
-    for root, dirs, files in os.walk("."):
+    for root, _dirs, files in os.walk("."):
         if ".git" in root or "__pycache__" in root:
             continue
         level = root.replace(".", "").count(os.sep)
         indent = " " * 4 * (level)
         structure.append(f"{indent}{os.path.basename(root)}/")
         subindent = " " * 4 * (level + 1)
-        for f in files:
-            structure.append(f"{subindent}{f}")
+        structure.extend([f"{subindent}{f}" for f in files])
     return "\n".join(structure)
 
 @mcp.tool()

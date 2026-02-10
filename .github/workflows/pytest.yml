@@ -37,7 +37,7 @@ jobs:
           python -m pip install -r requirements/requirements-dev.txt
       - name: Run pytest
         run: |
-          export PYTHONPATH=$PYTHONPATH:$(pwd)/src/quantum_edge_core:$(pwd)/src/quantum_edge_infra:$(pwd)/src/quantum_edge_ml:$(pwd)/src/quantum_edge_infra/automation/meta_agent
+          export PYTHONPATH=$PYTHONPATH:$(pwd)/src:$(pwd)/src/quantum_edge_core:$(pwd)/src/quantum_edge_infra:$(pwd)/src/quantum_edge_ml:$(pwd)/src/quantum_edge_infra/automation/meta_agent:$(pwd)/src/quantum_edge_core/strategies/legacy
           python -m pytest -q
       - name: Docs check
         run: |
@@ -57,5 +57,5 @@ jobs:
           python -m pip install -e .
       - name: Smoke E2E
         run: |
-          export PYTHONPATH=$PYTHONPATH:$(pwd)/src/quantum_edge_core:$(pwd)/src/quantum_edge_infra:$(pwd)/src/quantum_edge_ml
+          export PYTHONPATH=$PYTHONPATH:$(pwd)/src:$(pwd)/src/quantum_edge_core:$(pwd)/src/quantum_edge_infra:$(pwd)/src/quantum_edge_ml
           python src/quantum_edge_infra/tools/smoke_e2e.py

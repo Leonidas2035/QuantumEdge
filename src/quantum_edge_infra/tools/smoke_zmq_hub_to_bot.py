@@ -13,7 +13,7 @@ from bot.market_data.hub_source import HubMarketDataSource
 
 
 async def _publish_events(publisher: ZmqPublisher, cache: SnapshotCache, symbols: Iterable[str]) -> None:
-    symbol = list(symbols)[0]
+    symbol = next(iter(symbols))
     event = L1Event(
         ts_ns=time.time_ns(),
         symbol=symbol,

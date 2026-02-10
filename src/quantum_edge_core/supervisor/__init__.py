@@ -1,2 +1,0 @@
-"""SupervisorAgent package root."""
-

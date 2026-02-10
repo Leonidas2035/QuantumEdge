@@ -15,7 +15,7 @@ def find_repo_root(start: Optional[Path] = None) -> Path:
     candidate = Path(start) if start else Path(__file__).resolve()
     if candidate.is_file():
         candidate = candidate.parent
-    for parent in [candidate] + list(candidate.parents):
+    for parent in [candidate, *candidate.parents]:
         if (parent / ".git").exists():
             return parent.resolve()
         if (parent / "scripts" / "run_orchestrator.py").exists():
@@ -55,7 +55,7 @@ def get_paths() -> Dict[str, Path]:
         "supervisor_dir": qe_root / "src" / "quantum_edge_core" / "supervisor",
         "meta_agent_dir": qe_root / "src" / "quantum_edge_infra" / "automation" / "meta_agent",
         "bot_config_dir": qe_root / "src" / "quantum_edge_core" / "config",
-        "supervisor_config_dir": qe_root / "src" / "quantum_edge_core" / "config",
+        "supervisor_config_dir": qe_root / "src" / "quantum_edge_core" / "supervisor" / "config_files",
         "meta_agent_config_dir": qe_root / "src" / "quantum_edge_core" / "config",
     }
 

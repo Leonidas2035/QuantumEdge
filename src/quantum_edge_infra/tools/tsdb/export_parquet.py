@@ -34,10 +34,10 @@ def _query_questdb(query_url: str, sql: str, timeout: float = 5.0) -> List[Dict[
 
 def _rows_from_questdb(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
     cols = [col.get("name") for col in payload.get("columns", [])]
-    rows = []
-    for row in payload.get("dataset", []) or []:
-        rows.append({cols[i]: row[i] if i < len(row) else None for i in range(len(cols))})
-    return rows
+    return [
+        {cols[i]: row[i] if i < len(row) else None for i in range(len(cols))}
+        for row in payload.get("dataset", []) or []
+    ]
 
 
 def _parse_dt(value: str) -> datetime:
@@ -51,10 +51,7 @@ def _parse_dt(value: str) -> datetime:
 def _iter_ranges(start: datetime, end: datetime, granularity: str) -> Iterable[tuple[datetime, datetime]]:
     cursor = start
     while cursor < end:
-        if granularity == "hour":
-            nxt = cursor + timedelta(hours=1)
-        else:
-            nxt = cursor + timedelta(days=1)
+        nxt = cursor + (timedelta(hours=1) if granularity == "hour" else timedelta(days=1))
         yield cursor, min(nxt, end)
         cursor = nxt
 

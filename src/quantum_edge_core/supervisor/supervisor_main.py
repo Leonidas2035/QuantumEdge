@@ -1961,15 +1961,15 @@ def main(argv: Optional[list[str]] = None) -> None:
     os.environ.setdefault("QE_ROOT", str(qe_root))
 
     config_dir = Path(os.getenv("QE_CONFIG_DIR") or (qe_paths["config_dir"] if qe_paths else qe_root / "config"))
-    supervisor_config_dir = Path(qe_paths["supervisor_config_dir"] if qe_paths else project_root / "config")
+    supervisor_config_dir = Path(qe_paths["supervisor_config_dir"] if qe_paths else project_root / "config_files")
     project_root = Path(qe_paths["supervisor_dir"] if qe_paths else project_root)
 
     if not supervisor_config_dir.exists():
-        supervisor_config_dir = project_root / "config"
+        supervisor_config_dir = project_root / "config_files"
 
     paths_config_path = config_dir / "paths.yaml"
     if not paths_config_path.exists():
-        paths_config_path = project_root / "config" / "paths.yaml"
+        paths_config_path = project_root / "config_files" / "paths.yaml"
 
     supervisor_config_path = Path(args.config_path) if args.config_path else Path(os.getenv("SUPERVISOR_CONFIG") or config_dir / "supervisor.yaml")
     if not supervisor_config_path.exists():

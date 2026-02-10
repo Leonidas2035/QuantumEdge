@@ -4,21 +4,21 @@ structlog
 openai
 msgspec
 pydantic
+pydantic-settings
 aiohttp
 python-dotenv
 asyncio
 pyzmq
 pandas
 numpy
-structlog
-ruff
-black
-pytest
-pytest-asyncio
 httpx
 fastapi
 uvicorn
 jinja2
 clickhouse-driver
 questdb
-	# note: using a specific version might be safer but for now just the names
+uvloop
+requests
+cryptography
+google-generativeai
+websockets

@@ -14,7 +14,8 @@ import shutil
 
 
 def _repo_root() -> Path:
-    return Path(__file__).resolve().parents[1]
+    # src/quantum_edge_infra/tools/smoke_e2e.py -> parents[3] is root
+    return Path(__file__).resolve().parents[3]
 
 
 def _run(cmd: list[str], env: dict, label: str, ok_codes: Optional[set[int]] = None) -> None:
@@ -102,6 +103,21 @@ def main() -> int:
         env["QE_ROOT"] = str(repo_root)
         env["META_AGENT_RUNTIME_DIR"] = str(runtime_dir)
         env["META_AGENT_MOCK_LLM_RESPONSE"] = ""
+
+        # Ensure PYTHONPATH is correctly set for subprocesses
+        pp = env.get("PYTHONPATH", "")
+        new_pp = [
+            str(repo_root),
+            str(repo_root / "src"),
+            str(repo_root / "src" / "quantum_edge_core"),
+            str(repo_root / "src" / "quantum_edge_infra"),
+            str(repo_root / "src" / "quantum_edge_ml"),
+            str(repo_root / "src" / "quantum_edge_infra" / "automation" / "meta_agent"),
+            str(repo_root / "src" / "quantum_edge_core" / "strategies" / "legacy"),
+        ]
+        if pp:
+            new_pp.append(pp)
+        env["PYTHONPATH"] = os.pathsep.join(new_pp)
 
         if shutil.which("meta-agent"):
             _run(["meta-agent", "version"], env, "meta-agent version")

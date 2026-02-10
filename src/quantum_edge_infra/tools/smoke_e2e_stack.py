@@ -50,7 +50,7 @@ def questdb_count(table: str) -> int:
     try:
         return int(data["query"]["results"][0]["count"])
     except Exception as exc:
-        raise RuntimeError(f"Failed to parse QuestDB response: {exc}")
+        raise RuntimeError(f"Failed to parse QuestDB response: {exc}") from exc
 
 
 async def _publish_l1_events(service: MarketDataHubService, symbol: str, count: int = 3) -> None:

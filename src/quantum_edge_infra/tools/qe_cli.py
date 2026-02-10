@@ -52,7 +52,7 @@ def _run_target(target: Path, extra_args: List[str], env_overrides: Optional[dic
     if not target.exists():
         print(f"[qe_cli] Missing target: {target}", file=sys.stderr)
         return 1
-    cmd = [sys.executable, str(target)] + extra_args
+    cmd = [sys.executable, str(target), *extra_args]
     return subprocess.call(cmd, env=_build_env(env_overrides), cwd=str(get_qe_paths()["qe_root"]))
 
 
@@ -184,8 +184,8 @@ def main() -> int:
         cfg_path = _resolve_path(getattr(args, "config_path", None), "config/supervisor.yaml")
         env_overrides = {"SUPERVISOR_CONFIG": str(cfg_path)}
         sup_args = extra or ["run-foreground"]
-        sup_args = ["--config", str(cfg_path)] + sup_args
-        return _run_target(paths["supervisor_dir"] / "supervisor.py", sup_args, env_overrides)
+        sup_args = ["--config", str(cfg_path), *sup_args]
+        return _run_target(paths["supervisor_dir"] / "supervisor_main.py", sup_args, env_overrides)
 
     if args.command == "bot":
         cfg_path = _resolve_path(getattr(args, "config_path", None), "config/bot.yaml")
@@ -195,7 +195,7 @@ def main() -> int:
     if args.command == "meta":
         cfg_path = _resolve_path(getattr(args, "config_path", None), "config/meta_agent.yaml")
         env_overrides = {"META_AGENT_CONFIG": str(cfg_path)}
-        meta_args = ["--config", str(cfg_path)] + extra
+        meta_args = ["--config", str(cfg_path), *extra]
         return _run_target(paths["meta_agent_dir"] / "meta_agent.py", meta_args, env_overrides)
 
     return 1
