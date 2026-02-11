@@ -98,7 +98,7 @@ runtime/
 
 ## Projects registry
 
-Projects for the Control Center are defined in `config/projects.yaml`.
+Projects for the Control Center are defined in `src/quantum_edge_core/config/projects.yaml`.
 Add a new entry under `projects` with `id`, `root`, `label`, and optional
 `default_include_globs` / `deny_globs`.
 

@@ -57,7 +57,7 @@ BINANCE_API_SECRET=REPLACE_ME
 Equivalent direct command:
 
 ```bash
-python SupervisorAgent/supervisor.py run-foreground --episode-set smoke --scenario-id S00
+python src/quantum_edge_core/supervisor/supervisor.py run-foreground --episode-set smoke --scenario-id S00
 ```
 
 ## Startup order and monitoring
@@ -111,7 +111,7 @@ Bot instances can load `/etc/quantumedge/bot@.env`:
 
 ```
 # Shared bot settings
-BOREAL_BOT_CONFIG=ai_scalper_bot/config/bot.yaml
+BOREAL_BOT_CONFIG=src/quantum_edge_core/ai_scalper_bot/config/bot.yaml
 ```
 
 Reload systemd and enable the full stack:
@@ -121,7 +121,7 @@ sudo systemctl daemon-reload
 sudo systemctl enable --now questdb marketdatahub supervisoragent quantumedge-bot@scalper quantumedge-l2-replay.timer
 ```
 
-The marketdatahub service writes `runtime/status/marketdatahub.json` every 10 seconds; read it with `python -m MarketDataHub.hub status` (or use `--json` for compact output) to verify endpoints, TSDB metrics, and L2 spool health.
+The marketdatahub service writes `runtime/status/marketdatahub.json` every 10 seconds; read it with `python -m quantum_edge_core.market_data.hub status` (or use `--json` for compact output) to verify endpoints, TSDB metrics, and L2 spool health.
 
 Use `python tools/spool_status.py` and `python tools/prune_spool.py` (when available) to keep the spool budget in check before bots resume trading.
 
@@ -138,7 +138,7 @@ Use `python tools/spool_status.py` and `python tools/prune_spool.py` (when avail
 Enable TSDB in `config/tsdb.yaml` and ensure QuestDB is running. Generate a JSON report:
 
 ```bash
-python SupervisorAgent/supervisor.py report --last 24h --bucket 5m
+python src/quantum_edge_core/supervisor/supervisor.py report --last 24h --bucket 5m
 ```
 
 Common queries live in `docs/tsdb_queries.md`.
@@ -174,7 +174,7 @@ Point the accompanying service at:
 python tools/replay_spool.py --spool-dir runtime/spool/l2 --quest-host 127.0.0.1 --ilp-port 9009
 ```
 
-- On shutdown, ensure the Hub/supervisor sequence gives `MarketDataHub/spool/l2_spooler.py` time to flush (the CLI `meta_agent.py diag` can be used to confirm a clean exit). If `tools/spool_status.py` reports a large backlog, replay before starting next batch of bots.
+- On shutdown, ensure the Hub/supervisor sequence gives `src/quantum_edge_core/market_data/spool/l2_spooler.py` time to flush (the CLI `meta_agent.py diag` can be used to confirm a clean exit). If `tools/spool_status.py` reports a large backlog, replay before starting next batch of bots.
 ## Smoke verification
 
 Run `tools/smoke_e2e_stack.py` after the stack is live to assert Hot Path messages flow, QuestDB receives rows, and the L2 replay plumbing can drain the spool:

@@ -34,7 +34,7 @@ Distillation:
 
 ## Distill format
 
-File: `supervisor_llm/runtime/distill/teacher_student_pairs.jsonl`
+File: `src/quantum_edge_ml/model_router/runtime/distill/teacher_student_pairs.jsonl`
 
 Each line:
 

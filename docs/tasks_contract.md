@@ -48,7 +48,7 @@ Optional fields:
 task_id: example_001
 created_at: 2026-01-02T22:30:00Z
 project_id: meta_agent
-project_root: meta_agent
+  project_root: src/quantum_edge_infra/automation/meta_agent
 objective: "Update task contract docs"
 instructions: |
   Add a short note explaining the contract lifecycle.

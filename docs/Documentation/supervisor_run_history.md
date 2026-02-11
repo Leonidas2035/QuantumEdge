@@ -3,7 +3,7 @@
 Each Supervisor run creates a durable run folder:
 
 ```
-SupervisorAgent/runtime/runs/<run_id>/
+src/quantum_edge_core/supervisor/runtime/runs/<run_id>/
   events.jsonl
   summary.json
   config_snapshot.json
@@ -42,16 +42,16 @@ SupervisorAgent/runtime/runs/<run_id>/
 
 ## Manual smoke check
 1) Run Supervisor in foreground for ~30s:
-   - `python SupervisorAgent/supervisor.py run-foreground --episode-set tick_scenarios_v1 --scenario-id S01`
+   - `python src/quantum_edge_core/supervisor/supervisor.py run-foreground --episode-set tick_scenarios_v1 --scenario-id S01`
 2) Verify a new folder in:
-   - `SupervisorAgent/runtime/runs/<run_id>/`
+   - `src/quantum_edge_core/supervisor/runtime/runs/<run_id>/`
 3) Confirm:
    - `events.jsonl` has RUN_START and RUN_END
    - `summary.json` exists
    - `config_snapshot.json` exists with secrets redacted
     - `artifacts.json` exists and lists files
 4) Check log rotation:
-   - `SupervisorAgent/runtime/logs/supervisor.log` (+ rotated files)
+   - `src/quantum_edge_core/supervisor/runtime/logs/supervisor.log` (+ rotated files)
 
 ## Trade result intake (optional)
 Send a trade outcome to the Supervisor API:
@@ -65,44 +65,44 @@ Body example:
 Offline episode tooling replays tick scenarios through the Supervisor decision core.
 
 Scenario library:
-- `SupervisorAgent/episodes/scenarios_v1.yaml`
+- `src/quantum_edge_core/supervisor/episodes/scenarios_v1.yaml`
 
 Commands:
 1) Cut episodes:
-   - `python SupervisorAgent/supervisor.py episodes-cut --episode-set smoke_v1 --ticks-path data/ticks --format jsonl`
+   - `python src/quantum_edge_core/supervisor/supervisor.py episodes-cut --episode-set smoke_v1 --ticks-path data/ticks --format jsonl`
    - If no tick file exists yet: add `--synthetic` to generate a tiny JSONL sample.
 2) Run episodes:
-   - `python SupervisorAgent/supervisor.py episodes-run --episode-set smoke_v1 --episodes-manifest SupervisorAgent/runtime/episodes/smoke_v1/episodes_manifest.json`
+   - `python src/quantum_edge_core/supervisor/supervisor.py episodes-run --episode-set smoke_v1 --episodes-manifest src/quantum_edge_core/supervisor/runtime/episodes/smoke_v1/episodes_manifest.json`
 3) Report:
-   - `python SupervisorAgent/supervisor.py episodes-report --episode-set smoke_v1`
+   - `python src/quantum_edge_core/supervisor/supervisor.py episodes-report --episode-set smoke_v1`
 
 Artifacts:
-- Episodes: `SupervisorAgent/runtime/episodes/<episode_set>/<scenario_id>/<episode_id>.jsonl`
-- Manifest: `SupervisorAgent/runtime/episodes/<episode_set>/episodes_manifest.json`
-- Run folders: `SupervisorAgent/runtime/runs/<run_id>/` (with episode tags)
-- Report: `SupervisorAgent/runtime/reports/<episode_set>/report.json` and `report.md`
+- Episodes: `src/quantum_edge_core/supervisor/runtime/episodes/<episode_set>/<scenario_id>/<episode_id>.jsonl`
+- Manifest: `src/quantum_edge_core/supervisor/runtime/episodes/<episode_set>/episodes_manifest.json`
+- Run folders: `src/quantum_edge_core/supervisor/runtime/runs/<run_id>/` (with episode tags)
+- Report: `src/quantum_edge_core/supervisor/runtime/reports/<episode_set>/report.json` and `report.md`
 
 ## Ops Brain v1 (auto-tuning + regression gates)
 Ops automation produces policy versions and gate reports under runtime:
 
 ```
-SupervisorAgent/runtime/policy_versions/
+src/quantum_edge_core/supervisor/runtime/policy_versions/
   policy_vNNN.yaml
   policy_vNNN_manifest.json
   active_policy.yaml
   active_policy_manifest.json
 
-SupervisorAgent/runtime/regression/<policy_version>/
+src/quantum_edge_core/supervisor/runtime/regression/<policy_version>/
   gate_report.json
 ```
 
 Commands:
 1) Autotune (dry-run default):
-   - `python SupervisorAgent/supervisor.py ops-autotune --episode-set tick_scenarios_v1`
+   - `python src/quantum_edge_core/supervisor/supervisor.py ops-autotune --episode-set tick_scenarios_v1`
    - Add `--apply` to activate if gates pass.
 2) Regression gate on a version:
-   - `python SupervisorAgent/supervisor.py ops-regression-gate --policy-version v001 --episode-set tick_scenarios_v1`
+   - `python src/quantum_edge_core/supervisor/supervisor.py ops-regression-gate --policy-version v001 --episode-set tick_scenarios_v1`
 3) Daily report:
-   - `python SupervisorAgent/supervisor.py ops-daily-report --date YYYY-MM-DD`
+   - `python src/quantum_edge_core/supervisor/supervisor.py ops-daily-report --date YYYY-MM-DD`
 4) Rollback:
-   - `python SupervisorAgent/supervisor.py ops-rollback --policy-version v001`
+   - `python src/quantum_edge_core/supervisor/supervisor.py ops-rollback --policy-version v001`

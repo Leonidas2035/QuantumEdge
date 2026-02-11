@@ -1,5 +1,5 @@
 **Microstructure OFI (v1)**
-- Top-of-book OFI is computed in MarketDataHub and published to bots + QuestDB.
+- Top-of-book OFI is computed in `src/quantum_edge_core/market_data/` (MarketDataHub) and published to bots + QuestDB.
 - Rolling window statistics provide `ofi_z` and `ofi_ma5`.
 
 **OFI Formula**

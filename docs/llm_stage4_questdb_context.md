@@ -49,5 +49,5 @@ curl -s http://127.0.0.1:8010/v1/supervisor/decision_routed \
 ## Troubleshooting
 
 - Missing QuestDB DSN: context is skipped and the request still succeeds.
-- ILP unavailable: audit events are written to `supervisor_llm/runtime/audit_fallback.jsonl`.
+- ILP unavailable: audit events are written to `src/quantum_edge_ml/model_router/runtime/audit_fallback.jsonl`.
 - Table/column mismatch: update `QDB_*` env vars to match your schema.
