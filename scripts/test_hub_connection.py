@@ -1,7 +1,6 @@
 
 import asyncio
 import signal
-import time
 import uvloop
 from quantum_edge_core.core.service import BaseService
 from quantum_edge_core.market_data.feeds.binance_feed import BinanceFeed

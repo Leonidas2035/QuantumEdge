@@ -4,7 +4,6 @@ import multiprocessing
 import time
 import zmq
 import zmq.asyncio
-import msgspec
 
 from quantum_edge_core.market_data.hub import MarketDataHubService
 from quantum_edge_core.utils.async_runner import run_service

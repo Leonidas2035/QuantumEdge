@@ -6,7 +6,6 @@ Orchestrates Real-Time BingX Data Feed and AI Scalper Bot.
 import subprocess
 import time
 import os
-import signal
 import sys
 import threading
 from typing import IO

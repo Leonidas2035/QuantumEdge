@@ -6,8 +6,8 @@ Stores recent market data (trades, candles) in efficient ring buffers.
 from __future__ import annotations
 
 from collections import deque
-from dataclasses import dataclass, field
-from typing import Deque, Dict, Any, Optional
+from dataclasses import dataclass
+from typing import Deque, Dict, Any
 import time
 
 @dataclass

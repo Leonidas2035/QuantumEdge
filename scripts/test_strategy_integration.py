@@ -1,7 +1,7 @@
 
 import asyncio
 import structlog
-from unittest.mock import MagicMock, AsyncMock, patch
+from unittest.mock import MagicMock, patch
 
 from quantum_edge_core.bot.service import TradingBot
 from quantum_edge_core.events import MarketTrade

@@ -4,9 +4,8 @@ src/quantum_edge_core/market_data/analytics/microstructure.py
 Microstructure Analysis Engine.
 """
 
-import time
 import structlog
-from typing import Optional, List, Dict
+from typing import Optional
 from quantum_edge_core.events import MarketTrade, OrderBookUpdate, LargeBlockEvent, MicrostructureMetrics
 
 logger = structlog.get_logger()

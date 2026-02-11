@@ -5,13 +5,12 @@ Handles subscriptions, message parsing, and state management (Partial Patches).
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import zmq
 import zmq.asyncio
 from dataclasses import dataclass, field
-from typing import Dict, Any, Optional, List
+from typing import Dict, Any, Optional
 
 logger = logging.getLogger(__name__)
 

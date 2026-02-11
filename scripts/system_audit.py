@@ -2,10 +2,9 @@ import os
 import platform
 import psutil
 import subprocess
-import sys
 
 def get_cpu_info():
-    print(f"--- CPU Architecture & Instructions ---")
+    print("--- CPU Architecture & Instructions ---")
     print(f"Arch: {platform.machine()}")
     print(f"Physical Cores: {psutil.cpu_count(logical=False)}")
     print(f"Logical Cores: {psutil.cpu_count(logical=True)}")
@@ -27,7 +26,7 @@ def get_cpu_info():
         print(f"Error reading CPU flags: {e}")
 
 def get_memory_topology():
-    print(f"\n--- Memory & NUMA (Critical for ZeroMQ Latency) ---")
+    print("\n--- Memory & NUMA (Critical for ZeroMQ Latency) ---")
     print(f"Total RAM: {psutil.virtual_memory().total / (1024**3):.2f} GB")
     print(f"Available RAM: {psutil.virtual_memory().available / (1024**3):.2f} GB")
     
@@ -43,7 +42,7 @@ def get_memory_topology():
         print("lscpu tool not found. Cannot determine NUMA topology.")
 
 def get_io_stats():
-    print(f"\n--- Disk I/O (Critical for QuestDB ) ---")
+    print("\n--- Disk I/O (Critical for QuestDB ) ---")
     # Basic check - in HFT we prefer NVMe
     # This is a heuristic check for rotational drives
     if platform.system() == "Linux":

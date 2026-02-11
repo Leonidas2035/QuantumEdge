@@ -6,7 +6,6 @@ Handles uvloop installation and graceful shutdown signals.
 """
 
 import asyncio
-import signal
 import sys
 import logging
 from typing import Coroutine, Any

@@ -24,10 +24,10 @@ def _bootstrap_paths() -> Path:
 
 REPO_ROOT = _bootstrap_paths()
 
-from bot.storage.event_bus import EventBus  # noqa: E402
-from bot.storage.spooler import Spooler  # noqa: E402
-from bot.storage.tsdb.questdb_ilp_writer import QuestDbIlpWriter  # noqa: E402
-from tools.load.generate_market_events import MarketEventGenerator, SYMBOLS_DEFAULT  # noqa: E402
+from bot.storage.event_bus import EventBus
+from bot.storage.spooler import Spooler
+from bot.storage.tsdb.questdb_ilp_writer import QuestDbIlpWriter
+from tools.load.generate_market_events import MarketEventGenerator, SYMBOLS_DEFAULT
 
 
 def _load_tsdb_defaults() -> Dict[str, Any]:

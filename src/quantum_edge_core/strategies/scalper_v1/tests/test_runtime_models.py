@@ -15,7 +15,7 @@ if "xgboost" not in sys.modules:
     stub.XGBClassifier = object
     sys.modules["xgboost"] = stub
 
-import bot.ml.runtime_models as rm  # noqa: E402
+import bot.ml.runtime_models as rm
 from bot.ml.features.builder import feature_names, schema_version
 
 

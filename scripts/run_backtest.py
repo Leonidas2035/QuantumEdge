@@ -58,7 +58,7 @@ def main():
         stats = runner.run()
         print("\n=== BACKTEST RESULTS ===")
         print(f"Total Trades: {stats['total_trades']}")
-        print(f"Win Rate:     N/A") # metrics.py says N/A yet
+        print("Win Rate:     N/A") # metrics.py says N/A yet
         print(f"Total PnL:    {stats['total_pnl_pct']}%")
         print(f"Final Equity: ${stats['final_equity']}")
         print(f"Max Drawdown: {stats['max_drawdown_pct']}%")

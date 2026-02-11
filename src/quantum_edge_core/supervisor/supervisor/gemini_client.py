@@ -7,7 +7,7 @@ import json
 import logging
 import time
 from enum import Enum
-from typing import Any, Dict, Optional, Mapping
+from typing import Any, Dict, Optional
 
 import httpx
 
