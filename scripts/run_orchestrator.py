@@ -466,7 +466,7 @@ def _print_status(
     print("==================")
     print(f"QE_ROOT: {paths['qe_root']}")
     print(f"Supervisor URL: {supervisor_settings['url']}")
-    print(f"Configs:")
+    print("Configs:")
     for name, path in config_paths.items():
         print(f"  - {name}: {path}")
     print("Processes:")

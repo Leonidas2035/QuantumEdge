@@ -22,7 +22,7 @@ def find_repo_root(start: Optional[Path] = None) -> Path:
             return parent.resolve()
         if (parent / "src" / "quantum_edge_core" / "config" / "quantumedge.yaml").exists():
             return parent.resolve()
-    return Path(__file__).resolve().parents[1]
+    return Path(__file__).resolve().parents[3]
 
 
 def _load_yaml(path: Path) -> Dict[str, object]:

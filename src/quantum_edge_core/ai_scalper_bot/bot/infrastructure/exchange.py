@@ -26,7 +26,8 @@ class BingXExecutionGateway:
         """
         side = 'buy' if 'BUY' in action.action_type else 'sell'
         # Hedge Short logic:
-        if 'SHORT' in action.action_type: side = 'sell'
+        if 'SHORT' in action.action_type:
+            side = 'sell'
         
         amount = action.qty
         
