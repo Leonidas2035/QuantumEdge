@@ -17,13 +17,13 @@ Target Python: 3.12.x
 - Stop: `python QuantumEdge.py stop`
 
 ## Supervisor foreground (debug)
-- `python SupervisorAgent\\supervisor.py run-foreground`
+- `python src/quantum_edge_core/supervisor/supervisor.py run-foreground`
 
 ## Port check (Supervisor API)
 - `netstat -ano | findstr 8765`
 
 ## Common errors
-- IndentationError/SyntaxError: run `python -m py_compile SupervisorAgent\\supervisor.py`
+- IndentationError/SyntaxError: run `python -m py_compile src/quantum_edge_core/supervisor/supervisor.py`
 - Missing config YAMLs: ensure `config\\supervisor.yaml` and `config\\bot.yaml` exist
 - Port already in use: stop the existing process (use PID from netstat)
 - Missing runtime/artifacts dirs: run `python QuantumEdge.py diag` or create `runtime\\` and `artifacts\\`

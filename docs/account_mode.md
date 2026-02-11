@@ -1,6 +1,6 @@
 ## Account Mode: Binance BTCUSDT (Spot + USD-M)
 
-MarketDataHub operates in a “data plane only” mode for account telemetry:
+MarketDataHub (`src/quantum_edge_core/market_data/`) operates in a “data plane only” mode for account telemetry:
 
 - **Startup:** call `BinanceAccountRestSnapshotBuilder.build_full_account_snapshot(symbols=["BTCUSDT"])` once, publish `hub.account_snapshot.v1`, and initialize the cache (balances, orders, positions).
 - **Steady state:** listen to Binance user streams (spot/outboundAccountPosition + futures/ACCOUNT_UPDATE and ORDER_TRADE_UPDATE). Normalize every payload into `AccountDelta` patches and publish them via the existing bus so bots consume a single schema (`hub.account_delta.v1`).

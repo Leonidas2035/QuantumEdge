@@ -3,13 +3,13 @@
 ## Overview
 The spot scalper is a deterministic hot-path loop driven by top-of-book microstructure:
 `RegimeDetector -> SignalEngine -> ExecutionEngine -> RiskManager`.
-It consumes MarketDataHub L1 (or L2-derived L1) and emits limit order intents.
+It consumes MarketDataHub (`src/quantum_edge_core/market_data/`) L1 (or L2-derived L1) and emits limit order intents.
 All USD-M futures endpoints are blocked for this mode.
 
 ## How to run (SPOT-only)
-1) Enable the scalper and spot-only flags in `config/bot.yaml` or `ai_scalper_bot/config/settings.yaml`.
+1) Enable the scalper and spot-only flags in `config/bot.yaml` or `src/quantum_edge_core/ai_scalper_bot/config/settings.yaml`.
 2) Ensure MarketDataHub publishes `${symbol}:l1` or `${symbol}:depth_l2`.
-3) Start the bot (`python ai_scalper_bot/bot/run_bot.py` or the orchestrator entrypoint).
+3) Start the bot (`python src/quantum_edge_core/ai_scalper_bot/run_bot.py` or the orchestrator entrypoint `python QuantumEdge.py`).
 
 Minimal config example:
 

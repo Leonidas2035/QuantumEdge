@@ -22,7 +22,7 @@ Default ports:
 
 ## Configure SupervisorAgent
 
-Edit `C:\QuantumEdge\SupervisorAgent\config\tsdb.yaml`:
+Edit `src/quantum_edge_core/supervisor/config/tsdb.yaml`:
 
 ```yaml
 enabled: true
@@ -36,8 +36,8 @@ ingest:
 
 ## Commands
 
-```powershell
-cd C:\QuantumEdge\SupervisorAgent
+```bash
+cd src/quantum_edge_core/supervisor
 python supervisor.py tsdb-migrate
 python supervisor.py tsdb-ingest start
 python supervisor.py tsdb-status
@@ -52,5 +52,5 @@ python supervisor.py tsdb-ingest stop
 ## Troubleshooting
 
 - Connection refused: QuestDB is not running, or ports are blocked.
-- No data in TSDB: verify `ai_scalper_bot/runtime/events/events.jsonl` and `ai_scalper_bot/runtime/status/metrics.json`.
+- No data in TSDB: verify `src/quantum_edge_core/ai_scalper_bot/runtime/events/events.jsonl` and `src/quantum_edge_core/ai_scalper_bot/runtime/status/metrics.json`.
 - Ingest lag high: check `tsdb-status` and `runtime/ingest_state.json`.
