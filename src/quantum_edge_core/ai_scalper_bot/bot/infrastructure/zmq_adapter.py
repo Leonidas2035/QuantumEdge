@@ -63,20 +63,18 @@ class ZmqSubStream:
             # Safer to try non-blocking recv.
             
             try:
-                # Optimized for single frame JSON messages common in simple setups
-                # If multipart is used, we might need recv_multipart
-                # User Requirement: "Uses socket.recv()... Decodes messages using ujson.loads()"
-                msg = self._socket.recv(flags=flags)
+                # MarketDataHub sends [topic, payload] multipart messages.
+                frames = self._socket.recv_multipart(flags=flags)
+                if not frames or len(frames) < 2:
+                    return None
+
+                msg = frames[1]
                 
             except zmq.Again:
                 return None
                 
-            # Decode
-            # If there's a topic prefix validation needed, we can split, but relying on zmq filtering for now.
+            # Decode payload
             try:
-                # Handle cases where topic is attached (e.g. "BTC/USDT {...}")
-                # Ideally the Hub sends multipart. If raw bytes:
-                # We interpret as just JSON.
                 decoded = ujson.loads(msg)
                 return decoded
                 
