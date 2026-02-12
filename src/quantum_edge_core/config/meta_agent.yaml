@@ -1,5 +1,6 @@
 # Meta-Agent defaults (safe, no secrets).
 mode: "dev"
+model: "gpt-4o"
 projects_path: "meta_agent/config/projects.yaml"
 offmarket_schedule_path: "meta_agent/config/offmarket_schedule.yaml"
 logs_dir: "logs"

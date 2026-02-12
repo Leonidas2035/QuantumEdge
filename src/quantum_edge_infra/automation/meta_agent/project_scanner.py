@@ -1,6 +1,7 @@
 import fnmatch
 import glob
 import os
+import subprocess
 from dataclasses import dataclass, field
 from typing import Iterable, List, Optional, Set
 
@@ -106,6 +107,20 @@ class ProjectScanner:
         parts = rel_path.replace("\\", "/").split("/")
         return any(part.lower() in self.exclude_dirs for part in parts)
 
+    def _get_git_files(self) -> Optional[List[str]]:
+        try:
+            # Use git ls-files to get tracked and untracked (but not ignored) files
+            proc = subprocess.run(
+                ["git", "ls-files", "--cached", "--others", "--exclude-standard"],
+                cwd=self.project_root,
+                capture_output=True,
+                text=True,
+                check=True,
+            )
+            return [os.path.join(self.project_root, line) for line in proc.stdout.splitlines() if line]
+        except (subprocess.SubprocessError, FileNotFoundError):
+            return None
+
     def collect_project_context(
         self,
         max_chars: int = 250_000,
@@ -117,6 +132,7 @@ class ProjectScanner:
         Walks the project tree and returns a concatenated string of file contents
         limited to `max_chars`. Large files (> max_file_chars) are skipped.
         Directory exclusions and extension filters are applied to reduce noise.
+        Respects .gitignore by using git ls-files when available.
         """
         context_parts: List[str] = []
         total_chars = 0
@@ -142,8 +158,21 @@ class ProjectScanner:
                     if os.path.isfile(abs_path):
                         explicit_files.append(os.path.abspath(abs_path))
 
+        if not focus_files and not include_globs:
+            git_files = self._get_git_files()
+            if git_files:
+                explicit_files = git_files
+
         if explicit_files:
             for abs_path in sorted(set(explicit_files)):
+                if not os.path.isfile(abs_path):
+                    continue
+                fname = os.path.basename(abs_path)
+                if not focus_files and not include_globs:
+                    # Apply extension filtering to the default git/walk files
+                    if not self._should_include_file(fname):
+                        continue
+
                 rel_path = os.path.relpath(abs_path, self.project_root)
                 if self._in_excluded_dir(rel_path):
                     continue

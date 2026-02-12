@@ -38,7 +38,7 @@ class CodexClient:
         self.client = OpenAI(api_key=self.api_key)
 
         # more stable model for long prompts
-        self.model = model or "gpt-4.1"
+        self.model = model or "gpt-4o"
         self.temperature = 0 if temperature is None else temperature
         self.request_timeout_seconds = request_timeout_seconds
 

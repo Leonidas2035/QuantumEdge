@@ -67,9 +67,14 @@ def _resolve_base_dir() -> str:
             return str(get_qe_paths()["qe_root"])
         except Exception:
             pass
-    parent = os.path.abspath(os.path.join(BASE_DIR, os.pardir))
-    if os.path.isdir(os.path.join(parent, "config")) and os.path.isdir(os.path.join(parent, "ai_scalper_bot")):
-        return parent
+
+    # In the src-layout, find root by looking for src/quantum_edge_core
+    curr = Path(__file__).resolve()
+    for _ in range(6):
+        if (curr / "src" / "quantum_edge_core").is_dir():
+            return str(curr)
+        curr = curr.parent
+
     return BASE_DIR
 
 
@@ -365,7 +370,7 @@ class MetaAgent:
         self.config = self._load_config(resolved)
         self.builder = PromptBuilder()
         self.mode = self._resolve_mode()
-        self.client = CodexClient(mode=self.mode)
+        self.client = CodexClient(mode=self.mode, model=self.config.get("model"))
         self.lock_busy = False
         projects_path = (self.config or {}).get("projects_path")
         self.project_registry = load_project_registry(projects_path) if projects_path else load_project_registry()
@@ -450,15 +455,12 @@ class MetaAgent:
                     print(f"[ERROR] Stage {name} is missing a prompt path.")
                     return False, stages
 
-                project_id = override_project_id or stage.get("project") or default_project_id
-                try:
-                    project_info = resolve_project_root(project_id, self.project_registry)
-                except KeyError as exc:
-                    print(f"[ERROR] {exc}")
-                    return False, stages
-                target_project = project_info.root_path
+                # Operating on the entire repository as a single Monorepo
+                target_project = _resolve_base_dir()
+                project_id = "monorepo"
+
                 if not os.path.isdir(target_project):
-                    print(f"[ERROR] Target project path does not exist for project_id={project_id}: {target_project}")
+                    print(f"[ERROR] Target repository root does not exist: {target_project}")
                     return False, stages
 
                 if os.path.isabs(prompt_file):
