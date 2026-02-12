@@ -134,6 +134,7 @@ class AccountRuntimeConfig:
 
 @dataclass
 class HubConfig:
+    mode: str = os.getenv("MARKET_DATA_MODE", "live") # live | mock
     symbols: List[str] = field(default_factory=lambda: os.getenv("MARKET_DATA_SYMBOLS", "BTCUSDT").split(","))
     zmq: ZmqConfig = field(default_factory=ZmqConfig)
     snapshot: SnapshotConfig = field(default_factory=SnapshotConfig)

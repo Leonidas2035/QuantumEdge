@@ -6,7 +6,7 @@ from datetime import datetime, timezone
 from hashlib import sha256
 from typing import Dict, List, Optional
 
-from codex_client import CodexClient
+from llm_client import LLMClient
 from file_manager import ChangeSet, FileChange, build_change_set_from_response
 from gate_runner import GateResults, run_gates
 from logger import configure_logger
@@ -310,7 +310,7 @@ def _read_shadow_info(run_dir: str) -> Dict[str, str]:
 def run_task(
     task_path: str,
     use_lock: bool = True,
-    llm_client: Optional[object] = None,
+    llm_client: Optional[LLMClient] = None,
     timeout_seconds: Optional[int] = None,
     llm_timeout_seconds: Optional[int] = None,
     cli_context: Optional[dict] = None,
@@ -390,6 +390,7 @@ def run_task(
         _log_event(events_path, "run_started", {"run_id": run_id})
         os.makedirs(patches_dir, exist_ok=True)
 
+        config = _load_config()
         spec = load_task_spec(task_path)
         _log_event(events_path, "task_loaded", {"task_id": spec.task_id, "project_id": spec.project_id})
         _check_timeout(timeout_seconds, overall_start)
@@ -408,12 +409,16 @@ def run_task(
 
         scan_start = time.perf_counter()
         scanner = ProjectScanner(target_project)
-        context = scanner.collect_project_context(
+
+        # Architect Mode: Gather Tree + Source
+        tree_view = scanner.generate_tree_view()
+        source_context = scanner.collect_project_context(
             max_chars=spec.llm.max_context_chars or 250_000,
             include_globs=spec.context.include_globs or None,
             focus_files=spec.context.focus_files or None,
             deny_globs=spec.constraints.deny_globs or None,
         )
+        context = f"PROJECT STRUCTURE:\n{tree_view}\n\nSOURCE CODE:\n{source_context}"
         scan_ms = _elapsed_ms(scan_start)
         context_manifest = {
             "project_root": target_project,
@@ -448,7 +453,8 @@ def run_task(
         full_prompt = PromptBuilder().build_prompt(instructions, context, prompt_metadata)
 
         llm_start = time.perf_counter()
-        client = llm_client or CodexClient(
+        client = llm_client or LLMClient(
+            provider=config.get("provider"),
             model=spec.llm.model,
             temperature=spec.llm.temperature,
             request_timeout_seconds=llm_timeout_seconds,

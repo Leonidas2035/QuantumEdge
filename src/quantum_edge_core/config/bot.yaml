@@ -5,8 +5,12 @@ app:
   websocket: "mock"      # mock | binance
   log_level: "INFO"
   llm_enabled: false
-  exchange: "binance_demo"
+  exchange: "mock"
   data_path: "data"
+
+exchange:
+  name: "mock"           # mock | paper
+  mode: "simulation"     # backtest | simulation
 
 enabled_market: "spot"
 futures_enabled: false
