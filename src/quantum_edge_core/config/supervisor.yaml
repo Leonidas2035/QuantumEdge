@@ -1,7 +1,8 @@
 # Supervisor runtime configuration (shared defaults).
 
 mode: "paper"  # paper | demo | off
-exchange: ""   # optional: e.g. "bingx_swap"
+exchange: "mock"   # optional: e.g. "bingx_swap"
+exchange_mode: "simulation"
 heartbeat_port: 8765
 heartbeat_timeout_s: 15
 restart_max_attempts: 3
