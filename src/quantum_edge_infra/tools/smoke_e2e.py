@@ -39,7 +39,7 @@ def _write_task(path: Path) -> None:
         "task_id": "smoke_task",
         "created_at": "2026-01-01T00:00:00Z",
         "project_id": "meta_agent",
-        "project_root": "meta_agent",
+        "project_root": ".",
         "objective": "Smoke test task",
         "instructions": "Do not change code; this is a dry run.",
         "execution": {"dry_run": True},
