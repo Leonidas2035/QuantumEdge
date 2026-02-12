@@ -23,7 +23,6 @@ httpx==0.28.1
 idna==3.11
 msgspec==0.20.0
 numpy==2.4.2
-openai
 proto-plus==1.27.1
 protobuf==5.29.6
 pyasn1==0.6.2

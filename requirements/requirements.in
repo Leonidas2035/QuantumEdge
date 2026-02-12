@@ -9,7 +9,6 @@ pandas
 python-binance
 xgboost
 cryptography>=42.0.0
-openai>=1.30
 msgspec>=0.18.0
 httpx>=0.26.0
 fastapi>=0.110.0

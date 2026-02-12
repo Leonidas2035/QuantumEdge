@@ -28,7 +28,6 @@ xgboost
 questdb
 
 # AI / ML / LLM
-openai>=1.30
 google-generativeai
 transformers
 torch
