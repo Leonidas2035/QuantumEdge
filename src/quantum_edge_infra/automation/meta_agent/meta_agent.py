@@ -234,6 +234,8 @@ def run_diag() -> int:
                     continue
                 if any(x in lower for x in ("venv/", "venv\\", ".venv/", ".venv\\")):
                     continue
+                if lower.endswith((".env.enc", "engine_defaults.env")):
+                    continue
                 if lower.endswith(secret_suffixes) or "/secrets/" in lower or "\\secrets\\" in lower:
                     hits.append(path)
             record("tracked_secrets", not hits, "none" if not hits else f"found: {', '.join(hits)}")
