@@ -95,7 +95,7 @@ def _resolve_runtime_dir() -> str:
 def _resolve_meta_config_path(path: Optional[str]) -> str:
     base = _resolve_base_dir()
     env_override = os.getenv("META_AGENT_CONFIG")
-    candidate = env_override or path or "config/meta_agent.yaml"
+    candidate = env_override or path or "src/quantum_edge_core/config/meta_agent.yaml"
     if os.path.isabs(candidate):
         return candidate
     return os.path.abspath(os.path.join(base, candidate))
@@ -231,6 +231,8 @@ def run_diag() -> int:
             for path in tracked:
                 lower = path.lower()
                 if lower.endswith((".example", ".sample", ".template")):
+                    continue
+                if any(x in lower for x in ("venv/", "venv\\", ".venv/", ".venv\\")):
                     continue
                 if lower.endswith(secret_suffixes) or "/secrets/" in lower or "\\secrets\\" in lower:
                     hits.append(path)

@@ -12,7 +12,7 @@ try:
 except Exception:  # pragma: no cover - fallback for legacy runs
     get_qe_paths = None
 
-DEFAULT_PROJECTS_PATH = os.path.join("config", "projects.yaml")
+DEFAULT_PROJECTS_PATH = os.path.join("src", "quantum_edge_core", "config", "projects.yaml")
 
 
 @dataclass

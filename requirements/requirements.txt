@@ -7,9 +7,12 @@ requests
 python-dotenv
 cryptography>=46.0.0
 psycopg>=3.1.0
+structlog>=24.1.0
+pydantic-settings>=2.0
 
 # Web & Async
 fastapi>=0.110.0
+uvloop>=0.19.0
 uvicorn>=0.27.0
 websockets>=11.0
 httpx>=0.26.0

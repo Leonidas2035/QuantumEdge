@@ -9,7 +9,7 @@ jobs:
   lint:
     runs-on: ubuntu-latest
     env:
-      PYTHONPATH: src:src/quantum_edge_core:src/quantum_edge_infra:src/quantum_edge_ml:src/quantum_edge_core/ai_scalper_bot:src/quantum_edge_core/supervisor:src/quantum_edge_infra/automation/meta_agent:.
+      PYTHONPATH: src:src/quantum_edge_core:src/quantum_edge_infra:src/quantum_edge_ml:src/quantum_edge_core/ai_scalper_bot:src/quantum_edge_core/strategies/scalper_v1:src/quantum_edge_core/strategies/legacy/lockbot:src/quantum_edge_core/supervisor:src/quantum_edge_core/supervisor/supervisor:src/quantum_edge_infra/automation/meta_agent:.
     steps:
       - uses: actions/checkout@v4
       - name: Set up Python
@@ -28,7 +28,7 @@ jobs:
   pytest:
     runs-on: ubuntu-latest
     env:
-      PYTHONPATH: src:src/quantum_edge_core:src/quantum_edge_infra:src/quantum_edge_ml:src/quantum_edge_core/ai_scalper_bot:src/quantum_edge_core/supervisor:src/quantum_edge_infra/automation/meta_agent:.
+      PYTHONPATH: src:src/quantum_edge_core:src/quantum_edge_infra:src/quantum_edge_ml:src/quantum_edge_core/ai_scalper_bot:src/quantum_edge_core/strategies/scalper_v1:src/quantum_edge_core/strategies/legacy/lockbot:src/quantum_edge_core/supervisor:src/quantum_edge_core/supervisor/supervisor:src/quantum_edge_infra/automation/meta_agent:.
     steps:
       - uses: actions/checkout@v4
       - name: Set up Python
@@ -50,7 +50,7 @@ jobs:
   smoke:
     runs-on: ubuntu-latest
     env:
-      PYTHONPATH: src:src/quantum_edge_core:src/quantum_edge_infra:src/quantum_edge_ml:src/quantum_edge_core/ai_scalper_bot:src/quantum_edge_core/supervisor:src/quantum_edge_infra/automation/meta_agent:.
+      PYTHONPATH: src:src/quantum_edge_core:src/quantum_edge_infra:src/quantum_edge_ml:src/quantum_edge_core/ai_scalper_bot:src/quantum_edge_core/strategies/scalper_v1:src/quantum_edge_core/strategies/legacy/lockbot:src/quantum_edge_core/supervisor:src/quantum_edge_core/supervisor/supervisor:src/quantum_edge_infra/automation/meta_agent:.
     steps:
       - uses: actions/checkout@v4
       - name: Set up Python

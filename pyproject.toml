@@ -52,6 +52,11 @@ ignore = [
     "E402", # module-level-import-not-at-top-of-file
     "F401", # unused-import
     "F841", # unused-variable
+    "E701", # multiple-statements-on-one-line
+    "F821", # undefined-name
+    "E731", # lambda-assignment
+    "E722", # bare-except
+    "E741", # ambiguous-variable-name
     "B",    # bugbear
     "PERF", # performance-lints
     "DTZ",  # datetime-timezone

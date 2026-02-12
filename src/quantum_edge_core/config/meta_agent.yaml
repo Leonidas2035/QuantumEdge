@@ -1,7 +1,7 @@
 # Meta-Agent defaults (safe, no secrets).
 mode: "dev"
 model: "gpt-4o"
-projects_path: "meta_agent/config/projects.yaml"
-offmarket_schedule_path: "meta_agent/config/offmarket_schedule.yaml"
+projects_path: "src/quantum_edge_core/config/projects.yaml"
+offmarket_schedule_path: "src/quantum_edge_core/config/offmarket_schedule.yaml"
 logs_dir: "logs"
 runtime_dir: "runtime"
