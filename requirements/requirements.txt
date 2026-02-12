@@ -17,6 +17,7 @@ msgspec>=0.18.0
 pyzmq>=25.0.0
 
 # Data Science & Trading
+ujson
 numpy
 pandas
 python-binance

@@ -3,7 +3,7 @@ import os
 from dataclasses import dataclass, field
 from typing import Any, Dict, List
 
-from codex_client import CodexClient
+from llm_client import LLMClient
 from report_schema import REPORTS_DIR
 from task_manager import create_task
 
@@ -45,8 +45,8 @@ def _gather_recent_summaries(limit: int = 5) -> str:
     return "\n\n".join(context_parts)
 
 
-def _llm_client() -> CodexClient:
-    return CodexClient()
+def _llm_client() -> LLMClient:
+    return LLMClient()
 
 
 def generate_strategic_backlog(project: str, horizon: str = "short_term") -> Dict[str, Any]:

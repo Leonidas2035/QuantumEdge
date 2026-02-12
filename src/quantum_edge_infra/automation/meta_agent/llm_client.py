@@ -3,11 +3,16 @@ import re
 from typing import List, Optional, Tuple
 
 from openai import OpenAI
+try:
+    import google.generativeai as genai
+except ImportError:
+    genai = None
 
 
-class CodexClient:
+class LLMClient:
     def __init__(
         self,
+        provider: Optional[str] = None,
         mode: Optional[str] = None,
         model: Optional[str] = None,
         temperature: Optional[float] = None,
@@ -30,15 +35,28 @@ class CodexClient:
             resolved_mode = "dev"
         self.mode = resolved_mode
 
-        env_key_name = f"OPENAI_API_KEY_{self.mode.upper()}"
-        self.api_key = os.getenv(env_key_name)
-        if not self.api_key:
-            raise RuntimeError("API key not set in environment variables")
+        self.provider = provider or os.getenv("LLM_PROVIDER") or "openai"
 
-        self.client = OpenAI(api_key=self.api_key)
+        if self.provider == "openai":
+            env_key_name = f"OPENAI_API_KEY_{self.mode.upper()}"
+            self.api_key = os.getenv(env_key_name) or os.getenv("OPENAI_API_KEY")
+            if not self.api_key:
+                raise RuntimeError(f"OpenAI API key not set in environment ({env_key_name})")
+            self.client = OpenAI(api_key=self.api_key)
+            self.model = model or "gpt-4o"
+        elif self.provider == "gemini":
+            if not genai:
+                raise RuntimeError("google-generativeai package not installed")
+            env_key_name = f"GEMINI_API_KEY_{self.mode.upper()}"
+            self.api_key = os.getenv(env_key_name) or os.getenv("GEMINI_API_KEY")
+            if not self.api_key:
+                raise RuntimeError(f"Gemini API key not set in environment ({env_key_name})")
+            genai.configure(api_key=self.api_key)
+            self.model = model or "gemini-1.5-pro"
+            self.client = genai.GenerativeModel(self.model)
+        else:
+            raise ValueError(f"Unsupported provider: {self.provider}")
 
-        # more stable model for long prompts
-        self.model = model or "gpt-4.1"
         self.temperature = 0 if temperature is None else temperature
         self.request_timeout_seconds = request_timeout_seconds
 
@@ -96,14 +114,27 @@ class CodexClient:
             chunks.append(current)
         return chunks
 
+    def send_request(self, context: str, instructions: str) -> str:
+        """
+        Unified interface for sending context and instructions to the LLM.
+        """
+        prompt = f"{context}\n\nInstructions:\n{instructions}"
+        return self.send(prompt)
+
     def send(self, prompt: str) -> str:
         """
-        Sends prompt to Codex with safe chunking and stable formatting.
-        Avoids invalid_request_error and ensures compatibility with chat models.
+        Sends prompt to the configured LLM provider.
         """
         if self.mock_response is not None:
             return self.mock_response
 
+        if self.provider == "openai":
+            return self._send_openai(prompt)
+        elif self.provider == "gemini":
+            return self._send_gemini(prompt)
+        return f"[ERROR] Unsupported provider: {self.provider}"
+
+    def _send_openai(self, prompt: str) -> str:
         messages = [
             {
                 "role": "system",
@@ -126,8 +157,28 @@ class CodexClient:
                 temperature=self.temperature,
                 timeout=self.request_timeout_seconds,
             )
-
             return response.choices[0].message.content
-
         except Exception as e:
-            return f"[ERROR] CodexClient failed: {e!s}"
+            return f"[ERROR] OpenAI failed: {e!s}"
+
+    def _send_gemini(self, prompt: str) -> str:
+        try:
+            # Gemini typically has a larger context window, but we still respect system instructions
+            generation_config = {
+                "temperature": self.temperature,
+                "max_output_tokens": 4096,
+            }
+            # We can't set a system instruction as easily in older versions,
+            # but usually we just prepent it to the prompt if needed.
+            system_instr = (
+                "You are an autonomous code-generation and refactoring agent "
+                "inside a Meta-Agent pipeline. Follow instructions precisely, "
+                "output only code or patches when required.\n\n"
+            )
+            response = self.client.generate_content(
+                system_instr + prompt,
+                generation_config=generation_config
+            )
+            return response.text
+        except Exception as e:
+            return f"[ERROR] Gemini failed: {e!s}"

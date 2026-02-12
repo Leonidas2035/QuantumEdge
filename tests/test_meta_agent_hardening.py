@@ -3,7 +3,7 @@ from pathlib import Path
 import yaml
 
 ROOT_DIR = Path(__file__).resolve().parents[1]
-META_AGENT_DIR = ROOT_DIR / "meta_agent"
+META_AGENT_DIR = ROOT_DIR / "src" / "quantum_edge_infra" / "automation" / "meta_agent"
 if str(META_AGENT_DIR) not in sys.path:
     sys.path.insert(0, str(META_AGENT_DIR))
 
@@ -91,7 +91,11 @@ def test_stage_pipeline_routes_through_safety_policy(tmp_path: Path, monkeypatch
     monkeypatch.setenv("QE_ROOT", str(base_dir))
     monkeypatch.setenv("META_AGENT_PROJECTS_PATH", str(projects_yaml))
 
-    import meta_agent as meta_agent_mod
+    # Ensure we import the correct meta_agent module from src/
+    import importlib.util
+    spec = importlib.util.spec_from_file_location("meta_agent_real", str(META_AGENT_DIR / "meta_agent.py"))
+    meta_agent_mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(meta_agent_mod)
 
     monkeypatch.setattr(meta_agent_mod, "PATCHES_DIR", str(tmp_path / "patches"))
     monkeypatch.setattr(meta_agent_mod, "write_json_report", lambda report: str(tmp_path / "report.json"))
@@ -104,13 +108,14 @@ def test_stage_pipeline_routes_through_safety_policy(tmp_path: Path, monkeypatch
     )
 
     class DummyClient:
-        def __init__(self, mode=None):
-            self.model = "dummy"
+        def __init__(self, provider=None, mode=None, model=None):
+            self.model = model or "dummy"
+            self.provider = provider or "dummy"
 
         def send(self, prompt: str) -> str:
             return "===FILE: test.txt===\ncontent\n"
 
-    monkeypatch.setattr(meta_agent_mod, "CodexClient", DummyClient)
+    monkeypatch.setattr(meta_agent_mod, "LLMClient", DummyClient)
 
     called = {"value": False}
 
