@@ -16,7 +16,7 @@ class FakeLLMClient:
     def __init__(self, response: str):
         self._response = response
 
-    def send(self, prompt: str) -> str:
+    def send(self, prompt: str, **kwargs) -> str:
         return self._response
 
 

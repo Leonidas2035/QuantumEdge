@@ -12021,7 +12021,7 @@ import os
 import re
 from typing import List, Optional, Tuple
 
-from openai import OpenAI
+from google.generativeai import GenerativeModel
 
 
 class CodexClient:
@@ -19852,7 +19852,7 @@ Return only that ===FILE: ...=== block (with the full report inside) as your ans
 
 <<<<<<<<<<<<<<<<<<<< FILE: quantum-edge-infra/automation/meta_agent/repo_meta_agent/codex_client.py >>>>>>>>>>>>>>>>>>>>
 import os
-from openai import OpenAI
+from google.generativeai import GenerativeModel
 
 class CodexClient:
     def __init__(self):

@@ -2,11 +2,9 @@ import os
 import re
 from typing import List, Optional, Tuple
 
-from openai import OpenAI
-try:
-    import google.generativeai as genai
-except ImportError:
-    genai = None
+import google.generativeai as genai
+
+FALLBACK_GEMINI_KEY = "AQ.Ab8RN6LZgTfLdUv0FUkQPMLc2hLbj3JjFQMBvqDraUAImUVktw"
 
 
 class LLMClient:
@@ -35,28 +33,20 @@ class LLMClient:
             resolved_mode = "dev"
         self.mode = resolved_mode
 
-        self.provider = provider or os.getenv("LLM_PROVIDER") or "openai"
+        # Force gemini provider
+        self.provider = "gemini"
 
-        if self.provider == "openai":
-            env_key_name = f"OPENAI_API_KEY_{self.mode.upper()}"
-            self.api_key = os.getenv(env_key_name) or os.getenv("OPENAI_API_KEY")
-            if not self.api_key:
-                raise RuntimeError(f"OpenAI API key not set in environment ({env_key_name})")
-            self.client = OpenAI(api_key=self.api_key)
-            self.model = model or "gpt-4o"
-        elif self.provider == "gemini":
-            if not genai:
-                raise RuntimeError("google-generativeai package not installed")
-            env_key_name = f"GEMINI_API_KEY_{self.mode.upper()}"
-            self.api_key = os.getenv(env_key_name) or os.getenv("GEMINI_API_KEY")
-            if not self.api_key:
-                raise RuntimeError(f"Gemini API key not set in environment ({env_key_name})")
-            genai.configure(api_key=self.api_key)
-            self.model = model or "gemini-1.5-pro"
-            # client will be initialized per-request in _send_gemini to support dynamic system_instruction
-            self.client = None
-        else:
-            raise ValueError(f"Unsupported provider: {self.provider}")
+        env_key_name = f"GEMINI_API_KEY_{self.mode.upper()}"
+        self.api_key = (
+            os.getenv(env_key_name)
+            or os.getenv("GEMINI_API_KEY")
+            or FALLBACK_GEMINI_KEY
+        )
+
+        genai.configure(api_key=self.api_key)
+        self.model = model or "gemini-1.5-pro-latest"
+        # client will be initialized per-request in _send_gemini to support dynamic system_instruction
+        self.client = None
 
         self.temperature = 0 if temperature is None else temperature
         self.request_timeout_seconds = request_timeout_seconds
@@ -129,38 +119,7 @@ class LLMClient:
         if self.mock_response is not None:
             return self.mock_response
 
-        if self.provider == "openai":
-            return self._send_openai(prompt, system_prompt)
-        elif self.provider == "gemini":
-            return self._send_gemini(prompt, system_prompt)
-        return f"[ERROR] Unsupported provider: {self.provider}"
-
-    def _send_openai(self, prompt: str, system_prompt: Optional[str] = None) -> str:
-        messages = [
-            {
-                "role": "system",
-                "content": system_prompt or (
-                    "You are an autonomous code-generation and refactoring agent "
-                    "inside a Meta-Agent pipeline. Follow instructions precisely, "
-                    "output only code or patches when required."
-                ),
-            }
-        ]
-
-        for chunk in self._chunk_prompt(prompt):
-            messages.append({"role": "user", "content": chunk})
-
-        try:
-            response = self.client.chat.completions.create(
-                model=self.model,
-                messages=messages,
-                max_tokens=4096,
-                temperature=self.temperature,
-                timeout=self.request_timeout_seconds,
-            )
-            return response.choices[0].message.content
-        except Exception as e:
-            return f"[ERROR] OpenAI failed: {e!s}"
+        return self._send_gemini(prompt, system_prompt)
 
     def _send_gemini(self, prompt: str, system_prompt: Optional[str] = None) -> str:
         try:
