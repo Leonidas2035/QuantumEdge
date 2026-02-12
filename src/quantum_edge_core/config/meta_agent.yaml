@@ -1,6 +1,7 @@
 # Meta-Agent defaults (safe, no secrets).
 mode: "dev"
-model: "gpt-4o"
+provider: "openai" # "openai" or "gemini"
+model: "gpt-4o"     # e.g., "gpt-4o", "gemini-1.5-pro"
 projects_path: "src/quantum_edge_core/config/projects.yaml"
 offmarket_schedule_path: "src/quantum_edge_core/config/offmarket_schedule.yaml"
 logs_dir: "logs"

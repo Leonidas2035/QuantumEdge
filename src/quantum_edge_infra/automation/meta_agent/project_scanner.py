@@ -263,6 +263,92 @@ class ProjectScanner:
         """
         return self.collect_project_context(max_chars=max_chars)
 
+    def generate_tree_view(self) -> str:
+        """
+        Returns a text representation of the folder structure, respecting .gitignore.
+        """
+        git_files = self._get_git_files()
+        if git_files is None:
+            # Fallback to os.walk if git is not available
+            return self._generate_tree_walk(self.project_root)
+
+        tree = {}
+        for abs_path in git_files:
+            rel_path = os.path.relpath(abs_path, self.project_root)
+            if self._in_excluded_dir(rel_path):
+                continue
+            parts = rel_path.split(os.sep)
+            curr = tree
+            for part in parts:
+                if part not in curr:
+                    curr[part] = {}
+                curr = curr[part]
+
+        lines = ["."]
+        def _render(node, indent=""):
+            items = sorted(node.items())
+            for idx, (name, children) in enumerate(items):
+                is_last = (idx == len(items) - 1)
+                connector = "└── " if is_last else "├── "
+                lines.append(f"{indent}{connector}{name}")
+                if children:
+                    new_indent = indent + ("    " if is_last else "│   ")
+                    _render(children, new_indent)
+
+        _render(tree)
+        return "\n".join(lines)
+
+    def _generate_tree_walk(self, root_dir: str, indent: str = "") -> str:
+        lines = []
+        if indent == "":
+            lines.append(".")
+
+        try:
+            entries = sorted(os.listdir(root_dir))
+        except OSError:
+            return ""
+
+        entries = [e for e in entries if not self._should_exclude_dir(e)]
+
+        for idx, entry in enumerate(entries):
+            is_last = (idx == len(entries) - 1)
+            connector = "└── " if is_last else "├── "
+            abs_path = os.path.join(root_dir, entry)
+            lines.append(f"{indent}{connector}{entry}")
+
+            if os.path.isdir(abs_path):
+                new_indent = indent + ("    " if is_last else "│   ")
+                subtree = self._generate_tree_walk(abs_path, new_indent)
+                if subtree:
+                    lines.append(subtree)
+
+        return "\n".join(lines)
+
+    def read_all_source_files(self) -> str:
+        """
+        Gathers ALL .py files in src/ (respecting .gitignore and excluding secrets).
+        """
+        # Temporarily override include_exts to only include .py
+        original_exts = self.include_exts
+        self.include_exts = {".py"}
+
+        try:
+            # Context collection for architect mode usually needs more tokens
+            # We use include_globs to target src/ while keeping project_root at the base
+            # so that relative paths remain correct (e.g., src/quantum_edge_core/...)
+            context = self.collect_project_context(
+                max_chars=500_000,
+                include_globs=["src/**/*.py"]
+            )
+
+            # If src/ was empty or missing, try root .py files as fallback
+            if not context:
+                context = self.collect_project_context(max_chars=500_000)
+
+            return context
+        finally:
+            self.include_exts = original_exts
+
 
 def collect_project_context(
     project_root: str,

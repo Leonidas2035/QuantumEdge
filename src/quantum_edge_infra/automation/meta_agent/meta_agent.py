@@ -11,7 +11,7 @@ from typing import Dict, Tuple, Optional
 
 import yaml
 
-from codex_client import CodexClient
+from llm_client import LLMClient
 from file_manager import build_change_set_from_response
 from logger import configure_logger
 from meta_core import run_task
@@ -374,7 +374,11 @@ class MetaAgent:
         self.config = self._load_config(resolved)
         self.builder = PromptBuilder()
         self.mode = self._resolve_mode()
-        self.client = CodexClient(mode=self.mode, model=self.config.get("model"))
+        self.client = LLMClient(
+            provider=self.config.get("provider"),
+            mode=self.mode,
+            model=self.config.get("model")
+        )
         self.lock_busy = False
         projects_path = (self.config or {}).get("projects_path")
         self.project_registry = load_project_registry(projects_path) if projects_path else load_project_registry()
@@ -486,13 +490,18 @@ class MetaAgent:
                         stage_instructions = handle.read()
 
                     print(
-                        f"[INFO] Collecting project context from {target_project} for stage {name} (project_id={project_id})..."
+                        f"[INFO] Collecting global project context for stage {name}..."
                     )
                     scanner = ProjectScanner(target_project)
-                    context = scanner.collect_project_context(max_chars=MAX_CONTEXT_CHARS)
+
+                    # Architect Mode: Gather Tree + All Source (up to limit)
+                    tree_view = scanner.generate_tree_view()
+                    source_context = scanner.read_all_source_files()
+
+                    context = f"PROJECT STRUCTURE:\n{tree_view}\n\nSOURCE CODE:\n{source_context}"
+
                     print(
-                        f"[INFO] Collected context for stage {name}: "
-                        f"{scanner.stats.files_included} files, {scanner.stats.chars_collected} chars."
+                        f"[INFO] Collected context for stage {name} (Architect Mode)."
                     )
 
                     full_prompt = self.builder.build_prompt(

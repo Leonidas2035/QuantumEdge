@@ -108,13 +108,14 @@ def test_stage_pipeline_routes_through_safety_policy(tmp_path: Path, monkeypatch
     )
 
     class DummyClient:
-        def __init__(self, mode=None, model=None):
+        def __init__(self, provider=None, mode=None, model=None):
             self.model = model or "dummy"
+            self.provider = provider or "dummy"
 
         def send(self, prompt: str) -> str:
             return "===FILE: test.txt===\ncontent\n"
 
-    monkeypatch.setattr(meta_agent_mod, "CodexClient", DummyClient)
+    monkeypatch.setattr(meta_agent_mod, "LLMClient", DummyClient)
 
     called = {"value": False}
 
