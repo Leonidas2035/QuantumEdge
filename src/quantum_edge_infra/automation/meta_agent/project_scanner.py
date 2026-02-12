@@ -3,6 +3,7 @@ import glob
 import os
 import subprocess
 from dataclasses import dataclass, field
+from pathlib import Path
 from typing import Iterable, List, Optional, Set
 
 from secret_masking import mask_secrets
@@ -69,13 +70,24 @@ class ProjectScanner:
 
     def __init__(
         self,
-        project_root: str,
+        project_root: Optional[str] = None,
         include_exts: Optional[Iterable[str]] = None,
         exclude_dirs: Optional[Iterable[str]] = None,
         exclude_files: Optional[Iterable[str]] = None,
         max_file_chars: int = 100_000,
     ):
-        self.project_root = os.path.abspath(project_root)
+        if project_root is None:
+            # Default to repo root by looking for src/quantum_edge_core
+            curr = Path(__file__).resolve()
+            found_root = None
+            for _ in range(6):
+                if (curr / "src" / "quantum_edge_core").is_dir():
+                    found_root = str(curr)
+                    break
+                curr = curr.parent
+            self.project_root = found_root or os.path.abspath(".")
+        else:
+            self.project_root = os.path.abspath(project_root)
         self.include_exts = {ext.lower() for ext in (include_exts or DEFAULT_INCLUDE_EXTS)}
         self.exclude_dirs = {d.lower() for d in (exclude_dirs or DEFAULT_EXCLUDE_DIRS)}
         self.exclude_files = {f.lower() for f in (exclude_files or DEFAULT_EXCLUDE_FILES)}
@@ -324,6 +336,71 @@ class ProjectScanner:
 
         return "\n".join(lines)
 
+    def get_project_structure(self) -> str:
+        """
+        Returns a text tree of src/, config/, and tests/.
+        """
+        git_files = self._get_git_files()
+        tree = {}
+        target_dirs = {"src", "config", "tests"}
+
+        files_to_process = []
+        if git_files:
+            for abs_path in git_files:
+                rel_path = os.path.relpath(abs_path, self.project_root)
+                parts = rel_path.split(os.sep)
+                if parts[0] in target_dirs:
+                    files_to_process.append(rel_path)
+        else:
+            # Fallback to manual walk if not in git
+            for target in target_dirs:
+                target_path = os.path.join(self.project_root, target)
+                if os.path.isdir(target_path):
+                    for root, _, files in os.walk(target_path):
+                        for f in files:
+                            abs_p = os.path.join(root, f)
+                            rel_p = os.path.relpath(abs_p, self.project_root)
+                            files_to_process.append(rel_p)
+
+        for rel_path in files_to_process:
+            if self._in_excluded_dir(rel_path):
+                continue
+            parts = rel_path.split(os.sep)
+            curr = tree
+            for part in parts:
+                if part not in curr:
+                    curr[part] = {}
+                curr = curr[part]
+
+        lines = ["."]
+        def _render(node, indent=""):
+            items = sorted(node.items())
+            for idx, (name, children) in enumerate(items):
+                is_last = (idx == len(items) - 1)
+                connector = "└── " if is_last else "├── "
+                lines.append(f"{indent}{connector}{name}")
+                if children:
+                    new_indent = indent + ("    " if is_last else "│   ")
+                    _render(children, new_indent)
+
+        _render(tree)
+        return "\n".join(lines)
+
+    def read_all_code(self) -> str:
+        """
+        Recursively reads .py and .yaml files (respecting .gitignore).
+        """
+        original_exts = self.include_exts
+        self.include_exts = {".py", ".yaml", ".yml"}
+
+        try:
+            return self.collect_project_context(
+                max_chars=1_000_000,
+                include_globs=["src/**/*", "config/**/*", "tests/**/*"]
+            )
+        finally:
+            self.include_exts = original_exts
+
     def read_all_source_files(self) -> str:
         """
         Gathers ALL .py files in src/ (respecting .gitignore and excluding secrets).
@@ -337,13 +414,13 @@ class ProjectScanner:
             # We use include_globs to target src/ while keeping project_root at the base
             # so that relative paths remain correct (e.g., src/quantum_edge_core/...)
             context = self.collect_project_context(
-                max_chars=500_000,
+                max_chars=1_000_000,
                 include_globs=["src/**/*.py"]
             )
 
             # If src/ was empty or missing, try root .py files as fallback
             if not context:
-                context = self.collect_project_context(max_chars=500_000)
+                context = self.collect_project_context(max_chars=1_000_000)
 
             return context
         finally:

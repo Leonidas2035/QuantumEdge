@@ -100,7 +100,10 @@ def test_stage_pipeline_routes_through_safety_policy(tmp_path: Path, monkeypatch
     monkeypatch.setattr(meta_agent_mod, "PATCHES_DIR", str(tmp_path / "patches"))
     monkeypatch.setattr(meta_agent_mod, "write_json_report", lambda report: str(tmp_path / "report.json"))
     monkeypatch.setattr(meta_agent_mod, "write_md_report", lambda report: str(tmp_path / "report.md"))
-    monkeypatch.setattr(meta_agent_mod.ProjectScanner, "collect_project_context", lambda self, max_chars=250000: "")
+    monkeypatch.setattr(meta_agent_mod.ProjectScanner, "collect_project_context", lambda self, **kwargs: "")
+    monkeypatch.setattr(meta_agent_mod.ProjectScanner, "get_project_structure", lambda self: ".")
+    monkeypatch.setattr(meta_agent_mod.ProjectScanner, "read_all_code", lambda self: "")
+
     monkeypatch.setattr(
         meta_agent_mod.MetaAgent,
         "_load_stages",
@@ -112,7 +115,7 @@ def test_stage_pipeline_routes_through_safety_policy(tmp_path: Path, monkeypatch
             self.model = model or "dummy"
             self.provider = provider or "dummy"
 
-        def send(self, prompt: str) -> str:
+        def send(self, prompt: str, system_prompt: str = None) -> str:
             return "===FILE: test.txt===\ncontent\n"
 
     monkeypatch.setattr(meta_agent_mod, "LLMClient", DummyClient)

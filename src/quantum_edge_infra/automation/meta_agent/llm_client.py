@@ -53,7 +53,8 @@ class LLMClient:
                 raise RuntimeError(f"Gemini API key not set in environment ({env_key_name})")
             genai.configure(api_key=self.api_key)
             self.model = model or "gemini-1.5-pro"
-            self.client = genai.GenerativeModel(self.model)
+            # client will be initialized per-request in _send_gemini to support dynamic system_instruction
+            self.client = None
         else:
             raise ValueError(f"Unsupported provider: {self.provider}")
 
@@ -114,14 +115,14 @@ class LLMClient:
             chunks.append(current)
         return chunks
 
-    def send_request(self, context: str, instructions: str) -> str:
+    def send_request(self, context: str, instructions: str, system_prompt: Optional[str] = None) -> str:
         """
         Unified interface for sending context and instructions to the LLM.
         """
         prompt = f"{context}\n\nInstructions:\n{instructions}"
-        return self.send(prompt)
+        return self.send(prompt, system_prompt=system_prompt)
 
-    def send(self, prompt: str) -> str:
+    def send(self, prompt: str, system_prompt: Optional[str] = None) -> str:
         """
         Sends prompt to the configured LLM provider.
         """
@@ -129,16 +130,16 @@ class LLMClient:
             return self.mock_response
 
         if self.provider == "openai":
-            return self._send_openai(prompt)
+            return self._send_openai(prompt, system_prompt)
         elif self.provider == "gemini":
-            return self._send_gemini(prompt)
+            return self._send_gemini(prompt, system_prompt)
         return f"[ERROR] Unsupported provider: {self.provider}"
 
-    def _send_openai(self, prompt: str) -> str:
+    def _send_openai(self, prompt: str, system_prompt: Optional[str] = None) -> str:
         messages = [
             {
                 "role": "system",
-                "content": (
+                "content": system_prompt or (
                     "You are an autonomous code-generation and refactoring agent "
                     "inside a Meta-Agent pipeline. Follow instructions precisely, "
                     "output only code or patches when required."
@@ -161,22 +162,29 @@ class LLMClient:
         except Exception as e:
             return f"[ERROR] OpenAI failed: {e!s}"
 
-    def _send_gemini(self, prompt: str) -> str:
+    def _send_gemini(self, prompt: str, system_prompt: Optional[str] = None) -> str:
         try:
-            # Gemini typically has a larger context window, but we still respect system instructions
+            # Gemini typically has a larger context window
             generation_config = {
                 "temperature": self.temperature,
-                "max_output_tokens": 4096,
+                "max_output_tokens": 8192,
             }
-            # We can't set a system instruction as easily in older versions,
-            # but usually we just prepent it to the prompt if needed.
-            system_instr = (
+
+            # Use the provided system prompt or a default one
+            sys_instr = system_prompt or (
                 "You are an autonomous code-generation and refactoring agent "
                 "inside a Meta-Agent pipeline. Follow instructions precisely, "
-                "output only code or patches when required.\n\n"
+                "output only code or patches when required."
             )
-            response = self.client.generate_content(
-                system_instr + prompt,
+
+            # Initialize model with system instruction natively
+            model = genai.GenerativeModel(
+                model_name=self.model,
+                system_instruction=sys_instr
+            )
+
+            response = model.generate_content(
+                prompt,
                 generation_config=generation_config
             )
             return response.text
