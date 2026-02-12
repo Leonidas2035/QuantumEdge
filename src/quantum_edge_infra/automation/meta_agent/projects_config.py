@@ -105,9 +105,21 @@ def _resolve_base_dir() -> Path:
             return get_qe_paths()["qe_root"]
         except Exception:
             pass
+
+    # Try upward traversal to find repo root (marked by src/quantum_edge_core)
+    curr = Path(BASE_DIR).resolve()
+    for _ in range(6):
+        if (curr / "src" / "quantum_edge_core").is_dir():
+            return curr
+        if curr.parent == curr:
+            break
+        curr = curr.parent
+
+    # Fallback for legacy layout
     parent = Path(BASE_DIR).parent
     if (parent / "config").is_dir() and (parent / "ai_scalper_bot").is_dir():
         return parent
+
     return Path(BASE_DIR)
 
 
