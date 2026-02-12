@@ -41,7 +41,7 @@ def save_stages(stages):
 def on_add():
     task_name = entry_name.get().strip()
     task_body = text_prompt.get("1.0", tk.END).strip()
-    project_id = project_var.get().strip()
+    project_id = "monorepo"
 
     if not task_name:
         messagebox.showerror("Error", "Task name is required.")
@@ -111,11 +111,6 @@ def main():
     entry_name = tk.Entry(frame_top)
     entry_name.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(5, 0))
 
-    lbl_project = tk.Label(frame_top, text="Project:")
-    lbl_project.pack(side=tk.LEFT, padx=(10, 0))
-
-    project_dropdown = ttk.Combobox(frame_top, textvariable=project_var, values=project_choices, width=20)
-    project_dropdown.pack(side=tk.LEFT, padx=(5, 0))
 
     lbl_prompt = tk.Label(root, text="Task prompt / instructions (.md):")
     lbl_prompt.pack(anchor="w", padx=10)

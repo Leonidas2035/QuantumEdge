@@ -380,6 +380,8 @@ class MetaAgent:
             model=self.config.get("model")
         )
         self.lock_busy = False
+        # Architect Mode: default to global project root
+        self.project_root = self.config.get("project_root") or _resolve_base_dir()
         projects_path = (self.config or {}).get("projects_path")
         self.project_registry = load_project_registry(projects_path) if projects_path else load_project_registry()
 
@@ -437,7 +439,7 @@ class MetaAgent:
             return []
 
     def run_stage_pipeline(self, override_project_id: Optional[str] = None) -> tuple[bool, list]:
-        print("[INFO] Starting stage pipeline from stages.yaml...")
+        print("[INFO] Starting stage pipeline (Architect Mode)...")
         stages = self._load_stages()
         if not stages:
             print("[WARN] No stages to run.")
@@ -455,7 +457,6 @@ class MetaAgent:
             return False, stages
 
         try:
-            default_project_id = self.project_registry.default_project_id
             for stage in stages:
                 name = stage.get("name", "unnamed_stage")
                 prompt_file = stage.get("prompt")
@@ -463,8 +464,8 @@ class MetaAgent:
                     print(f"[ERROR] Stage {name} is missing a prompt path.")
                     return False, stages
 
-                # Operating on the entire repository as a single Monorepo
-                target_project = _resolve_base_dir()
+                # Operating on the entire repository as a single Monorepo (Architect Mode)
+                target_project = self.project_root
                 project_id = "monorepo"
 
                 if not os.path.isdir(target_project):
@@ -494,34 +495,39 @@ class MetaAgent:
                     )
                     scanner = ProjectScanner(target_project)
 
-                    # Architect Mode: Gather Tree + All Source (up to limit)
-                    tree_view = scanner.generate_tree_view()
-                    source_context = scanner.read_all_source_files()
-
-                    context = f"PROJECT STRUCTURE:\n{tree_view}\n\nSOURCE CODE:\n{source_context}"
+                    # Global Architect Mode: Gather Tree + All Source
+                    tree_view = scanner.get_project_structure()
+                    source_context = scanner.read_all_code()
 
                     print(
                         f"[INFO] Collected context for stage {name} (Architect Mode)."
                     )
 
+                    system_prompt = (
+                        "You are a Global Architect. You have full vision of the project structure and source code.\n"
+                        f"PROJECT STRUCTURE:\n{tree_view}\n\n"
+                        "Use this context to fulfill the user's request precisely. "
+                        "Output only file blocks using the format ===FILE: path === followed by the new content."
+                    )
+
                     full_prompt = self.builder.build_prompt(
                         stage_instructions,
-                        context,
+                        f"SOURCE CODE:\n{source_context}",
                         {
                             "stage": name,
-                            "mode": "legacy",
+                            "mode": "architect",
                             "target_project": target_project,
                             "project_id": project_id,
                             "project_path": target_project,
                         },
                     )
 
-                    print(f"[INFO] Sending prompt to Codex for stage {name}...")
-                    response = self.client.send(full_prompt)
-                    print(f"[INFO] Codex response received for stage {name}.")
+                    print(f"[INFO] Sending prompt to LLM for stage {name} (Architect Mode)...")
+                    response = self.client.send(full_prompt, system_prompt=system_prompt)
+                    print(f"[INFO] LLM response received for stage {name}.")
 
                     if isinstance(response, str) and response.lstrip().startswith("[ERROR]"):
-                        print(f"[ERROR] Codex call failed for stage {name}: {response}")
+                        print(f"[ERROR] LLM call failed for stage {name}: {response}")
                         return False, stages
 
                     change_set = build_change_set_from_response(target_project, response)
@@ -602,7 +608,6 @@ def parse_args(argv: Optional[list[str]] = None):
     parser.add_argument("--task-id", dest="task_id", help="Task ID to resolve in tasks/<ID>.md for task mode.")
     parser.add_argument("--task-file", dest="task_file", help="Alias for --task (legacy).")
     parser.add_argument("--list-tasks", action="store_true", help="List available tasks from tasks/ directory.")
-    parser.add_argument("--list-projects", action="store_true", help="List configured projects.")
     parser.add_argument("--project", dest="filter_project", help="Filter tasks by project when listing.")
     parser.add_argument("--task-type", dest="filter_task_type", help="Filter tasks by task type when listing.")
     parser.add_argument("--supervisor-goal", dest="supervisor_goal", help="Run a supervisor goal (high-level string).")
@@ -1051,13 +1056,6 @@ def main() -> int:
     if args.once:
         print("[INFO] --once specified; running a single pass.")
 
-    if args.list_projects:
-        registry = load_project_registry()
-        print("Configured projects:")
-        for pid, info in registry.projects.items():
-            prefix = "(default) " if pid == registry.default_project_id else ""
-            print(f"- {prefix}{pid}: {info.root_path} - {info.description}")
-        return 0
 
     if args.list_tasks:
         try:

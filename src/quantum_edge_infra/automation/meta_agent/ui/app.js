@@ -116,7 +116,7 @@ async function submitTask(event) {
   const payload = {
     objective: form.objective.value.trim(),
     instructions: form.instructions.value.trim(),
-    project_id: form.project_id.value,
+    project_id: form.project_id.value || "monorepo",
     llm: { model: form.model.value.trim() || undefined },
     constraints: { patch_only: form.patch_only.checked },
     execution: { dry_run: form.dry_run.checked },

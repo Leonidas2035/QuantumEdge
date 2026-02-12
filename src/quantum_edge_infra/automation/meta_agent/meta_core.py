@@ -411,13 +411,8 @@ def run_task(
         scanner = ProjectScanner(target_project)
 
         # Architect Mode: Gather Tree + Source
-        tree_view = scanner.generate_tree_view()
-        source_context = scanner.collect_project_context(
-            max_chars=spec.llm.max_context_chars or 250_000,
-            include_globs=spec.context.include_globs or None,
-            focus_files=spec.context.focus_files or None,
-            deny_globs=spec.constraints.deny_globs or None,
-        )
+        tree_view = scanner.get_project_structure()
+        source_context = scanner.read_all_code()
         context = f"PROJECT STRUCTURE:\n{tree_view}\n\nSOURCE CODE:\n{source_context}"
         scan_ms = _elapsed_ms(scan_start)
         context_manifest = {
@@ -459,7 +454,13 @@ def run_task(
             temperature=spec.llm.temperature,
             request_timeout_seconds=llm_timeout_seconds,
         )
-        response = client.send(full_prompt)
+        system_prompt = (
+            "You are a Global Architect. You have full vision of the project structure and source code.\n"
+            f"PROJECT STRUCTURE:\n{tree_view}\n\n"
+            "Use this context to fulfill the user's request precisely. "
+            "Output only file blocks using the format ===FILE: path === followed by the new content."
+        )
+        response = client.send(full_prompt, system_prompt=system_prompt)
         llm_ms = _elapsed_ms(llm_start)
         _log_event(events_path, "llm_called", {"duration_ms": llm_ms, "model": spec.llm.model or "default"})
         if isinstance(response, str) and response.lstrip().startswith("[ERROR]"):
