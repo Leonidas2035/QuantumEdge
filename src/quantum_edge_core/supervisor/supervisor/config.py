@@ -34,6 +34,7 @@ class SupervisorConfig:
     heartbeat_timeout_s: float
     restart_max_attempts: int
     restart_backoff_s: float
+    zmq_heartbeat_port: int = 5557
     exchange: str = ""
     api_enabled: bool = True
     api_host: str = "127.0.0.1"
@@ -405,6 +406,7 @@ def load_supervisor_config(path: Path) -> SupervisorConfig:
     env_port = os.getenv("SUPERVISOR_PORT") or os.getenv("QE_SUPERVISOR_PORT")
     heartbeat_port = int(env_port or raw.get("heartbeat_port", 8765))
     heartbeat_timeout_s = float(raw.get("heartbeat_timeout_s", 15))
+    zmq_heartbeat_port = int(raw.get("zmq_heartbeat_port", 5557))
     restart_max_attempts = int(raw.get("restart_max_attempts", 3))
     restart_backoff_s = float(raw.get("restart_backoff_s", 5))
     if heartbeat_port < 1 or heartbeat_port > 65535:
@@ -517,6 +519,7 @@ def load_supervisor_config(path: Path) -> SupervisorConfig:
         mode=mode,
         heartbeat_port=heartbeat_port,
         heartbeat_timeout_s=heartbeat_timeout_s,
+        zmq_heartbeat_port=zmq_heartbeat_port,
         restart_max_attempts=restart_max_attempts,
         restart_backoff_s=restart_backoff_s,
         exchange=str(raw.get("exchange", "")),
@@ -700,7 +703,7 @@ def load_llm_supervisor_config(path: Path) -> LlmSupervisorConfig:
         max_multiplier=max_mul,
     )
 
-    cb = llm_section.get("circuit_breaker", {}) or {}
+    cb = raw.get("circuit_breaker", {}) or {}
     circuit_breaker = CircuitBreakerConfig(
         failures=int(cb.get("failures", 3)),
         window_sec=int(cb.get("window_sec", 300)),

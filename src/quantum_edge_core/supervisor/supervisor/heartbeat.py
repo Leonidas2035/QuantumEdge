@@ -2,9 +2,14 @@
 
 from __future__ import annotations
 
+import json
+import logging
+import threading
 from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from typing import Any, Mapping, Optional
+
+import zmq
 
 
 @dataclass
@@ -115,6 +120,65 @@ class HeartbeatServer:
         """Return the latest heartbeat state."""
 
         return self._state
+
+
+class ZmqHeartbeatSubscriber:
+    """Subscribes to ZMQ heartbeats and updates a HeartbeatServer."""
+
+    def __init__(
+        self,
+        server: HeartbeatServer,
+        endpoint: str = "tcp://127.0.0.1:5557",
+        logger: Optional[logging.Logger] = None,
+    ) -> None:
+        self.server = server
+        self.endpoint = endpoint
+        self.logger = logger or logging.getLogger(__name__)
+        self._stop_event = threading.Event()
+        self._thread: Optional[threading.Thread] = None
+
+    def start(self) -> None:
+        """Start the subscriber thread."""
+        if self._thread:
+            return
+        self._thread = threading.Thread(target=self._run, daemon=True)
+        self._thread.start()
+
+    def stop(self) -> None:
+        """Stop the subscriber thread."""
+        self._stop_event.set()
+        if self._thread:
+            self._thread.join(timeout=2)
+            self._thread = None
+
+    def _run(self) -> None:
+        ctx = zmq.Context()
+        socket = ctx.socket(zmq.SUB)
+        socket.setsockopt(zmq.SUBSCRIBE, b"")
+        socket.setsockopt(zmq.RCVTIMEO, 1000)
+        try:
+            socket.connect(self.endpoint)
+            self.logger.info("ZmqHeartbeatSubscriber connected to %s", self.endpoint)
+            while not self._stop_event.is_set():
+                try:
+                    message = socket.recv_string()
+                    data = json.loads(message)
+                    if data.get("type") == "heartbeat":
+                        # Map bot fields to HeartbeatServer fields
+                        hb_data = {
+                            "pnl": data.get("pnl"),
+                            "unrealized_pnl": data.get("pnl"),
+                            "open_positions_notional": data.get("position"),
+                            "mode": data.get("state"),
+                        }
+                        self.server.update_heartbeat(hb_data)
+                except zmq.Again:
+                    continue
+                except Exception as e:
+                    self.logger.error("ZmqHeartbeatSubscriber error: %s", e)
+        finally:
+            socket.close()
+            ctx.term()
 
 
 def heartbeat_to_risk_summary(state: HeartbeatState) -> Optional[Mapping[str, Any]]:

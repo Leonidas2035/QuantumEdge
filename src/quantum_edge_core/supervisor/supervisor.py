@@ -46,7 +46,7 @@ from supervisor.config import (
     TsdbRetentionConfig,
     AutopilotConfig,
 )
-from supervisor.heartbeat import HeartbeatServer, HeartbeatPayload
+from supervisor.heartbeat import HeartbeatServer, HeartbeatPayload, ZmqHeartbeatSubscriber
 from supervisor.logging_setup import setup_logging
 from supervisor.config_loader import load_processes_spec
 from supervisor.process_manager import ProcessManager, ProcessInfo
@@ -168,6 +168,11 @@ class SupervisorApp:
             self.tsdb_writer.start()
             self.event_logger.tsdb_writer = self.tsdb_writer
         self.heartbeat_server = HeartbeatServer(config.heartbeat_timeout_s)
+        self.zmq_heartbeat_sub = ZmqHeartbeatSubscriber(
+            self.heartbeat_server,
+            endpoint=f"tcp://127.0.0.1:{config.zmq_heartbeat_port}",
+            logger=self.logger
+        )
         risk_state = state_utils.load_risk_state(self.state_dir, today=date.today())
         self.risk_engine = HardRiskEngine(risk_config, risk_state, self.logger, self.event_logger, llm_config.trust_policy)
         self.process_manager = ProcessManager(
@@ -670,6 +675,7 @@ class SupervisorApp:
                 continue
         if self.api_server:
             self.api_server.start()
+        self.zmq_heartbeat_sub.start()
         if self.lockbot_policy_runner:
             self.lockbot_policy_runner.start()
         try:
@@ -794,6 +800,7 @@ class SupervisorApp:
                 self.run_context.write_artifacts_manifest()
             if self.api_server:
                 self.api_server.stop()
+            self.zmq_heartbeat_sub.stop()
             if self.lockbot_policy_runner:
                 self.lockbot_policy_runner.stop()
             self.process_manager.stop_all()

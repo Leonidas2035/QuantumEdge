@@ -3,9 +3,10 @@
 mode: "paper"  # paper | demo | off
 exchange: ""   # optional: e.g. "bingx_swap"
 heartbeat_port: 8765
-heartbeat_timeout_s: 15
+heartbeat_timeout_s: 60
+zmq_heartbeat_port: 5557
 restart_max_attempts: 3
-restart_backoff_s: 5
+restart_backoff_s: 10
 
 # HTTP API settings
 api_enabled: true

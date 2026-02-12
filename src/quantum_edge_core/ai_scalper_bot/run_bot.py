@@ -69,13 +69,20 @@ class BotEngine:
                 if tick:
                     current_ts = time.time()
                     
+                    # Normalize MarketDataHub events to raw Binance-style fields if needed
+                    if 'price' in tick and 'p' not in tick:
+                        tick['p'] = tick.get('price')
+                        tick['q'] = tick.get('quantity')
+                        tick['T'] = tick.get('timestamp')
+                        tick['m'] = (tick.get('side') == 'sell')
+
                     # 2. Critical Path: Update State
                     self.cache.update(tick)
                     
                     # Features need the Struct
                     market_state = self.cache._current_state 
                     
-                    if market_state: # Ensure we have initial state
+                    if market_state and 'p' in tick: # Ensure we have initial state and it's a trade tick
                         # Re-parse for Feature usage
                         from quantum_edge_core.ai_scalper_bot.bot.core.models import MarketTick
                         tick_obj = MarketTick(

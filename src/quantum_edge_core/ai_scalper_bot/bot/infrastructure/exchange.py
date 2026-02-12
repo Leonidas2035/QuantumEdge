@@ -1,26 +1,36 @@
 import ccxt.async_support as ccxt
 import logging
+import os
+import uuid
 from quantum_edge_core.ai_scalper_bot.bot.execution.strategy_core import TradeAction
 
 class BingXExecutionGateway:
     def __init__(self, config):
         self.logger = logging.getLogger("BingXGateway")
         self.symbol = config.symbol
+        self.offline = os.getenv("QE_OFFLINE") == "1"
         
-        # Init CCXT BingX
-        self.exchange = ccxt.bingx({
-            'apiKey': config.bingx_api_key,
-            'secret': config.bingx_secret,
-            'options': {
-                'defaultType': 'swap', 
-            }
-        })
-        
-        if config.use_sandbox:
-            self.exchange.set_sandbox_mode(True)
-            self.logger.warning("⚠️ RUNNING IN BINGX SANDBOX MODE (VST)")
+        if not self.offline:
+            # Init CCXT BingX
+            self.exchange = ccxt.bingx({
+                'apiKey': config.bingx_api_key,
+                'secret': config.bingx_secret,
+                'options': {
+                    'defaultType': 'swap',
+                }
+            })
+
+            if config.use_sandbox:
+                self.exchange.set_sandbox_mode(True)
+                self.logger.warning("⚠️ RUNNING IN BINGX SANDBOX MODE (VST)")
+        else:
+            self.logger.warning("⚠️ RUNNING IN OFFLINE MODE (No CCXT)")
+            self.exchange = None
 
     async def execute(self, action: TradeAction) -> bool:
+        if self.offline:
+            self.logger.info(f"OFFLINE: Simulated {action.action_type} {action.qty} @ {action.price}")
+            return True
         """
         Executes a TradeAction on BingX via CCXT.
         """
@@ -54,4 +64,5 @@ class BingXExecutionGateway:
             return False
             
     async def close(self):
-        await self.exchange.close()
+        if self.exchange:
+            await self.exchange.close()

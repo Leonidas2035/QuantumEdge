@@ -6,6 +6,7 @@ import argparse
 import asyncio
 import json
 import logging
+import os
 import sys
 import time
 from contextlib import suppress
@@ -108,10 +109,11 @@ class MarketDataHubService(BaseService):
         #     BinanceFuturesFeed(self.config, self.bus),
         # ]
      
-        self.feeds = [
+        self.feeds: List[BaseFeed] = [
             MockLiveFeed(self.config, self.bus),
-            LiquidationFeed(self.config, self.bus)
         ]
+        if os.getenv("QE_OFFLINE") != "1":
+            self.feeds.append(LiquidationFeed(self.config, self.bus))
         
         self.alpha_engine = AlphaEngine(symbol="BTCUSDT") # Default symbol
         self.last_metrics_pub = 0.0
