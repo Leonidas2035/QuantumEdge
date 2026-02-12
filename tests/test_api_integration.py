@@ -4,18 +4,15 @@ Integration Test for API and Logging.
 
 import sys
 import os
-import asyncio
 import unittest
 import requests
 import time
-import shutil
 from pathlib import Path
 
 # Add src to path
 sys.path.append(os.path.abspath("src"))
 
 from quantum_edge_core.supervisor.service import AsyncSupervisor
-from quantum_edge_core.logging.audit_logger import AuditLogger
 
 # We need httpx OR requests to test API.
 # Since we installed httpx for Gemini, we can use it, or requests (standard).

@@ -9,7 +9,7 @@ import structlog
 from typing import Optional, Any
 
 from quantum_edge_core.strategies.base import BaseStrategy, TradeSignal
-from quantum_edge_core.events import LargeBlockEvent, MarketTrade
+from quantum_edge_core.events import LargeBlockEvent
 
 logger = structlog.get_logger()
 

@@ -3,9 +3,8 @@ import pytest
 import numpy as np
 from unittest.mock import MagicMock, patch
 import zmq
-import ujson
 
-from quantum_edge_core.ai_scalper_bot.bot.core.models import MarketTick, OrderBookState, MarketState
+from quantum_edge_core.ai_scalper_bot.bot.core.models import MarketTick
 from quantum_edge_core.ai_scalper_bot.bot.core.orderbook import OrderBookCache
 from quantum_edge_core.ai_scalper_bot.bot.infrastructure.zmq_adapter import ZmqSubStream
 
@@ -64,18 +63,24 @@ def test_zmq_adapter_decoding():
         adapter = ZmqSubStream("tcp://test")
         
         # Test Success
-        mock_socket.recv.return_value = b'{"p": 100, "q": 1}'
+        mock_socket.recv_multipart.return_value = [b"topic", b'{"p": 100, "q": 1}']
         tick = adapter.get_latest_tick(timeout_ms=10)
         assert tick['p'] == 100
         
         # Test Malformed
-        mock_socket.recv.return_value = b'BAD_JSON'
+        mock_socket.recv_multipart.return_value = [b"topic", b'BAD_JSON']
         tick = adapter.get_latest_tick(timeout_ms=10)
         assert tick is None # Should return None and log warning, not crash
 
         # Test Empty/Timeout
-        mock_socket.recv.side_effect = zmq.Again
+        mock_socket.recv_multipart.side_effect = zmq.Again
         tick = adapter.get_latest_tick(timeout_ms=0)
+        assert tick is None
+
+        # Test Fewer than 2 frames
+        mock_socket.recv_multipart.side_effect = None
+        mock_socket.recv_multipart.return_value = [b"only_topic"]
+        tick = adapter.get_latest_tick(timeout_ms=10)
         assert tick is None
 
 if __name__ == "__main__":

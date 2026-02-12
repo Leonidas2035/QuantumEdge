@@ -4,7 +4,6 @@ Tests for Smart Executor Logic.
 
 import unittest
 from unittest.mock import MagicMock, AsyncMock
-import asyncio
 import sys
 
 # Mock binance before importing smart_executor

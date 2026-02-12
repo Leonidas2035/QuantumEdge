@@ -26,9 +26,9 @@ SUPERVISOR_DIR = ROOT / "SupervisorAgent"
 if SUPERVISOR_DIR.exists() and str(SUPERVISOR_DIR) not in sys.path:
     sys.path.insert(0, str(SUPERVISOR_DIR))
 
-from supervisor.lockbot.models import PolicyRunnerConfig, load_lockbot_policy_config  # noqa: E402
-from supervisor.lockbot.policy_runner import LockbotPolicyRunner  # noqa: E402
-from supervisor.lockbot.replay.policy_adapter import PolicyReplayAdapter, ReplayControlClient  # noqa: E402
+from supervisor.lockbot.models import PolicyRunnerConfig, load_lockbot_policy_config
+from supervisor.lockbot.policy_runner import LockbotPolicyRunner
+from supervisor.lockbot.replay.policy_adapter import PolicyReplayAdapter, ReplayControlClient
 
 
 def load_dataset(path: Path, *, time_min: Optional[int] = None, time_max: Optional[int] = None) -> List[Dict[str, Any]]:

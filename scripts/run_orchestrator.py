@@ -466,7 +466,7 @@ def _print_status(
     print("==================")
     print(f"QE_ROOT: {paths['qe_root']}")
     print(f"Supervisor URL: {supervisor_settings['url']}")
-    print(f"Configs:")
+    print("Configs:")
     for name, path in config_paths.items():
         print(f"  - {name}: {path}")
     print("Processes:")
@@ -701,8 +701,6 @@ def main() -> int:
         "supervisor": _resolve_config_path(args.supervisor_config, "SUPERVISOR_CONFIG", "src/quantum_edge_core/config/supervisor.yaml", qe_root),
         "bot": _resolve_config_path(args.bot_config, "QE_CONFIG_PATH", "src/quantum_edge_core/config/bot.yaml", qe_root),
         "meta": _resolve_config_path(args.meta_config, "META_AGENT_CONFIG", "src/quantum_edge_core/config/meta_agent.yaml", qe_root),
-    }
-
     }
 
     setup_logging()

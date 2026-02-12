@@ -1,5 +1,4 @@
 import ccxt.async_support as ccxt
-import asyncio
 import logging
 from quantum_edge_core.ai_scalper_bot.bot.execution.strategy_core import TradeAction
 
@@ -27,7 +26,8 @@ class BingXExecutionGateway:
         """
         side = 'buy' if 'BUY' in action.action_type else 'sell'
         # Hedge Short logic:
-        if 'SHORT' in action.action_type: side = 'sell'
+        if 'SHORT' in action.action_type:
+            side = 'sell'
         
         amount = action.qty
         

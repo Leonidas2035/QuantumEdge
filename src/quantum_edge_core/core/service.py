@@ -6,10 +6,8 @@ Base service class handling lifecycle and signal interruption.
 
 import asyncio
 import signal
-import sys
 import structlog
 from abc import ABC, abstractmethod
-from typing import Optional
 
 logger = structlog.get_logger()
 

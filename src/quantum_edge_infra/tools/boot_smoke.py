@@ -11,7 +11,7 @@ def _compile(path: Path) -> None:
 
 
 def main() -> int:
-    root = Path(__file__).resolve().parents[1]
+    root = Path(__file__).resolve().parents[3]
     targets = [
         root / "QuantumEdge.py",
         root / "SupervisorAgent" / "supervisor.py",

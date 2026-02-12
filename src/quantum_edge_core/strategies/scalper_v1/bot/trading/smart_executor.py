@@ -8,7 +8,6 @@ import logging
 from typing import Dict, Any, Optional
 
 # Assuming we can import binance exceptions or similar
-from binance.exceptions import BinanceAPIException
 
 logger = logging.getLogger(__name__)
 

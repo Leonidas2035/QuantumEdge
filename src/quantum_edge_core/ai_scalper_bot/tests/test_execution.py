@@ -1,6 +1,5 @@
 
 import pytest
-from unittest.mock import MagicMock
 
 from quantum_edge_core.ai_scalper_bot.bot.core.models import MarketState
 from quantum_edge_core.ai_scalper_bot.bot.features.facade import FeatureVector

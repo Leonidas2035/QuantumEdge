@@ -6,7 +6,6 @@ Uses Asyncio for non-blocking TCP interfacing.
 """
 
 import asyncio
-import logging
 import structlog
 from typing import Dict, Any
 

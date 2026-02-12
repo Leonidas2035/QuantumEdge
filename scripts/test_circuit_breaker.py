@@ -1,8 +1,7 @@
 
 import asyncio
-import pytest
 from unittest.mock import MagicMock, patch
-from quantum_edge_core.supervisor.gemini_client import GeminiClient, CircuitBreakerOpenException
+from quantum_edge_core.supervisor.gemini_client import GeminiClient
 
 async def test_circuit_breaker_logic():
     print("Initializing Client...")

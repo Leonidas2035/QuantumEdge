@@ -6,7 +6,6 @@ Target Exchange: BingX (Integration Phase)
 import asyncio
 import logging
 import time
-import os
 
 from quantum_edge_core.ai_scalper_bot.bot.core.config import Config
 from quantum_edge_core.ai_scalper_bot.bot.core.orderbook import OrderBookCache

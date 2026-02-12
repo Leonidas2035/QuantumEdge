@@ -3,7 +3,7 @@
 import asyncio
 import logging
 import time
-from unittest.mock import MagicMock, AsyncMock
+from unittest.mock import AsyncMock
 
 # Add src to path
 import sys
@@ -68,7 +68,7 @@ async def run_test():
             try:
                 # Call slow mock
                 await supervisor.gemini_client.safe_analyze_risk({})
-            except Exception as e:
+            except Exception:
                 pass
             await asyncio.sleep(0.5) # Fast retry to keep pressure
             

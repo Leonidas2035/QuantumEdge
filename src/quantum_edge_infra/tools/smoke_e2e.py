@@ -14,7 +14,7 @@ import shutil
 
 
 def _repo_root() -> Path:
-    return Path(__file__).resolve().parents[1]
+    return Path(__file__).resolve().parents[3]
 
 
 def _run(cmd: list[str], env: dict, label: str, ok_codes: Optional[set[int]] = None) -> None:

@@ -5,7 +5,7 @@ Enforces Hard Risk Overrides.
 """
 
 from __future__ import annotations
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 
 from quantum_edge_core.supervisor.domain.models import (
     PolicyContract, RiskVerdict, RiskLevel, TradingMode

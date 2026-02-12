@@ -50,7 +50,7 @@ from supervisor.heartbeat import HeartbeatServer, HeartbeatPayload
 from supervisor.logging_setup import setup_logging
 from supervisor.config_loader import load_processes_spec
 from supervisor.process_manager import ProcessManager, ProcessInfo
-from supervisor.risk_engine import RiskEngine, RiskDecision, OrderRequest, OrderSide, OrderType
+from supervisor.risk_engine import HardRiskEngine, RiskDecision, OrderRequest, OrderSide, OrderType
 from supervisor import state as state_utils
 from supervisor.events import BaseEvent, EventLogger, EventType, new_run_id, prune_event_logs
 from supervisor.audit_report import load_events_for_date, compute_stats, render_markdown_report
@@ -169,7 +169,7 @@ class SupervisorApp:
             self.event_logger.tsdb_writer = self.tsdb_writer
         self.heartbeat_server = HeartbeatServer(config.heartbeat_timeout_s)
         risk_state = state_utils.load_risk_state(self.state_dir, today=date.today())
-        self.risk_engine = RiskEngine(risk_config, risk_state, self.logger, self.event_logger, llm_config.trust_policy)
+        self.risk_engine = HardRiskEngine(risk_config, risk_state, self.logger, self.event_logger, llm_config.trust_policy)
         self.process_manager = ProcessManager(
             paths,
             config,

@@ -12,9 +12,9 @@ This monorepo uses a shared configuration contract rooted at `QE_ROOT` (defaults
 
 ## Module config directories
 The SupervisorAgent, bot, and Meta-Agent still keep their detailed module configs under:
-- `SupervisorAgent/config/`
-- `ai_scalper_bot/config/`
-- `meta_agent/config/`
+- `src/quantum_edge_core/supervisor/config/`
+- `src/quantum_edge_core/ai_scalper_bot/config/`
+- `src/quantum_edge_infra/automation/meta_agent/config/`
 
 `config/paths.yaml` points to these directories so each module can resolve its own config set.
 
@@ -49,17 +49,17 @@ Supervisor API endpoints (local, no secrets):
 - `POST /api/v1/bot/restart`: restart the bot.
 
 ## ModelOps (SupervisorAgent)
-Supervisor owns model training and publishing under `SupervisorAgent/mlops/`:
+Supervisor owns model training and publishing under `src/quantum_edge_core/supervisor/mlops/`:
 - Artifacts: `artifacts/models/<symbol>/<horizon>/<version>/`
 - Published runtime: `runtime/models/<symbol>/<horizon>/current/`
 - Manifest: `runtime/models/.../manifest.json` (version `model.v1`)
   - Optional compatibility metadata: `model_format`, `model_api`, `artifact.{python,platform,serializer,lib_versions}`
 
 Example commands:
-- Dataset: `python SupervisorAgent/supervisor.py ml dataset --symbol BTCUSDT --source ticks --input-dir data/ticks`
-- Train: `python SupervisorAgent/supervisor.py ml train --symbol BTCUSDT --horizons 1,5,30 --source ticks --input-dir data/ticks --publish`
-- Validate: `python SupervisorAgent/supervisor.py ml validate --manifest artifacts/models/BTCUSDT/1/<version>/manifest.json --dataset artifacts/datasets/BTCUSDT/ticks/<version>/BTCUSDT_h1.csv`
-- Publish: `python SupervisorAgent/supervisor.py ml publish --artifact-dir artifacts/models/BTCUSDT/1/<version>`
+- Dataset: `python src/quantum_edge_core/supervisor/supervisor.py ml dataset --symbol BTCUSDT --source ticks --input-dir data/ticks`
+- Train: `python src/quantum_edge_core/supervisor/supervisor.py ml train --symbol BTCUSDT --horizons 1,5,30 --source ticks --input-dir data/ticks --publish`
+- Validate: `python src/quantum_edge_core/supervisor/supervisor.py ml validate --manifest artifacts/models/BTCUSDT/1/<version>/manifest.json --dataset artifacts/datasets/BTCUSDT/ticks/<version>/BTCUSDT_h1.csv`
+- Publish: `python src/quantum_edge_core/supervisor/supervisor.py ml publish --artifact-dir artifacts/models/BTCUSDT/1/<version>`
 
 Bot loading (from `config/bot.yaml`):
 - `ml.model_source`: `runtime` (default) or `legacy`
@@ -68,13 +68,13 @@ Bot loading (from `config/bot.yaml`):
 - `ml.ml_compat_strict`: if true, incompatible model metadata disables ML (default false)
 
 ## Research suite (SupervisorAgent)
-Offline research runs live under `SupervisorAgent/research/` and write outputs to `artifacts/research/<run_id>/`.
+Offline research runs live under `src/quantum_edge_core/supervisor/research/` and write outputs to `artifacts/research/<run_id>/`.
 These commands never call external services and are deterministic with a fixed seed.
 
 Commands:
-- Backtest: `python SupervisorAgent/supervisor.py research backtest --symbol BTCUSDT --data_dir data/ticks`
-- Replay: `python SupervisorAgent/supervisor.py research replay --symbol BTCUSDT --data_dir data/ticks --speed 1.0`
-- Scenario: `python SupervisorAgent/supervisor.py research scenario --name spread_spike --symbol BTCUSDT --data_dir data/ticks`
+- Backtest: `python src/quantum_edge_core/supervisor/supervisor.py research backtest --symbol BTCUSDT --data_dir data/ticks`
+- Replay: `python src/quantum_edge_core/supervisor/supervisor.py research replay --symbol BTCUSDT --data_dir data/ticks --speed 1.0`
+- Scenario: `python src/quantum_edge_core/supervisor/supervisor.py research scenario --name spread_spike --symbol BTCUSDT --data_dir data/ticks`
 
 Outputs per run:
 - `results.json` (metrics + trades)
@@ -82,8 +82,8 @@ Outputs per run:
 - `trades.jsonl` and `equity_curve.csv` (optional)
 
 Add new scenarios by:
-1) Defining a `ScenarioSpec` in `SupervisorAgent/research/scenarios/definitions.py`
-2) Applying logic in `SupervisorAgent/research/scenarios/injector.py`
+1) Defining a `ScenarioSpec` in `src/quantum_edge_core/supervisor/research/scenarios/definitions.py`
+2) Applying logic in `src/quantum_edge_core/supervisor/research/scenarios/injector.py`
 
 ## Policy contract (Supervisor -> bot)
 Supervisor publishes a versioned policy contract that the bot consumes:
@@ -149,7 +149,7 @@ Endpoints:
 ## Ops & doctor/diag
 Unified ops entrypoints:
 - `python QuantumEdge.py start|stop|restart|status|diag`
-- `python SupervisorAgent/supervisor.py start|stop|restart|status|diag`
+- `python src/quantum_edge_core/supervisor/supervisor.py start|stop|restart|status|diag`
 
 Runtime layout:
 - `runtime/`: `policy.json`, `models/`, `telemetry.jsonl`, PID/state files

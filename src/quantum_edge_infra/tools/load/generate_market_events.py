@@ -21,7 +21,7 @@ def _bootstrap_paths() -> None:
 
 _bootstrap_paths()
 
-from bot.storage.event_bus import EventBus, EventPriority  # noqa: E402
+from bot.storage.event_bus import EventBus, EventPriority
 
 
 SYMBOLS_DEFAULT = [

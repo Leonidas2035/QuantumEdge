@@ -14,7 +14,6 @@ sys.path.append(os.path.abspath("src"))
 
 from quantum_edge_core.supervisor.service import AsyncSupervisor
 from quantum_edge_core.supervisor.supervisor.gemini_client import GeminiClient
-from quantum_edge_core.supervisor.supervisor.ai_bridge import MalformedResponseError
 
 class TestFailSafe(unittest.IsolatedAsyncioTestCase):
     
@@ -55,7 +54,7 @@ class TestFailSafe(unittest.IsolatedAsyncioTestCase):
                     context = self.supervisor.context_builder.build_snapshot()
                     raw_result = await self.supervisor.gemini_client.safe_analyze_risk(context)
                     # This should raise exception in mock
-            except Exception as e:
+            except Exception:
                 # This matches catch block in service.py
                 pass
                 

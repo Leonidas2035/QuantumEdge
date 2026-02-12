@@ -1,0 +1,3 @@
+supervisor_path: "src/quantum_edge_core/supervisor/supervisor.py"
+hub_path: "src/quantum_edge_core/market_data/hub.py"
+bot_path: "src/quantum_edge_core/ai_scalper_bot/run_bot.py"
