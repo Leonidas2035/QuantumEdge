@@ -619,7 +619,7 @@ def parse_args(argv: Optional[list[str]] = None):
 
 def parse_run_task_args(argv: list[str]):
     parser = argparse.ArgumentParser(description="Run a TaskSpec")
-    parser.add_argument("--task", required=True, help="Path to task.yaml or task.md")
+    parser.add_argument("--task", required=True, help="Path to task.yaml or task.md OR a natural language instruction string.")
     parser.add_argument("--timeout-seconds", type=int, dest="timeout_seconds")
     parser.add_argument("--llm-timeout-seconds", type=int, dest="llm_timeout_seconds")
     parser.add_argument("--retries", type=int, default=0)

@@ -215,7 +215,8 @@ class MockExchange:
         """Estimate total equity (Balance + Unrealized PnL)."""
         upnl = 0.0
         for sym, pos in self.positions.items():
-            if pos == 0: continue
+            if pos == 0:
+                continue
             entry = self.avg_entry_price.get(sym, 0.0)
             if pos > 0:
                 upnl += (current_price - entry) * pos

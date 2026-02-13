@@ -185,23 +185,44 @@ def _scenario_functions(
     if name == "S_RANGE_OSCILLATION":
         amp = 220.0
         period = 600.0
-        price_fn = lambda t: base + amp * math.sin(2.0 * math.pi * t / period)
-        funding_fn = lambda t: 0.00005
-        liq_fn = lambda t, mark: (1.0 + 0.5 * math.sin(t / 120.0), 1.0 + 0.5 * math.cos(t / 120.0))
+
+        def price_fn(t: int) -> float:
+            return base + amp * math.sin(2.0 * math.pi * t / period)
+
+        def funding_fn(t: int) -> float:
+            return 0.00005
+
+        def liq_fn(t: int, mark: float) -> Tuple[float, float]:
+            return (1.0 + 0.5 * math.sin(t / 120.0), 1.0 + 0.5 * math.cos(t / 120.0))
+
     elif name == "S_TREND_UP_PULLBACKS":
         slope = 0.5
         amp = 120.0
         period = 900.0
-        price_fn = lambda t: base + slope * t + amp * math.sin(2.0 * math.pi * t / period)
-        funding_fn = lambda t: 0.0001
-        liq_fn = lambda t, mark: (2.0 + 0.3 * math.sin(t / 180.0), 1.0)
+
+        def price_fn(t: int) -> float:
+            return base + slope * t + amp * math.sin(2.0 * math.pi * t / period)
+
+        def funding_fn(t: int) -> float:
+            return 0.0001
+
+        def liq_fn(t: int, mark: float) -> Tuple[float, float]:
+            return (2.0 + 0.3 * math.sin(t / 180.0), 1.0)
+
     elif name == "S_TREND_DOWN_PULLBACKS":
         slope = -0.5
         amp = 120.0
         period = 900.0
-        price_fn = lambda t: base + 2000.0 + slope * t + amp * math.sin(2.0 * math.pi * t / period)
-        funding_fn = lambda t: -0.0001
-        liq_fn = lambda t, mark: (1.0, 2.0 + 0.3 * math.cos(t / 180.0))
+
+        def price_fn(t: int) -> float:
+            return base + 2000.0 + slope * t + amp * math.sin(2.0 * math.pi * t / period)
+
+        def funding_fn(t: int) -> float:
+            return -0.0001
+
+        def liq_fn(t: int, mark: float) -> Tuple[float, float]:
+            return (1.0, 2.0 + 0.3 * math.cos(t / 180.0))
+
     elif name == "S_TREND_FLIP_FALSE_BREAK":
         slope = 0.6
         amp = 160.0
@@ -212,8 +233,12 @@ def _scenario_functions(
                 return base + slope * t + amp * math.sin(2.0 * math.pi * t / period)
             return base + 1000.0 - slope * (t - 1800) + amp * math.sin(2.0 * math.pi * t / period)
 
-        funding_fn = lambda t: 0.00002 if t < 1800 else -0.00002
-        liq_fn = lambda t, mark: (3.0 if t % 600 < 60 else 1.5, 3.0 if t % 600 > 540 else 1.5)
+        def funding_fn(t: int) -> float:
+            return 0.00002 if t < 1800 else -0.00002
+
+        def liq_fn(t: int, mark: float) -> Tuple[float, float]:
+            return (3.0 if t % 600 < 60 else 1.5, 3.0 if t % 600 > 540 else 1.5)
+
     elif name == "S_VOLATILITY_EXPANSION_ATR_SPIKE":
         period = 500.0
 
@@ -221,7 +246,8 @@ def _scenario_functions(
             amp = 80.0 + 0.08 * t
             return base + amp * math.sin(2.0 * math.pi * t / period)
 
-        funding_fn = lambda t: 0.00008
+        def funding_fn(t: int) -> float:
+            return 0.00008
 
         def liq_fn(t: int, mark: float) -> Tuple[float, float]:
             spike = 8.0 if 1800 <= t <= 1860 else 2.0
@@ -230,9 +256,15 @@ def _scenario_functions(
     else:  # S_FUNDING_BLEED_LONG_DURATION
         amp = 60.0
         period = 1200.0
-        price_fn = lambda t: base + 400.0 + amp * math.sin(2.0 * math.pi * t / period)
-        funding_fn = lambda t: 0.00025
-        liq_fn = lambda t, mark: (1.2, 1.2)
+
+        def price_fn(t: int) -> float:
+            return base + 400.0 + amp * math.sin(2.0 * math.pi * t / period)
+
+        def funding_fn(t: int) -> float:
+            return 0.00025
+
+        def liq_fn(t: int, mark: float) -> Tuple[float, float]:
+            return (1.2, 1.2)
 
     def risk_fn(t: int, mark: float) -> Tuple[Dict[str, float], Dict[str, float]]:
         distance = 600.0

@@ -18,7 +18,7 @@ from bot.engine.decision_types import DecisionAction
 from bot.market_data.mock_ws_manager import MockWSManager
 from bot.market_data.ws_manager import WSManager
 from bot.ml.ensemble import EnsembleOutput
-from bot.ml.signal_model.model import SignalOutput
+from bot.ml.signal_model.model import SignalOutput, EnsembleSignalModel
 from bot.ml.signal_model.online_features import OnlineFeatureBuilder
 from bot.ml.runtime_models import resolve_models_root
 from bot.ml.runtime.policy_loader import load_policy, load_policy_override, resolve_policy_path

@@ -26,19 +26,21 @@ from quantum_edge_core.market_data.bus.event_bus import EventBus
 from quantum_edge_core.market_data.config import HubConfig
 from quantum_edge_core.market_data.feeds.mock_feed import MockLiveFeed
 from quantum_edge_core.market_data.feeds.liquidations import LiquidationFeed
-# from quantum_edge_core.market_data.analytics.microstructure import MicrostructureAnalyzer
 from quantum_edge_core.market_data.analytics.alpha_engine import AlphaEngine
 from quantum_edge_core.market_data.ipc.publisher import ZmqPublisher
 from quantum_edge_core.market_data.ipc.snapshot_server import SnapshotCache, SnapshotServer
 from quantum_edge_core.market_data.models import HeartbeatEvent, Priority, TradeEvent
 from quantum_edge_core.market_data.models.account_snapshot import AccountSnapshot
+from quantum_edge_core.market_data.models.account_delta import AccountDelta
 from quantum_edge_core.market_data.orderbook.aggregator import OrderBookAggregator
-# from quantum_edge_core.market_data.microstructure.ofi import MicrostructureAnalyzer # Legacy Conflict
 from quantum_edge_core.market_data.microstructure.publisher import MicrostructurePublisher
 from quantum_edge_core.market_data.lockbot.engine import LockbotDerivedEngine
 from quantum_edge_core.market_data.lockbot.publisher import LockbotPublisher
 from quantum_edge_core.market_data.spool.status import summarize_spool
 from quantum_edge_core.market_data.tsdb.quest_writer import QuestILPWriter
+
+# Forward references for type hinting (Legacy components)
+MicrostructureAnalyzer = Any
 
 
 class StatusReporter:

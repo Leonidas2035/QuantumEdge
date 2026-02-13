@@ -4,10 +4,13 @@ from __future__ import annotations
 
 import logging
 from decimal import Decimal
-from typing import Optional
+from typing import Optional, Any
 
 from quantumedge.execution.policies import OrderSide
 from quantumedge.execution.types import ExecutionClient, OrderAck, OrderPlacement
+
+# Forward reference for Market
+Market = Any
 
 
 class TraderExecutionAdapter(ExecutionClient):

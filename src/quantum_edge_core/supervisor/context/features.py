@@ -171,12 +171,12 @@ class FeatureEngine:
             # Prev (i-1): 0 to end-1
             
             h = highs[1:]
-            l = lows[1:]
+            lows_sliced = lows[1:]
             prev_c = closes[:-1]
             
-            tr1 = h - l
+            tr1 = h - lows_sliced
             tr2 = np.abs(h - prev_c)
-            tr3 = np.abs(l - prev_c)
+            tr3 = np.abs(lows_sliced - prev_c)
             
             tr = np.maximum(tr1, np.maximum(tr2, tr3))
             
