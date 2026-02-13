@@ -391,7 +391,22 @@ def run_task(
         os.makedirs(patches_dir, exist_ok=True)
 
         config = _load_config()
-        spec = load_task_spec(task_path)
+
+        if os.path.exists(task_path):
+            spec = load_task_spec(task_path)
+        else:
+            # Treat task_path as a natural language instruction
+            spec = TaskSpec(
+                task_id=_make_run_id(),
+                created_at=datetime.now(timezone.utc).isoformat(),
+                project_id="monorepo",
+                project_root=_resolve_base_dir(),
+                objective="CLI Request",
+                instructions=task_path,
+                mode="task",
+            )
+            spec.validate()
+
         _log_event(events_path, "task_loaded", {"task_id": spec.task_id, "project_id": spec.project_id})
         _check_timeout(timeout_seconds, overall_start)
         target_project = _resolve_target_project(spec)
