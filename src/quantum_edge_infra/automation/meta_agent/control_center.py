@@ -328,7 +328,9 @@ def list_schedules_with_state(schedules_dir: str, runtime_dir: Optional[str] = N
                     "enabled": spec.enabled,
                     "timezone": spec.timezone,
                     "source": path,
-                    "in_window": evaluate_windows(datetime.now(timezone.utc).astimezone(_tzinfo(spec.timezone)), spec.windows),
+                    "in_window": evaluate_windows(
+                        datetime.now(timezone.utc).astimezone(_tzinfo(spec.timezone)), spec.windows
+                    ),
                     "next_eligible_at": status.get("next_eligible_at"),
                     "last_exit_code": status.get("last_exit_code"),
                     "attempts": status.get("attempts", 0),

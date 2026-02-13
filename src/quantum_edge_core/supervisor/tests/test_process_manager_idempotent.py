@@ -1,9 +1,9 @@
 from datetime import datetime, timezone
 from pathlib import Path
 
-from supervisor.config import PathsConfig, SupervisorConfig
-from supervisor.process_manager import ProcessManager, ProcessInfo
-from supervisor.process_spec import ProcessSpec
+from quantum_edge_core.supervisor.supervisor.config import PathsConfig, SupervisorConfig
+from quantum_edge_core.supervisor.supervisor.process_manager import ProcessManager, ProcessInfo
+from quantum_edge_core.supervisor.supervisor.process_spec import ProcessSpec
 
 
 class DummyPopen:

@@ -1,4 +1,4 @@
-﻿"""Client for fetching SupervisorAgent snapshots."""
+"""Client for fetching SupervisorAgent snapshots."""
 
 from __future__ import annotations
 

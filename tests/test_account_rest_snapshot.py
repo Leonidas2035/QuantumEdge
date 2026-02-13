@@ -29,7 +29,9 @@ def _make_session(responses):
 
 
 def test_full_account_snapshot_strings():
-    config = AccountConfig(spot_api_key="spot-key", spot_api_secret="spot-secret", usdm_api_key="fapi-key", usdm_api_secret="fapi-secret")
+    config = AccountConfig(
+        spot_api_key="spot-key", spot_api_secret="spot-secret", usdm_api_key="fapi-key", usdm_api_secret="fapi-secret"
+    )
     responses = [
         _load_fixture("ticker_price.json"),
         _load_fixture("premium_index.json"),
@@ -53,10 +55,12 @@ def test_full_account_snapshot_strings():
 
 def test_spot_open_orders_called_with_symbol():
     config = AccountConfig(spot_api_key="spot-key", spot_api_secret="spot-secret")
-    session = _make_session([
-        _load_fixture("spot_account.json"),
-        _load_fixture("spot_open_orders.json"),
-    ])
+    session = _make_session(
+        [
+            _load_fixture("spot_account.json"),
+            _load_fixture("spot_open_orders.json"),
+        ]
+    )
     builder = BinanceAccountRestSnapshotBuilder(config, session=session)
     builder.build_spot_snapshot(["BTCUSDT"])
     calls = session.get.call_args_list

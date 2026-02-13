@@ -61,9 +61,7 @@ def _threshold_metrics(y_true: np.ndarray, y_prob: np.ndarray, threshold: float)
         from sklearn.metrics import confusion_matrix, precision_recall_fscore_support, accuracy_score
 
         preds = (y_prob >= threshold).astype(int)
-        precision, recall, f1, _ = precision_recall_fscore_support(
-            y_true, preds, average="binary", zero_division=0
-        )
+        precision, recall, f1, _ = precision_recall_fscore_support(y_true, preds, average="binary", zero_division=0)
         accuracy = accuracy_score(y_true, preds)
         conf = confusion_matrix(y_true, preds).tolist()
         return {

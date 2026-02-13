@@ -76,9 +76,10 @@ def run_gates(shadow_root: str, gates, logger, artifacts_dir: Optional[str] = No
             env = os.environ.copy()
             if step.env:
                 env.update({str(k): str(v) for k, v in step.env.items()})
-            with open(stdout_path, "w", encoding="utf-8") as out_handle, open(
-                stderr_path, "w", encoding="utf-8"
-            ) as err_handle:
+            with (
+                open(stdout_path, "w", encoding="utf-8") as out_handle,
+                open(stderr_path, "w", encoding="utf-8") as err_handle,
+            ):
                 proc = subprocess.run(
                     step.cmd,
                     cwd=cwd,

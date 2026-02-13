@@ -1,8 +1,8 @@
 from pathlib import Path
 
-from supervisor.mlops.manifest import ModelManifest, MANIFEST_VERSION, validate_manifest
-from supervisor.mlops.registry import sha256_file
-from supervisor.mlops.publisher import publish_model
+from quantum_edge_core.supervisor.supervisor.mlops.manifest import ModelManifest, MANIFEST_VERSION, validate_manifest
+from quantum_edge_core.supervisor.supervisor.mlops.registry import sha256_file
+from quantum_edge_core.supervisor.supervisor.mlops.publisher import publish_model
 
 
 def test_manifest_roundtrip(tmp_path: Path):
@@ -20,7 +20,12 @@ def test_manifest_roundtrip(tmp_path: Path):
         thresholds={"p_up": 0.55},
         model_format="xgboost_json",
         model_api="predict_proba",
-        artifact={"python": "3.11.0", "platform": "win32", "serializer": "xgboost_json", "lib_versions": {"xgboost": "2.0.0"}},
+        artifact={
+            "python": "3.11.0",
+            "platform": "win32",
+            "serializer": "xgboost_json",
+            "lib_versions": {"xgboost": "2.0.0"},
+        },
     )
     manifest_path = tmp_path / "manifest.json"
     manifest.write(manifest_path)

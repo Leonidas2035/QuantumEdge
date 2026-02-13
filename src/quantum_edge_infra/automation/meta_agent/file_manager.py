@@ -7,7 +7,7 @@ from typing import Dict, List
 
 @dataclass
 class FileChange:
-    path: str               # relative to project root
+    path: str  # relative to project root
     old_content: str
     new_content: str
 
@@ -144,7 +144,9 @@ def build_change_set_from_response(project_root: str, model_output: str) -> Chan
     change_set = ChangeSet(project_root=project_root_abs, changes={})
     for path, code in matches:
         rel_path = os.path.normpath(path.strip())
-        abs_path = os.path.join(project_root_abs, rel_path) if not os.path.isabs(rel_path) else os.path.abspath(rel_path)
+        abs_path = (
+            os.path.join(project_root_abs, rel_path) if not os.path.isabs(rel_path) else os.path.abspath(rel_path)
+        )
         if os.path.commonpath([abs_path, project_root_abs]) != project_root_abs:
             # Skip files outside project root for safety
             continue

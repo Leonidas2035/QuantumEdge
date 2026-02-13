@@ -136,7 +136,9 @@ class PolicyHysteresis:
 
 
 class PolicyEngine:
-    def __init__(self, config: PolicyEngineConfig, paths, process_manager, risk_engine, logger, telemetry_manager=None) -> None:
+    def __init__(
+        self, config: PolicyEngineConfig, paths, process_manager, risk_engine, logger, telemetry_manager=None
+    ) -> None:
         self.config = config
         self.paths = paths
         self.process_manager = process_manager
@@ -201,7 +203,9 @@ class PolicyEngine:
     def evaluate(self) -> Policy:
         try:
             telemetry_summary = self.telemetry.summary() if self.telemetry else None
-            signals = collect_signals(self.paths, self.process_manager, self.risk_engine, self.logger, telemetry_summary)
+            signals = collect_signals(
+                self.paths, self.process_manager, self.risk_engine, self.logger, telemetry_summary
+            )
             self._last_signals = signals
             decision = apply_heuristics(signals, self.config.thresholds)
             immediate = decision.reason in {"BOT_UNHEALTHY", "DAILY_LOSS_LIMIT", "DRAWDOWN_LIMIT", "RISK_ENGINE_HALTED"}

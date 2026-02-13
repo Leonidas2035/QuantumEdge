@@ -8,8 +8,8 @@ from bot.core.secret_store import encrypt_secrets
 SECRET_KEYS = [
     "BINGX_DEMO_API_KEY",
     "BINGX_DEMO_API_SECRET",
-    
 ]
+
 
 def load_env_secrets() -> Dict[str, str]:
     """
@@ -31,7 +31,7 @@ def load_env_secrets() -> Dict[str, str]:
         for m in missing:
             print("  -", m)
         print("\nSet them using:")
-        print("  setx VARIABLE_NAME \"value\"   # Windows")
+        print('  setx VARIABLE_NAME "value"   # Windows')
         sys.exit(1)
 
     return secrets
@@ -44,7 +44,7 @@ def load_passphrase() -> str:
     pwd = os.environ.get("SCALPER_SECRETS_PASSPHRASE")
     if not pwd:
         print("[ERROR] SCALPER_SECRETS_PASSPHRASE not set.")
-        print("Set it using: setx SCALPER_SECRETS_PASSPHRASE \"your_password\"")
+        print('Set it using: setx SCALPER_SECRETS_PASSPHRASE "your_password"')
         sys.exit(1)
     return pwd.strip()
 

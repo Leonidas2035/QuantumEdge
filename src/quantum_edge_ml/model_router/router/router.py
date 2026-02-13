@@ -237,7 +237,9 @@ class Router:
     def _student_model_id(self) -> str:
         return os.environ.get("SUPERVISOR_LLM_MODEL", "local")
 
-    def _log_event(self, result: RouterResult, request_id: Optional[str], prompt_hash: str, mode: str, cache_hit: bool) -> None:
+    def _log_event(
+        self, result: RouterResult, request_id: Optional[str], prompt_hash: str, mode: str, cache_hit: bool
+    ) -> None:
         payload = {
             "ts_utc": _utc_now_str(),
             "request_id": request_id,

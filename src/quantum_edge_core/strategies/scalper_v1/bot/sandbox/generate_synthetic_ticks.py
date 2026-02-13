@@ -1,4 +1,5 @@
-﻿"""Deprecated wrapper. Moved to SupervisorAgent.research.sandbox.generate_synthetic_ticks."""
+"""Deprecated wrapper. Moved to SupervisorAgent.research.sandbox.generate_synthetic_ticks."""
+
 from __future__ import annotations
 
 import importlib

@@ -15,29 +15,30 @@ EXCLUDE_FILES = {
     "requirements.txt",
     "requirements-dev.txt",
     "requirements-runtime.txt",
-    "FULL_SYSTEM_CONTEXT_V3.txt", # Ваш новий файл
-    "cleanup_project.py"          # Цей скрипт
+    "FULL_SYSTEM_CONTEXT_V3.txt",  # Ваш новий файл
+    "cleanup_project.py",  # Цей скрипт
 }
+
 
 def move_docs():
     print(f"Починаю переміщення документації в {DOCS_DIR}...")
     moved_count = 0
-    
+
     # Скануємо тільки корінь (щоб не ламати вкладені модулі коду)
     for filename in os.listdir("."):
         if not os.path.isfile(filename):
             continue
-            
+
         # Перевірка на винятки
         if filename in EXCLUDE_FILES:
             continue
-            
+
         # Перевірка розширення
         _, ext = os.path.splitext(filename)
         if ext.lower() in TARGET_EXTENSIONS:
             source = filename
             destination = os.path.join(DOCS_DIR, filename)
-            
+
             try:
                 shutil.move(source, destination)
                 print(f"✅ Переміщено: {filename}")
@@ -46,6 +47,7 @@ def move_docs():
                 print(f"❌ Помилка з {filename}: {e}")
 
     print(f"\nЗавершено. Переміщено файлів: {moved_count}")
+
 
 def update_agents_md():
     print("\nОновлюю AGENTS.md...")
@@ -59,6 +61,7 @@ Strict Rule: Any code modification, module refactoring, or architectural change 
         print("✅ Правило додано в AGENTS.md")
     else:
         print("⚠️ Файл AGENTS.md не знайдено!")
+
 
 if __name__ == "__main__":
     move_docs()

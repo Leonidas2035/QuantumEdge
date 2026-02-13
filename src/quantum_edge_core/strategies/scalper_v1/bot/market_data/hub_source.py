@@ -68,7 +68,6 @@ class HubSnapshotClient:
 
 
 class HubMarketDataSource:
-
     def __init__(
         self,
         symbols: List[str],

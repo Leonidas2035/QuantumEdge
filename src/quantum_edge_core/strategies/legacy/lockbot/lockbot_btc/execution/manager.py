@@ -117,7 +117,11 @@ class ExecutionManager:
     def handle_order_update(self, update: dict, ts_ms: int, source: str) -> None:
         record = self._tracker.update_from_exchange(update, ts_ms, source)
         if record is None:
-            payload = {"reason": "unknown_order", "client_order_id": update.get("clientOrderId"), "order_id": update.get("orderId")}
+            payload = {
+                "reason": "unknown_order",
+                "client_order_id": update.get("clientOrderId"),
+                "order_id": update.get("orderId"),
+            }
             self._emit_event("RECONCILIATION_MISMATCH", ts_ms, payload)
             return
         status = str(update.get("status") or record.status)
@@ -300,7 +304,9 @@ class ExecutionManager:
         self._ledger.append(record)
         self._emit(envelope)
 
-    def _plan_payload(self, cmd_id: str, plan: OrderPlan, index: int, ts_ms: int, reason: Optional[str]) -> Dict[str, object]:
+    def _plan_payload(
+        self, cmd_id: str, plan: OrderPlan, index: int, ts_ms: int, reason: Optional[str]
+    ) -> Dict[str, object]:
         payload: Dict[str, object] = {
             "cmd_id": cmd_id,
             "plan_id": make_plan_id(cmd_id, index, plan),

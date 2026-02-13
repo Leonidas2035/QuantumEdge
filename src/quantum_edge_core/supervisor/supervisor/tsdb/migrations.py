@@ -8,8 +8,8 @@ import urllib.request
 from pathlib import Path
 from typing import Optional
 
-from supervisor.config import TsdbConfig, TsdbRetentionConfig
-from supervisor.tsdb.query import derive_questdb_query_url, questdb_exec
+from quantum_edge_core.supervisor.supervisor.config import TsdbConfig, TsdbRetentionConfig
+from quantum_edge_core.supervisor.supervisor.tsdb.query import derive_questdb_query_url, questdb_exec
 
 
 def apply_clickhouse(sql_path: Path, cfg: TsdbConfig, logger: logging.Logger) -> bool:
@@ -61,7 +61,9 @@ def apply_questdb(sql_path: Path, cfg: TsdbConfig, logger: logging.Logger) -> bo
     return True
 
 
-def run_tsdb_migrations(project_root: Path, cfg: TsdbConfig, logger: logging.Logger, retention: Optional[TsdbRetentionConfig] = None) -> bool:
+def run_tsdb_migrations(
+    project_root: Path, cfg: TsdbConfig, logger: logging.Logger, retention: Optional[TsdbRetentionConfig] = None
+) -> bool:
     """Apply TSDB schema best-effort."""
 
     if not cfg.enabled or cfg.backend == "none":

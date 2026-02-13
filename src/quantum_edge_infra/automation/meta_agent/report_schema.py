@@ -14,7 +14,7 @@ class Report:
     title: str
     priority: str = "normal"
 
-    status: str = "ok"          # "ok" | "error" | "partial" | "blocked"
+    status: str = "ok"  # "ok" | "error" | "partial" | "blocked"
     error_message: Optional[str] = None
 
     summary: str = ""
@@ -25,7 +25,7 @@ class Report:
     risks: List[str] = field(default_factory=list)
     notes: List[str] = field(default_factory=list)
 
-    safety_status: str = "allow"            # "allow" | "warn" | "block"
+    safety_status: str = "allow"  # "allow" | "warn" | "block"
     blocked_files: List[str] = field(default_factory=list)
     warning_files: List[str] = field(default_factory=list)
     patch_files: List[str] = field(default_factory=list)

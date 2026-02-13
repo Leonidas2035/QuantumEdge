@@ -45,7 +45,9 @@ class TelemetryEmitter:
             self._thread = threading.Thread(target=self._worker, daemon=True)
             self._thread.start()
 
-    def emit_event(self, event_type: str, data: Dict[str, Any], symbol: Optional[str] = None, source: str = "ai_scalper_bot") -> None:
+    def emit_event(
+        self, event_type: str, data: Dict[str, Any], symbol: Optional[str] = None, source: str = "ai_scalper_bot"
+    ) -> None:
         if not self.enabled:
             return
         payload = {

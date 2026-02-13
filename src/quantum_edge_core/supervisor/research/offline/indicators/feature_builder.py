@@ -9,7 +9,6 @@ from bot.indicators.volatility import realized_volatility, std_vol
 
 
 class FeatureBuilder:
-
     def __init__(self, data_path="./data"):
         self.base = Path(data_path)
 
@@ -65,7 +64,7 @@ class FeatureBuilder:
             high=("price", "max"),
             low=("price", "min"),
             close=("price", "last"),
-            volume=("qty", "sum")
+            volume=("qty", "sum"),
         )
 
         # Якщо даних менше ніж 2-3 секунди — не будуємо фічі

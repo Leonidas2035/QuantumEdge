@@ -45,4 +45,4 @@ class MarketState:
             return
         mean = sum(returns) / len(returns)
         var = sum((r - mean) ** 2 for r in returns) / len(returns)
-        self.volatility_bps = (var ** 0.5) * 10000.0
+        self.volatility_bps = (var**0.5) * 10000.0

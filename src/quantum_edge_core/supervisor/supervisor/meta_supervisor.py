@@ -10,8 +10,8 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Optional, Tuple
 
-from supervisor.config import MetaSupervisorConfig, PathsConfig
-from supervisor.events import EventLogger
+from quantum_edge_core.supervisor.supervisor.config import MetaSupervisorConfig, PathsConfig
+from quantum_edge_core.supervisor.supervisor.events import EventLogger
 from supervisor import state as state_utils
 
 
@@ -70,7 +70,9 @@ class MetaSupervisorRunner:
         reports_dir = Path(self._meta_root) / "reports" / "supervisor"
         if not reports_dir.exists():
             return []
-        candidates = sorted([p for p in reports_dir.glob("**/*") if p.is_file()], key=lambda p: p.stat().st_mtime, reverse=True)
+        candidates = sorted(
+            [p for p in reports_dir.glob("**/*") if p.is_file()], key=lambda p: p.stat().st_mtime, reverse=True
+        )
         return candidates
 
     def _run_meta_agent_supervisor(self) -> Tuple[str, List[Path]]:

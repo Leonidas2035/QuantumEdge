@@ -1,4 +1,5 @@
-﻿"""Deprecated wrapper. Moved to SupervisorAgent.research.backtest.backtest_model."""
+"""Deprecated wrapper. Moved to SupervisorAgent.research.backtest.backtest_model."""
+
 from __future__ import annotations
 
 import importlib

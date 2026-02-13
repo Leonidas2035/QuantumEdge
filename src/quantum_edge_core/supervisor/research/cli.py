@@ -72,7 +72,9 @@ def parse_research_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     replay.add_argument("--no_trades", action="store_true")
 
     scenario = sub.add_parser("scenario", parents=[common], help="Run a scenario injection")
-    scenario.add_argument("--name", type=str, required=True, choices=["spread_spike", "latency_spike", "volatility_spike"])
+    scenario.add_argument(
+        "--name", type=str, required=True, choices=["spread_spike", "latency_spike", "volatility_spike"]
+    )
     scenario.add_argument("--data_dir", type=Path, default=None)
     scenario.add_argument("--data_file", type=Path, default=None)
     scenario.add_argument("--timeframe", type=str, default="ticks")

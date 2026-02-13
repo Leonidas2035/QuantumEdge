@@ -167,7 +167,10 @@ def _normalize_event(event: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _sort_events(events: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    return sorted(events, key=lambda item: (int(item.get("ts_event") or 0), int(item.get("seq") or 0), str(item.get("topic") or "")))
+    return sorted(
+        events,
+        key=lambda item: (int(item.get("ts_event") or 0), int(item.get("seq") or 0), str(item.get("topic") or "")),
+    )
 
 
 def _write_outputs(

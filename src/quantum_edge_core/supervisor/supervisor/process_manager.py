@@ -15,9 +15,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Optional
 
-from supervisor.config import PathsConfig, SupervisorConfig
-from supervisor.events import BaseEvent, EventLogger, EventType
-from supervisor.process_spec import HealthCheckSpec, ProcessSpec, ProcessStatus
+from quantum_edge_core.supervisor.supervisor.config import PathsConfig, SupervisorConfig
+from quantum_edge_core.supervisor.supervisor.events import BaseEvent, EventLogger, EventType
+from quantum_edge_core.supervisor.supervisor.process_spec import HealthCheckSpec, ProcessSpec, ProcessStatus
 
 
 class ProcessState:
@@ -100,7 +100,9 @@ class ProcessManager:
         if not runtime:
             return {"managed": False, "state": ProcessState.STOPPED}
         pid = runtime.info.pid if runtime.info and self._pid_running(runtime.info.pid) else None
-        last_exit_time = runtime.info.last_exit_time.isoformat() if runtime.info and runtime.info.last_exit_time else None
+        last_exit_time = (
+            runtime.info.last_exit_time.isoformat() if runtime.info and runtime.info.last_exit_time else None
+        )
         return {
             "managed": True,
             "state": runtime.state,
@@ -491,7 +493,9 @@ class ProcessManager:
                 "pid": runtime.info.pid if runtime.info else None,
                 "start_ts": runtime.info.start_time.isoformat() if runtime.info and runtime.info.start_time else None,
                 "last_exit_code": runtime.info.last_exit_code if runtime.info else None,
-                "last_exit_time": runtime.info.last_exit_time.isoformat() if runtime.info and runtime.info.last_exit_time else None,
+                "last_exit_time": runtime.info.last_exit_time.isoformat()
+                if runtime.info and runtime.info.last_exit_time
+                else None,
                 "retries": runtime.retries,
                 "last_health": runtime.last_health,
                 "last_health_ts": runtime.last_health_ts.isoformat() if runtime.last_health_ts else None,
@@ -524,12 +528,16 @@ class ProcessManager:
             pid = data.get("pid")
             start_ts = _parse_iso(data.get("start_ts"))
             last_exit_time = _parse_iso(data.get("last_exit_time"))
-            runtime.info = ProcessInfo(
-                pid=int(pid) if pid else 0,
-                start_time=start_ts,
-                last_exit_code=data.get("last_exit_code"),
-                last_exit_time=last_exit_time,
-            ) if pid else None
+            runtime.info = (
+                ProcessInfo(
+                    pid=int(pid) if pid else 0,
+                    start_time=start_ts,
+                    last_exit_code=data.get("last_exit_code"),
+                    last_exit_time=last_exit_time,
+                )
+                if pid
+                else None
+            )
             runtime.retries = int(data.get("retries") or 0)
             runtime.last_health = data.get("last_health")
             runtime.last_health_ts = _parse_iso(data.get("last_health_ts"))

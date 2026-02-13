@@ -43,4 +43,3 @@ class DDNConfig:
             "panic": DDNProfile(name="panic", target=0.0, band_low=-0.05, band_high=0.05, force_hedge=True),
         }
         return DDNConfig(profiles=profiles)
-

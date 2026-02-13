@@ -63,4 +63,3 @@ class RawSubscriber:
                 continue
             if isinstance(data, dict):
                 self._queue.put_nowait((topic.decode("utf-8", errors="ignore"), data))
-

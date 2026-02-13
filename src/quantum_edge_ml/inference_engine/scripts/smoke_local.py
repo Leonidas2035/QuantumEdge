@@ -13,6 +13,7 @@ from typing import List, Optional
 def _try_import_trt() -> bool:
     try:
         import tensorrt_llm  # noqa: F401
+
         return True
     except Exception:
         return False

@@ -11,9 +11,9 @@ SUPERVISOR_DIR = ROOT / "SupervisorAgent"
 if str(SUPERVISOR_DIR) not in sys.path:
     sys.path.insert(0, str(SUPERVISOR_DIR))
 
-from supervisor.config import LockbotControlConfig
-from supervisor.contracts.lockbot_control_v1 import AckEnvelope, CommandEnvelope, StatusEnvelope
-from supervisor.lockbot.control_client import LockbotControlClient
+from quantum_edge_core.supervisor.supervisor.config import LockbotControlConfig
+from quantum_edge_core.supervisor.supervisor.contracts.lockbot_control_v1 import AckEnvelope, CommandEnvelope, StatusEnvelope
+from quantum_edge_core.supervisor.supervisor.lockbot.control_client import LockbotControlClient
 
 
 def _free_port() -> int:

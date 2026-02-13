@@ -1,4 +1,5 @@
-﻿"""Deprecated wrapper. Moved to SupervisorAgent.research.offline.indicators.orderflow."""
+"""Deprecated wrapper. Moved to SupervisorAgent.research.offline.indicators.orderflow."""
+
 from __future__ import annotations
 
 import importlib

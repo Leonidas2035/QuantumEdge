@@ -2,6 +2,7 @@
 Supervisor Reporter.
 Publishes bot health and status metrics to the Supervisor system via ZMQ.
 """
+
 import zmq
 import ujson
 import time
@@ -12,10 +13,12 @@ from quantum_edge_core.ai_scalper_bot.bot.execution.strategy_core import BotStat
 
 logger = logging.getLogger(__name__)
 
+
 class SupervisorReporter:
     """
     Publishes heartbeat and metrics to a ZMQ PUB socket.
     """
+
     def __init__(self, pub_endpoint: str = "tcp://*:5557"):
         self.context = AsyncContext()
         self.socket = self.context.socket(zmq.PUB)
@@ -37,9 +40,9 @@ class SupervisorReporter:
             "service": "ai_scalper_bot",
             "state": state.name,
             "pnl": pnl,
-            "position": open_positions_qty
+            "position": open_positions_qty,
         }
-        
+
         try:
             # Create JSON string
             payload = ujson.dumps(msg)

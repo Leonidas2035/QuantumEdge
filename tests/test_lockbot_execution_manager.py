@@ -2,13 +2,13 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from LockBotBTC.lockbot.contracts.lockbot_exec_v1 import EVENT_TYPES
-from LockBotBTC.lockbot_btc.ddn.config import DDNConfig
-from LockBotBTC.lockbot_btc.ddn.engine import OrderPlan
-from LockBotBTC.lockbot_btc.execution.base import CancelAllResult, CancelResult, ExecutionConfig, SubmitResult
-from LockBotBTC.lockbot_btc.execution.ledger import ExecutionLedger
-from LockBotBTC.lockbot_btc.execution.manager import ExecutionManager, make_client_order_id
-from LockBotBTC.lockbot_btc.state.order_tracker import OrderTracker
+from quantum_edge_core.supervisor.supervisor.contracts.lockbot_exec_v1 import EVENT_TYPES
+from quantum_edge_core.supervisor.supervisor.lockbot.models import DDNConfig
+from quantum_edge_core.supervisor.supervisor_btc.ddn.engine import OrderPlan
+from quantum_edge_core.supervisor.supervisor_btc.execution.base import CancelAllResult, CancelResult, ExecutionConfig, SubmitResult
+from quantum_edge_core.supervisor.supervisor_btc.execution.ledger import ExecutionLedger
+from quantum_edge_core.supervisor.supervisor_btc.execution.manager import ExecutionManager, make_client_order_id
+from quantum_edge_core.supervisor.supervisor_btc.state.order_tracker import OrderTracker
 
 
 class FakeExecutor:
@@ -22,7 +22,9 @@ class FakeExecutor:
 
     def cancel_order(self, **kwargs):
         self.cancels.append(kwargs)
-        return CancelResult(ok=True, client_order_id=kwargs.get("client_order_id"), order_id=kwargs.get("order_id"), status="CANCELED")
+        return CancelResult(
+            ok=True, client_order_id=kwargs.get("client_order_id"), order_id=kwargs.get("order_id"), status="CANCELED"
+        )
 
     def cancel_all(self, **kwargs):
         self.cancels.append(kwargs)

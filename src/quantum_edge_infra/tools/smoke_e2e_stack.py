@@ -141,7 +141,16 @@ async def run_smoke() -> None:
             raise RuntimeError("No L2 spool files found after enqueuing event.")
 
         subprocess.run(
-            [sys.executable, str(SPAWL_SERVICE), "--spool-dir", str(SPOOL_DIR), "--quest-host", QUESTDB_HOST, "--ilp-port", str(QUESTDB_ILP_PORT)],
+            [
+                sys.executable,
+                str(SPAWL_SERVICE),
+                "--spool-dir",
+                str(SPOOL_DIR),
+                "--quest-host",
+                QUESTDB_HOST,
+                "--ilp-port",
+                str(QUESTDB_ILP_PORT),
+            ],
             check=True,
             cwd=ROOT,
         )

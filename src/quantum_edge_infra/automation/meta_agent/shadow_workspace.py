@@ -123,9 +123,7 @@ def create_shadow(
     try:
         shadow_dir_safe = shadow_dir.replace("\\", "/")
         with open(info_path, "w", encoding="utf-8") as handle:
-            handle.write(
-                f'{{"shadow_dir": "{shadow_dir_safe}", "strategy": "{used_strategy}"}}'
-            )
+            handle.write(f'{{"shadow_dir": "{shadow_dir_safe}", "strategy": "{used_strategy}"}}')
     except Exception:
         pass
 

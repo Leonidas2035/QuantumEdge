@@ -7,13 +7,13 @@ import uuid
 from pathlib import Path
 from typing import Any, Dict
 
-from supervisor.autopilot.audit import AuditLogger
-from supervisor.autopilot.collector import MetricsCollector
-from supervisor.autopilot.policy_manager import PolicyManager
-from supervisor.autopilot.quality import QualityMonitor
-from supervisor.autopilot.remediation import RemediationManager
-from supervisor.autopilot.state_machine import AutopilotController, AutopilotStateMachine
-from supervisor.config import AutopilotConfig, PathsConfig
+from quantum_edge_core.supervisor.supervisor.autopilot.audit import AuditLogger
+from quantum_edge_core.supervisor.supervisor.autopilot.collector import MetricsCollector
+from quantum_edge_core.supervisor.supervisor.autopilot.policy_manager import PolicyManager
+from quantum_edge_core.supervisor.supervisor.autopilot.quality import QualityMonitor
+from quantum_edge_core.supervisor.supervisor.autopilot.remediation import RemediationManager
+from quantum_edge_core.supervisor.supervisor.autopilot.state_machine import AutopilotController, AutopilotStateMachine
+from quantum_edge_core.supervisor.supervisor.config import AutopilotConfig, PathsConfig
 
 
 def build_controller(app, cfg: AutopilotConfig, paths: PathsConfig) -> AutopilotController:
@@ -135,9 +135,7 @@ def policy_list(manager: PolicyManager) -> Dict[str, Any]:
     }
 
 
-def policy_rollout(
-    manager: PolicyManager, path: Path, reason: str, audit: AuditLogger | None = None
-) -> Dict[str, Any]:
+def policy_rollout(manager: PolicyManager, path: Path, reason: str, audit: AuditLogger | None = None) -> Dict[str, Any]:
     dest = manager.rollout(path, reason)
     if audit:
         audit.log(

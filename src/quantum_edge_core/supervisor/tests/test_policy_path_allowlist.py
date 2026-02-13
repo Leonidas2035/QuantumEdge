@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from supervisor.security import is_path_allowed
+from quantum_edge_core.supervisor.supervisor.security import is_path_allowed
 
 
 def test_policy_path_allowlist(tmp_path: Path):

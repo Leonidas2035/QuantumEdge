@@ -7,7 +7,7 @@ import time
 import urllib.request
 from typing import Dict, Optional
 
-from supervisor.tsdb.base import Point, TimeseriesStore
+from quantum_edge_core.supervisor.supervisor.tsdb.base import Point, TimeseriesStore
 
 
 def _escape(val: str) -> str:

@@ -9,7 +9,7 @@ import urllib.parse
 import urllib.request
 from typing import Dict, Optional
 
-from supervisor.tsdb.base import Point, TimeseriesStore
+from quantum_edge_core.supervisor.supervisor.tsdb.base import Point, TimeseriesStore
 
 
 class ClickHouseTimeseriesStore(TimeseriesStore):
@@ -55,7 +55,11 @@ class ClickHouseTimeseriesStore(TimeseriesStore):
         backoff = self.base_backoff_ms / 1000.0
         while True:
             try:
-                req = urllib.request.Request(f"{self.url}/?database={self.database}&query={urllib.parse.quote(query)}", data=payload, method="POST")
+                req = urllib.request.Request(
+                    f"{self.url}/?database={self.database}&query={urllib.parse.quote(query)}",
+                    data=payload,
+                    method="POST",
+                )
                 if self.user:
                     creds = f"{self.user}:{self.password or ''}".encode("utf-8")
                     import base64

@@ -103,7 +103,17 @@ def test_approve_apply_warn_runs_gates_then_apply(tmp_path: Path, monkeypatch: p
 
     gate_results = GateResults(
         passed=True,
-        steps=[GateStepResult(name="smoke", exit_code=0, duration_ms=1, stdout_path=None, stderr_path=None, timed_out=False, error=None)],
+        steps=[
+            GateStepResult(
+                name="smoke",
+                exit_code=0,
+                duration_ms=1,
+                stdout_path=None,
+                stderr_path=None,
+                timed_out=False,
+                error=None,
+            )
+        ],
         started_at="2026-01-01T00:00:00Z",
         finished_at="2026-01-01T00:00:01Z",
     )
@@ -156,8 +166,22 @@ def test_approve_apply_rejects_block_gate_failed_dry_run(
 
     report = {"run_id": run_id, "verdict": verdict, "exit_code": exit_code, "changes": {"applied": False}}
     (run_dir / "report.json").write_text(json.dumps(report), encoding="utf-8")
-    (run_dir / "task.yaml").write_text(yaml.safe_dump({"task_id": "t", "created_at": "x", "project_id": "meta_agent", "objective": "o", "instructions": "i", "mode": "task"}), encoding="utf-8")
-    (run_dir / "changeset.json").write_text(json.dumps({"project_root": str(tmp_path), "changes": {}}), encoding="utf-8")
+    (run_dir / "task.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "task_id": "t",
+                "created_at": "x",
+                "project_id": "meta_agent",
+                "objective": "o",
+                "instructions": "i",
+                "mode": "task",
+            }
+        ),
+        encoding="utf-8",
+    )
+    (run_dir / "changeset.json").write_text(
+        json.dumps({"project_root": str(tmp_path), "changes": {}}), encoding="utf-8"
+    )
 
     with pytest.raises(ApprovalError):
         approve_apply(run_id, runtime_dir=str(runtime_dir), method="test")

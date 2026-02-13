@@ -1,4 +1,4 @@
-﻿"""Shared OpenAI Chat Completions client."""
+"""Shared OpenAI Chat Completions client."""
 
 from __future__ import annotations
 
@@ -17,7 +17,9 @@ class ChatCompletionsClient:
         self.api_key_env = api_key_env
         self.logger = logger or logging.getLogger(__name__)
 
-    def complete(self, model: str, messages: List[Mapping[str, str]], temperature: float, timeout_seconds: float) -> str:
+    def complete(
+        self, model: str, messages: List[Mapping[str, str]], temperature: float, timeout_seconds: float
+    ) -> str:
         api_key = os.environ.get(self.api_key_env)
         if not api_key:
             raise RuntimeError(f"API key env var {self.api_key_env} not set")

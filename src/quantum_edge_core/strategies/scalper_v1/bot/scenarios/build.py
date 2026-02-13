@@ -85,7 +85,6 @@ def _write_episode(path: Path, ticks: List[Tick], fmt: str) -> None:
     fmt = fmt.lower()
     if fmt == "parquet":
         try:
-
             df = _ticks_to_frame(ticks)
             df.to_parquet(path, index=False)
             return

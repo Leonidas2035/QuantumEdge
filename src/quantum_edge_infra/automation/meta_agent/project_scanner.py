@@ -50,6 +50,7 @@ DEFAULT_EXCLUDE_FILES: Set[str] = {
     "*.kdbx",
 }
 
+
 @dataclass
 class ScannerStats:
     """
@@ -297,10 +298,11 @@ class ProjectScanner:
                 curr = curr[part]
 
         lines = ["."]
+
         def _render(node, indent=""):
             items = sorted(node.items())
             for idx, (name, children) in enumerate(items):
-                is_last = (idx == len(items) - 1)
+                is_last = idx == len(items) - 1
                 connector = "└── " if is_last else "├── "
                 lines.append(f"{indent}{connector}{name}")
                 if children:
@@ -323,7 +325,7 @@ class ProjectScanner:
         entries = [e for e in entries if not self._should_exclude_dir(e)]
 
         for idx, entry in enumerate(entries):
-            is_last = (idx == len(entries) - 1)
+            is_last = idx == len(entries) - 1
             connector = "└── " if is_last else "├── "
             abs_path = os.path.join(root_dir, entry)
             lines.append(f"{indent}{connector}{entry}")
@@ -373,10 +375,11 @@ class ProjectScanner:
                 curr = curr[part]
 
         lines = ["."]
+
         def _render(node, indent=""):
             items = sorted(node.items())
             for idx, (name, children) in enumerate(items):
-                is_last = (idx == len(items) - 1)
+                is_last = idx == len(items) - 1
                 connector = "└── " if is_last else "├── "
                 lines.append(f"{indent}{connector}{name}")
                 if children:
@@ -395,8 +398,7 @@ class ProjectScanner:
 
         try:
             return self.collect_project_context(
-                max_chars=1_000_000,
-                include_globs=["src/**/*", "config/**/*", "tests/**/*"]
+                max_chars=1_000_000, include_globs=["src/**/*", "config/**/*", "tests/**/*"]
             )
         finally:
             self.include_exts = original_exts
@@ -413,10 +415,7 @@ class ProjectScanner:
             # Context collection for architect mode usually needs more tokens
             # We use include_globs to target src/ while keeping project_root at the base
             # so that relative paths remain correct (e.g., src/quantum_edge_core/...)
-            context = self.collect_project_context(
-                max_chars=1_000_000,
-                include_globs=["src/**/*.py"]
-            )
+            context = self.collect_project_context(max_chars=1_000_000, include_globs=["src/**/*.py"])
 
             # If src/ was empty or missing, try root .py files as fallback
             if not context:

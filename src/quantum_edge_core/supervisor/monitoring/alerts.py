@@ -109,7 +109,15 @@ class AlertManager:
         last_fired = self._last_fired.get(key, 0.0)
         alert = self._alerts.get(key)
         if alert is None:
-            alert = Alert(key=key, severity=severity, message=message, first_seen=now, last_seen=now, active=True, evidence=evidence)
+            alert = Alert(
+                key=key,
+                severity=severity,
+                message=message,
+                first_seen=now,
+                last_seen=now,
+                active=True,
+                evidence=evidence,
+            )
             self._alerts[key] = alert
             if now - last_fired >= self.cooldown_sec:
                 self._last_fired[key] = now

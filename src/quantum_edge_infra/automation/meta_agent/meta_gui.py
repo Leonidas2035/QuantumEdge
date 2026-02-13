@@ -111,7 +111,6 @@ def main():
     entry_name = tk.Entry(frame_top)
     entry_name.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(5, 0))
 
-
     lbl_prompt = tk.Label(root, text="Task prompt / instructions (.md):")
     lbl_prompt.pack(anchor="w", padx=10)
 

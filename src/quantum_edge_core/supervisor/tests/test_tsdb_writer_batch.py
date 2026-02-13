@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 
-from supervisor.tsdb.base import Point
-from supervisor.tsdb.writer import TsdbWriter
+from quantum_edge_core.supervisor.supervisor.tsdb.base import Point
+from quantum_edge_core.supervisor.supervisor.tsdb.writer import TsdbWriter
 
 
 class DummyStore:

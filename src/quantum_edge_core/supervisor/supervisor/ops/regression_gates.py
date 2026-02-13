@@ -7,10 +7,10 @@ import random
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from supervisor.episodes.runner import EpisodeRunConfig, run_episode_set
-from supervisor.episodes.report import generate_report
-from supervisor.episodes.cutter import load_scenarios
-from supervisor.ops.config import load_ops_config, get_nested
+from quantum_edge_core.supervisor.supervisor.episodes.runner import EpisodeRunConfig, run_episode_set
+from quantum_edge_core.supervisor.supervisor.episodes.report import generate_report
+from quantum_edge_core.supervisor.supervisor.episodes.cutter import load_scenarios
+from quantum_edge_core.supervisor.supervisor.ops.config import load_ops_config, get_nested
 
 
 CRITICAL_REASONS = {
@@ -135,7 +135,9 @@ def _prepare_manifest(
     return tmp_path
 
 
-def _compare_reports(candidate: Dict[str, Any], baseline: Dict[str, Any], gate_cfg: Dict[str, Any]) -> list[Dict[str, Any]]:
+def _compare_reports(
+    candidate: Dict[str, Any], baseline: Dict[str, Any], gate_cfg: Dict[str, Any]
+) -> list[Dict[str, Any]]:
     checks: list[Dict[str, Any]] = []
     max_flaps_abs = float(gate_cfg.get("max_regime_flaps_per_min", 2.0))
     flap_increase_pct = float(gate_cfg.get("max_flap_increase_pct", 0.2))
@@ -157,7 +159,9 @@ def _compare_reports(candidate: Dict[str, Any], baseline: Dict[str, Any], gate_c
     candidate_rejected = int(candidate.get("actions_rejected_count") or 0)
     baseline_rejected = int(baseline.get("actions_rejected_count") or 0)
     rejected_limit = int(round(baseline_rejected * (1 + rejected_increase_pct))) + 1
-    checks.append(_check("actions_rejected_count", candidate_rejected, rejected_limit, candidate_rejected <= rejected_limit))
+    checks.append(
+        _check("actions_rejected_count", candidate_rejected, rejected_limit, candidate_rejected <= rejected_limit)
+    )
 
     candidate_errors = int(candidate.get("errors_count") or 0)
     baseline_errors = int(baseline.get("errors_count") or 0)
@@ -167,7 +171,9 @@ def _compare_reports(candidate: Dict[str, Any], baseline: Dict[str, Any], gate_c
     candidate_critical = _count_critical(candidate.get("top_block_reasons") or {})
     baseline_critical = _count_critical(baseline.get("top_block_reasons") or {})
     critical_limit = int(round(baseline_critical * (1 + critical_increase_pct))) + 1
-    checks.append(_check("critical_block_reasons", candidate_critical, critical_limit, candidate_critical <= critical_limit))
+    checks.append(
+        _check("critical_block_reasons", candidate_critical, critical_limit, candidate_critical <= critical_limit)
+    )
     return checks
 
 

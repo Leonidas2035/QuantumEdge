@@ -191,7 +191,9 @@ def compute_next_fire(schedule: ScheduleSpec, last_fire: Optional[datetime], now
         return None if last_fire else now_local
     if trigger.type == "cron":
         for _ in range(0, 24 * 60):
-            if _cron_match(trigger.minute or "*", now_local.minute) and _cron_match(trigger.hour or "*", now_local.hour):
+            if _cron_match(trigger.minute or "*", now_local.minute) and _cron_match(
+                trigger.hour or "*", now_local.hour
+            ):
                 return now_local
             now_local += timedelta(minutes=1)
         return None
@@ -431,7 +433,9 @@ def tick(
         if result.get("lock_busy"):
             for entry in state["schedules"].values():
                 backoff = _calc_backoff(1, 5, 30, False)
-                entry["next_eligible_at"] = _format_iso((now_utc or datetime.now(timezone.utc)) + timedelta(seconds=backoff))
+                entry["next_eligible_at"] = _format_iso(
+                    (now_utc or datetime.now(timezone.utc)) + timedelta(seconds=backoff)
+                )
 
     for item in reports_total:
         task_name = item.get("task_name")
@@ -464,7 +468,9 @@ def tick(
             entry["next_eligible_at"] = _format_iso((now_utc or datetime.now(timezone.utc)) + timedelta(seconds=delay))
             if attempts >= schedule.policy.max_attempts:
                 entry["attempts"] = 0
-                end_time = _window_end(now_local, schedule.windows[0]) if schedule.windows else now_local + timedelta(hours=1)
+                end_time = (
+                    _window_end(now_local, schedule.windows[0]) if schedule.windows else now_local + timedelta(hours=1)
+                )
                 entry["next_eligible_at"] = _format_iso(end_time.astimezone(timezone.utc))
         else:
             entry["attempts"] = 0

@@ -67,7 +67,9 @@ class DashboardAuditLogger:
         return items
 
 
-def _read_last_lines(path: Path, max_lines: int = 200, chunk_size: int = 8192, max_bytes: int = 1024 * 1024) -> list[str]:
+def _read_last_lines(
+    path: Path, max_lines: int = 200, chunk_size: int = 8192, max_bytes: int = 1024 * 1024
+) -> list[str]:
     lines: list[str] = []
     size = 0
     with path.open("rb") as handle:

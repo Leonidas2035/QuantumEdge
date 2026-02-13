@@ -1,4 +1,4 @@
-﻿"""Utility rate limiter helpers."""
+"""Utility rate limiter helpers."""
 
 from __future__ import annotations
 

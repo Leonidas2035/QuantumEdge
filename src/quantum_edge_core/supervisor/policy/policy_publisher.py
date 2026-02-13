@@ -43,4 +43,3 @@ class PolicyPublisher:
                 self.logger.error("Policy publish failed: %s", exc)
             return False
         return True
-

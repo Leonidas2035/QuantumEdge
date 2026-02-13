@@ -105,21 +105,27 @@ class BingXClient:
             payload = response.json()
         except ValueError:
             detail = BingXErrorDetail(status, None, f"Non-JSON response (status={status})", endpoint)
-            self.logger.warning("BingX API error endpoint=%s status=%s code=%s msg=%s", endpoint, status, None, detail.message)
+            self.logger.warning(
+                "BingX API error endpoint=%s status=%s code=%s msg=%s", endpoint, status, None, detail.message
+            )
             raise BingXAPIError(detail) from None
 
         if status != 200:
             error_code = payload.get("code") if isinstance(payload, dict) else None
             message = payload.get("msg") if isinstance(payload, dict) else str(payload)
             detail = BingXErrorDetail(status, error_code, message, endpoint)
-            self.logger.warning("BingX API error endpoint=%s status=%s code=%s msg=%s", endpoint, status, error_code, message)
+            self.logger.warning(
+                "BingX API error endpoint=%s status=%s code=%s msg=%s", endpoint, status, error_code, message
+            )
             raise BingXAPIError(detail)
 
         if isinstance(payload, dict) and payload.get("code") not in (0, None):
             error_code = payload.get("code")
             message = payload.get("msg", "BingX API error")
             detail = BingXErrorDetail(status, error_code, message, endpoint)
-            self.logger.warning("BingX API error endpoint=%s status=%s code=%s msg=%s", endpoint, status, error_code, message)
+            self.logger.warning(
+                "BingX API error endpoint=%s status=%s code=%s msg=%s", endpoint, status, error_code, message
+            )
             raise BingXAPIError(detail)
 
         if isinstance(payload, dict) and "data" in payload:

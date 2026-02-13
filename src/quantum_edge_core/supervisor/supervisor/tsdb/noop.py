@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from supervisor.tsdb.base import TimeseriesStore, Point
+from quantum_edge_core.supervisor.supervisor.tsdb.base import TimeseriesStore, Point
 
 
 class NoopTimeseriesStore(TimeseriesStore):

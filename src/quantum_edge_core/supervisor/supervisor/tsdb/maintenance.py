@@ -7,8 +7,8 @@ import urllib.request
 from pathlib import Path
 from typing import Optional
 
-from supervisor.config import TsdbRetentionConfig, TsdbConfig
-from supervisor.tsdb.query import derive_questdb_query_url, questdb_exec
+from quantum_edge_core.supervisor.supervisor.config import TsdbRetentionConfig, TsdbConfig
+from quantum_edge_core.supervisor.supervisor.tsdb.query import derive_questdb_query_url, questdb_exec
 
 
 def _post_sql(url: str, sql: str, auth: Optional[tuple[str, str]] = None) -> None:
@@ -24,7 +24,9 @@ def _post_sql(url: str, sql: str, auth: Optional[tuple[str, str]] = None) -> Non
             raise RuntimeError(f"HTTP {resp.status}")
 
 
-def clickhouse_retention(project_root: Path, cfg: TsdbConfig, retention: TsdbRetentionConfig, logger: logging.Logger) -> bool:
+def clickhouse_retention(
+    project_root: Path, cfg: TsdbConfig, retention: TsdbRetentionConfig, logger: logging.Logger
+) -> bool:
     sql_path = project_root / "sql" / "clickhouse_retention.sql"
     dynamic_sql = ""
     if retention.enabled:
@@ -41,7 +43,11 @@ def clickhouse_retention(project_root: Path, cfg: TsdbConfig, retention: TsdbRet
         logger.warning("No ClickHouse retention SQL to apply.")
         return False
     try:
-        _post_sql(f"{cfg.clickhouse_url}/?database={cfg.clickhouse_database}", sql, (cfg.clickhouse_user, cfg.clickhouse_password))
+        _post_sql(
+            f"{cfg.clickhouse_url}/?database={cfg.clickhouse_database}",
+            sql,
+            (cfg.clickhouse_user, cfg.clickhouse_password),
+        )
         return True
     except Exception as exc:  # pylint: disable=broad-except
         logger.warning("ClickHouse retention failed: %s", exc)
@@ -66,7 +72,9 @@ def questdb_retention(cfg: TsdbConfig, retention: TsdbRetentionConfig, logger: l
     return True
 
 
-def apply_retention_and_rollups(project_root: Path, tsdb_cfg: TsdbConfig, retention_cfg: TsdbRetentionConfig, logger: logging.Logger) -> bool:
+def apply_retention_and_rollups(
+    project_root: Path, tsdb_cfg: TsdbConfig, retention_cfg: TsdbRetentionConfig, logger: logging.Logger
+) -> bool:
     if not retention_cfg.enabled or not tsdb_cfg.enabled or tsdb_cfg.backend == "none":
         logger.info("Retention skipped (disabled or TSDB disabled).")
         return True

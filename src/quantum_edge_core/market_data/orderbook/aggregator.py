@@ -52,9 +52,7 @@ class OrderBookAggregator:
         self._publisher = publisher
         self._bus = bus
         self._snapshot_cache = snapshot_cache
-        self._books: Dict[str, OrderBook] = {
-            symbol: OrderBook(symbol) for symbol in config.symbols
-        }
+        self._books: Dict[str, OrderBook] = {symbol: OrderBook(symbol) for symbol in config.symbols}
         self._running = False
         self._publish_interval = max(self._config.publish_interval_ms / 1000.0, 0.05)
         self._stats = AggregatorStats()
@@ -157,12 +155,7 @@ class OrderBookAggregator:
         self._stats.depth_publish_total += 1
         if self._config.snapshot.include_depth:
             self._snapshot_cache.update(event)
-        if (
-            self._microstructure
-            and self._micro_publisher
-            and best_bid
-            and best_ask
-        ):
+        if self._microstructure and self._micro_publisher and best_bid and best_ask:
             snapshot = self._microstructure.update_book(
                 symbol=symbol,
                 bid_px=best_bid[0],
@@ -230,9 +223,7 @@ class OrderBookAggregator:
                 distance = abs(level.price - mid) / mid * 10000
                 if self._config.walls.max_distance_bps and distance > self._config.walls.max_distance_bps:
                     continue
-            walls.append(
-                WallLevel(price=level.price, qty=level.qty, notional=notional, distance_bps=distance)
-            )
+            walls.append(WallLevel(price=level.price, qty=level.qty, notional=notional, distance_bps=distance))
         return walls
 
     def _nearest_distance(self, walls: List[WallLevel]) -> Optional[float]:

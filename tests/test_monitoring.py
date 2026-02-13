@@ -1,8 +1,8 @@
 import time
 
-from supervisor.monitoring.aggregator import TelemetryAggregator
-from supervisor.monitoring.alerts import AlertManager
-from supervisor.monitoring.api import normalize_event
+from quantum_edge_core.supervisor.supervisor.monitoring.aggregator import TelemetryAggregator
+from quantum_edge_core.supervisor.supervisor.monitoring.alerts import AlertManager
+from quantum_edge_core.supervisor.supervisor.monitoring.api import normalize_event
 
 
 def test_event_normalization_defaults():

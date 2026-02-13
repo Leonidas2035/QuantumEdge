@@ -9,6 +9,7 @@ import yaml
 
 from tools.qe_paths import find_repo_root, get_paths
 
+
 def _find_qe_root() -> Path:
     return find_repo_root()
 

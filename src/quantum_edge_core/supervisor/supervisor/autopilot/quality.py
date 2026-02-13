@@ -6,7 +6,7 @@ from collections import deque
 from dataclasses import dataclass
 from typing import Any, Deque, Dict, List, Tuple
 
-from supervisor.autopilot.collector import MetricsSnapshot
+from quantum_edge_core.supervisor.supervisor.autopilot.collector import MetricsSnapshot
 
 
 @dataclass
@@ -137,7 +137,10 @@ class QualityMonitor:
         rejects = _delta_rejects(recent)
         if rejects <= 0:
             return None
-        mismatch = _delta_rejects(recent, keys=("SCHEMA_HASH_MISMATCH", "MODEL_MISSING", "MODEL_MISSING_H1", "MODEL_MISSING_H5", "MODEL_MISSING_H30"))
+        mismatch = _delta_rejects(
+            recent,
+            keys=("SCHEMA_HASH_MISMATCH", "MODEL_MISSING", "MODEL_MISSING_H1", "MODEL_MISSING_H5", "MODEL_MISSING_H30"),
+        )
         return mismatch / rejects if rejects else None
 
 

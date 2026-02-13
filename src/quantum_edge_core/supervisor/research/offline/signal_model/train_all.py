@@ -62,8 +62,7 @@ def main():
                 rows = info.get("rows")
                 balance = info.get("class_balance")
                 print(
-                    f"  h={h}: OK rows={rows} balance={balance} "
-                    f"acc={metrics.get('accuracy')} mcc={metrics.get('mcc')}"
+                    f"  h={h}: OK rows={rows} balance={balance} acc={metrics.get('accuracy')} mcc={metrics.get('mcc')}"
                 )
             else:
                 print(f"  h={h}: ERROR {info.get('error')}")

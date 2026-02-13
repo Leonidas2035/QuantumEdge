@@ -8,10 +8,12 @@ import copy
 import time
 from typing import Dict, Any
 
+
 class ThreadSafeStateManager:
     """
     Manages atomic updates and reads of the system state.
     """
+
     def __init__(self):
         self._lock = threading.Lock()
         self._state = {
@@ -21,7 +23,7 @@ class ThreadSafeStateManager:
             "active_policy": {},
             "last_heartbeat_time": 0.0,
             "emergency_mode": False,
-            "heartbeat_age_s": 0.0
+            "heartbeat_age_s": 0.0,
         }
 
     def update(self, updates: Dict[str, Any]):

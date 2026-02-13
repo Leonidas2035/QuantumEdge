@@ -1,4 +1,4 @@
-﻿"""Snapshot scheduler for SupervisorAgent."""
+"""Snapshot scheduler for SupervisorAgent."""
 
 from __future__ import annotations
 
@@ -9,13 +9,13 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-from supervisor.audit_report import load_events_for_date
-from supervisor.config import SnapshotSchedulerConfig
-from supervisor.events import BaseEvent, EventLogger, EventType
-from supervisor.llm.market_risk_monitor import MarketRiskMonitor
-from supervisor.llm.trading_behavior_analyzer import TradingBehaviorAnalyzer
-from supervisor.llm.trend_evaluator import TrendEvaluator
-from supervisor.snapshot_models import SnapshotReport
+from quantum_edge_core.supervisor.supervisor.audit_report import load_events_for_date
+from quantum_edge_core.supervisor.supervisor.config import SnapshotSchedulerConfig
+from quantum_edge_core.supervisor.supervisor.events import BaseEvent, EventLogger, EventType
+from quantum_edge_core.supervisor.supervisor.llm.market_risk_monitor import MarketRiskMonitor
+from quantum_edge_core.supervisor.supervisor.llm.trading_behavior_analyzer import TradingBehaviorAnalyzer
+from quantum_edge_core.supervisor.supervisor.llm.trend_evaluator import TrendEvaluator
+from quantum_edge_core.supervisor.supervisor.snapshot_models import SnapshotReport
 
 
 class SnapshotScheduler:
@@ -126,7 +126,9 @@ class SnapshotScheduler:
                 wins += 1
             elif result == "LOSS":
                 losses += 1
-        volatility_metric = statistics.pstdev(pnl_series) if len(pnl_series) > 1 else (abs(pnl_series[0]) if pnl_series else 0.0)
+        volatility_metric = (
+            statistics.pstdev(pnl_series) if len(pnl_series) > 1 else (abs(pnl_series[0]) if pnl_series else 0.0)
+        )
         total_decisions = len(decisions) or 1
         recent_winrate = wins / max(1, wins + losses)
         return {

@@ -1,4 +1,3 @@
-
 import pytest
 
 from market_data.bus.event_bus import EventBus

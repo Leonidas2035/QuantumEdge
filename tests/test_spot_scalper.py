@@ -1,4 +1,7 @@
 import pytest
+import sys
+import os
+sys.path.insert(0, os.path.abspath("src/quantum_edge_core/strategies/scalper_v1"))
 
 from bot.spot_scalper import (
     BookTop,

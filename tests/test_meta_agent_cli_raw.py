@@ -20,12 +20,14 @@ except ImportError:
     print(f"Failed to import meta_core from {META_AGENT_DIR}")
     raise
 
+
 class FakeLLMClient:
     def __init__(self, response: str):
         self._response = response
 
     def send(self, prompt: str, **kwargs) -> str:
         return self._response
+
 
 def test_run_task_with_raw_string(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
     # Setup environment

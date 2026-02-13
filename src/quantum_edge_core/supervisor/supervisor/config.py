@@ -121,6 +121,7 @@ class CircuitBreakerConfig:
     window_sec: int
     open_sec: int
 
+
 @dataclass
 class LlmSupervisorConfig:
     """Configuration for the LLM-based risk moderator."""
@@ -838,7 +839,7 @@ def load_trading_behavior_config(path: Path) -> TradingBehaviorConfig:
 
 
 def load_snapshot_scheduler_config(path: Path) -> SnapshotSchedulerConfig:
-    """Load snapshot scheduler configuration from supervisor.yaml."""
+    """Load snapshot scheduler configuration from quantum_edge_core.supervisor.supervisor.yaml."""
 
     raw = _load_yaml(path)
     snap = raw.get("snapshots", {}) or {}
@@ -857,7 +858,13 @@ def load_dashboard_config(path: Path) -> DashboardConfig:
         return DashboardConfig(
             enabled=True,
             max_events=200,
-            events_types=["ORDER_DECISION", "ORDER_RESULT", "RISK_LIMIT_BREACH", "SUPERVISOR_SNAPSHOT", "STRATEGY_UPDATE"],
+            events_types=[
+                "ORDER_DECISION",
+                "ORDER_RESULT",
+                "RISK_LIMIT_BREACH",
+                "SUPERVISOR_SNAPSHOT",
+                "STRATEGY_UPDATE",
+            ],
             pnl_window_minutes=60,
             max_snapshots=12,
             require_snapshot_recent_minutes=10,
@@ -1033,7 +1040,10 @@ def load_autopilot_config(path: Path) -> AutopilotConfig:
     return AutopilotConfig(
         enabled=bool(autopilot.get("enabled", False)),
         target_state=str(autopilot.get("target_state", "SHADOW")).upper(),
-        allowed_states=[str(s).upper() for s in autopilot.get("allowed_states", ["OFF", "SHADOW", "LIVE_DEMO", "LIVE", "DEGRADED", "HALTED"])],
+        allowed_states=[
+            str(s).upper()
+            for s in autopilot.get("allowed_states", ["OFF", "SHADOW", "LIVE_DEMO", "LIVE", "DEGRADED", "HALTED"])
+        ],
         min_dwell_sec=int(autopilot.get("min_dwell_sec", 300) or 300),
         max_transitions_per_hour=int(autopilot.get("max_transitions_per_hour", 6) or 6),
         max_actions_per_hour=int(autopilot.get("max_actions_per_hour", 12) or 12),

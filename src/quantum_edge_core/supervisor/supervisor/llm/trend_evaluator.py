@@ -1,4 +1,4 @@
-﻿"""Trend evaluator using LLM with graceful fallbacks."""
+"""Trend evaluator using LLM with graceful fallbacks."""
 
 from __future__ import annotations
 
@@ -8,10 +8,10 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Dict, Literal, Optional
 
-from supervisor.config import TrendEvaluatorConfig
-from supervisor.llm.chat_client import ChatCompletionsClient
-from supervisor.utils.cache import TtlCache
-from supervisor.utils.rate_limit import PerMinuteRateLimiter
+from quantum_edge_core.supervisor.supervisor.config import TrendEvaluatorConfig
+from quantum_edge_core.supervisor.supervisor.llm.chat_client import ChatCompletionsClient
+from quantum_edge_core.supervisor.supervisor.utils.cache import TtlCache
+from quantum_edge_core.supervisor.supervisor.utils.rate_limit import PerMinuteRateLimiter
 
 TrendLabel = Literal["UP", "DOWN", "RANGE", "UNKNOWN"]
 
@@ -63,9 +63,11 @@ class TrendEvaluator:
         try:
             response = self._llm.complete(
                 model=self._config.model,
-                messages=
-                [
-                    {"role": "system", "content": "You are a trading trend analyst. Respond with JSON {\"trend\":...,\"confidence\":0..1,\"comment\":...}."},
+                messages=[
+                    {
+                        "role": "system",
+                        "content": 'You are a trading trend analyst. Respond with JSON {"trend":...,"confidence":0..1,"comment":...}.',
+                    },
                     {"role": "user", "content": prompt},
                 ],
                 temperature=self._config.temperature,

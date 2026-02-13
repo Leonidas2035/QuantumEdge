@@ -69,7 +69,7 @@ def _escape_tag(value: str) -> str:
 
 
 def _escape_field_string(value: str) -> str:
-    return value.replace("\\", "\\\\").replace("\"", "\\\"")
+    return value.replace("\\", "\\\\").replace('"', '\\"')
 
 
 def _format_field(value: Any) -> Optional[str]:
@@ -82,8 +82,8 @@ def _format_field(value: Any) -> Optional[str]:
     if isinstance(value, float):
         return f"{value}"
     if isinstance(value, str):
-        return f"\"{_escape_field_string(value)}\""
-    return f"\"{_escape_field_string(str(value))}\""
+        return f'"{_escape_field_string(value)}"'
+    return f'"{_escape_field_string(str(value))}"'
 
 
 def event_to_ilp_line(event: Dict[str, Any]) -> Optional[str]:

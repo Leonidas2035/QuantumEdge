@@ -1,4 +1,4 @@
-from LockBotBTC.lockbot_btc.state.account_state import AccountState
+from quantum_edge_core.supervisor.supervisor.state import AccountState
 
 
 def test_account_net_delta_est() -> None:

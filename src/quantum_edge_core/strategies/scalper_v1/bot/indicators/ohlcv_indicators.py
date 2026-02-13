@@ -1,4 +1,5 @@
-﻿"""Deprecated wrapper. Moved to SupervisorAgent.research.offline.indicators.ohlcv_indicators."""
+"""Deprecated wrapper. Moved to SupervisorAgent.research.offline.indicators.ohlcv_indicators."""
+
 from __future__ import annotations
 
 import importlib

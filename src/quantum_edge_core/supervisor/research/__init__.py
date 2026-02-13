@@ -19,4 +19,3 @@ def ensure_qe_root() -> Path:
 
 
 ensure_qe_root()
-

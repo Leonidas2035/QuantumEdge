@@ -62,7 +62,7 @@ SKIP_DIR_NAMES: Set[str] = {".git", "venv", ".venv"}
 # Additional directories to drop when specifically under certain parents
 SPECIAL_TMP_DIRS: Tuple[Tuple[str, str], ...] = (
     ("installer", "tmp"),  # installer/tmp
-    ("data", "tmp"),       # data/tmp
+    ("data", "tmp"),  # data/tmp
 )
 
 

@@ -1,4 +1,5 @@
-﻿"""Deprecated wrapper. Moved to SupervisorAgent.research.offline.signal_model.dataset."""
+"""Deprecated wrapper. Moved to SupervisorAgent.research.offline.signal_model.dataset."""
+
 from __future__ import annotations
 
 import importlib

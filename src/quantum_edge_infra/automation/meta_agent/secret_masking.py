@@ -53,7 +53,7 @@ def mask_secrets(text: str) -> str:
         return text
 
     masked = ASSIGNMENT_RE.sub(_mask_assignment, text)
-    masked = JSON_RE.sub(lambda m: f"{m.group(1)}{MASK}\"", masked)
+    masked = JSON_RE.sub(lambda m: f'{m.group(1)}{MASK}"', masked)
     masked = TOKEN_RE.sub("sk-" + MASK, masked)
 
     def _mask_entropy(match: re.Match) -> str:

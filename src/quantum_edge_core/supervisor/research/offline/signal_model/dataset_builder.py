@@ -14,7 +14,13 @@ class DatasetBuilder:
     The tick schema is expected to be: timestamp,price,qty,side
     """
 
-    def __init__(self, symbol: str = "BTCUSDT", horizon: int = 1, data_dir: Optional[Path] = None, limit_files: Optional[int] = None):
+    def __init__(
+        self,
+        symbol: str = "BTCUSDT",
+        horizon: int = 1,
+        data_dir: Optional[Path] = None,
+        limit_files: Optional[int] = None,
+    ):
         self.root = Path(os.getenv("QE_ROOT") or Path(__file__).resolve().parents[4])
         self.symbol = symbol
         self.horizon = horizon

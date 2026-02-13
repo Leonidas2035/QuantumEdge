@@ -90,7 +90,9 @@ class BinanceFuturesExecutor:
                 retryable=False,
             )
 
-    def cancel_order(self, *, symbol: str, client_order_id: Optional[str] = None, order_id: Optional[str] = None) -> CancelResult:
+    def cancel_order(
+        self, *, symbol: str, client_order_id: Optional[str] = None, order_id: Optional[str] = None
+    ) -> CancelResult:
         client = self._ensure_client()
         if not client:
             return CancelResult(ok=False, client_order_id=client_order_id, order_id=order_id, error_code="missing_keys")

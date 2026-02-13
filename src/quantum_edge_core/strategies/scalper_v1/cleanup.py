@@ -20,7 +20,7 @@ DIRS_TO_REMOVE = [
 ]
 
 FILE_PATTERNS_TO_REMOVE = [
-    "__pycache__",      # каталоги
+    "__pycache__",  # каталоги
 ]
 
 FILE_EXT_TO_REMOVE = [

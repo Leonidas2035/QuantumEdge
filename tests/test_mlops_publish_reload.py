@@ -3,9 +3,9 @@ import sys
 import types
 from pathlib import Path
 
-from supervisor.mlops.manifest import ModelManifest
-from supervisor.mlops.publisher import publish_model
-from supervisor.mlops.registry import sha256_file
+from quantum_edge_core.supervisor.supervisor.mlops.manifest import ModelManifest
+from quantum_edge_core.supervisor.supervisor.mlops.publisher import publish_model
+from quantum_edge_core.supervisor.supervisor.mlops.registry import sha256_file
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 BOT_ROOT = REPO_ROOT / "ai_scalper_bot"

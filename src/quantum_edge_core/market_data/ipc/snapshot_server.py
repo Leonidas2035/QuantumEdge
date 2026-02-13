@@ -94,7 +94,9 @@ class SnapshotServer:
                 break
             except Exception as exc:
                 logging.exception("Snapshot server error: %s", exc)
-                await self._socket.send(msgspec.msgpack.encode(SnapshotResponse(False, time.time_ns(), "", b"", note=str(exc))))
+                await self._socket.send(
+                    msgspec.msgpack.encode(SnapshotResponse(False, time.time_ns(), "", b"", note=str(exc)))
+                )
 
     def _handle_request(self, request: SnapshotRequest) -> SnapshotResponse:
         now = time.time_ns()

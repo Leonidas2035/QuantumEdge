@@ -124,10 +124,14 @@ class _Bars1sAggregator:
                 "trades": state.trades,
                 "ts": state.sec * 1000,
             }
-            self._state[symbol] = _BarState(sec=sec, open=price, high=price, low=price, close=price, volume=qty, trades=1)
+            self._state[symbol] = _BarState(
+                sec=sec, open=price, high=price, low=price, close=price, volume=qty, trades=1
+            )
             return bar
         if state is None:
-            self._state[symbol] = _BarState(sec=sec, open=price, high=price, low=price, close=price, volume=qty, trades=1)
+            self._state[symbol] = _BarState(
+                sec=sec, open=price, high=price, low=price, close=price, volume=qty, trades=1
+            )
             return None
         state.high = max(state.high, price)
         state.low = min(state.low, price)

@@ -7,9 +7,9 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, Optional, Tuple
 
-from supervisor.alerts.engine import AlertResult
-from supervisor.alerts.engine import AlertEngine
-from supervisor.dashboard.audit_log import DashboardAuditLogger
+from quantum_edge_core.supervisor.supervisor.alerts.engine import AlertResult
+from quantum_edge_core.supervisor.supervisor.alerts.engine import AlertEngine
+from quantum_edge_core.supervisor.supervisor.dashboard.audit_log import DashboardAuditLogger
 
 
 StrategyKey = Tuple[str, str]
@@ -250,7 +250,9 @@ class DashboardStateStore:
                         stale_count += 1
                 breaches += len(_detect_limit_breaches(state.telemetry, state.limits))
                 api_errors += int(state.telemetry.get("api_errors_1m") or 0)
-                stuck_sells += _summarize_dca_lots(state.lot_status, now_ms, self._dca_stuck_sell_ms).get("stuck_sells", 0)
+                stuck_sells += _summarize_dca_lots(state.lot_status, now_ms, self._dca_stuck_sell_ms).get(
+                    "stuck_sells", 0
+                )
                 cancel_count += self._cancel_count_for(key, now_ms)
             cancel_rate = cancel_count
         return {
@@ -448,7 +450,9 @@ def _detect_limit_breaches(telemetry: Dict[str, Any], limits: Dict[str, Any]) ->
     return breaches
 
 
-def _check_breach(breaches: list[str], telemetry: Dict[str, Any], limits: Dict[str, Any], field: str, limit_field: str) -> None:
+def _check_breach(
+    breaches: list[str], telemetry: Dict[str, Any], limits: Dict[str, Any], field: str, limit_field: str
+) -> None:
     value = _coerce_float(telemetry.get(field), default=None)
     limit = _coerce_float(limits.get(limit_field), default=None)
     if value is None or limit is None:

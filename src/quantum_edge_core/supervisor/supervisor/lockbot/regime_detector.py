@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import List, Optional, Sequence, Tuple
 
-from supervisor.lockbot.models import MarketSnapshot, OhlcvBar, RegimeDetectorConfig, RegimeSignals
+from quantum_edge_core.supervisor.supervisor.lockbot.models import MarketSnapshot, OhlcvBar, RegimeDetectorConfig, RegimeSignals
 
 
 @dataclass

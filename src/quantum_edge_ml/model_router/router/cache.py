@@ -30,9 +30,7 @@ class RouterCache:
 
     def get(self, key: str) -> Optional[CacheEntry]:
         with sqlite3.connect(self.path) as conn:
-            row = conn.execute(
-                "SELECT decision, backend, created_ts FROM cache WHERE key = ?", (key,)
-            ).fetchone()
+            row = conn.execute("SELECT decision, backend, created_ts FROM cache WHERE key = ?", (key,)).fetchone()
         if not row:
             return None
         entry = CacheEntry(decision_json=row[0], backend=row[1], created_ts=row[2])

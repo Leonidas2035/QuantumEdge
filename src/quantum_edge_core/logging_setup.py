@@ -11,11 +11,12 @@ import sys
 
 import structlog
 
+
 def setup_logging() -> None:
     """
     Configures structlog and standard library logging.
     """
-    
+
     # Common processors for both JSON and Console
     processors = [
         structlog.stdlib.filter_by_level,
@@ -52,15 +53,17 @@ def setup_logging() -> None:
     # Configure Standard Library Logging to use structlog
     # This ensures logs from libraries (like uvicorn, asyncio) are formatted correctly
     handler = logging.StreamHandler(sys.stdout)
-    handler.setFormatter(structlog.stdlib.ProcessorFormatter(
-        processor=formatter_processor,
-    ))
-    
+    handler.setFormatter(
+        structlog.stdlib.ProcessorFormatter(
+            processor=formatter_processor,
+        )
+    )
+
     root_logger = logging.getLogger()
     root_logger.handlers = [handler]
-    
+
     # Set default level (can be controlled via env var in future)
     root_logger.setLevel(logging.INFO)
 
-    # Redirect standard logging to structlog is implicit via Handler/Formatter above, 
+    # Redirect standard logging to structlog is implicit via Handler/Formatter above,
     # but we prevent duplicate logs if needed.

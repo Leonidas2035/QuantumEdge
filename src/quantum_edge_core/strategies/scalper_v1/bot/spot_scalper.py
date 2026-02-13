@@ -400,7 +400,9 @@ class SpotOrderExecutor:
         self._logger = logger
         self._client = BinanceDemoExecutor(exchange_override="spot") if self._mode == "demo" else None
 
-    async def place_limit(self, symbol: str, side: str, qty: float, price: float, client_order_id: str) -> Optional[str]:
+    async def place_limit(
+        self, symbol: str, side: str, qty: float, price: float, client_order_id: str
+    ) -> Optional[str]:
         if self._mode != "demo":
             return None
         result = await self._client.submit_order(
@@ -550,9 +552,13 @@ async def run_spot_scalper(config: Dict[str, object], *, logger: Optional[loggin
         risk_manager=risk_manager,
     )
 
-    events_path = _resolve_path(config, scalper_cfg.get("events_path", "ai_scalper_bot/runtime/events/spot_scalper.jsonl"))
+    events_path = _resolve_path(
+        config, scalper_cfg.get("events_path", "ai_scalper_bot/runtime/events/spot_scalper.jsonl")
+    )
     event_writer = EventWriter(events_path)
-    status_file = _resolve_path(config, scalper_cfg.get("status_file", "ai_scalper_bot/runtime/status/spot_scalper.json"))
+    status_file = _resolve_path(
+        config, scalper_cfg.get("status_file", "ai_scalper_bot/runtime/status/spot_scalper.json")
+    )
     status_writer = BotStatusWriter(status_file, interval_seconds=2.0)
     order_executor = SpotOrderExecutor(mode, logger, enable_trading=trading_enabled)
 
@@ -568,18 +574,8 @@ async def run_spot_scalper(config: Dict[str, object], *, logger: Optional[loggin
                     continue
                 bid_px = float(event.get("b") or 0.0)
                 ask_px = float(event.get("a") or 0.0)
-                bid_qty = float(
-                    event.get("bid_qty")
-                    or event.get("best_bid_qty")
-                    or event.get("quant_bid")
-                    or 0.0
-                )
-                ask_qty = float(
-                    event.get("ask_qty")
-                    or event.get("best_ask_qty")
-                    or event.get("quant_ask")
-                    or 0.0
-                )
+                bid_qty = float(event.get("bid_qty") or event.get("best_bid_qty") or event.get("quant_bid") or 0.0)
+                ask_qty = float(event.get("ask_qty") or event.get("best_ask_qty") or event.get("quant_ask") or 0.0)
                 ts_ms = int(event.get("E") or event.get("T") or time.time() * 1000)
                 if bid_px <= 0 or ask_px <= 0:
                     continue
@@ -619,13 +615,17 @@ async def _apply_intent(
         side = "BUY" if intent.side > 0 else "SELL"
         order_id = await executor.place_limit(symbol, side, intent.qty, intent.price, intent.client_order_id)
         engine.apply_intent(intent, ts_ms)
-        event_writer.write({"type": "spot_scalper_order", "data": {"action": "place", "order_id": order_id, **intent.__dict__}})
+        event_writer.write(
+            {"type": "spot_scalper_order", "data": {"action": "place", "order_id": order_id, **intent.__dict__}}
+        )
     elif action == "replace":
         await executor.cancel(symbol, intent.order_id, intent.client_order_id)
         side = "BUY" if intent.side > 0 else "SELL"
         order_id = await executor.place_limit(symbol, side, intent.qty, intent.price, intent.client_order_id)
         engine.apply_intent(intent, ts_ms)
-        event_writer.write({"type": "spot_scalper_order", "data": {"action": "replace", "order_id": order_id, **intent.__dict__}})
+        event_writer.write(
+            {"type": "spot_scalper_order", "data": {"action": "replace", "order_id": order_id, **intent.__dict__}}
+        )
     elif action == "cancel":
         await executor.cancel(symbol, intent.order_id, intent.client_order_id)
         engine.apply_intent(intent, ts_ms)
@@ -644,7 +644,7 @@ def _std(values: Deque[float]) -> float:
         return 0.0
     mean = sum(values) / len(values)
     var = sum((v - mean) ** 2 for v in values) / len(values)
-    return var ** 0.5
+    return var**0.5
 
 
 def _price_diff(a: float, b: float, tick_size: float) -> bool:

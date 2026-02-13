@@ -43,8 +43,11 @@ def _override_config(cfg_path: str, mode: Optional[str], allow_no_models: bool) 
         global_config.data["ml"]["require_models"] = False
 
 
-def _install_signal_handlers(loop: asyncio.AbstractEventLoop, stop_event: asyncio.Event, logger: logging.Logger) -> None:
+def _install_signal_handlers(
+    loop: asyncio.AbstractEventLoop, stop_event: asyncio.Event, logger: logging.Logger
+) -> None:
     """Attach signal handlers with a Windows-safe fallback."""
+
     def _trigger(signame: str) -> None:
         logger.info("Received %s, shutting down gracefully...", signame)
         loop.call_soon_threadsafe(stop_event.set)

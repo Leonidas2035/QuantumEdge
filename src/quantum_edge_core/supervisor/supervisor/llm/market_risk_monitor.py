@@ -1,4 +1,4 @@
-﻿"""Market risk monitor backed by LLM with safe fallback."""
+"""Market risk monitor backed by LLM with safe fallback."""
 
 from __future__ import annotations
 
@@ -8,9 +8,9 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Literal, Optional
 
-from supervisor.config import MarketRiskMonitorConfig
-from supervisor.llm.chat_client import ChatCompletionsClient
-from supervisor.utils.rate_limit import PerMinuteRateLimiter
+from quantum_edge_core.supervisor.supervisor.config import MarketRiskMonitorConfig
+from quantum_edge_core.supervisor.supervisor.llm.chat_client import ChatCompletionsClient
+from quantum_edge_core.supervisor.supervisor.utils.rate_limit import PerMinuteRateLimiter
 
 RiskLevel = Literal["LOW", "MEDIUM", "HIGH"]
 
@@ -53,7 +53,10 @@ class MarketRiskMonitor:
             response = self._llm.complete(
                 model=self._config.model,
                 messages=[
-                    {"role": "system", "content": "You classify market risk. Respond JSON {\"risk_level\":LOW/MEDIUM/HIGH,\"triggers\":[],\"comment\":...}."},
+                    {
+                        "role": "system",
+                        "content": 'You classify market risk. Respond JSON {"risk_level":LOW/MEDIUM/HIGH,"triggers":[],"comment":...}.',
+                    },
                     {"role": "user", "content": prompt},
                 ],
                 temperature=self._config.temperature,

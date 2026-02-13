@@ -1,4 +1,4 @@
-﻿"""Simple TTL cache utilities."""
+"""Simple TTL cache utilities."""
 
 from __future__ import annotations
 

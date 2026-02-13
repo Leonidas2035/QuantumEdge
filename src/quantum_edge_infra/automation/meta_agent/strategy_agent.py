@@ -26,11 +26,7 @@ def _gather_recent_summaries(limit: int = 5) -> str:
     """
     if not os.path.isdir(SUPERVISOR_REPORT_DIR):
         return ""
-    files = [
-        os.path.join(SUPERVISOR_REPORT_DIR, f)
-        for f in os.listdir(SUPERVISOR_REPORT_DIR)
-        if f.endswith(".json")
-    ]
+    files = [os.path.join(SUPERVISOR_REPORT_DIR, f) for f in os.listdir(SUPERVISOR_REPORT_DIR) if f.endswith(".json")]
     files.sort(key=os.path.getmtime, reverse=True)
     context_parts: List[str] = []
     for path in files[:limit]:

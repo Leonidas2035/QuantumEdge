@@ -154,4 +154,5 @@ class PaperTrader:
         Convenience wrapper for non-async contexts.
         """
         import asyncio
+
         asyncio.run(self.process(decision, price, timestamp, symbol=symbol))

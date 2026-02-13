@@ -39,9 +39,9 @@ class OffMarketConfig:
 
 @dataclass
 class OffMarketState:
-    last_runs: Dict[str, str] = field(default_factory=dict)   # goal -> ISO ts
+    last_runs: Dict[str, str] = field(default_factory=dict)  # goal -> ISO ts
     runs_today: Dict[str, int] = field(default_factory=dict)  # goal -> count
-    runs_date: Optional[str] = None                           # YYYY-MM-DD in config timezone
+    runs_date: Optional[str] = None  # YYYY-MM-DD in config timezone
 
 
 def _ensure_dir(path: str) -> None:

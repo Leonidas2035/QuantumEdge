@@ -2,10 +2,10 @@ import hashlib
 import json
 from pathlib import Path
 
-from supervisor.research.backtest.engine import BacktestConfig, BacktestEngine
-from supervisor.research.replay.adapters import MarketEvent, load_events
-from supervisor.research.scenarios.definitions import get_scenario
-from supervisor.research.scenarios.injector import inject_scenario
+from quantum_edge_core.supervisor.supervisor.research.backtest.engine import BacktestConfig, BacktestEngine
+from quantum_edge_core.supervisor.supervisor.research.replay.adapters import MarketEvent, load_events
+from quantum_edge_core.supervisor.supervisor.research.scenarios.definitions import get_scenario
+from quantum_edge_core.supervisor.supervisor.research.scenarios.injector import inject_scenario
 
 
 def _result_hash(result) -> str:
@@ -27,10 +27,7 @@ def test_backtest_deterministic():
 
 
 def test_scenario_injection():
-    base = [
-        MarketEvent(ts=1000 + i * 1000, price=100.0, bid=99.5, ask=100.5, qty=1.0, side="buy")
-        for i in range(10)
-    ]
+    base = [MarketEvent(ts=1000 + i * 1000, price=100.0, bid=99.5, ask=100.5, qty=1.0, side="buy") for i in range(10)]
     spread = inject_scenario(base, get_scenario("spread_spike"), seed=1)
     assert any((evt.ask - evt.bid) > 1.0 for evt in spread)
 

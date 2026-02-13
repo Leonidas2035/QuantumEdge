@@ -11,6 +11,7 @@ from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
+
 ROOT = Path(__file__).resolve().parents[2]
 SUPERVISOR_DIR = ROOT / "SupervisorAgent"
 CONFIG_DIR = SUPERVISOR_DIR / "config"
@@ -43,7 +44,7 @@ def _git_info() -> Tuple[str, str]:
 
 def _build_test_app(tmp_root: Path):
     SupervisorApp = _load_supervisor_app_class()
-    from supervisor.config import (
+    from quantum_edge_core.supervisor.supervisor.config import (
         load_autopilot_config,
         load_dashboard_config,
         load_llm_supervisor_config,
@@ -59,10 +60,11 @@ def _build_test_app(tmp_root: Path):
         load_tsdb_config,
         load_tsdb_retention_config,
     )
-    from supervisor.config_loader import load_processes_spec
-    from supervisor.guards import load_guard_config
-    from supervisor.policy_store import resolve_active_policy_path
-    from supervisor.regime_sm import load_directives_config, load_regime_config
+    from quantum_edge_core.supervisor.supervisor.config_loader import load_processes_spec
+    from quantum_edge_core.supervisor.supervisor.guards import load_guard_config
+    from quantum_edge_core.supervisor.supervisor.policy_store import resolve_active_policy_path
+    from quantum_edge_core.supervisor.supervisor.regime_sm import load_directives_config, load_regime_config
+
     paths = load_paths_config(ROOT / "config" / "paths.yaml")
     runtime_dir = tmp_root / "runtime"
     logs_dir = tmp_root / "logs"
@@ -200,7 +202,7 @@ def _api_checks(app: Any) -> List[Dict[str, Any]]:
 
 def _alert_checks(app: Any) -> List[Dict[str, Any]]:
     results = []
-    from supervisor.alerts.rules import load_alert_rules
+    from quantum_edge_core.supervisor.supervisor.alerts.rules import load_alert_rules
 
     rules = load_alert_rules(CONFIG_DIR / "alerts.yaml")
     names = {rule.name for rule in rules}
@@ -251,7 +253,13 @@ def _alert_checks(app: Any) -> List[Dict[str, Any]]:
     app.dashboard_store.ingest_event(
         {
             "type": "strategy_telemetry.v1",
-            "data": {"strategy_id": "SCALP", "symbol": "BTCUSDT", "position_notional": 5, "api_errors_1m": 0, "cancel_count_1m": 0},
+            "data": {
+                "strategy_id": "SCALP",
+                "symbol": "BTCUSDT",
+                "position_notional": 5,
+                "api_errors_1m": 0,
+                "cancel_count_1m": 0,
+            },
             "ts_ms": clear_ms,
         }
     )
@@ -267,7 +275,13 @@ def _alert_checks(app: Any) -> List[Dict[str, Any]]:
     app.dashboard_store.ingest_event(
         {
             "type": "strategy_telemetry.v1",
-            "data": {"strategy_id": "SCALP", "symbol": "BTCUSDT", "position_notional": 5, "api_errors_1m": 0, "cancel_count_1m": 0},
+            "data": {
+                "strategy_id": "SCALP",
+                "symbol": "BTCUSDT",
+                "position_notional": 5,
+                "api_errors_1m": 0,
+                "cancel_count_1m": 0,
+            },
             "ts_ms": refresh_ms,
         }
     )
@@ -287,13 +301,27 @@ def _performance_checks(app: Any) -> List[Dict[str, Any]]:
     app.dashboard_store.ingest_event(
         {
             "type": "dca_deal_closed.v1",
-            "data": {"strategy_id": "DCA_ETH", "symbol": "ETHUSDT", "deal_id": "d1", "net_pnl": 5, "fees": 1, "volume_quote": 100},
+            "data": {
+                "strategy_id": "DCA_ETH",
+                "symbol": "ETHUSDT",
+                "deal_id": "d1",
+                "net_pnl": 5,
+                "fees": 1,
+                "volume_quote": 100,
+            },
         }
     )
     app.dashboard_store.ingest_event(
         {
             "type": "scalp_deal_closed.v1",
-            "data": {"strategy_id": "SCALP", "symbol": "BTCUSDT", "deal_id": "s1", "net_pnl": -2, "fees": 0.5, "volume_quote": 50},
+            "data": {
+                "strategy_id": "SCALP",
+                "symbol": "BTCUSDT",
+                "deal_id": "s1",
+                "net_pnl": -2,
+                "fees": 0.5,
+                "volume_quote": 50,
+            },
         }
     )
     perf = app.dashboard_performance()
@@ -305,7 +333,9 @@ def _performance_checks(app: Any) -> List[Dict[str, Any]]:
     results.append(_check(perf_after.get("session", {}).get("closed_deals") == 0, "perf:reset"))
 
     audit_items = app.dashboard_audit(limit=200).get("items", [])
-    results.append(_check(any(item.get("event_type") == "deal_closed" for item in audit_items), "perf:audit_deal_closed"))
+    results.append(
+        _check(any(item.get("event_type") == "deal_closed" for item in audit_items), "perf:audit_deal_closed")
+    )
     results.append(_check(any(item.get("event_type") == "counters_reset" for item in audit_items), "perf:audit_reset"))
     return results
 
@@ -347,10 +377,16 @@ def main() -> int:
     checks.extend(_ui_checks())
 
     report_lines.append("Stage status:")
-    stage1 = all(item["ok"] for item in checks if item["label"].startswith("api:") or item["label"].startswith("docs:") or item["label"].startswith("exists:"))
+    stage1 = all(
+        item["ok"]
+        for item in checks
+        if item["label"].startswith("api:") or item["label"].startswith("docs:") or item["label"].startswith("exists:")
+    )
     stage2 = all(item["ok"] for item in checks if item["label"].startswith("alerts:"))
     stage3 = all(item["ok"] for item in checks if item["label"].startswith("ui:"))
-    stage4 = all(item["ok"] for item in checks if item["label"].startswith("perf:") or item["label"].startswith("stage9.4:"))
+    stage4 = all(
+        item["ok"] for item in checks if item["label"].startswith("perf:") or item["label"].startswith("stage9.4:")
+    )
     report_lines.append(f"- 9.1 Dashboard backend: {'PASS' if stage1 else 'FAIL'}")
     report_lines.append(f"- 9.2 Alerts engine: {'PASS' if stage2 else 'FAIL'}")
     report_lines.append(f"- 9.3 Dashboard UI: {'PASS' if stage3 else 'FAIL'}")

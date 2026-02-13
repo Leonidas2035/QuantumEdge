@@ -161,7 +161,9 @@ def _metrics(y_true: np.ndarray, y_prob: np.ndarray) -> Dict[str, object]:
             metrics["auc"] = float(roc_auc_score(y_true, y_prob))
         for thr in (0.50, 0.55, 0.60):
             preds = (y_prob >= thr).astype(int)
-            precision, recall, fscore, _ = precision_recall_fscore_support(y_true, preds, average="binary", zero_division=0)
+            precision, recall, fscore, _ = precision_recall_fscore_support(
+                y_true, preds, average="binary", zero_division=0
+            )
             metrics[f"precision@{thr}"] = float(precision)
             metrics[f"recall@{thr}"] = float(recall)
             metrics[f"f1@{thr}"] = float(fscore)
@@ -184,7 +186,9 @@ def _train_horizon(
     y_col = f"y_up_h{horizon}"
 
     if train_df.empty or val_df.empty or test_df.empty:
-        raise ValueError(f"Empty split detected for h{horizon}: train={len(train_df)} val={len(val_df)} test={len(test_df)}")
+        raise ValueError(
+            f"Empty split detected for h{horizon}: train={len(train_df)} val={len(val_df)} test={len(test_df)}"
+        )
     missing = [name for name in features + [y_col] if name not in train_df.columns]
     if missing:
         raise KeyError(f"Missing columns in training data for h{horizon}: {missing}")

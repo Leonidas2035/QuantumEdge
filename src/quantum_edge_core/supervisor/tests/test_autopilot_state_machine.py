@@ -1,4 +1,4 @@
-from supervisor.autopilot.state_machine import AutopilotState, AutopilotStateMachine
+from quantum_edge_core.supervisor.supervisor.autopilot.state_machine import AutopilotState, AutopilotStateMachine
 
 
 def test_state_machine_dwell_and_transition_limit():

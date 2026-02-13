@@ -15,29 +15,31 @@ from dataclasses import asdict, is_dataclass
 
 logger = logging.getLogger(__name__)
 
+
 class AuditLogger:
     """
     Logs structured events to a persistent JSONL file.
     Thread-safe.
     """
+
     def __init__(self, log_dir: str = "data/logs"):
         self.log_dir = Path(log_dir)
         self.log_dir.mkdir(parents=True, exist_ok=True)
         self.log_file = self.log_dir / "events.jsonl"
         self._lock = threading.Lock()
-        
+
     def _write_entry(self, entry: Dict[str, Any]):
         """Write a dictionary as a JSON line."""
         try:
             # Add timestamp if missing
             if "ts" not in entry:
                 entry["ts"] = datetime.now(timezone.utc).isoformat()
-            
+
             json_str = json.dumps(entry)
-            
+
             with self._lock, open(self.log_file, "a", encoding="utf-8") as f:
                 f.write(json_str + "\n")
-                    
+
         except Exception as e:
             logger.error(f"Failed to write audit log: {e}")
 
@@ -47,20 +49,17 @@ class AuditLogger:
         decision: Can be PolicyContract (dataclass) or dict.
         """
         try:
-             # Convert dataclass to dict if needed
+            # Convert dataclass to dict if needed
             if is_dataclass(decision):
-                 output_data = asdict(decision)
-                 # Handle Enum
-                 output_data["mode"] = output_data["mode"].value if hasattr(output_data["mode"], "value") else str(output_data["mode"])
+                output_data = asdict(decision)
+                # Handle Enum
+                output_data["mode"] = (
+                    output_data["mode"].value if hasattr(output_data["mode"], "value") else str(output_data["mode"])
+                )
             else:
-                 output_data = decision
+                output_data = decision
 
-            entry = {
-                "type": "AI_DECISION",
-                "latency_ms": latency_ms,
-                "input": context, 
-                "output": output_data
-            }
+            entry = {"type": "AI_DECISION", "latency_ms": latency_ms, "input": context, "output": output_data}
             self._write_entry(entry)
         except Exception as e:
             logger.error(f"Failed to log AI event: {e}")
@@ -69,12 +68,7 @@ class AuditLogger:
         """
         Log an emergency kill switch event.
         """
-        entry = {
-            "type": "KILL_SWITCH",
-            "reason": reason,
-            "trigger": triggering_metric,
-            "limit": limit_val
-        }
+        entry = {"type": "KILL_SWITCH", "reason": reason, "trigger": triggering_metric, "limit": limit_val}
         self._write_entry(entry)
 
     def tail(self, n: int = 10) -> list:
@@ -83,13 +77,13 @@ class AuditLogger:
         """
         if not self.log_file.exists():
             return []
-            
-        # Simplified tail - reads all and slices. 
+
+        # Simplified tail - reads all and slices.
         # For huge files, use seek from end.
         try:
             with self._lock, open(self.log_file, "r", encoding="utf-8") as f:
                 lines = f.readlines()
-            
+
             return [json.loads(line) for line in lines[-n:]]
         except Exception as e:
             logger.error(f"Failed to read tail: {e}")

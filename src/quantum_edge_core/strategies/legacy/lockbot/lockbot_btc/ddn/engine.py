@@ -94,7 +94,10 @@ class DDNEngine:
             if intent.action not in {"PANIC_LOCK", "PAUSE"}:
                 return self._reject(now_ms, ["STALE_DATA"])
 
-        if _is_liq_risk(ctx.position.distance_to_liq_bps, self._cfg.min_distance_to_liq_bps) or intent.action == "PANIC_LOCK":
+        if (
+            _is_liq_risk(ctx.position.distance_to_liq_bps, self._cfg.min_distance_to_liq_bps)
+            or intent.action == "PANIC_LOCK"
+        ):
             return self._panic_decision(ctx, now_ms)
 
         if intent.action in {"PAUSE", "RESUME"}:

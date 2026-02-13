@@ -6,8 +6,8 @@ SUPERVISOR_DIR = ROOT / "SupervisorAgent"
 if str(SUPERVISOR_DIR) not in sys.path:
     sys.path.insert(0, str(SUPERVISOR_DIR))
 
-from supervisor.lockbot.models import LiqHeatmapSummary, MarketSnapshot, OhlcvBar, RegimeDetectorConfig
-from supervisor.lockbot.regime_detector import RegimeDetector, RegimeHysteresis
+from quantum_edge_core.supervisor.supervisor.lockbot.models import LiqHeatmapSummary, MarketSnapshot, OhlcvBar, RegimeDetectorConfig
+from quantum_edge_core.supervisor.supervisor.lockbot.regime_detector import RegimeDetector, RegimeHysteresis
 
 
 def _trend_bars(count: int = 30, start: float = 100.0, step: float = 1.0) -> list[OhlcvBar]:
@@ -24,7 +24,9 @@ def _trend_bars(count: int = 30, start: float = 100.0, step: float = 1.0) -> lis
 
 
 def test_regime_detector_trend_up() -> None:
-    cfg = RegimeDetectorConfig(adx_period=5, atr_period=5, atr_baseline_period=10, slope_bps_enter=1.0, trend_adx_enter=5.0)
+    cfg = RegimeDetectorConfig(
+        adx_period=5, atr_period=5, atr_baseline_period=10, slope_bps_enter=1.0, trend_adx_enter=5.0
+    )
     detector = RegimeDetector(cfg)
     bars = _trend_bars()
     market = MarketSnapshot(

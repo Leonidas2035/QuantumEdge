@@ -107,7 +107,7 @@ def _detect_p_cores(max_cores: int) -> List[int]:
 
     cpu_ids = [cpu_id for _, cpu_id in selected]
     if max_cores and max_cores > 0:
-        cpu_ids = cpu_ids[: max_cores]
+        cpu_ids = cpu_ids[:max_cores]
     return cpu_ids
 
 

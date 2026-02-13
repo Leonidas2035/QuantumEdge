@@ -1,9 +1,9 @@
 from pathlib import Path
 
-from supervisor.alerts.engine import AlertEngine
-from supervisor.alerts.storage import AlertStorage
-from supervisor.dashboard.audit_log import DashboardAuditLogger
-from supervisor.dashboard.state_store import DashboardStateStore
+from quantum_edge_core.supervisor.supervisor.alerts.engine import AlertEngine
+from quantum_edge_core.supervisor.supervisor.alerts.storage import AlertStorage
+from quantum_edge_core.supervisor.supervisor.dashboard.audit_log import DashboardAuditLogger
+from quantum_edge_core.supervisor.supervisor.dashboard.state_store import DashboardStateStore
 
 
 def _make_store(tmp_path: Path) -> DashboardStateStore:
@@ -63,13 +63,27 @@ def test_performance_and_reset(tmp_path: Path) -> None:
     store.ingest_event(
         {
             "type": "dca_deal_closed.v1",
-            "data": {"strategy_id": "DCA_ETH", "symbol": "ETHUSDT", "deal_id": "d1", "net_pnl": 5, "fees": 1, "volume_quote": 100},
+            "data": {
+                "strategy_id": "DCA_ETH",
+                "symbol": "ETHUSDT",
+                "deal_id": "d1",
+                "net_pnl": 5,
+                "fees": 1,
+                "volume_quote": 100,
+            },
         }
     )
     store.ingest_event(
         {
             "type": "scalp_deal_closed.v1",
-            "data": {"strategy_id": "SCALP", "symbol": "BTCUSDT", "deal_id": "s1", "net_pnl": -2, "fees": 0.5, "volume_quote": 50},
+            "data": {
+                "strategy_id": "SCALP",
+                "symbol": "BTCUSDT",
+                "deal_id": "s1",
+                "net_pnl": -2,
+                "fees": 0.5,
+                "volume_quote": 50,
+            },
         }
     )
     perf = store.performance()

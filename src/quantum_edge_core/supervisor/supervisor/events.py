@@ -13,11 +13,11 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, Mapping, Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from supervisor.process_manager import ProcessInfo
-    from supervisor.risk_engine import OrderRequest, RiskDecision
+    from quantum_edge_core.supervisor.supervisor.process_manager import ProcessInfo
+    from quantum_edge_core.supervisor.supervisor.risk_engine import OrderRequest, RiskDecision
 
-from supervisor.snapshot_models import SnapshotReport
-from supervisor.tsdb.writer import TsdbWriter
+from quantum_edge_core.supervisor.supervisor.snapshot_models import SnapshotReport
+from quantum_edge_core.supervisor.supervisor.tsdb.writer import TsdbWriter
 
 SCHEMA_VERSION = "telemetry.v1"
 
@@ -117,7 +117,7 @@ class EventLogger:
         if self.tsdb_writer:
             try:
                 # Lazy import to avoid circular dependency during module import time
-                from supervisor.tsdb import mappers as tsdb_mappers  # type: ignore
+                from quantum_edge_core.supervisor.supervisor.tsdb import mappers as tsdb_mappers  # type: ignore
 
                 points = tsdb_mappers.event_to_points(event)
                 if points:
@@ -133,7 +133,11 @@ class EventLogger:
             ts=self._now(),
             type=EventType.BOT_START,
             source="ProcessManager",
-            data={"mode": mode, "pid": process_info.pid, "start_time": process_info.start_time.isoformat() if process_info.start_time else None},
+            data={
+                "mode": mode,
+                "pid": process_info.pid,
+                "start_time": process_info.start_time.isoformat() if process_info.start_time else None,
+            },
             severity="INFO",
         )
         self.log_event(event)
@@ -329,7 +333,9 @@ def prune_event_logs(events_dir: Path, retention_days: int, logger: Optional[log
     return deleted
 
 
-def _read_last_lines(path: Path, max_lines: int = 200, chunk_size: int = 8192, max_bytes: int = 1024 * 1024) -> list[str]:
+def _read_last_lines(
+    path: Path, max_lines: int = 200, chunk_size: int = 8192, max_bytes: int = 1024 * 1024
+) -> list[str]:
     lines: list[str] = []
     size = 0
     with path.open("rb") as handle:

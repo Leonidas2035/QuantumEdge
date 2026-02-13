@@ -24,7 +24,6 @@ class Tick:
 
 
 class OfflineTickSource:
-
     def __init__(self, symbol: str):
         self.symbol = symbol.upper()
         fname = f"{self.symbol}_ticks.csv"
@@ -60,7 +59,6 @@ class OfflineTickSource:
 
 
 class OfflineSimulator:
-
     def __init__(self, symbol: str, speed: float = 0):
         self.symbol = symbol.upper()
         self.speed = speed
@@ -96,14 +94,7 @@ class OfflineSimulator:
         unique_seconds = len({t.ts // 1000 for t in prepared})
         if unique_seconds < 3:
             prepared = [
-                Tick(
-                    ts=base_ts + i * 1000,
-                    price=t.price,
-                    qty=t.qty,
-                    side=t.side,
-                    bid=t.bid,
-                    ask=t.ask
-                )
+                Tick(ts=base_ts + i * 1000, price=t.price, qty=t.qty, side=t.side, bid=t.bid, ask=t.ask)
                 for i, t in enumerate(prepared)
             ]
 
@@ -111,14 +102,7 @@ class OfflineSimulator:
         while len(prepared) < 10:
             last = prepared[-1]
             prepared.append(
-                Tick(
-                    ts=last.ts + 1000,
-                    price=last.price,
-                    qty=last.qty,
-                    side=last.side,
-                    bid=last.bid,
-                    ask=last.ask
-                )
+                Tick(ts=last.ts + 1000, price=last.price, qty=last.qty, side=last.side, bid=last.bid, ask=last.ask)
             )
 
         return prepared
@@ -134,29 +118,17 @@ class OfflineSimulator:
         last_ts = None
 
         for tick in ticks:
-
             # WS-style filename pattern
             trade_path = os.path.join(TRADES_DIR, f"{self.symbol}_{tick.ts}.json")
             ob_path = os.path.join(ORDERBOOKS_DIR, f"{self.symbol}_{tick.ts}.json")
 
             # save trade
-            trade_event = {
-                "T": tick.ts,
-                "p": tick.price,
-                "q": tick.qty,
-                "m": tick.side == "sell",
-                "s": self.symbol
-            }
+            trade_event = {"T": tick.ts, "p": tick.price, "q": tick.qty, "m": tick.side == "sell", "s": self.symbol}
             with open(trade_path, "w") as f:
                 json.dump(trade_event, f)
 
             # save orderbook
-            ob_event = {
-                "E": tick.ts,
-                "bids": [[tick.bid, tick.qty]],
-                "asks": [[tick.ask, tick.qty]],
-                "s": self.symbol
-            }
+            ob_event = {"E": tick.ts, "bids": [[tick.bid, tick.qty]], "asks": [[tick.ask, tick.qty]], "s": self.symbol}
             with open(ob_path, "w") as f:
                 json.dump(ob_event, f)
 

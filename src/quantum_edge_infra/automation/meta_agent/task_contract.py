@@ -242,7 +242,7 @@ def _parse_frontmatter(text: str) -> tuple[Optional[dict], str]:
     if end is None:
         return None, text
     meta_text = "\n".join(lines[1:end])
-    body = "\n".join(lines[end + 1:]).lstrip()
+    body = "\n".join(lines[end + 1 :]).lstrip()
     data = yaml.safe_load(meta_text) or {}
     return data, body
 

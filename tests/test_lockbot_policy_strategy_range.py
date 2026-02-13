@@ -6,8 +6,8 @@ SUPERVISOR_DIR = ROOT / "SupervisorAgent"
 if str(SUPERVISOR_DIR) not in sys.path:
     sys.path.insert(0, str(SUPERVISOR_DIR))
 
-from supervisor.lockbot.models import BotStatusSnapshot, LiqHeatmapSummary, MarketSnapshot, RangePolicyConfig
-from supervisor.lockbot.strategy_range import evaluate_range
+from quantum_edge_core.supervisor.supervisor.lockbot.models import BotStatusSnapshot, LiqHeatmapSummary, MarketSnapshot, RangePolicyConfig
+from quantum_edge_core.supervisor.supervisor.lockbot.strategy_range import evaluate_range
 
 
 def _status() -> BotStatusSnapshot:

@@ -33,7 +33,9 @@ class EventWriter:
 
     def _prune(self) -> None:
         try:
-            candidates = sorted(self.path.parent.glob(f"{self.path.stem}.*{self.path.suffix}"), key=lambda p: p.stat().st_mtime)
+            candidates = sorted(
+                self.path.parent.glob(f"{self.path.stem}.*{self.path.suffix}"), key=lambda p: p.stat().st_mtime
+            )
         except Exception:
             return
         if len(candidates) <= self.backup_count:

@@ -179,7 +179,9 @@ def _collect_policy_changes(runtime_dir: Path, target_date: date) -> list[Dict[s
     return sorted(changes, key=lambda item: item.get("created_at") or "")
 
 
-def _render_markdown(target_date: date, totals: Dict[str, Any], ml_stats: Dict[str, Any], policy_changes: list[Dict[str, Any]]) -> str:
+def _render_markdown(
+    target_date: date, totals: Dict[str, Any], ml_stats: Dict[str, Any], policy_changes: list[Dict[str, Any]]
+) -> str:
     lines = [
         f"# Supervisor Daily Report — {target_date.isoformat()}",
         "",
@@ -233,10 +235,7 @@ def _render_markdown(target_date: date, totals: Dict[str, Any], ml_stats: Dict[s
     lines.append("## Policy Changes")
     if policy_changes:
         for change in policy_changes:
-            lines.append(
-                f"- {change.get('version_id')} @ {change.get('created_at')} "
-                f"reason={change.get('reason')}"
-            )
+            lines.append(f"- {change.get('version_id')} @ {change.get('created_at')} reason={change.get('reason')}")
     else:
         lines.append("- None")
 

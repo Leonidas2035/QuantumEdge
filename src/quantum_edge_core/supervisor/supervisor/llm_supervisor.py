@@ -9,11 +9,11 @@ from datetime import date
 from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
-from supervisor.audit_report import load_events_for_date
-from supervisor.config import LlmSupervisorConfig, RiskConfig
-from supervisor.events import BaseEvent, EventType, EventLogger
-from supervisor.llm.chat_client import ChatCompletionsClient
-from supervisor.state import RiskStateSnapshot
+from quantum_edge_core.supervisor.supervisor.audit_report import load_events_for_date
+from quantum_edge_core.supervisor.supervisor.config import LlmSupervisorConfig, RiskConfig
+from quantum_edge_core.supervisor.supervisor.events import BaseEvent, EventType, EventLogger
+from quantum_edge_core.supervisor.supervisor.llm.chat_client import ChatCompletionsClient
+from quantum_edge_core.supervisor.supervisor.state import RiskStateSnapshot
 
 
 class LlmAction(str, Enum):
@@ -68,7 +68,9 @@ class LlmSupervisor:
         self._event_logger = event_logger
         self._chat_client = chat_client or ChatCompletionsClient(config.api_url, config.api_key_env, logger)
 
-    def run_check(self, today: date, snapshot: RiskStateSnapshot, mode: str = "unknown") -> Optional[LlmSupervisorAdvice]:
+    def run_check(
+        self, today: date, snapshot: RiskStateSnapshot, mode: str = "unknown"
+    ) -> Optional[LlmSupervisorAdvice]:
         if not self._config.enabled:
             self._logger.info("LLM supervisor disabled; skipping.")
             return None
@@ -76,7 +78,11 @@ class LlmSupervisor:
         events = load_events_for_date(self._events_dir, today)
         order_decisions = [e for e in events if e.type == EventType.ORDER_DECISION]
         if len(order_decisions) < self._config.min_order_decisions:
-            self._logger.info("Not enough order decisions for LLM check (%s/%s)", len(order_decisions), self._config.min_order_decisions)
+            self._logger.info(
+                "Not enough order decisions for LLM check (%s/%s)",
+                len(order_decisions),
+                self._config.min_order_decisions,
+            )
             return None
 
         summary = build_summary(snapshot, self._risk_config, events, self._config, mode)
@@ -90,7 +96,9 @@ class LlmSupervisor:
 
         advice = self.parse_advice(raw)
         if self._event_logger:
-            self._event_logger.log_llm_advice(advice.action.value, advice.risk_multiplier, advice.comment, self._config.dry_run)
+            self._event_logger.log_llm_advice(
+                advice.action.value, advice.risk_multiplier, advice.comment, self._config.dry_run
+            )
         return advice
 
     def call_llm(self, system_prompt: str, user_prompt: str) -> str:
@@ -113,7 +121,9 @@ class LlmSupervisor:
             if risk_multiplier is not None:
                 risk_multiplier = float(risk_multiplier)
             comment = str(payload.get("comment") or "")
-            return LlmSupervisorAdvice(action=action, risk_multiplier=risk_multiplier, comment=comment, raw_response=raw_response)
+            return LlmSupervisorAdvice(
+                action=action, risk_multiplier=risk_multiplier, comment=comment, raw_response=raw_response
+            )
         except Exception as exc:
             return LlmSupervisorAdvice(
                 action=LlmAction.UNSPECIFIED,
@@ -135,7 +145,9 @@ def build_summary(
     denied_codes: Dict[str, int] = {}
     trades: List[Dict[str, Any]] = []
 
-    ordered_events = [e for e in events if e.type in {EventType.ORDER_DECISION, EventType.ORDER_RESULT, EventType.RISK_LIMIT_BREACH}]
+    ordered_events = [
+        e for e in events if e.type in {EventType.ORDER_DECISION, EventType.ORDER_RESULT, EventType.RISK_LIMIT_BREACH}
+    ]
     ordered_events = ordered_events[-config.max_events_in_summary :]
 
     for event in ordered_events:
@@ -208,7 +220,9 @@ def build_prompts(summary: LlmSupervisorSummary, limits: RiskConfig, config: Llm
     deny_breakdown = ", ".join(f"{k}: {v}" for k, v in summary.denied_by_code.items()) or "none"
     trades_lines = []
     for t in summary.recent_trades:
-        trades_lines.append(f"{t.get('ts')} | {t.get('type')} | {t.get('symbol','?')} | {t.get('code', t.get('result',''))} | allowed={t.get('allowed')}")
+        trades_lines.append(
+            f"{t.get('ts')} | {t.get('type')} | {t.get('symbol', '?')} | {t.get('code', t.get('result', ''))} | allowed={t.get('allowed')}"
+        )
     trades_block = "\n".join(trades_lines) if trades_lines else "no trades"
 
     user_prompt = (

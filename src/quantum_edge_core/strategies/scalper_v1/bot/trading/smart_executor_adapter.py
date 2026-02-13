@@ -72,7 +72,9 @@ class TraderExecutionAdapter(ExecutionClient):
             {"action": side, "size": float(placement.quantity), "order_type": placement.order_type.lower()},
         )
         await self._trader.process(decision, float(placement.price or 0.0), (0), symbol=placement.symbol)
-        return OrderAck(order_id=None, client_order_id=placement.client_order_id, status="FILLED", filled_qty=placement.quantity)
+        return OrderAck(
+            order_id=None, client_order_id=placement.client_order_id, status="FILLED", filled_qty=placement.quantity
+        )
 
 
 def _as_decimal(value: object) -> Optional[Decimal]:

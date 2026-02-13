@@ -1,5 +1,3 @@
-
-
 def calc_delta(trades: list):
     """
     trades: list of trade events from Binance
@@ -7,12 +5,7 @@ def calc_delta(trades: list):
     buy = sum(float(t["q"]) for t in trades if t["m"] is False)
     sell = sum(float(t["q"]) for t in trades if t["m"] is True)
 
-    return {
-        "delta": buy - sell,
-        "buy_volume": buy,
-        "sell_volume": sell,
-        "taker_ratio": buy / (buy + sell + 1e-9)
-    }
+    return {"delta": buy - sell, "buy_volume": buy, "sell_volume": sell, "taker_ratio": buy / (buy + sell + 1e-9)}
 
 
 def orderbook_imbalance(bids, asks):

@@ -77,7 +77,12 @@ def simulate(
     horizons = [int(h) for h in policy.get("horizons", [])]
     thresholds = {int(str(k).replace("h", "")): float(v) for k, v in (policy.get("thresholds") or {}).items()}
     costs = policy.get("costs_bps") or {}
-    total_cost = (float(costs.get("fee_bps", 0)) + float(costs.get("slippage_bps", 0)) + float(costs.get("spread_bps", 0)) + float(costs.get("latency_bps", 0))) / 10_000.0
+    total_cost = (
+        float(costs.get("fee_bps", 0))
+        + float(costs.get("slippage_bps", 0))
+        + float(costs.get("spread_bps", 0))
+        + float(costs.get("latency_bps", 0))
+    ) / 10_000.0
 
     frames = []
     for horizon in horizons:

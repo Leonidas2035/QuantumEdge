@@ -1,8 +1,8 @@
 import time
 
-from supervisor.alerts.engine import AlertEngine
-from supervisor.alerts.rules import AlertRule
-from supervisor.alerts.storage import AlertStorage
+from quantum_edge_core.supervisor.supervisor.alerts.engine import AlertEngine
+from quantum_edge_core.supervisor.supervisor.alerts.rules import AlertRule
+from quantum_edge_core.supervisor.supervisor.alerts.storage import AlertStorage
 
 
 def test_alert_cooldown(tmp_path):

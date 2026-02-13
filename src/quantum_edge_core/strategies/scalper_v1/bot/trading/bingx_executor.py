@@ -125,7 +125,9 @@ class BingXDemoExecutor:
             return 0.0
         qty = round_qty_to_step(raw_qty, meta.step_size)
         if meta.min_qty and qty < meta.min_qty:
-            self._log(f"[WARN] Qty below minQty for {symbol}, skipping order (qty={raw_qty}, minQty={meta.min_qty}).", "WARN")
+            self._log(
+                f"[WARN] Qty below minQty for {symbol}, skipping order (qty={raw_qty}, minQty={meta.min_qty}).", "WARN"
+            )
             return 0.0
         return qty
 
@@ -285,9 +287,13 @@ class BingXDemoExecutor:
         if result:
             executed = float(result.filled_qty or qty)
             pnl_price = float(result.avg_price or 0.0)
-            pnl = (pnl_price - (self.entry_price or pnl_price)) * (self.position if executed >= abs(self.position) else executed) - self._fee(
-                pnl_price * executed
-            ) if self.entry_price else 0.0
+            pnl = (
+                (pnl_price - (self.entry_price or pnl_price))
+                * (self.position if executed >= abs(self.position) else executed)
+                - self._fee(pnl_price * executed)
+                if self.entry_price
+                else 0.0
+            )
             self._record_trade(pnl, side)
             self.position = 0.0
             self.entry_price = None
@@ -386,14 +392,20 @@ class BingXDemoExecutor:
                     )
             self._log(f"[DEMO] Closing position via MARKET {side} {sym} qty={qty} (reduce-only).")
             client_id = self._client_order_id(sym, "close")
-            result = await self.submit_order(sym, side, qty, reduce_only=True, price=effective_price, client_order_id=client_id)
+            result = await self.submit_order(
+                sym, side, qty, reduce_only=True, price=effective_price, client_order_id=client_id
+            )
             if result:
                 executed = float(result.filled_qty or qty)
                 pnl_price = effective_price if self.entry_price and effective_price else price
                 pnl = (
-                    (pnl_price - self.entry_price) * (self.position if executed >= abs(self.position) else executed)
-                    - self._fee(pnl_price * executed)
-                ) if self.entry_price else 0.0
+                    (
+                        (pnl_price - self.entry_price) * (self.position if executed >= abs(self.position) else executed)
+                        - self._fee(pnl_price * executed)
+                    )
+                    if self.entry_price
+                    else 0.0
+                )
                 self.realized_pnl += pnl
                 self._record_trade(pnl, side)
                 self._reduce_position(executed)
@@ -478,9 +490,12 @@ class BingXDemoExecutor:
         if result:
             executed = float(result.filled_qty or qty)
             pnl_price = float(result.avg_price or price)
-            pnl = (pnl_price - self.entry_price) * (self.position if executed >= abs(self.position) else executed) - self._fee(
-                pnl_price * executed
-            ) if self.entry_price else 0.0
+            pnl = (
+                (pnl_price - self.entry_price) * (self.position if executed >= abs(self.position) else executed)
+                - self._fee(pnl_price * executed)
+                if self.entry_price
+                else 0.0
+            )
             self.realized_pnl += pnl
             self._reduce_position(executed)
             return True
@@ -533,7 +548,9 @@ class BingXDemoExecutor:
                 return False
             order_id = result.order_id or ""
             self._log(f"[DEMO] Test order placed id={order_id}.")
-            await self._to_thread(self.exchange.cancel_order, symbol, order_id=order_id, client_order_id=result.client_order_id)
+            await self._to_thread(
+                self.exchange.cancel_order, symbol, order_id=order_id, client_order_id=result.client_order_id
+            )
             self._log(f"[DEMO] Test order cancel requested id={order_id}.")
             return True
         except BingXAPIError as exc:

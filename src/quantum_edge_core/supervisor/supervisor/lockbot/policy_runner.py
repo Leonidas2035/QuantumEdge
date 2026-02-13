@@ -10,16 +10,16 @@ from collections import deque
 from pathlib import Path
 from typing import Any, Deque, Dict, Optional
 
-from supervisor.lockbot.hub_subscriber import LockbotHubSubscriber, MarketDataCache
-from supervisor.lockbot.models import (
+from quantum_edge_core.supervisor.supervisor.lockbot.hub_subscriber import LockbotHubSubscriber, MarketDataCache
+from quantum_edge_core.supervisor.supervisor.lockbot.models import (
     BotStatusSnapshot,
     MarketSnapshot,
     PolicyIntent,
     PolicyRunnerConfig,
 )
-from supervisor.lockbot.regime_detector import RegimeDetector, RegimeHysteresis
-from supervisor.lockbot.strategy_range import evaluate_range
-from supervisor.lockbot.strategy_trend import evaluate_trend
+from quantum_edge_core.supervisor.supervisor.lockbot.regime_detector import RegimeDetector, RegimeHysteresis
+from quantum_edge_core.supervisor.supervisor.lockbot.strategy_range import evaluate_range
+from quantum_edge_core.supervisor.supervisor.lockbot.strategy_trend import evaluate_trend
 
 
 class PolicyAuditLogger:
@@ -151,7 +151,9 @@ class LockbotPolicyRunner:
             self._send_intents([intent_sent], now_ms, lock_present)
         elif self._manual_hold:
             if not self._manual_hold_sent:
-                pause_intent = PolicyIntent(cmd="PAUSE", payload={"reason": "ddn_rejects"}, reason="manual_hold", priority=5)
+                pause_intent = PolicyIntent(
+                    cmd="PAUSE", payload={"reason": "ddn_rejects"}, reason="manual_hold", priority=5
+                )
                 self._send_intents([pause_intent], now_ms, lock_present)
                 self._manual_hold_sent = True
             reason = "manual_hold"
@@ -378,7 +380,9 @@ class LockbotPolicyRunner:
 
 
 def _intent_set_regime(regime: str) -> PolicyIntent:
-    return PolicyIntent(cmd="SET_REGIME", payload={"regime": regime, "reason": "policy_regime"}, reason="set_regime", priority=20)
+    return PolicyIntent(
+        cmd="SET_REGIME", payload={"regime": regime, "reason": "policy_regime"}, reason="set_regime", priority=20
+    )
 
 
 def _safe_int(value: object) -> Optional[int]:

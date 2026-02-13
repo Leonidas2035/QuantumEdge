@@ -44,16 +44,15 @@ def _load_secure_env(qe_root: Path) -> None:
 
     # Fallback to .env (legacy/insecure) if no vars loaded or explicit fallback needed
     # But usually dotenv loading happens automatically or we do it here.
-    # QuantumEdge seems to rely on finding them in env or .env processing elsewhere? 
+    # QuantumEdge seems to rely on finding them in env or .env processing elsewhere?
     # Actually, QuantumEdge.py doesn't seem to load .env explicitly using python-dotenv.
     # It assumes they are in os.environ.
     # So we SHOULD load .env here if not encrypted.
-    
-    if plain_path.exists() and not os.environ.get("GOOGLE_API_KEY"): # naive check if loaded
+
+    if plain_path.exists() and not os.environ.get("GOOGLE_API_KEY"):  # naive check if loaded
         # We can implement simple .env loading if we want parity, or assume user does `source .env`.
         # But request says "If not found, fall back to .env (but log a security warning)."
         pass
-
 
 
 def _now_iso() -> str:
@@ -438,7 +437,6 @@ def _status_from_pid(pid: Optional[int]) -> dict:
 # Logger config removed in favor of logging_setup.py
 
 
-
 def _tail_file(path: Path, lines: int) -> str:
     if not path.exists():
         return ""
@@ -698,9 +696,15 @@ def main() -> int:
     global_config_path = _resolve_cli_path(args.global_config, "src/quantum_edge_core/config/quantumedge.yaml", qe_root)
     config_paths = {
         "global": global_config_path,
-        "supervisor": _resolve_config_path(args.supervisor_config, "SUPERVISOR_CONFIG", "src/quantum_edge_core/config/supervisor.yaml", qe_root),
-        "bot": _resolve_config_path(args.bot_config, "QE_CONFIG_PATH", "src/quantum_edge_core/config/bot.yaml", qe_root),
-        "meta": _resolve_config_path(args.meta_config, "META_AGENT_CONFIG", "src/quantum_edge_core/config/meta_agent.yaml", qe_root),
+        "supervisor": _resolve_config_path(
+            args.supervisor_config, "SUPERVISOR_CONFIG", "src/quantum_edge_core/config/supervisor.yaml", qe_root
+        ),
+        "bot": _resolve_config_path(
+            args.bot_config, "QE_CONFIG_PATH", "src/quantum_edge_core/config/bot.yaml", qe_root
+        ),
+        "meta": _resolve_config_path(
+            args.meta_config, "META_AGENT_CONFIG", "src/quantum_edge_core/config/meta_agent.yaml", qe_root
+        ),
     }
 
     setup_logging()

@@ -55,7 +55,9 @@ class BotState:
     def bump_state(self) -> None:
         self.state_version += 1
 
-    def record_decision(self, verdict: str, reasons: list[str], step_qty: Optional[float], cost_bps: Optional[float], plans: list[dict]) -> None:
+    def record_decision(
+        self, verdict: str, reasons: list[str], step_qty: Optional[float], cost_bps: Optional[float], plans: list[dict]
+    ) -> None:
         self.last_ddn_verdict = verdict
         self.last_ddn_reasons = list(reasons)
         self.last_ddn_step_qty = step_qty

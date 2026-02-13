@@ -90,7 +90,7 @@ def build_backlog_from_reports(
             f"Source report: {rep.name}\n"
             f"Severity: {sev}\n\n"
             "Use the context below to propose fixes or follow-ups:\n\n"
-            f"{meta.get('body','')}\n"
+            f"{meta.get('body', '')}\n"
         )
         backlog.append(
             BacklogItem(
@@ -125,12 +125,7 @@ def run_supervisor_maintenance_once(
         except KeyError:
             project_info = resolve_project_root(None, registry)
 
-        body = (
-            f"# Supervisor Follow-up\n"
-            f"Project: {item.project_id}\n"
-            f"Severity: {item.severity}\n\n"
-            f"{item.instructions}\n"
-        )
+        body = f"# Supervisor Follow-up\nProject: {item.project_id}\nSeverity: {item.severity}\n\n{item.instructions}\n"
         task = create_task(
             project=item.project_id,
             task_type="supervisor_followup",

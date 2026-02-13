@@ -11,6 +11,7 @@ from abc import ABC, abstractmethod
 
 logger = structlog.get_logger()
 
+
 class BaseService(ABC):
     """
     Abstract Base Class for all long-running services.
@@ -45,7 +46,7 @@ class BaseService(ABC):
         Wraps the main run loop and ensures cleanup happens.
         """
         loop = asyncio.get_running_loop()
-        
+
         # Register signal handlers
         for sig in (signal.SIGINT, signal.SIGTERM):
             try:
@@ -57,10 +58,10 @@ class BaseService(ABC):
         self.logger.info("Service starting")
         try:
             # Run the implementation's main loop
-            # We wrap it in a task to allow cancellation if needed, 
+            # We wrap it in a task to allow cancellation if needed,
             # though usually run() should monitor _shutdown_event.
             task = asyncio.create_task(self.run())
-            
+
             # Wait for shutdown signal OR task completion (if it finishes early)
             shutdown_wait_task = asyncio.create_task(self._shutdown_event.wait())
             await asyncio.wait([task, shutdown_wait_task], return_when=asyncio.FIRST_COMPLETED)

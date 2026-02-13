@@ -74,7 +74,9 @@ class LockbotConfig:
                 panic_on_lag_ms=int(ddn_cfg.get("panic_on_lag_ms", cfg.ddn.panic_on_lag_ms)),
                 taker_fee_bps=float(ddn_cfg.get("taker_fee_bps", cfg.ddn.taker_fee_bps)),
                 maker_fee_bps=float(ddn_cfg.get("maker_fee_bps", cfg.ddn.maker_fee_bps)),
-                expected_slippage_bps_market=float(ddn_cfg.get("expected_slippage_bps_market", cfg.ddn.expected_slippage_bps_market)),
+                expected_slippage_bps_market=float(
+                    ddn_cfg.get("expected_slippage_bps_market", cfg.ddn.expected_slippage_bps_market)
+                ),
                 funding_weight=float(ddn_cfg.get("funding_weight", cfg.ddn.funding_weight)),
                 min_expected_edge_bps=float(ddn_cfg.get("min_expected_edge_bps", cfg.ddn.min_expected_edge_bps)),
                 max_cost_bps_per_step=float(ddn_cfg.get("max_cost_bps_per_step", cfg.ddn.max_cost_bps_per_step)),
@@ -97,7 +99,9 @@ class LockbotConfig:
                 ack_timeout_ms=int(exec_cfg.get("ack_timeout_ms", cfg.execution.ack_timeout_ms)),
                 stale_account_ms=int(exec_cfg.get("stale_account_ms", cfg.execution.stale_account_ms)),
                 error_threshold=int(exec_cfg.get("error_threshold", cfg.execution.error_threshold)),
-                allow_reduce_only_in_panic=bool(exec_cfg.get("allow_reduce_only_in_panic", cfg.execution.allow_reduce_only_in_panic)),
+                allow_reduce_only_in_panic=bool(
+                    exec_cfg.get("allow_reduce_only_in_panic", cfg.execution.allow_reduce_only_in_panic)
+                ),
                 ledger_path=str(exec_cfg.get("ledger_path", cfg.execution.ledger_path)),
                 api_key_env=str(exec_cfg.get("api_key_env", cfg.execution.api_key_env)),
                 api_secret_env=str(exec_cfg.get("api_secret_env", cfg.execution.api_secret_env)),

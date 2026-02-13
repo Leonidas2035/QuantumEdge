@@ -22,7 +22,11 @@ from bot.ml.signal_model.model import SignalOutput, EnsembleSignalModel
 from bot.ml.signal_model.online_features import OnlineFeatureBuilder
 from bot.ml.runtime_models import resolve_models_root
 from bot.ml.runtime.policy_loader import load_policy, load_policy_override, resolve_policy_path
-from bot.ml.features.builder import schema_hash as ml_schema_hash, schema_version as ml_schema_version, feature_names as ml_feature_names
+from bot.ml.features.builder import (
+    schema_hash as ml_schema_hash,
+    schema_version as ml_schema_version,
+    feature_names as ml_feature_names,
+)
 from bot.ml.drift_monitor import DriftMonitor
 from bot.ml.runtime.model_manager import ModelManager
 from bot.ml.runtime.aggregator import MultiHorizonAggregator, build_ensemble_output
@@ -74,7 +78,6 @@ def _kill_switch_active() -> Dict[str, Any]:
             pass
     _kill_cache.update({"ts": now, "active": active, "reason": reason})
     return _kill_cache
-
 
 
 def _resolve_data_source() -> str:
@@ -181,7 +184,9 @@ async def _event_stream(symbols):
                 hub_cfg = dict(hub_cfg)
                 hub_section = dict(hub_cfg.get("hub", {}) or {})
                 hub_section.setdefault("include_microstructure", micro_cfg.get("enabled", True))
-                hub_section.setdefault("microstructure_topic_suffix", micro_cfg.get("publish_topic_suffix", "microstructure.v1"))
+                hub_section.setdefault(
+                    "microstructure_topic_suffix", micro_cfg.get("publish_topic_suffix", "microstructure.v1")
+                )
                 hub_cfg["hub"] = hub_section
             hub_source = HubMarketDataSource(symbols, hub_cfg)
             try:
@@ -213,7 +218,12 @@ def _build_signal_from_meta(meta: EnsembleOutput) -> SignalOutput:
     return SignalOutput(p_up=p_up, p_down=p_down, edge=meta.meta_edge, direction=meta.direction)
 
 
-async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, status_writer: Optional[BotStatusWriter] = None, logger: Optional[logging.Logger] = None):
+async def main(
+    stop_event: Optional[asyncio.Event] = None,
+    once: bool = False,
+    status_writer: Optional[BotStatusWriter] = None,
+    logger: Optional[logging.Logger] = None,
+):
     if logger is None:
         logging.basicConfig(level=getattr(logging, str(config.get("app.log_level", "INFO")).upper(), logging.INFO))
     spot_cfg = config.get("spot_scalper", {}) or {}
@@ -261,18 +271,22 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
     telemetry_max_kb = int(telemetry_cfg.get("max_event_size_kb", 32))
     sample_cfg = telemetry_cfg.get("sample", {}) or {}
     latency_every_n = int(sample_cfg.get("latency_every_n", 10) or 10)
-    telemetry_emitter = TelemetryEmitter(
-        TelemetryConfig(
-            enabled=telemetry_enabled,
-            sink=telemetry_sink,
-            http_url=telemetry_http_url,
-            file_path=telemetry_file,
-            flush_interval_sec=telemetry_flush,
-            max_queue=telemetry_queue,
-            timeout_s=telemetry_timeout,
-            max_event_kb=telemetry_max_kb,
+    telemetry_emitter = (
+        TelemetryEmitter(
+            TelemetryConfig(
+                enabled=telemetry_enabled,
+                sink=telemetry_sink,
+                http_url=telemetry_http_url,
+                file_path=telemetry_file,
+                flush_interval_sec=telemetry_flush,
+                max_queue=telemetry_queue,
+                timeout_s=telemetry_timeout,
+                max_event_kb=telemetry_max_kb,
+            )
         )
-    ) if telemetry_enabled else None
+        if telemetry_enabled
+        else None
+    )
     events_path = Path(telemetry_cfg.get("events_path", "runtime/events/events.jsonl"))
     if not events_path.is_absolute():
         events_path = (Path(config.qe_root) / events_path).resolve()
@@ -282,7 +296,9 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
     bot_id = str(config.get("app.bot_id", "ai_scalper_bot"))
     tsdb_publisher = TsdbPublisher(bot_id)
 
-    def emit_event(event_type: str, data: Dict[str, Any], symbol_override: Optional[str] = None, component: str = "bot") -> None:
+    def emit_event(
+        event_type: str, data: Dict[str, Any], symbol_override: Optional[str] = None, component: str = "bot"
+    ) -> None:
         if telemetry_emitter:
             telemetry_emitter.emit_event(event_type, data, symbol_override)
         event_writer.write(
@@ -294,7 +310,10 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
                 "mode": str(config.get("app.mode", "paper")).lower(),
             }
         )
-    deal_emitter = DealEventEmitter(lambda event_type, data, symbol: emit_event(event_type, data, symbol_override=symbol, component="bot"))
+
+    deal_emitter = DealEventEmitter(
+        lambda event_type, data, symbol: emit_event(event_type, data, symbol_override=symbol, component="bot")
+    )
     mode = str(config.get("app.mode", "paper")).lower()
     demo_mode = mode == "demo"
     data_source = _resolve_data_source()
@@ -363,7 +382,9 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
     state_store = StateStore(state_dir)
     recover_state(state_dir)
 
-    exchange_name = str(os.getenv("EXCHANGE") or config.get("app.exchange") or config.get("exchange") or "binance_demo").lower()
+    exchange_name = str(
+        os.getenv("EXCHANGE") or config.get("app.exchange") or config.get("exchange") or "binance_demo"
+    ).lower()
     demo_cfg_key = "bingx_demo" if exchange_name == "bingx_swap" else "binance_demo"
     demo_cfg = config.get(demo_cfg_key, {}) or {}
     if exchange_name == "bingx_swap" and not demo_cfg:
@@ -481,7 +502,7 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
         model_versions = dict(model_manager.model_versions)
         feature_stats = dict(model_manager.feature_stats or {})
 
-        drift_cfg = (ml_cfg.get("drift") or {})
+        drift_cfg = ml_cfg.get("drift") or {}
         drift_window = int(drift_cfg.get("window", 300))
         drift_z = float(drift_cfg.get("z_threshold", 3.0))
         if feature_stats.get("mean") and feature_stats.get("std"):
@@ -593,9 +614,13 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
     if snapshot_settings.enabled:
         snapshot_client = SupervisorSnapshotClient(snapshot_settings, logging.getLogger("supervisor_snapshot_client"))
         snapshot_monitor_task = asyncio.create_task(
-            run_supervisor_snapshot_monitor(snapshot_settings, snapshot_client, logging.getLogger("supervisor_snapshot_monitor"))
+            run_supervisor_snapshot_monitor(
+                snapshot_settings, snapshot_client, logging.getLogger("supervisor_snapshot_monitor")
+            )
         )
-        print(f"[INFO] Supervisor snapshot monitor enabled -> {snapshot_settings.supervisor_url}{snapshot_settings.endpoint}")
+        print(
+            f"[INFO] Supervisor snapshot monitor enabled -> {snapshot_settings.supervisor_url}{snapshot_settings.endpoint}"
+        )
 
     last_report = time.time()
     report_interval = 5.0
@@ -668,7 +693,12 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
                     freshness.update_book(ts)
                     continue
                 if event_type in {"l1", "bar1s"}:
-                    if event_type == "l1" and order_policy and event.get("b") is not None and event.get("a") is not None:
+                    if (
+                        event_type == "l1"
+                        and order_policy
+                        and event.get("b") is not None
+                        and event.get("a") is not None
+                    ):
                         ctx = engines.get(evt_symbol)
                         if ctx:
                             ctx["last_book_event"] = dict(event)
@@ -685,7 +715,11 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
                 price = float(event["p"])
                 qty = float(event["q"])
             except Exception:
-                emit_event("error", {"code": "event_parse", "message": "Failed to parse market event", "where": "event_stream"}, symbol)
+                emit_event(
+                    "error",
+                    {"code": "event_parse", "message": "Failed to parse market event", "where": "event_stream"},
+                    symbol,
+                )
                 metrics_tracker.record_error("event_parse")
                 continue
             if evt_symbol not in engines:
@@ -763,7 +797,9 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
                 if depth_missing:
                     skip_trading = True
                     if not ctx.get("depth_warned"):
-                        print(f"[WARN] Depth info unavailable for {evt_symbol}; scalp decisions paused until depth is received.")
+                        print(
+                            f"[WARN] Depth info unavailable for {evt_symbol}; scalp decisions paused until depth is received."
+                        )
                         ctx["depth_warned"] = True
 
             side = "sell" if event.get("m") else "buy"
@@ -793,7 +829,9 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
                         evt_symbol,
                         signal_label,
                         float(pseudo_signal.edge),
-                        model=ctx.get("ml_versions", {}).get("ensemble") if isinstance(ctx.get("ml_versions"), dict) else None,
+                        model=ctx.get("ml_versions", {}).get("ensemble")
+                        if isinstance(ctx.get("ml_versions"), dict)
+                        else None,
                         ts_ms=int(ts),
                     )
                     if telemetry_emitter:
@@ -802,13 +840,17 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
                             {
                                 "schema_hash": ml_schema_hash(),
                                 "latency_ms": prediction.latency_ms,
-                                "probs": {h: {"p_up": sig.p_up, "p_down": sig.p_down} for h, sig in prediction.outputs.items()},
+                                "probs": {
+                                    h: {"p_up": sig.p_up, "p_down": sig.p_down} for h, sig in prediction.outputs.items()
+                                },
                                 "model_versions": ctx.get("ml_versions", {}),
                             },
                             evt_symbol,
                         )
                     if (model_manager.errors or not prediction.outputs) and not ctx.get("ml_gate_warned"):
-                        reasons = _model_error_reasons(model_manager.errors) if model_manager.errors else ["MODEL_MISSING"]
+                        reasons = (
+                            _model_error_reasons(model_manager.errors) if model_manager.errors else ["MODEL_MISSING"]
+                        )
                         if telemetry_emitter:
                             emit_event(
                                 "ml_gate",
@@ -846,7 +888,11 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
                 except Exception as exc:
                     approved = True
                     print(f"[WARN] LLM risk moderator failed; falling back to rules. err={exc}")
-                    emit_event("error", {"code": "llm_risk_moderator", "message": str(exc), "where": "risk_moderator"}, evt_symbol)
+                    emit_event(
+                        "error",
+                        {"code": "llm_risk_moderator", "message": str(exc), "where": "risk_moderator"},
+                        evt_symbol,
+                    )
                     metrics_tracker.record_error("llm_risk_moderator")
 
             policy = policy_client.get_effective_policy()
@@ -890,12 +936,16 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
                     ml_gate_enabled = bool(ctx.get("ml_enabled", True))
                     model_errors = model_manager.errors if model_manager else {}
                     error_reasons = _model_error_reasons(model_errors) if model_errors else []
-                    gate = aggregator.evaluate(
-                        meta.components,
-                        decision.direction,
-                        ts,
-                        ctx.get("last_trade_ms"),
-                    ) if ml_gate_enabled else None
+                    gate = (
+                        aggregator.evaluate(
+                            meta.components,
+                            decision.direction,
+                            ts,
+                            ctx.get("last_trade_ms"),
+                        )
+                        if ml_gate_enabled
+                        else None
+                    )
                     if error_reasons and gate is None:
                         gate = aggregator.evaluate({}, decision.direction, ts, ctx.get("last_trade_ms"))
                         gate.reasons = error_reasons
@@ -985,7 +1035,11 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
                             orders_last_min = len(orders_window)
                         else:
                             orders_last_min = 0
-                        action = "close" if decision.action == DecisionAction.EXIT else ("buy" if decision.direction == "long" else "sell")
+                        action = (
+                            "close"
+                            if decision.action == DecisionAction.EXIT
+                            else ("buy" if decision.direction == "long" else "sell")
+                        )
                         reduce_only = decision.action == DecisionAction.EXIT
                         position_notional = abs(float(summary.get("position", 0.0)) * price)
                         daily_pnl = stats.total_pnl_window(86400)
@@ -1014,13 +1068,25 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
                         )
                         if not safety.allow and decision.action == DecisionAction.ENTER:
                             metrics_tracker.record_reject(safety.reason)
-                            emit_event("safety_gate", {"allow": False, "reason": safety.reason, "details": safety.details}, evt_symbol, component="risk")
+                            emit_event(
+                                "safety_gate",
+                                {"allow": False, "reason": safety.reason, "details": safety.details},
+                                evt_symbol,
+                                component="risk",
+                            )
                             decision = None
                         if decision:
-                            client_order_id = state_store.generate_client_order_id(evt_symbol, action, action, ts, float(decision.size or 0.0))
+                            client_order_id = state_store.generate_client_order_id(
+                                evt_symbol, action, action, ts, float(decision.size or 0.0)
+                            )
                             if decision.action == DecisionAction.ENTER and state_store.is_duplicate(client_order_id):
                                 metrics_tracker.record_reject("IDEMPOTENT_DUPLICATE")
-                                emit_event("safety_gate", {"allow": False, "reason": "IDEMPOTENT_DUPLICATE"}, evt_symbol, component="risk")
+                                emit_event(
+                                    "safety_gate",
+                                    {"allow": False, "reason": "IDEMPOTENT_DUPLICATE"},
+                                    evt_symbol,
+                                    component="risk",
+                                )
                                 decision = None
                             else:
                                 ctx["client_order_id"] = client_order_id
@@ -1040,6 +1106,7 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
                         decision = None
                         # Skip execution but continue telemetry/monitoring.
                     if decision:
+
                         async def _supervisor_allows(action: str, size: float, reduce_only: bool) -> bool:
                             if supervisor_client is None:
                                 return True
@@ -1219,13 +1286,20 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
                                     "entry_price": price,
                                     "side": result.action,
                                     "qty": result.size,
-                                    "probs": {h: {"p_up": sig.p_up, "p_down": sig.p_down} for h, sig in meta.components.items()},
+                                    "probs": {
+                                        h: {"p_up": sig.p_up, "p_down": sig.p_down}
+                                        for h, sig in meta.components.items()
+                                    },
                                 }
                             elif result.action == "close":
                                 entry = ctx.pop("last_entry", None)
                                 if entry and supervisor_client is not None:
                                     direction = 1 if entry.get("side") == "buy" else -1
-                                    pnl = (price - entry.get("entry_price", price)) * float(entry.get("qty", 0.0)) * direction
+                                    pnl = (
+                                        (price - entry.get("entry_price", price))
+                                        * float(entry.get("qty", 0.0))
+                                        * direction
+                                    )
                                     tracker = ctx.get("scalp_deal_tracker")
                                     if tracker:
                                         cycle_id = str(entry.get("entry_ts") or ts)
@@ -1309,7 +1383,9 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
                             ctx["last_trade_ms"] = ts
 
                         # Time-based exit for scalp mode (no-op for normal)
-                        await execution_mode.enforce_time_stop(trader, price, ts, evt_symbol, allow_fn=_supervisor_allows)
+                        await execution_mode.enforce_time_stop(
+                            trader, price, ts, evt_symbol, allow_fn=_supervisor_allows
+                        )
 
             ml_state = ctx.get("ml_state") if isinstance(ctx, dict) else None
             if telemetry_emitter and ml_state:
@@ -1334,7 +1410,9 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
                                 "score": drift_snapshot.drift_score,
                                 "exceed_rate": drift_snapshot.exceed_rate,
                                 "top_features": drift_snapshot.top_features,
-                            } if drift_snapshot else None,
+                            }
+                            if drift_snapshot
+                            else None,
                         },
                         evt_symbol,
                     )
@@ -1361,7 +1439,9 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
                     evt_symbol,
                 )
                 equity_start = float(demo_cfg.get("equity_override", 0) or 0)
-                equity_val = equity_start + float(summary.get("realized_pnl", 0.0)) + float(summary.get("open_pnl", 0.0))
+                equity_val = (
+                    equity_start + float(summary.get("realized_pnl", 0.0)) + float(summary.get("open_pnl", 0.0))
+                )
                 equity_val = equity_val if equity_val > 0 else None
                 await tsdb_publisher.publish_position(
                     symbol=evt_symbol,
@@ -1380,6 +1460,7 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
                 last_report = now
 
             if supervisor_client is not None:
+
                 def build_payload() -> dict:
                     summary = trader.summary()
                     open_notional = abs(summary.get("position", 0.0) * price)
@@ -1407,7 +1488,9 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
             dd_abs = stats.max_drawdown_abs()
             summary_now = trader.summary()
             equity_start = float(demo_cfg.get("equity_override", 0) or 0)
-            equity_now = equity_start + float(summary_now.get("realized_pnl", 0.0)) + float(summary_now.get("open_pnl", 0.0))
+            equity_now = (
+                equity_start + float(summary_now.get("realized_pnl", 0.0)) + float(summary_now.get("open_pnl", 0.0))
+            )
             equity_now = equity_now if equity_now > 0 else None
             daily_loss_pct = (abs(min(daily_pnl, 0.0)) / equity_now) if equity_now else None
             drawdown_pct = (dd_abs / equity_now) if equity_now else None
@@ -1416,7 +1499,9 @@ async def main(stop_event: Optional[asyncio.Event] = None, once: bool = False, s
 
             breaker_snapshot = circuit_breakers.snapshot()
             freshness_snapshot = freshness.snapshot(now_ms)
-            reject_counts = {k.replace("reject:", ""): v for k, v in metrics_tracker.counters.items() if str(k).startswith("reject:")}
+            reject_counts = {
+                k.replace("reject:", ""): v for k, v in metrics_tracker.counters.items() if str(k).startswith("reject:")
+            }
             top_rejects = sorted(reject_counts.items(), key=lambda item: item[1], reverse=True)[:5]
             status_extra = {
                 "circuit_active": breaker_snapshot.get("active"),

@@ -47,6 +47,8 @@ def test_reset_flags_on_gap_and_resync():
     assert snap_gap is not None
     assert snap_gap.is_gap is True
     analyzer.mark_resync()
-    snap_resync = analyzer.update_book(symbol="BTCUSDT", bid_px=100.0, bid_qty=1.0, ask_px=101.0, ask_qty=1.0, ts_event=3)
+    snap_resync = analyzer.update_book(
+        symbol="BTCUSDT", bid_px=100.0, bid_qty=1.0, ask_px=101.0, ask_qty=1.0, ts_event=3
+    )
     assert snap_resync is not None
     assert snap_resync.is_resynced is True

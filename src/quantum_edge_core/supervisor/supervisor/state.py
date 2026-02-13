@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from supervisor.process_manager import ProcessInfo
+    from quantum_edge_core.supervisor.supervisor.process_manager import ProcessInfo
 
 
 STATE_FILENAME = "process_state.json"
@@ -37,7 +37,7 @@ def load_process_info(state_dir: Path) -> Optional["ProcessInfo"]:
         return None
 
     try:
-        from supervisor.process_manager import ProcessInfo
+        from quantum_edge_core.supervisor.supervisor.process_manager import ProcessInfo
     except Exception:
         return None
 
@@ -99,14 +99,18 @@ def load_meta_supervisor_state(state_path: Path) -> MetaSupervisorState:
     """Load meta supervisor state from disk."""
 
     if not state_path.exists():
-        return MetaSupervisorState(last_run_at=None, last_status=None, last_reason=None, last_reports=[], last_run_mode=None)
+        return MetaSupervisorState(
+            last_run_at=None, last_status=None, last_reason=None, last_reports=[], last_run_mode=None
+        )
 
     try:
         with state_path.open("r", encoding="utf-8") as handle:
             raw = json.load(handle)
     except (json.JSONDecodeError, OSError) as exc:
         logging.getLogger(__name__).warning("Failed to read meta supervisor state: %s", exc)
-        return MetaSupervisorState(last_run_at=None, last_status=None, last_reason=None, last_reports=[], last_run_mode=None)
+        return MetaSupervisorState(
+            last_run_at=None, last_status=None, last_reason=None, last_reports=[], last_run_mode=None
+        )
 
     last_run_at_str = raw.get("last_run_at")
     try:

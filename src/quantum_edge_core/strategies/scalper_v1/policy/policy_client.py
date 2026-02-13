@@ -143,4 +143,3 @@ class PolicyClient:
         reason = "POLICY_MISSING_OR_EXPIRED"
         self._log_safe_mode(reason)
         return self._safe_policy(reason)
-

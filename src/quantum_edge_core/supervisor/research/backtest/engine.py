@@ -267,7 +267,9 @@ class BotStrategy:
         except Exception:
             runtime_models = None
         try:
-            self.ensemble = EnsembleSignalModel(symbol=symbol, horizons=[1, 5, 30], runtime_models=runtime_models, thresholds=thresholds)
+            self.ensemble = EnsembleSignalModel(
+                symbol=symbol, horizons=[1, 5, 30], runtime_models=runtime_models, thresholds=thresholds
+            )
         except Exception:
             self.ensemble = None
 

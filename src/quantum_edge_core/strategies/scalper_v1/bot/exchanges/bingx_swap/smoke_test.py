@@ -80,7 +80,9 @@ def main(argv: list[str]) -> int:
     _print_kv("client_order_id", result.client_order_id or "n/a")
 
     exchange.cancel_order(symbol, order_id=result.order_id or None, client_order_id=result.client_order_id or None)
-    refreshed = exchange.get_order(symbol, order_id=result.order_id or None, client_order_id=result.client_order_id or None)
+    refreshed = exchange.get_order(
+        symbol, order_id=result.order_id or None, client_order_id=result.client_order_id or None
+    )
     _print_kv("cancel_status", refreshed.status)
     return 0
 

@@ -38,11 +38,7 @@ class EventBus:
         }
         self._max_events = max(int(max_events), 1)
         self._max_bytes = max(int(max_bytes), 1024)
-        self._drop_policy = (
-            drop_policy
-            if drop_policy in {"drop_lowest", "drop_newest"}
-            else "drop_lowest"
-        )
+        self._drop_policy = drop_policy if drop_policy in {"drop_lowest", "drop_newest"} else "drop_lowest"
         self._lock = asyncio.Lock()
         self._events = 0
         self._bytes = 0

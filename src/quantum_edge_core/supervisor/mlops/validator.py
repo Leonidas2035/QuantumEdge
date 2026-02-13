@@ -7,7 +7,7 @@ from typing import Dict, Tuple
 
 import pandas as pd
 
-from supervisor.mlops.manifest import ModelManifest
+from quantum_edge_core.supervisor.supervisor.mlops.manifest import ModelManifest
 
 
 def _load_dataset(path: Path) -> Tuple[pd.DataFrame, pd.Series]:
@@ -52,4 +52,3 @@ def validate_model(
     manifest.metrics.update(metrics)
     manifest.write(manifest_path)
     return metrics
-

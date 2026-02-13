@@ -58,10 +58,7 @@ class MarketEventGenerator:
         self.l1_per_sec = float(l1_per_sec)
         self.stats = GeneratorStats()
         self._rng = random.Random(seed)
-        self._prices = {
-            symbol: self._seed_price(symbol, idx)
-            for idx, symbol in enumerate(self.symbols)
-        }
+        self._prices = {symbol: self._seed_price(symbol, idx) for idx, symbol in enumerate(self.symbols)}
         self._trade_ids = {symbol: 0 for symbol in self.symbols}
 
     def _seed_price(self, symbol: str, idx: int) -> float:

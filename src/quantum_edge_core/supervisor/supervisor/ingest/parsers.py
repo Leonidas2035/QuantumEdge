@@ -7,7 +7,7 @@ import json
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
-from supervisor.tsdb.base import Point
+from quantum_edge_core.supervisor.supervisor.tsdb.base import Point
 
 
 def parse_event_line(line: str) -> Optional[Dict[str, Any]]:

@@ -74,9 +74,7 @@ def build_from_scenarios(
         "scenarios_root": str(scenarios_root),
         "schema_hash": schema_hash(),
     }
-    (out_root / "config_snapshot.json").write_text(
-        json.dumps(config_snapshot, indent=2), encoding="utf-8"
-    )
+    (out_root / "config_snapshot.json").write_text(json.dumps(config_snapshot, indent=2), encoding="utf-8")
     (out_root / "schema.json").write_text(json.dumps(_schema_payload(), indent=2), encoding="utf-8")
 
     data_by_horizon: Dict[int, Dict[str, List[pd.DataFrame]]] = {
@@ -128,7 +126,9 @@ def build_from_scenarios(
                 combined = pd.concat([meta, features, label_slice], axis=1).loc[mask]
 
                 data_by_horizon[int(horizon)][split_name].append(combined)
-                scenario_counts[int(horizon)][scenario_id] = scenario_counts[int(horizon)].get(scenario_id, 0) + len(combined)
+                scenario_counts[int(horizon)][scenario_id] = scenario_counts[int(horizon)].get(scenario_id, 0) + len(
+                    combined
+                )
 
     for horizon in horizons:
         horizon_dir = out_root / f"horizon_h{horizon}"
@@ -147,7 +147,9 @@ def build_from_scenarios(
                 df = pd.concat(frames, ignore_index=True)
             else:
                 df = pd.DataFrame(
-                    columns=["ts_ms", "scenario_id", "episode_id"] + feature_names() + [f"fut_ret_h{horizon}", f"y_up_h{horizon}"]
+                    columns=["ts_ms", "scenario_id", "episode_id"]
+                    + feature_names()
+                    + [f"fut_ret_h{horizon}", f"y_up_h{horizon}"]
                 )
             out_path = horizon_dir / f"{split_name}.{output_format}"
             write_frame(out_path, df, output_format)
@@ -168,7 +170,9 @@ def build_from_scenarios(
     return 0
 
 
-def _render_report(symbol: str, horizons: List[int], stats: Dict[int, Dict[str, object]], label_config: LabelConfig) -> str:
+def _render_report(
+    symbol: str, horizons: List[int], stats: Dict[int, Dict[str, object]], label_config: LabelConfig
+) -> str:
     lines = [f"# ML Dataset Report ({symbol})", ""]
     lines.append(f"Horizons: {', '.join(str(h) for h in horizons)}")
     lines.append(f"Label thresholds (bps): base={label_config.label_thr_bps}, ignore={label_config.ignore_thr_bps}")

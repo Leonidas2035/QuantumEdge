@@ -65,30 +65,56 @@ class BinanceAccountRestSnapshotBuilder:
         )
 
     def build_spot_snapshot(self, symbols: List[str]) -> SpotBlock:
-        account = self._signed_get(self._config.base_url, "/api/v3/account", {"omitZeroBalances": "true"}, self._config.spot_api_key, self._config.spot_api_secret)
+        account = self._signed_get(
+            self._config.base_url,
+            "/api/v3/account",
+            {"omitZeroBalances": "true"},
+            self._config.spot_api_key,
+            self._config.spot_api_secret,
+        )
         balances = [
             BalanceEntry(asset=item["asset"], free=_ensure_str(item["free"]), locked=_ensure_str(item["locked"]))
             for item in account.get("balances", [])
         ]
         open_orders = []
         for symbol in symbols:
-            data = self._signed_get(self._config.base_url, "/api/v3/openOrders", {"symbol": symbol}, self._config.spot_api_key, self._config.spot_api_secret)
+            data = self._signed_get(
+                self._config.base_url,
+                "/api/v3/openOrders",
+                {"symbol": symbol},
+                self._config.spot_api_key,
+                self._config.spot_api_secret,
+            )
             for order in data:
                 open_orders.append(self._normalize_order(order))
         return SpotBlock(balances=balances, open_orders=open_orders)
 
     def build_usdm_snapshot(self, symbols: List[str]) -> UsdmBlock:
-        account = self._signed_get(self._config.fapi_url, "/fapi/v3/account", {}, self._config.usdm_api_key, self._config.usdm_api_secret)
-        positions = self._signed_get(self._config.fapi_url, "/fapi/v3/positionRisk", {}, self._config.usdm_api_key, self._config.usdm_api_secret)
+        account = self._signed_get(
+            self._config.fapi_url, "/fapi/v3/account", {}, self._config.usdm_api_key, self._config.usdm_api_secret
+        )
+        positions = self._signed_get(
+            self._config.fapi_url, "/fapi/v3/positionRisk", {}, self._config.usdm_api_key, self._config.usdm_api_secret
+        )
         open_orders = []
         for symbol in symbols:
-            data = self._signed_get(self._config.fapi_url, "/fapi/v1/openOrders", {"symbol": symbol}, self._config.usdm_api_key, self._config.usdm_api_secret)
+            data = self._signed_get(
+                self._config.fapi_url,
+                "/fapi/v1/openOrders",
+                {"symbol": symbol},
+                self._config.usdm_api_key,
+                self._config.usdm_api_secret,
+            )
             for order in data:
                 open_orders.append(self._normalize_order(order, include_future=True))
         totals = account
         assets = account.get("assets", [])
         assets_entries = [
-            UsdmAssetEntry(asset=item["asset"], walletBalance=_ensure_str(item["walletBalance"]), availableBalance=_ensure_str(item["availableBalance"]))
+            UsdmAssetEntry(
+                asset=item["asset"],
+                walletBalance=_ensure_str(item["walletBalance"]),
+                availableBalance=_ensure_str(item["availableBalance"]),
+            )
             for item in assets
         ]
         position_entries = [
@@ -126,7 +152,14 @@ class BinanceAccountRestSnapshotBuilder:
         usdm_mark = []
         for symbol in symbols:
             ticker = self._get(self._config.base_url, "/api/v3/ticker/price", {"symbol": symbol})
-            spot_last.append(MarketPriceEntry(symbol=symbol, price=_ensure_str(ticker.get("price", "")), ts_ms=int(time.time() * 1000), src="spot_rest_ticker_price"))
+            spot_last.append(
+                MarketPriceEntry(
+                    symbol=symbol,
+                    price=_ensure_str(ticker.get("price", "")),
+                    ts_ms=int(time.time() * 1000),
+                    src="spot_rest_ticker_price",
+                )
+            )
             premium = self._get(self._config.fapi_url, "/fapi/v1/premiumIndex", {"symbol": symbol})
             if isinstance(premium, list) and premium:
                 premium = premium[0]

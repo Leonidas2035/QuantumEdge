@@ -26,9 +26,7 @@ class OpenAICompatBackend:
         async with self._get_client(timeout_s=5.0) as client:
             resp = await client.get("/v1/models")
         if resp.status_code != 200:
-            raise RuntimeError(
-                f"/v1/models unavailable at {self.base_url} (status={resp.status_code})"
-            )
+            raise RuntimeError(f"/v1/models unavailable at {self.base_url} (status={resp.status_code})")
         self._models_checked = True
 
     async def _post_chat(self, client, prompt: str, system_prompt: str):

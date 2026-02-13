@@ -58,7 +58,13 @@ class NormalExecutionMode:
                 trader_decision = type(
                     "Tmp",
                     (),
-                    {"action": action, "size": decision.size, "order_type": "market", "tp_price": tp_price, "sl_price": sl_price},
+                    {
+                        "action": action,
+                        "size": decision.size,
+                        "order_type": "market",
+                        "tp_price": tp_price,
+                        "sl_price": sl_price,
+                    },
                 )
                 await trader.process(trader_decision, price, timestamp, symbol=symbol)
                 if hasattr(trader, "set_bracket"):
@@ -99,7 +105,9 @@ class ScalpExecutionMode:
         self.min_prob_up = float(self.cfg.get("min_prob_up", 0.55))
         self.min_edge = float(self.cfg.get("min_edge", 0.0))
         self.max_spread_bps = float(self.cfg.get("max_spread_bps", 2.0))
-        self.min_depth_usd = float(self.cfg.get("min_orderbook_depth_usd", self.cfg.get("min_depth_quote", 1000.0) or 1000.0))
+        self.min_depth_usd = float(
+            self.cfg.get("min_orderbook_depth_usd", self.cfg.get("min_depth_quote", 1000.0) or 1000.0)
+        )
         self.max_hold_seconds = int(self.cfg.get("max_position_hold_seconds", 60))
         self._disable_if_no_depth = bool(self.cfg.get("disable_without_depth", True))
 
@@ -280,7 +288,9 @@ class ScalpExecutionMode:
             )
             executed = bool(result.get("executed", result.get("filled", True)))
             if not executed:
-                return ExecutionResult(executed=False, reason=str(result.get("reason", "execution_blocked")), skipped=True)
+                return ExecutionResult(
+                    executed=False, reason=str(result.get("reason", "execution_blocked")), skipped=True
+                )
             if hasattr(trader, "set_bracket"):
                 trader.set_bracket(action, stops["tp_price"], stops["sl_price"])
             self.guard.record_entry()

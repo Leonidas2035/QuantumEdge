@@ -57,7 +57,9 @@ class AccountState:
         self.usdm_open_orders: Dict[str, OrderPatch] = {}
         self.last_snapshot: Optional[AccountSnapshot] = None
 
-    def build_snapshot(self, symbols: List[str], include_market: bool = True, account_ref: Optional[str] = None) -> AccountSnapshot:
+    def build_snapshot(
+        self, symbols: List[str], include_market: bool = True, account_ref: Optional[str] = None
+    ) -> AccountSnapshot:
         snapshot_ref = account_ref or self._account_ref
         snapshot = self._rest_builder.build_full_account_snapshot(symbols, include_market, snapshot_ref)
         self.apply_snapshot(snapshot)
@@ -65,12 +67,10 @@ class AccountState:
 
     def apply_snapshot(self, snapshot: AccountSnapshot, src: str = "rest_repair") -> AccountSnapshot:
         self.spot_balances = {
-            entry.asset: {"free": entry.free, "locked": entry.locked}
-            for entry in snapshot.spot.balances
+            entry.asset: {"free": entry.free, "locked": entry.locked} for entry in snapshot.spot.balances
         }
         self.spot_open_orders = {
-            order.orderId: self._order_entry_to_patch(order)
-            for order in snapshot.spot.open_orders
+            order.orderId: self._order_entry_to_patch(order) for order in snapshot.spot.open_orders
         }
         totals = snapshot.usdm.account_totals
         self.usdm_account_totals = AccountTotalsPatch(
@@ -81,7 +81,9 @@ class AccountState:
             maxWithdrawAmount=totals.maxWithdrawAmount,
         )
         self.usdm_assets = {
-            asset.asset: AssetPatch(asset=asset.asset, walletBalance=asset.walletBalance, availableBalance=asset.availableBalance)
+            asset.asset: AssetPatch(
+                asset=asset.asset, walletBalance=asset.walletBalance, availableBalance=asset.availableBalance
+            )
             for asset in snapshot.usdm.assets
         }
         self.usdm_positions = {
@@ -100,8 +102,7 @@ class AccountState:
             for pos in snapshot.usdm.positions
         }
         self.usdm_open_orders = {
-            order.orderId: self._order_entry_to_patch(order)
-            for order in snapshot.usdm.open_orders
+            order.orderId: self._order_entry_to_patch(order) for order in snapshot.usdm.open_orders
         }
         self.last_snapshot = snapshot
         return snapshot

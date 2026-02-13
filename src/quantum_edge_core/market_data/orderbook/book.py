@@ -26,9 +26,7 @@ class OrderBookSide:
             self._levels[price] = qty
 
     def top_n(self, n: int) -> List[DepthLevel]:
-        sorted_levels = sorted(
-            self._levels.items(), key=lambda item: item[0], reverse=self._descending
-        )
+        sorted_levels = sorted(self._levels.items(), key=lambda item: item[0], reverse=self._descending)
         return [DepthLevel(price=price, qty=qty) for price, qty in sorted_levels[:n]]
 
     def best(self) -> Tuple[float, float] | None:

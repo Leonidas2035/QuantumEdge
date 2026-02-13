@@ -76,7 +76,9 @@ class OrderbookSnapshotConfig:
 @dataclass
 class OrderbookConfig:
     enabled: bool = os.getenv("MARKET_DATA_ORDERBOOK_ENABLED", "1") in {"1", "true", "True"}
-    symbols: List[str] = field(default_factory=lambda: os.getenv("MARKET_DATA_ORDERBOOK_SYMBOLS", "BTCUSDT,ETHUSDT").split(","))
+    symbols: List[str] = field(
+        default_factory=lambda: os.getenv("MARKET_DATA_ORDERBOOK_SYMBOLS", "BTCUSDT,ETHUSDT").split(",")
+    )
     top_n_levels: int = int(os.getenv("MARKET_DATA_ORDERBOOK_TOP_N", "50"))
     publish_interval_ms: int = int(os.getenv("MARKET_DATA_ORDERBOOK_PUBLISH_MS", "100"))
     walls: WallsConfig = field(default_factory=WallsConfig)
@@ -131,10 +133,9 @@ class AccountRuntimeConfig:
     )
 
 
-
 @dataclass
 class HubConfig:
-    mode: str = os.getenv("MARKET_DATA_MODE", "live") # live | mock
+    mode: str = os.getenv("MARKET_DATA_MODE", "live")  # live | mock
     symbols: List[str] = field(default_factory=lambda: os.getenv("MARKET_DATA_SYMBOLS", "BTCUSDT").split(","))
     zmq: ZmqConfig = field(default_factory=ZmqConfig)
     snapshot: SnapshotConfig = field(default_factory=SnapshotConfig)

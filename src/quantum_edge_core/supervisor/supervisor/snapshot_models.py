@@ -1,4 +1,4 @@
-﻿"""Snapshot report datamodels."""
+"""Snapshot report datamodels."""
 
 from __future__ import annotations
 

@@ -140,4 +140,3 @@ def test_schema_contracts() -> None:
     assert TOPIC_VWAP_BANDS_D in types_seen
     assert TOPIC_AVWAP in types_seen
     assert TOPIC_LIQ_HEATMAP in types_seen
-

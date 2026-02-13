@@ -82,7 +82,7 @@ class MicrostructureAnalyzer:
         self._ofi_window.append(ofi_raw)
         mean = sum(self._ofi_window) / max(len(self._ofi_window), 1)
         var = sum((val - mean) ** 2 for val in self._ofi_window) / max(len(self._ofi_window), 1)
-        std = max(var ** 0.5, self._eps)
+        std = max(var**0.5, self._eps)
         ofi_z = (ofi_raw - mean) / std
         self._ofi_z_window.append(ofi_z)
         window = list(self._ofi_z_window)[-5:]

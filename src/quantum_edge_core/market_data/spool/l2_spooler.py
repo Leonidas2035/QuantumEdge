@@ -106,9 +106,7 @@ class L2Spooler:
             self._budget_checked_at = self._time_provider()
             return self._cached_size
 
-        self._cached_size = _never_drop_policy(
-            limit, self._budget_mode, self._cached_size, refresh
-        )
+        self._cached_size = _never_drop_policy(limit, self._budget_mode, self._cached_size, refresh)
 
     def _scan_spool_size(self) -> int:
         if not self._spool_root.exists():

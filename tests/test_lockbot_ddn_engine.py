@@ -1,7 +1,7 @@
 import random
 
-from LockBotBTC.lockbot_btc.ddn.config import DDNConfig, DDNProfile
-from LockBotBTC.lockbot_btc.ddn.engine import (
+from quantum_edge_core.supervisor.supervisor.lockbot.models import DDNConfig, DDNProfile
+from quantum_edge_core.supervisor.supervisor_btc.ddn.engine import (
     DDNContext,
     DDNEngine,
     DDNIntent,

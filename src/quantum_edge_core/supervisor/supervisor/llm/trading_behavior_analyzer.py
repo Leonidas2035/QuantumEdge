@@ -1,4 +1,4 @@
-﻿"""Trading behavior analyzer for Supervisor snapshots."""
+"""Trading behavior analyzer for Supervisor snapshots."""
 
 from __future__ import annotations
 
@@ -8,9 +8,9 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
-from supervisor.config import TradingBehaviorConfig
-from supervisor.llm.chat_client import ChatCompletionsClient
-from supervisor.utils.rate_limit import PerMinuteRateLimiter
+from quantum_edge_core.supervisor.supervisor.config import TradingBehaviorConfig
+from quantum_edge_core.supervisor.supervisor.llm.chat_client import ChatCompletionsClient
+from quantum_edge_core.supervisor.supervisor.utils.rate_limit import PerMinuteRateLimiter
 
 
 @dataclass
@@ -52,7 +52,10 @@ class TradingBehaviorAnalyzer:
             response = self._llm.complete(
                 model=self._config.model,
                 messages=[
-                    {"role": "system", "content": "Assess trading behavior. Respond JSON {\"pnl_quality\":,\"signal_quality\":,\"behavior_flags\":[],\"comment\":...}."},
+                    {
+                        "role": "system",
+                        "content": 'Assess trading behavior. Respond JSON {"pnl_quality":,"signal_quality":,"behavior_flags":[],"comment":...}.',
+                    },
                     {"role": "user", "content": prompt},
                 ],
                 temperature=self._config.temperature,
@@ -76,7 +79,7 @@ class TradingBehaviorAnalyzer:
             f"- Trades analyzed: {len(last_trades)}\n"
             f"- Signals analyzed: {len(last_signals)}\n"
             f"- Winrate: {winrate:.2f}\n"
-            f"- Avg PnL: {sum(pnl_samples)/len(pnl_samples) if pnl_samples else 0:.4f}\n"
+            f"- Avg PnL: {sum(pnl_samples) / len(pnl_samples) if pnl_samples else 0:.4f}\n"
             f"- Signal bias: {signal_bias}\n"
             "Provide concise behavior flags if any issues like overtrading, revenge trading, or tilt are suspected."
         )

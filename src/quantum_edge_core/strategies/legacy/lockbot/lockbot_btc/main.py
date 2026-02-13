@@ -111,13 +111,19 @@ class LockBotService:
         now_ms = now_ms if now_ms is not None else int(time.time() * 1000)
         ttl_ms = int(command.get("ttl_ms") or self._cfg.cmd_ttl_ms)
         if self._bot_state.is_duplicate(cmd_id):
-            return self._build_ack(cmd_id, "IGNORED_DUPLICATE", state_version=self._bot_state.state_version, now_ms=now_ms)
+            return self._build_ack(
+                cmd_id, "IGNORED_DUPLICATE", state_version=self._bot_state.state_version, now_ms=now_ms
+            )
         if not ok:
-            return self._build_ack(cmd_id, "REJECTED", error_code=reason, state_version=self._bot_state.state_version, now_ms=now_ms)
+            return self._build_ack(
+                cmd_id, "REJECTED", error_code=reason, state_version=self._bot_state.state_version, now_ms=now_ms
+            )
         ts_cmd = int(command.get("ts_cmd") or 0)
         if ts_cmd + ttl_ms < now_ms:
             self._bot_state.remember_cmd(cmd_id)
-            return self._build_ack(cmd_id, "EXPIRED", error_code="ttl", state_version=self._bot_state.state_version, now_ms=now_ms)
+            return self._build_ack(
+                cmd_id, "EXPIRED", error_code="ttl", state_version=self._bot_state.state_version, now_ms=now_ms
+            )
 
         payload = command.get("payload") if isinstance(command.get("payload"), dict) else {}
         cmd_type = payload.get("cmd")
@@ -127,7 +133,9 @@ class LockBotService:
             ack_status, error_code = self._handle_exec_command(cmd_type, payload, now_ms, cmd_id)
             self._bot_state.remember_cmd(cmd_id)
             self._bot_state.bump_state()
-            return self._build_ack(cmd_id, ack_status, error_code=error_code, state_version=self._bot_state.state_version, now_ms=now_ms)
+            return self._build_ack(
+                cmd_id, ack_status, error_code=error_code, state_version=self._bot_state.state_version, now_ms=now_ms
+            )
         intent = self._build_intent(cmd_type, payload)
         decision = self._ddn.evaluate(self._build_ddn_context(intent, now_ms=now_ms))
         verdict = decision.verdict
@@ -174,7 +182,9 @@ class LockBotService:
                 account_lag_ms=account_lag,
                 mark_price=self._market_state.mark_price,
             )
-        return self._build_ack(cmd_id, ack_status, error_code=error_code, state_version=self._bot_state.state_version, now_ms=now_ms)
+        return self._build_ack(
+            cmd_id, ack_status, error_code=error_code, state_version=self._bot_state.state_version, now_ms=now_ms
+        )
 
     def build_status(self, *, now_ms: Optional[int] = None) -> StatusEnvelope:
         now_ms = now_ms if now_ms is not None else int(time.time() * 1000)
@@ -308,9 +318,13 @@ class LockBotService:
         risk = payload.get("risk")
         if isinstance(risk, dict):
             self._account_state.margin_usage = risk.get("margin_usage", self._account_state.margin_usage)
-            self._account_state.distance_to_liq_bps = risk.get("distance_to_liq_bps", self._account_state.distance_to_liq_bps)
+            self._account_state.distance_to_liq_bps = risk.get(
+                "distance_to_liq_bps", self._account_state.distance_to_liq_bps
+            )
             self._account_state.initial_margin = risk.get("initial_margin", self._account_state.initial_margin)
-            self._account_state.maintenance_margin = risk.get("maintenance_margin", self._account_state.maintenance_margin)
+            self._account_state.maintenance_margin = risk.get(
+                "maintenance_margin", self._account_state.maintenance_margin
+            )
             self._account_state.equity = risk.get("equity", self._account_state.equity)
             self._account_state.leverage = risk.get("leverage", self._account_state.leverage)
 

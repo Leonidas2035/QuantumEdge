@@ -200,7 +200,9 @@ class DecisionEngine:
         action = DecisionAction.HOLD
         if position == 0:
             action = DecisionAction.ENTER
-        elif (position > 0 and direction == DecisionDirection.SHORT) or (position < 0 and direction == DecisionDirection.LONG):
+        elif (position > 0 and direction == DecisionDirection.SHORT) or (
+            position < 0 and direction == DecisionDirection.LONG
+        ):
             action = DecisionAction.EXIT
         else:
             action = DecisionAction.HOLD

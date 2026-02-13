@@ -11,6 +11,7 @@ from typing import Dict, Any
 
 logger = structlog.get_logger()
 
+
 class QuestILPWriter:
     """
     Async ILP Writer.
@@ -22,7 +23,7 @@ class QuestILPWriter:
         self.port = port
         self.queue: asyncio.Queue = asyncio.Queue(maxsize=10000)
         self.writer = None
-        self.reader = None # not used but returned by open_connection
+        self.reader = None  # not used but returned by open_connection
         self._stop_event = asyncio.Event()
         self._worker_task = None
         self.logger = logger.bind(component="QuestILPWriter", host=host, port=port)
@@ -58,10 +59,12 @@ class QuestILPWriter:
         except Exception as e:
             self.logger.error("Failed to format/enqueue ILP", error=str(e))
 
-    def _format_ilp(self, table: str, symbols: Dict[str, Any], columns: Dict[str, Any], timestamp_ns: int = None) -> str:
+    def _format_ilp(
+        self, table: str, symbols: Dict[str, Any], columns: Dict[str, Any], timestamp_ns: int = None
+    ) -> str:
         # 1. Table
         sb = [table]
-        
+
         # 2. Symbols (Tags) - Sorted by key, comma separated, no spaces
         if symbols:
             # Escape keys/values if needed (simplified here: assume safe chars for High Perf)
@@ -71,43 +74,43 @@ class QuestILPWriter:
             for k, v in sorted_syms:
                 val = str(v).replace(" ", "\\ ").replace(",", "\\,").replace("=", "\\=")
                 sb.append(f",{k}={val}")
-                
+
         # 3. Separator
         sb.append(" ")
-        
+
         # 4. Columns (Fields)
         if columns:
             parts = []
             for k, v in columns.items():
                 val_str = ""
                 if isinstance(v, int):
-                    val_str = f"{v}i" # ILP Integer
+                    val_str = f"{v}i"  # ILP Integer
                 elif isinstance(v, float):
                     val_str = f"{v}"
                 elif isinstance(v, str):
                     s = v.replace('"', '\\"')
-                    val_str = f'"{s}"' # Quoted string
+                    val_str = f'"{s}"'  # Quoted string
                 elif isinstance(v, bool):
                     val_str = "T" if v else "F"
                 else:
                     s = str(v).replace('"', '\\"')
                     val_str = f'"{s}"'
-                
+
                 parts.append(f"{k}={val_str}")
             sb.append(",".join(parts))
-            
+
         # 5. Timestamp
         if timestamp_ns is not None:
-             sb.append(f" {timestamp_ns}\n")
+            sb.append(f" {timestamp_ns}\n")
         else:
-             sb.append("\n")
-        
+            sb.append("\n")
+
         return "".join(sb)
 
     async def _worker(self):
         """Background task to drain queue and write to socket."""
         backoff = 1
-        
+
         while not self._stop_event.is_set():
             # 1. Ensure connection
             if self.writer is None:
@@ -125,28 +128,28 @@ class QuestILPWriter:
             batch = []
             batch_size = 0
             MAX_BATCH_BYTES = 4096
-            
+
             try:
                 # Wait for first item
                 line = await self.queue.get()
                 batch.append(line)
                 batch_size += len(line)
                 self.queue.task_done()
-                
+
                 # Opportunistic batching
                 while not self.queue.empty() and batch_size < MAX_BATCH_BYTES:
                     line = self.queue.get_nowait()
                     batch.append(line)
                     batch_size += len(line)
                     self.queue.task_done()
-                
+
                 # 3. Write
-                payload = "".join(batch).encode('utf-8')
+                payload = "".join(batch).encode("utf-8")
                 self.writer.write(payload)
                 await self.writer.drain()
-                
+
             except Exception as e:
                 self.logger.error("Write error", error=str(e))
                 self.writer.close()
                 await self.writer.wait_closed()
-                self.writer = None # Trigger reconnect
+                self.writer = None  # Trigger reconnect

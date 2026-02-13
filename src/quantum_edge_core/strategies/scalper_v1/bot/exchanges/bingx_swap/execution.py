@@ -136,7 +136,9 @@ class BingXExecution:
             params["clientOrderId"] = client_order_id
         return self.client.request("DELETE", "/openApi/swap/v2/trade/order", params=params, signed=True)
 
-    def get_order(self, symbol: str, order_id: Optional[str] = None, client_order_id: Optional[str] = None) -> OrderResult:
+    def get_order(
+        self, symbol: str, order_id: Optional[str] = None, client_order_id: Optional[str] = None
+    ) -> OrderResult:
         if not order_id and not client_order_id:
             raise ValueError("order_id or client_order_id is required to query order.")
         params: Dict[str, Any] = {"symbol": to_bingx_symbol(symbol)}

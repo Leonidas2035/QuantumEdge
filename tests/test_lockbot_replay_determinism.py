@@ -4,9 +4,9 @@ import hashlib
 import json
 from pathlib import Path
 
-from LockBotBTC.lockbot_btc.config import LockbotConfig
-from LockBotBTC.lockbot_btc.replay.runner import load_policy_config, run_replay
-from LockBotBTC.lockbot_btc.replay.scenarios import ScenarioConfig, generate_scenario
+from quantum_edge_core.supervisor.supervisor.lockbot.models import PolicyRunnerConfig as LockbotConfig
+from quantum_edge_core.supervisor.supervisor_btc.replay.runner import load_policy_config, run_replay
+from quantum_edge_core.supervisor.supervisor_btc.replay.scenarios import ScenarioConfig, generate_scenario
 
 
 def _hash_file(path: Path) -> str:

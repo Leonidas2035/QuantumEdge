@@ -113,7 +113,9 @@ def load_tsdb_config() -> TsdbConfig:
     )
 
     batch_rows = _int(raw.get("write_batch_rows", raw.get("batch_size", 500)), 500)
-    flush_interval_ms = _int(raw.get("write_flush_interval_ms", _int(raw.get("flush_interval_seconds", 2), 2) * 1000), 2000)
+    flush_interval_ms = _int(
+        raw.get("write_flush_interval_ms", _int(raw.get("flush_interval_seconds", 2), 2) * 1000), 2000
+    )
 
     queue_raw = raw.get("queue", {}) or {}
     memory_raw = raw.get("memory_budgets", {}) or {}
@@ -123,7 +125,9 @@ def load_tsdb_config() -> TsdbConfig:
 
     queue = QueueSettings(
         max_events=_int(queue_raw.get("max_events", 10000), 10000),
-        max_bytes=_int(queue_raw.get("max_bytes", memory_raw.get("ingest_queue_bytes", 256 * 1024 * 1024)), 256 * 1024 * 1024),
+        max_bytes=_int(
+            queue_raw.get("max_bytes", memory_raw.get("ingest_queue_bytes", 256 * 1024 * 1024)), 256 * 1024 * 1024
+        ),
         drop_policy=drop_policy,
     )
 
@@ -133,7 +137,9 @@ def load_tsdb_config() -> TsdbConfig:
     spool = SpoolSettings(
         enabled=_bool(spool_raw.get("enabled", True), True),
         path=spool_path,
-        max_bytes=_int(spool_raw.get("max_bytes", memory_raw.get("spool_max_bytes", 1024 * 1024 * 1024)), 1024 * 1024 * 1024),
+        max_bytes=_int(
+            spool_raw.get("max_bytes", memory_raw.get("spool_max_bytes", 1024 * 1024 * 1024)), 1024 * 1024 * 1024
+        ),
         retention_days=_int(spool_raw.get("retention_days", 3), 3),
         max_file_bytes=_int(spool_raw.get("max_file_bytes", 10 * 1024 * 1024), 10 * 1024 * 1024),
         rotation_minutes=_int(spool_raw.get("rotation_minutes", 5), 5),

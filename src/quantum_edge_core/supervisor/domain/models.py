@@ -10,21 +10,25 @@ from typing import Dict, Any
 
 # --- Enums ---
 
+
 class RiskLevel(Enum):
     NORMAL = auto()
-    WARNING = auto()   # Reduce exposure, tighten stops
+    WARNING = auto()  # Reduce exposure, tighten stops
     CRITICAL = auto()  # Liquidation, Halt
+
 
 class TradingMode(Enum):
     NORMAL = "normal"
-    CONSERVATIVE = "conservative" # Reduced leverage, tighter stops
-    SNIPER = "sniper"       # High confidence entries only
-    WINTER = "winter"       # Reduced activity due to volatility/uncertainty
-    FREEZE = "freeze"       # No new trades
-    REDUCE_ONLY = "reduce_only" # Only closing trades
-    HALT = "halt"           # Hard Stop
+    CONSERVATIVE = "conservative"  # Reduced leverage, tighter stops
+    SNIPER = "sniper"  # High confidence entries only
+    WINTER = "winter"  # Reduced activity due to volatility/uncertainty
+    FREEZE = "freeze"  # No new trades
+    REDUCE_ONLY = "reduce_only"  # Only closing trades
+    HALT = "halt"  # Hard Stop
+
 
 # --- Config & State ---
+
 
 @dataclass
 class RiskConfig:
@@ -34,6 +38,7 @@ class RiskConfig:
     max_open_orders: int = 10
     max_exposure_notional: float = 50000.0
 
+
 @dataclass
 class PortfolioState:
     equity_start_day: float
@@ -42,12 +47,14 @@ class PortfolioState:
     total_exposure: float
     open_order_count: int
     used_leverage: float
-    
+
     @property
     def daily_pnl(self) -> float:
         return self.equity_current - self.equity_start_day
 
+
 # --- Decision Outputs ---
+
 
 @dataclass
 class RiskVerdict:
@@ -56,11 +63,13 @@ class RiskVerdict:
     action_required: str  # e.g., "CLOSE_ALL", "CANCEL_ORDERS", "NONE"
     metadata: Dict[str, Any] = field(default_factory=dict)
 
+
 @dataclass
 class PolicyContract:
     """
     The instruction set sent to the Trading Bot.
     """
+
     mode: TradingMode
     long_allowed: bool
     short_allowed: bool
@@ -69,14 +78,14 @@ class PolicyContract:
     max_position_size: float
     risk_multiplier: float = 1.0
     volatility_scalar: float = 1.0
-    
+
     # AI Metadata (Reasons)
     ai_confidence: float = 0.0
     ai_reasoning: str = ""
-    
+
     # Overrides
     close_only: bool = False
-    
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "mode": self.mode.value,
@@ -88,8 +97,5 @@ class PolicyContract:
             "risk_multiplier": self.risk_multiplier,
             "volatility_scalar": self.volatility_scalar,
             "close_only": self.close_only,
-            "ai_meta": {
-                "confidence": self.ai_confidence,
-                "reasoning": self.ai_reasoning
-            }
+            "ai_meta": {"confidence": self.ai_confidence, "reasoning": self.ai_reasoning},
         }

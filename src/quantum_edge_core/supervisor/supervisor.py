@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import Optional, Mapping, Any, Dict, List
 import threading
 
-from supervisor.config import (
+from quantum_edge_core.supervisor.supervisor.config import (
     load_paths_config,
     load_supervisor_config,
     load_risk_config,
@@ -46,43 +46,49 @@ from supervisor.config import (
     TsdbRetentionConfig,
     AutopilotConfig,
 )
-from supervisor.heartbeat import HeartbeatServer, HeartbeatPayload
-from supervisor.logging_setup import setup_logging
-from supervisor.config_loader import load_processes_spec
-from supervisor.process_manager import ProcessManager, ProcessInfo
-from supervisor.risk_engine import HardRiskEngine, RiskDecision, OrderRequest, OrderSide, OrderType
+from quantum_edge_core.supervisor.supervisor.heartbeat import HeartbeatServer, HeartbeatPayload
+from quantum_edge_core.supervisor.supervisor.logging_setup import setup_logging
+from quantum_edge_core.supervisor.supervisor.config_loader import load_processes_spec
+from quantum_edge_core.supervisor.supervisor.process_manager import ProcessManager, ProcessInfo
+from quantum_edge_core.supervisor.supervisor.risk_engine import HardRiskEngine, RiskDecision, OrderRequest, OrderSide, OrderType
 from supervisor import state as state_utils
-from supervisor.events import BaseEvent, EventLogger, EventType, new_run_id, prune_event_logs
-from supervisor.audit_report import load_events_for_date, compute_stats, render_markdown_report
-from supervisor.llm_supervisor import LlmSupervisor
-from supervisor.llm.chat_client import ChatCompletionsClient
-from supervisor.llm.trend_evaluator import TrendEvaluator
-from supervisor.llm.market_risk_monitor import MarketRiskMonitor
-from supervisor.llm.trading_behavior_analyzer import TradingBehaviorAnalyzer
-from supervisor.meta_supervisor import MetaSupervisorRunner, MetaSupervisorContext
-from supervisor.api_server import ApiServer, ApiServerConfig
-from supervisor.snapshot_models import SnapshotReport
-from supervisor.tasks.snapshot_scheduler import SnapshotScheduler
-from supervisor.dashboard.service import DashboardService
-from supervisor.dashboard.audit_log import DashboardAuditLogger
-from supervisor.dashboard.state_store import DashboardStateStore
-from supervisor.tsdb import NoopTimeseriesStore, ClickHouseTimeseriesStore, QuestDbTimeseriesStore, TsdbWriter
-from supervisor.tsdb.maintenance import apply_retention_and_rollups
-from supervisor.tsdb.query import build_timeseries_query, derive_questdb_query_url, questdb_query, sanitize_symbol
-from supervisor.ingest.pipeline import IngestPipeline
-from supervisor.ingest.parsers import parse_metrics_file, parse_event_line
+from quantum_edge_core.supervisor.supervisor.events import BaseEvent, EventLogger, EventType, new_run_id, prune_event_logs
+from quantum_edge_core.supervisor.supervisor.audit_report import load_events_for_date, compute_stats, render_markdown_report
+from quantum_edge_core.supervisor.supervisor.llm_supervisor import LlmSupervisor
+from quantum_edge_core.supervisor.supervisor.llm.chat_client import ChatCompletionsClient
+from quantum_edge_core.supervisor.supervisor.llm.trend_evaluator import TrendEvaluator
+from quantum_edge_core.supervisor.supervisor.llm.market_risk_monitor import MarketRiskMonitor
+from quantum_edge_core.supervisor.supervisor.llm.trading_behavior_analyzer import TradingBehaviorAnalyzer
+from quantum_edge_core.supervisor.supervisor.meta_supervisor import MetaSupervisorRunner, MetaSupervisorContext
+from quantum_edge_core.supervisor.supervisor.api_server import ApiServer, ApiServerConfig
+from quantum_edge_core.supervisor.supervisor.snapshot_models import SnapshotReport
+from quantum_edge_core.supervisor.supervisor.tasks.snapshot_scheduler import SnapshotScheduler
+from quantum_edge_core.supervisor.supervisor.dashboard.service import DashboardService
+from quantum_edge_core.supervisor.supervisor.dashboard.audit_log import DashboardAuditLogger
+from quantum_edge_core.supervisor.supervisor.dashboard.state_store import DashboardStateStore
+from quantum_edge_core.supervisor.supervisor.tsdb import NoopTimeseriesStore, ClickHouseTimeseriesStore, QuestDbTimeseriesStore, TsdbWriter
+from quantum_edge_core.supervisor.supervisor.tsdb.maintenance import apply_retention_and_rollups
+from quantum_edge_core.supervisor.supervisor.tsdb.query import build_timeseries_query, derive_questdb_query_url, questdb_query, sanitize_symbol
+from quantum_edge_core.supervisor.supervisor.ingest.pipeline import IngestPipeline
+from quantum_edge_core.supervisor.supervisor.ingest.parsers import parse_metrics_file, parse_event_line
 from policy.policy_contract import policy_fingerprint, POLICY_VERSION
 from policy.policy_publisher import PolicyPublisher
 from policy.policy_engine import PolicyEngine, PolicyEngineConfig, HysteresisConfig
 from policy.heuristics import HeuristicThresholds
 from monitoring.api import TelemetryManager, TelemetryConfig
-from supervisor.stats import StatsAggregator
-from supervisor.run_context import RunContext
-from supervisor.regime_sm import RegimeStateMachine, RegimeConfig, DirectivesConfig, load_regime_config, load_directives_config
-from supervisor.guards import GuardEvaluator, GuardResult, GuardConfig, load_guard_config
-from supervisor.action_ledger import ActionLedger
-from supervisor.policy_store import resolve_active_policy_path
-from supervisor.autopilot.cli import (
+from quantum_edge_core.supervisor.supervisor.stats import StatsAggregator
+from quantum_edge_core.supervisor.supervisor.run_context import RunContext
+from quantum_edge_core.supervisor.supervisor.regime_sm import (
+    RegimeStateMachine,
+    RegimeConfig,
+    DirectivesConfig,
+    load_regime_config,
+    load_directives_config,
+)
+from quantum_edge_core.supervisor.supervisor.guards import GuardEvaluator, GuardResult, GuardConfig, load_guard_config
+from quantum_edge_core.supervisor.supervisor.action_ledger import ActionLedger
+from quantum_edge_core.supervisor.supervisor.policy_store import resolve_active_policy_path
+from quantum_edge_core.supervisor.supervisor.autopilot.cli import (
     build_controller,
     autopilot_enable,
     autopilot_set_target_state,
@@ -91,15 +97,15 @@ from supervisor.autopilot.cli import (
     policy_rollout,
     policy_rollback,
 )
-from supervisor.autopilot.policy_manager import PolicyManager
-from supervisor.alerts.rules import load_alert_rules
-from supervisor.alerts.storage import AlertStorage
-from supervisor.alerts.engine import AlertEngine, AlertResult
-from supervisor.security import is_path_allowed, validate_kill_switch_challenge
-from supervisor.process_spec import ProcessSpec
-from supervisor.lockbot.control_client import LockbotControlClient
-from supervisor.lockbot.models import PolicyRunnerConfig, load_lockbot_policy_config
-from supervisor.lockbot.policy_runner import LockbotPolicyRunner
+from quantum_edge_core.supervisor.supervisor.autopilot.policy_manager import PolicyManager
+from quantum_edge_core.supervisor.supervisor.alerts.rules import load_alert_rules
+from quantum_edge_core.supervisor.supervisor.alerts.storage import AlertStorage
+from quantum_edge_core.supervisor.supervisor.alerts.engine import AlertEngine, AlertResult
+from quantum_edge_core.supervisor.supervisor.security import is_path_allowed, validate_kill_switch_challenge
+from quantum_edge_core.supervisor.supervisor.process_spec import ProcessSpec
+from quantum_edge_core.supervisor.supervisor.lockbot.control_client import LockbotControlClient
+from quantum_edge_core.supervisor.supervisor.lockbot.models import PolicyRunnerConfig, load_lockbot_policy_config
+from quantum_edge_core.supervisor.supervisor.lockbot.policy_runner import LockbotPolicyRunner
 
 try:
     from tools.qe_config import get_qe_paths
@@ -169,7 +175,9 @@ class SupervisorApp:
             self.event_logger.tsdb_writer = self.tsdb_writer
         self.heartbeat_server = HeartbeatServer(config.heartbeat_timeout_s)
         risk_state = state_utils.load_risk_state(self.state_dir, today=date.today())
-        self.risk_engine = HardRiskEngine(risk_config, risk_state, self.logger, self.event_logger, llm_config.trust_policy)
+        self.risk_engine = HardRiskEngine(
+            risk_config, risk_state, self.logger, self.event_logger, llm_config.trust_policy
+        )
         self.process_manager = ProcessManager(
             paths,
             config,
@@ -180,7 +188,9 @@ class SupervisorApp:
             run_id=self.run_id,
         )
         self.llm_client = ChatCompletionsClient(llm_config.api_url, llm_config.api_key_env, self.logger)
-        self.llm_supervisor = LlmSupervisor(llm_config, risk_config, paths.events_dir, self.logger, self.event_logger, chat_client=self.llm_client)
+        self.llm_supervisor = LlmSupervisor(
+            llm_config, risk_config, paths.events_dir, self.logger, self.event_logger, chat_client=self.llm_client
+        )
         self.trend_evaluator = TrendEvaluator(trend_config, self.llm_client, self.logger)
         self.market_risk_monitor = MarketRiskMonitor(market_risk_config, self.llm_client, self.logger)
         self.behavior_analyzer = TradingBehaviorAnalyzer(behavior_config, self.llm_client, self.logger)
@@ -269,7 +279,14 @@ class SupervisorApp:
             alerts_cooldown_sec=config.telemetry_alerts_cooldown_sec,
         )
         self.telemetry = TelemetryManager(telemetry_cfg)
-        self.policy_engine = PolicyEngine(engine_cfg, self.paths, self.process_manager, self.risk_engine, self.logger, telemetry_manager=self.telemetry)
+        self.policy_engine = PolicyEngine(
+            engine_cfg,
+            self.paths,
+            self.process_manager,
+            self.risk_engine,
+            self.logger,
+            telemetry_manager=self.telemetry,
+        )
         self.policy_publisher = PolicyPublisher(policy_file, self.logger)
         self.policy_publish_interval_s = float(config.policy_publish_interval_s)
         self._last_policy_fingerprint: Optional[str] = None
@@ -318,7 +335,9 @@ class SupervisorApp:
             if not self.lockbot_client:
                 self.logger.warning("Lockbot policy enabled but lockbot control client is disabled.")
             else:
-                self.lockbot_policy_runner = LockbotPolicyRunner(self.lockbot_policy_cfg, self.lockbot_client, self.logger)
+                self.lockbot_policy_runner = LockbotPolicyRunner(
+                    self.lockbot_policy_cfg, self.lockbot_client, self.logger
+                )
 
     def _build_tsdb_writer(self, tsdb_config: TsdbConfig) -> Optional[TsdbWriter]:
         self.tsdb_backend = "none"
@@ -415,10 +434,17 @@ class SupervisorApp:
         status["pid"] = info.pid
         return status
 
-    def get_events_tail(self, limit: int = 200, types: Optional[List[str]] = None, since_ts_ms: Optional[int] = None) -> Dict[str, Any]:
-        from supervisor.events import tail_events
+    def get_events_tail(
+        self, limit: int = 200, types: Optional[List[str]] = None, since_ts_ms: Optional[int] = None
+    ) -> Dict[str, Any]:
+        from quantum_edge_core.supervisor.supervisor.events import tail_events
 
-        events = tail_events(self.paths.events_dir / f"events_{date.today().isoformat()}.jsonl", limit=limit, types=types, since_ts_ms=since_ts_ms)
+        events = tail_events(
+            self.paths.events_dir / f"events_{date.today().isoformat()}.jsonl",
+            limit=limit,
+            types=types,
+            since_ts_ms=since_ts_ms,
+        )
         return {"events": events}
 
     def log_api_call(self, method: str, path: str, status_code: int, duration_ms: int, trace_id: Optional[str]) -> None:
@@ -613,7 +639,9 @@ class SupervisorApp:
     def run_foreground(self) -> None:
         """Run supervisor loop, restarting the child if it dies."""
 
-        next_llm_check_at = time.time() + (self.llm_config.check_interval_minutes * 60 if self.llm_config.enabled else 0)
+        next_llm_check_at = time.time() + (
+            self.llm_config.check_interval_minutes * 60 if self.llm_config.enabled else 0
+        )
         snapshot_interval = self.snapshot_config.interval_minutes * 60 if self.snapshot_config.enabled else None
         next_snapshot_at = time.time() + snapshot_interval if snapshot_interval else float("inf")
         next_policy_publish_at = 0.0
@@ -679,11 +707,7 @@ class SupervisorApp:
                 if time.time() >= next_policy_publish_at:
                     self._publish_policy()
                     next_policy_publish_at = time.time() + self.policy_publish_interval_s
-                if (
-                    self.llm_config.enabled
-                    and time.time() >= next_llm_check_at
-                    and not self.risk_engine.state.halted
-                ):
+                if self.llm_config.enabled and time.time() >= next_llm_check_at and not self.risk_engine.state.halted:
                     try:
                         self.run_llm_check_once()
                     except Exception as exc:
@@ -813,12 +837,14 @@ class SupervisorApp:
         print(f"Realized PnL today: {snapshot.realized_pnl_today}")
         print(f"Max equity intraday: {snapshot.max_equity_intraday}")
         print(f"Min equity intraday: {snapshot.min_equity_intraday}")
-        print(f"Limits: daily_loss_abs={self.risk_config.max_daily_loss_abs}, "
-              f"daily_loss_pct={self.risk_config.max_daily_loss_pct}, "
-              f"drawdown_abs={self.risk_config.max_drawdown_abs}, "
-              f"drawdown_pct={self.risk_config.max_drawdown_pct}, "
-              f"max_notional_per_symbol={self.risk_config.max_notional_per_symbol}, "
-              f"max_leverage={self.risk_config.max_leverage}")
+        print(
+            f"Limits: daily_loss_abs={self.risk_config.max_daily_loss_abs}, "
+            f"daily_loss_pct={self.risk_config.max_daily_loss_pct}, "
+            f"drawdown_abs={self.risk_config.max_drawdown_abs}, "
+            f"drawdown_pct={self.risk_config.max_drawdown_pct}, "
+            f"max_notional_per_symbol={self.risk_config.max_notional_per_symbol}, "
+            f"max_leverage={self.risk_config.max_leverage}"
+        )
 
     def _print_status(self, running: bool, info: Optional[ProcessInfo]) -> None:
         heartbeat_state = self.heartbeat_server.get_state()
@@ -829,7 +855,9 @@ class SupervisorApp:
         print("Supervisor status")
         print("=================")
         if running and info:
-            uptime = (datetime.now(info.start_time.tzinfo) - info.start_time).total_seconds() if info.start_time else None
+            uptime = (
+                (datetime.now(info.start_time.tzinfo) - info.start_time).total_seconds() if info.start_time else None
+            )
             uptime_str = f"{uptime:.0f}s" if uptime is not None else "unknown"
             print(f"Bot: {state} (pid={info.pid}, uptime={uptime_str})")
         elif info:
@@ -933,7 +961,9 @@ class SupervisorApp:
             print("LLM check produced no advice (disabled, insufficient data, or error).")
             return
 
-        print(f"LLM Advice: action={advice.action.value}, risk_multiplier={advice.risk_multiplier}, comment={advice.comment}")
+        print(
+            f"LLM Advice: action={advice.action.value}, risk_multiplier={advice.risk_multiplier}, comment={advice.comment}"
+        )
 
         if self.llm_config.dry_run:
             self.logger.info("LLM advice received (dry-run): %s", advice)
@@ -987,7 +1017,9 @@ class SupervisorApp:
             "spread_bps": spread_bps,
         }
 
-    def _build_directives(self, regime_state: str, guard_result: GuardResult, episode_tags: Dict[str, Any]) -> Dict[str, Any]:
+    def _build_directives(
+        self, regime_state: str, guard_result: GuardResult, episode_tags: Dict[str, Any]
+    ) -> Dict[str, Any]:
         allow_scalp = guard_result.allowed and regime_state in {"RANGE", "TREND"}
         directives = {
             "ts_utc": datetime.now(timezone.utc).isoformat(),
@@ -1190,16 +1222,25 @@ class SupervisorApp:
             "last_exit_code": status.get("last_exit_code"),
         }
         if running and info:
-            uptime = (datetime.now(info.start_time.tzinfo) - info.start_time).total_seconds() if info.start_time else None
+            uptime = (
+                (datetime.now(info.start_time.tzinfo) - info.start_time).total_seconds() if info.start_time else None
+            )
             bot_data.update({"pid": info.pid, "uptime_seconds": uptime})
         elif info:
-            bot_data.update({"last_exit_code": info.last_exit_code, "last_exit_time": info.last_exit_time.isoformat() if info.last_exit_time else None})
+            bot_data.update(
+                {
+                    "last_exit_code": info.last_exit_code,
+                    "last_exit_time": info.last_exit_time.isoformat() if info.last_exit_time else None,
+                }
+            )
 
         return {
             "bot": bot_data,
             "heartbeat": {
                 "status": heartbeat_state.status,
-                "last_heartbeat_time": heartbeat_state.last_heartbeat_time.isoformat() if heartbeat_state.last_heartbeat_time else None,
+                "last_heartbeat_time": heartbeat_state.last_heartbeat_time.isoformat()
+                if heartbeat_state.last_heartbeat_time
+                else None,
             },
             "risk": {
                 "halted": snapshot.halted,
@@ -1446,6 +1487,7 @@ class SupervisorApp:
         reachable = None
         if enabled and self.tsdb_backend == "clickhouse":
             import urllib.request
+
             try:
                 with urllib.request.urlopen(f"{self.tsdb_config.clickhouse_url}/ping", timeout=3) as resp:
                     reachable = resp.status == 200 and resp.read() in (b"Ok.", b"Ok.\n")
@@ -1459,7 +1501,9 @@ class SupervisorApp:
             "enabled": enabled,
             "backend": self.tsdb_backend,
             "reachable": reachable,
-            "last_write_at": self.tsdb_writer.last_write_at.isoformat() if enabled and self.tsdb_writer.last_write_at else None,
+            "last_write_at": self.tsdb_writer.last_write_at.isoformat()
+            if enabled and self.tsdb_writer.last_write_at
+            else None,
             "queue_depth": self.tsdb_writer.queue_depth if enabled else 0,
             "ingest": ingest_status,
         }
@@ -1542,7 +1586,11 @@ class SupervisorApp:
         try:
             payload = json.loads(state_path.read_text(encoding="utf-8"))
         except Exception:
-            return {"enabled": bool(self.tsdb_config.ingest_enabled), "state_path": str(state_path), "status": "bad_json"}
+            return {
+                "enabled": bool(self.tsdb_config.ingest_enabled),
+                "state_path": str(state_path),
+                "status": "bad_json",
+            }
         now = time.time()
         event_lag = _compute_lag(payload.get("last_event_ts"), now)
         metrics_lag = _compute_lag(payload.get("last_metrics_ts"), now)
@@ -1971,7 +2019,11 @@ def main(argv: Optional[list[str]] = None) -> None:
     if not paths_config_path.exists():
         paths_config_path = project_root / "config" / "paths.yaml"
 
-    supervisor_config_path = Path(args.config_path) if args.config_path else Path(os.getenv("SUPERVISOR_CONFIG") or config_dir / "supervisor.yaml")
+    supervisor_config_path = (
+        Path(args.config_path)
+        if args.config_path
+        else Path(os.getenv("SUPERVISOR_CONFIG") or config_dir / "supervisor.yaml")
+    )
     if not supervisor_config_path.exists():
         supervisor_config_path = supervisor_config_dir / "supervisor.yaml"
 
@@ -2023,9 +2075,11 @@ def main(argv: Optional[list[str]] = None) -> None:
         elif args.command == "tsdb-status":
             print(json.dumps(app.get_tsdb_status(), indent=2))
         elif args.command == "tsdb-migrate":
-            from supervisor.tsdb.migrations import run_tsdb_migrations
+            from quantum_edge_core.supervisor.supervisor.tsdb.migrations import run_tsdb_migrations
 
-            ok = run_tsdb_migrations(project_root, app.tsdb_config, logging.getLogger(__name__), retention=app.tsdb_retention)
+            ok = run_tsdb_migrations(
+                project_root, app.tsdb_config, logging.getLogger(__name__), retention=app.tsdb_retention
+            )
             sys.exit(0 if ok else 1)
         elif args.command == "tsdb-backfill":
             if not app.tsdb_config.enabled or app.tsdb_config.backend == "none":
@@ -2035,18 +2089,20 @@ def main(argv: Optional[list[str]] = None) -> None:
                 if not args.from_ts or not args.to_ts:
                     print("Both --from and --to are required for ranged backfill.", file=sys.stderr)
                     sys.exit(1)
-                from supervisor.ingest.backfill import parse_range, run_backfill
+                from quantum_edge_core.supervisor.supervisor.ingest.backfill import parse_range, run_backfill
 
                 writer = app.tsdb_writer or TsdbWriter(NoopTimeseriesStore())
                 writer.start()
                 start_ts, end_ts = parse_range(args.from_ts, args.to_ts)
                 events_path = app._resolve_qe_path(app.tsdb_config.ingest_events_path)
                 exec_path = app._resolve_qe_path(app.tsdb_config.ingest_exec_path)
-                run_backfill(events_path, exec_path, start_ts, end_ts, writer, logging.getLogger(__name__), symbol=args.symbol)
+                run_backfill(
+                    events_path, exec_path, start_ts, end_ts, writer, logging.getLogger(__name__), symbol=args.symbol
+                )
                 writer.flush()
                 sys.exit(0)
             days = args.days or app.tsdb_config.backfill_from_days
-            from supervisor.tsdb.backfill import run_backfill
+            from quantum_edge_core.supervisor.supervisor.tsdb.backfill import run_backfill
 
             store = app.tsdb_writer.store if app.tsdb_writer else None
             if store is None:
@@ -2056,7 +2112,9 @@ def main(argv: Optional[list[str]] = None) -> None:
             run_backfill(app.paths.events_dir, store, days, checkpoint, logging.getLogger(__name__))
             print(f"Backfill completed for last {days} day(s).")
         elif args.command == "tsdb-maintain":
-            ok = apply_retention_and_rollups(project_root, app.tsdb_config, app.tsdb_retention, logging.getLogger(__name__))
+            ok = apply_retention_and_rollups(
+                project_root, app.tsdb_config, app.tsdb_retention, logging.getLogger(__name__)
+            )
             sys.exit(0 if ok else 1)
         elif args.command == "tsdb-ingest":
             action = args.ml_args[0].lower() if args.ml_args else "status"
@@ -2118,20 +2176,20 @@ def main(argv: Optional[list[str]] = None) -> None:
             report = build_report(client, last=args.last, bucket=args.bucket)
             print(json.dumps(report, indent=2))
         elif args.command == "ml":
-            from supervisor.mlops.cli import parse_ml_args, run_ml_command
+            from quantum_edge_core.supervisor.supervisor.mlops.cli import parse_ml_args, run_ml_command
 
             ml_args = parse_ml_args(args.ml_args)
             code = run_ml_command(ml_args)
             sys.exit(code)
         elif args.command == "telemetry":
-            from supervisor.monitoring.cli import parse_telemetry_args, run_telemetry_command
+            from quantum_edge_core.supervisor.supervisor.monitoring.cli import parse_telemetry_args, run_telemetry_command
 
             telemetry_args = parse_telemetry_args(args.ml_args)
             code = run_telemetry_command(app, telemetry_args)
             sys.exit(code)
         elif args.command == "research":
             try:
-                from supervisor.research.cli import parse_research_args, run_research_command
+                from quantum_edge_core.supervisor.supervisor.research.cli import parse_research_args, run_research_command
             except ModuleNotFoundError:
                 from research.cli import parse_research_args, run_research_command
 
@@ -2139,16 +2197,16 @@ def main(argv: Optional[list[str]] = None) -> None:
             code = run_research_command(research_args)
             sys.exit(code)
         elif args.command in {"episodes-cut", "episodes-run", "episodes-report"}:
-            from supervisor.episodes.cli import parse_episodes_args, run_episodes_command
+            from quantum_edge_core.supervisor.supervisor.episodes.cli import parse_episodes_args, run_episodes_command
 
             episodes_args = parse_episodes_args(args.command, args.ml_args)
             code = run_episodes_command(args.command, episodes_args)
             sys.exit(code)
         elif args.command == "ops-autotune":
-            from supervisor.policy_store import load_active_policy, save_new_policy, activate_policy
-            from supervisor.ops.autotuner import load_policy_bundle, collect_metrics, propose_tuning
-            from supervisor.ops.config import load_ops_config
-            from supervisor.ops.regression_gates import run_regression_gates
+            from quantum_edge_core.supervisor.supervisor.policy_store import load_active_policy, save_new_policy, activate_policy
+            from quantum_edge_core.supervisor.supervisor.ops.autotuner import load_policy_bundle, collect_metrics, propose_tuning
+            from quantum_edge_core.supervisor.supervisor.ops.config import load_ops_config
+            from quantum_edge_core.supervisor.supervisor.ops.regression_gates import run_regression_gates
 
             runtime_dir = app.paths.runtime_dir
             runs_dir = Path(args.runs_path) if args.runs_path else runtime_dir / "runs"
@@ -2158,7 +2216,9 @@ def main(argv: Optional[list[str]] = None) -> None:
                 telemetry_path = Path(app.config.telemetry_persist_path)
                 if not telemetry_path.is_absolute():
                     telemetry_path = (app.paths.qe_root / telemetry_path).resolve()
-            active_policy, active_version, active_path = load_active_policy(runtime_dir, supervisor_config_dir / "policy.yaml")
+            active_policy, active_version, active_path = load_active_policy(
+                runtime_dir, supervisor_config_dir / "policy.yaml"
+            )
             policy_bundle = load_policy_bundle(active_policy)
             metrics = collect_metrics(runs_dir, telemetry_path, ops_cfg)
 
@@ -2255,8 +2315,8 @@ def main(argv: Optional[list[str]] = None) -> None:
             finally:
                 _finalize_ops_context(ctx, start_ts, {"status": "completed"}, finalize_only=True)
         elif args.command == "ops-regression-gate":
-            from supervisor.policy_store import load_active_policy
-            from supervisor.ops.regression_gates import run_regression_gates
+            from quantum_edge_core.supervisor.supervisor.policy_store import load_active_policy
+            from quantum_edge_core.supervisor.supervisor.ops.regression_gates import run_regression_gates
 
             runtime_dir = app.paths.runtime_dir
             candidate_path = Path(args.policy_path) if args.policy_path else None
@@ -2281,7 +2341,7 @@ def main(argv: Optional[list[str]] = None) -> None:
             print(json.dumps(result, indent=2))
             sys.exit(0 if result.get("passed") else 1)
         elif args.command == "ops-daily-report":
-            from supervisor.ops.daily_report import generate_daily_report
+            from quantum_edge_core.supervisor.supervisor.ops.daily_report import generate_daily_report
 
             target_date = date.today()
             if args.date:
@@ -2300,7 +2360,7 @@ def main(argv: Optional[list[str]] = None) -> None:
             report_path = generate_daily_report(target_date, runtime_dir, report_dir, telemetry_path=telemetry_path)
             print(f"Daily report written to: {report_path}")
         elif args.command == "ops-rollback":
-            from supervisor.policy_store import rollback_to
+            from quantum_edge_core.supervisor.supervisor.policy_store import rollback_to
 
             if not args.policy_version:
                 print("Missing --policy-version for ops-rollback.", file=sys.stderr)
@@ -2445,9 +2505,7 @@ def _render_gate_report_md(result: Dict[str, Any]) -> str:
     ]
     for check in result.get("checks", []):
         status = "PASS" if check.get("passed") else "FAIL"
-        lines.append(
-            f"- [{status}] {check.get('name')}: actual={check.get('actual')} limit={check.get('limit')}"
-        )
+        lines.append(f"- [{status}] {check.get('name')}: actual={check.get('actual')} limit={check.get('limit')}")
     return "\n".join(lines) + "\n"
 
 

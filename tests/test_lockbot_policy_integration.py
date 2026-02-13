@@ -9,8 +9,8 @@ import pytest
 import zmq
 import zmq.asyncio
 
-from LockBotBTC.lockbot_btc.config import LockbotConfig
-from LockBotBTC.lockbot_btc.main import LockBotService
+from quantum_edge_core.supervisor.supervisor.lockbot.models import PolicyRunnerConfig as LockbotConfig
+from quantum_edge_core.supervisor.supervisor_btc.main import LockBotService
 from market_data.lockbot.schema import LockbotMarketEvent
 from market_data.models import Priority
 
@@ -19,10 +19,10 @@ SUPERVISOR_DIR = ROOT / "SupervisorAgent"
 if str(SUPERVISOR_DIR) not in sys.path:
     sys.path.insert(0, str(SUPERVISOR_DIR))
 
-from supervisor.config import LockbotControlConfig
-from supervisor.lockbot.control_client import LockbotControlClient
-from supervisor.lockbot.models import PolicyRunnerConfig
-from supervisor.lockbot.policy_runner import LockbotPolicyRunner
+from quantum_edge_core.supervisor.supervisor.config import LockbotControlConfig
+from quantum_edge_core.supervisor.supervisor.lockbot.control_client import LockbotControlClient
+from quantum_edge_core.supervisor.supervisor.lockbot.models import PolicyRunnerConfig
+from quantum_edge_core.supervisor.supervisor.lockbot.policy_runner import LockbotPolicyRunner
 
 
 def _free_port() -> int:
@@ -154,7 +154,16 @@ async def test_policy_runner_smoke_range_and_chaos():
 
     await publish(
         "liq_heatmap",
-        {"intensity_above": 10.0, "intensity_below": 10.0, "levels": [], "window_s": 3600, "bin_type": "bps", "bin_size": 10, "decay": {"type": "exp", "half_life_s": 600}, "last_force_order_ts": now_ms},
+        {
+            "intensity_above": 10.0,
+            "intensity_below": 10.0,
+            "levels": [],
+            "window_s": 3600,
+            "bin_type": "bps",
+            "bin_size": 10,
+            "decay": {"type": "exp", "half_life_s": 600},
+            "last_force_order_ts": now_ms,
+        },
         3,
     )
     await publish("mark_price_1s", {"mark_price": 103.1}, 5)

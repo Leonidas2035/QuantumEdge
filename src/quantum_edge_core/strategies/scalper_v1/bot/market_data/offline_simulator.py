@@ -1,4 +1,5 @@
-﻿"""Deprecated wrapper. Moved to SupervisorAgent.research.offline.offline_simulator."""
+"""Deprecated wrapper. Moved to SupervisorAgent.research.offline.offline_simulator."""
+
 from __future__ import annotations
 
 import importlib

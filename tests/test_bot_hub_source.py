@@ -7,11 +7,11 @@ import pytest
 from market_data.models import L1Event, SnapshotResponse, encode_event
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
-BOT_ROOT = REPO_ROOT / "ai_scalper_bot"
-if str(REPO_ROOT) not in sys.path:
-    sys.path.insert(0, str(REPO_ROOT))
-if BOT_ROOT.exists() and str(BOT_ROOT) not in sys.path:
+BOT_ROOT = REPO_ROOT / "src" / "quantum_edge_core" / "strategies" / "scalper_v1"
+if str(BOT_ROOT) not in sys.path:
     sys.path.insert(0, str(BOT_ROOT))
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(1, str(REPO_ROOT))
 
 from bot.market_data.hub_source import HubMarketDataSource
 

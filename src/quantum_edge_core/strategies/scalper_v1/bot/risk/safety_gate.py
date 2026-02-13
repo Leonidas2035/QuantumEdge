@@ -99,7 +99,9 @@ class SafetyGate:
         if self.max_trades_per_hour and trades_last_hour >= self.max_trades_per_hour:
             return SafetyDecision(False, "RATE_LIMIT_TRADES", {"trades_last_hour": trades_last_hour})
         if self.max_position_notional and (position_notional + notional) > self.max_position_notional:
-            return SafetyDecision(False, "RISK_LIMIT_NOTIONAL", {"position_notional": position_notional, "notional": notional})
+            return SafetyDecision(
+                False, "RISK_LIMIT_NOTIONAL", {"position_notional": position_notional, "notional": notional}
+            )
         if equity and self.max_position_pct_equity:
             pct = (position_notional + notional) / float(equity)
             if pct > self.max_position_pct_equity:

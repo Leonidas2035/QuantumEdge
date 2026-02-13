@@ -143,7 +143,12 @@ class CircuitBreakerManager:
             self._active_reason = None
         active = bool(self._active_until and now < self._active_until)
         cooldown_remaining = max(self._active_until - now, 0.0) if active else 0.0
-        return BreakerStatus(active=active, reason=self._active_reason, active_until=self._active_until, cooldown_remaining=cooldown_remaining)
+        return BreakerStatus(
+            active=active,
+            reason=self._active_reason,
+            active_until=self._active_until,
+            cooldown_remaining=cooldown_remaining,
+        )
 
     def snapshot(self) -> Dict[str, object]:
         status = self.status()

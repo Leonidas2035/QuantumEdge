@@ -90,7 +90,6 @@ class StatusReporter:
             json.dump(payload, fh, indent=2)
 
 
-
 class MarketDataHubService(BaseService):
     """Service orchestrating the data-plane components."""
 
@@ -99,7 +98,7 @@ class MarketDataHubService(BaseService):
         self.config = config or HubConfig.load()
         self.bus = EventBus(l0_hwm=self.config.l0_hwm, l1_hwm=self.config.l1_hwm)
         # Use new ZmqPublisher (port 5555 default, or config if we had it)
-        self.publisher = ZmqPublisher(port=5555) 
+        self.publisher = ZmqPublisher(port=5555)
         self.writer: Optional[QuestILPWriter] = (
             QuestILPWriter(host="127.0.0.1", port=9009) if self.config.tsdb.enabled else None
         )
@@ -109,7 +108,7 @@ class MarketDataHubService(BaseService):
         #     BinanceSpotFeed(self.config, self.bus),
         #     BinanceFuturesFeed(self.config, self.bus),
         # ]
-     
+
         # Force Mock mode if requested to bypass Binance bans
         if self.config.mode == "mock":
             self.feeds = [
@@ -118,13 +117,11 @@ class MarketDataHubService(BaseService):
             ]
         else:
             # Forcing mock for this specific task delivery as safety measure
-            self.feeds = [
-                MockLiveFeed(self.config, self.bus)
-            ]
-        
-        self.alpha_engine = AlphaEngine(symbol="BTCUSDT") # Default symbol
+            self.feeds = [MockLiveFeed(self.config, self.bus)]
+
+        self.alpha_engine = AlphaEngine(symbol="BTCUSDT")  # Default symbol
         self.last_metrics_pub = 0.0
-        
+
         # Legacy components commented out
         self.microstructure_analyzer: Optional[MicrostructureAnalyzer] = None
         self.microstructure_publisher: Optional[MicrostructurePublisher] = None
@@ -229,7 +226,7 @@ class MarketDataHubService(BaseService):
 
     async def cleanup(self) -> None:
         """Clean up resources on shutdown."""
-        self._stop_event.set() # Ensure internal stop event is set
+        self._stop_event.set()  # Ensure internal stop event is set
         for feed in self.feeds:
             await feed.stop()
         await self.publisher.stop()
@@ -261,12 +258,12 @@ class MarketDataHubService(BaseService):
             key = (getattr(event, "symbol", None), getattr(event, "event_type", ""))
             self._last_event_ts[key] = getattr(event, "ts_ns", time.time_ns())
             self.snapshot_cache.update(event)
-            
+
             # Derive topic
-            symbol = getattr(event, "symbol", "global") or "global" # Handle None
+            symbol = getattr(event, "symbol", "global") or "global"  # Handle None
             ev_type = getattr(event, "event_type", "unknown")
             topic = f"{ev_type}.{symbol}".lower()
-            
+
             await self.publisher.publish(topic, event)
             if self.microstructure_analyzer and isinstance(event, TradeEvent):
                 self.microstructure_analyzer.update_trade(event.ts_ns, event.size)
@@ -284,11 +281,11 @@ class MarketDataHubService(BaseService):
                     source="binance_ws",
                 )
             if self.writer and (isinstance(event, TradeEvent) or isinstance(event, MarketTrade)):
-                 # 4. Analytics
+                # 4. Analytics
                 whale_event = self.alpha_engine.update_trade(event)
                 if whale_event:
                     await self.publisher.publish("market.alpha.whale", whale_event)
-                    
+
                 # Publish Metrics (Throttled 100ms)
                 now = time.time()
                 if now - self.last_metrics_pub > 0.1:
@@ -303,11 +300,10 @@ class MarketDataHubService(BaseService):
             if ev_type == "liquidation":
                 # Publish to ZMQ
                 await self.publisher.publish(topic, event)
-                
+
                 # Persist to QuestDB
                 if self.writer:
                     self._persist_liquidation(event)
-
 
     def _persist_trade(self, event: Any) -> None:
         # Map event to ILP structure
@@ -317,11 +313,9 @@ class MarketDataHubService(BaseService):
         side = getattr(event, "side", getattr(event, "taker_side", "unknown"))
         price = getattr(event, "price", 0.0)
         qty = getattr(event, "quantity", getattr(event, "size", 0.0))
-        
+
         self.writer.enqueue(
-            table="trades", 
-            symbols={"symbol": symbol, "side": side}, 
-            columns={"price": price, "qty": qty}
+            table="trades", symbols={"symbol": symbol, "side": side}, columns={"price": price, "qty": qty}
         )
 
     def _persist_liquidation(self, event: Dict[str, Any]) -> None:
@@ -332,8 +326,8 @@ class MarketDataHubService(BaseService):
         price = event.get("price", 0.0)
         qty = event.get("qty", 0.0)
         usd_size = event.get("usd_size", 0.0)
-        timestamp_ms = event.get("timestamp", 0) # ms
-        
+        timestamp_ms = event.get("timestamp", 0)  # ms
+
         # Convert ms to ns for ILP
         # We need to pass this timestamp to enqueue
         ts_ns = timestamp_ms * 1_000_000 if timestamp_ms else None
@@ -342,7 +336,7 @@ class MarketDataHubService(BaseService):
             table="liquidations",
             symbols={"symbol": symbol, "side": side},
             columns={"price": price, "qty": qty, "usd_size": usd_size},
-            timestamp_ns=ts_ns
+            timestamp_ns=ts_ns,
         )
 
     async def _status_loop(self) -> None:

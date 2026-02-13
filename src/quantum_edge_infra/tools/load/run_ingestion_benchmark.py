@@ -331,11 +331,7 @@ def main() -> int:
     args = parser.parse_args()
 
     if args.symbols and len(args.symbols) == 1 and "," in args.symbols[0]:
-        args.symbols = [
-            item.strip().upper()
-            for item in args.symbols[0].split(",")
-            if item.strip()
-        ]
+        args.symbols = [item.strip().upper() for item in args.symbols[0].split(",") if item.strip()]
     if not args.symbols:
         args.symbols = SYMBOLS_DEFAULT
 

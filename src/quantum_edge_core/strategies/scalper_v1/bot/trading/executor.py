@@ -14,7 +14,6 @@ from bot.core.config_loader import config
 from bot.engine.decision_engine import Decision
 
 
-
 @dataclass
 class SymbolMeta:
     step_size: float
@@ -169,7 +168,9 @@ class BinanceDemoExecutor:
         steps = int(raw_qty / step)
         qty = steps * step
         if qty < min_qty:
-            self._log(f"[WARN] Qty below minQty for {symbol}, skipping order (qty={raw_qty}, minQty={min_qty}).", "WARN")
+            self._log(
+                f"[WARN] Qty below minQty for {symbol}, skipping order (qty={raw_qty}, minQty={min_qty}).", "WARN"
+            )
             return 0.0
         decimals = self._decimals_from_step(step)
         return float(f"{qty:.{decimals}f}")
@@ -297,7 +298,9 @@ class BinanceDemoExecutor:
                 return await fn(*args, **kwargs)
             except (BinanceRequestException, BinanceAPIException) as exc:
                 attempts += 1
-                if (isinstance(exc, BinanceAPIException) and exc.code and exc.code >= 500) or isinstance(exc, BinanceRequestException):
+                if (isinstance(exc, BinanceAPIException) and exc.code and exc.code >= 500) or isinstance(
+                    exc, BinanceRequestException
+                ):
                     pass
                 else:
                     raise
@@ -390,16 +393,22 @@ class BinanceDemoExecutor:
         if result:
             executed = float(result.get("executedQty") or qty)
             pnl_price = float(result.get("avgPrice") or 0.0)
-            pnl = (pnl_price - (self.entry_price or pnl_price)) * (self.position if executed >= abs(self.position) else executed) - self._fee(
-                pnl_price * executed
-            ) if self.entry_price else 0.0
+            pnl = (
+                (pnl_price - (self.entry_price or pnl_price))
+                * (self.position if executed >= abs(self.position) else executed)
+                - self._fee(pnl_price * executed)
+                if self.entry_price
+                else 0.0
+            )
             self._record_trade(pnl, side)
             self.position = 0.0
             self.entry_price = None
             self.trades += 1
             self._bracket = None
 
-    async def cancel_order(self, symbol: str, order_id: Optional[str] = None, client_order_id: Optional[str] = None) -> bool:
+    async def cancel_order(
+        self, symbol: str, order_id: Optional[str] = None, client_order_id: Optional[str] = None
+    ) -> bool:
         if not await self.initialize():
             return False
         symbol = symbol.upper()
@@ -512,14 +521,20 @@ class BinanceDemoExecutor:
                     )
             self._log(f"[DEMO] Closing position via MARKET {side} {sym} qty={qty} (reduce-only).")
             client_id = self._client_order_id(sym, "close")
-            result = await self.submit_order(sym, side, qty, reduce_only=True, price=effective_price, client_order_id=client_id)
+            result = await self.submit_order(
+                sym, side, qty, reduce_only=True, price=effective_price, client_order_id=client_id
+            )
             if result:
                 executed = float(result.get("executedQty") or qty)
                 pnl_price = effective_price if self.entry_price and effective_price else price
                 pnl = (
-                    (pnl_price - self.entry_price) * (self.position if executed >= abs(self.position) else executed)
-                    - self._fee(pnl_price * executed)
-                ) if self.entry_price else 0.0
+                    (
+                        (pnl_price - self.entry_price) * (self.position if executed >= abs(self.position) else executed)
+                        - self._fee(pnl_price * executed)
+                    )
+                    if self.entry_price
+                    else 0.0
+                )
                 self.realized_pnl += pnl
                 self._record_trade(pnl, side)
                 self._reduce_position(executed)
@@ -607,9 +622,12 @@ class BinanceDemoExecutor:
         if result:
             executed = float(result.get("executedQty") or qty)
             pnl_price = float(result.get("avgPrice") or price)
-            pnl = (pnl_price - self.entry_price) * (self.position if executed >= abs(self.position) else executed) - self._fee(
-                pnl_price * executed
-            ) if self.entry_price else 0.0
+            pnl = (
+                (pnl_price - self.entry_price) * (self.position if executed >= abs(self.position) else executed)
+                - self._fee(pnl_price * executed)
+                if self.entry_price
+                else 0.0
+            )
             self.realized_pnl += pnl
             self._reduce_position(executed)
             return True

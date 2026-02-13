@@ -59,7 +59,9 @@ def _parse_last_exit_time(payload: Dict[str, Any]) -> Optional[float]:
         return None
 
 
-def collect_signals(paths, process_manager, risk_engine, logger, telemetry_summary: Optional[Dict[str, Any]] = None) -> Signals:
+def collect_signals(
+    paths, process_manager, risk_engine, logger, telemetry_summary: Optional[Dict[str, Any]] = None
+) -> Signals:
     evidence: Dict[str, Any] = {}
     status = process_manager.get_status_payload()
     bot_running = status.get("state") == "RUNNING"

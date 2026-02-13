@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-from supervisor.autopilot.collector import MetricsCollector
+from quantum_edge_core.supervisor.supervisor.autopilot.collector import MetricsCollector
 
 
 def test_metrics_collector_missing_returns_unknown(tmp_path: Path):

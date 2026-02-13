@@ -36,4 +36,3 @@ def extract_payload(event: LockbotMarketEvent) -> Dict[str, object]:
 
 def topics_for_symbol(symbol: str) -> Iterable[str]:
     return [topic.replace("BTCUSDT", symbol) for topic in LOCKBOT_TOPICS]
-

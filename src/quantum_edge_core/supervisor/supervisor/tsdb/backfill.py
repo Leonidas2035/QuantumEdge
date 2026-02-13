@@ -7,9 +7,9 @@ import logging
 from datetime import date, timedelta
 from pathlib import Path
 
-from supervisor.audit_report import load_events_for_date
-from supervisor.tsdb.base import TimeseriesStore
-from supervisor.tsdb.mappers import event_to_points
+from quantum_edge_core.supervisor.supervisor.audit_report import load_events_for_date
+from quantum_edge_core.supervisor.supervisor.tsdb.base import TimeseriesStore
+from quantum_edge_core.supervisor.supervisor.tsdb.mappers import event_to_points
 
 
 def _load_checkpoint(path: Path) -> date | None:
@@ -28,7 +28,9 @@ def _save_checkpoint(path: Path, last_date: date) -> None:
     path.write_text(json.dumps({"last_date": last_date.isoformat()}, indent=2), encoding="utf-8")
 
 
-def run_backfill(events_dir: Path, store: TimeseriesStore, days: int, checkpoint_path: Path, logger: logging.Logger) -> None:
+def run_backfill(
+    events_dir: Path, store: TimeseriesStore, days: int, checkpoint_path: Path, logger: logging.Logger
+) -> None:
     """Backfill last N days of events into TSDB."""
 
     start_day = date.today() - timedelta(days=days - 1)

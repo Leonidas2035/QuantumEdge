@@ -24,4 +24,3 @@ def encode_lockbot(event: LockbotMarketEvent) -> bytes:
 
 def event_to_dict(event: LockbotMarketEvent) -> Dict[str, Any]:
     return msgspec.structs.asdict(event)
-

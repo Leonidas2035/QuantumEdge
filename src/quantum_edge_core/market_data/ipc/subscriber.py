@@ -13,11 +13,13 @@ from quantum_edge_core.events import BaseEvent, EventCodec
 
 logger = structlog.get_logger()
 
+
 class ZmqSubscriber:
     """
     Async ZMQ Subscriber.
     Consumes events from MarketDataHub.
     """
+
     def __init__(self, host: str = "127.0.0.1", port: int = 5555):
         self.endpoint = f"tcp://{host}:{port}"
         self.ctx = zmq.asyncio.Context()
@@ -28,17 +30,17 @@ class ZmqSubscriber:
     def connect(self, topics: list[str] = None):
         if self.connected:
             return
-        
+
         self.logger.info("Connecting to Market Buffer")
         self.socket.connect(self.endpoint)
-        
+
         if topics is None:
-            topics = [""] # Subscribe all
-            
+            topics = [""]  # Subscribe all
+
         for topic in topics:
             self.socket.subscribe(topic)
             self.logger.info("Subscribed to topic", topic=topic or "ALL")
-            
+
         self.connected = True
 
     async def next_event(self) -> Optional[BaseEvent]:
@@ -51,7 +53,7 @@ class ZmqSubscriber:
             msg = await self.socket.recv_multipart()
             if len(msg) < 2:
                 return None
-            
+
             payload = msg[1]
             try:
                 event = EventCodec.decode(payload)
@@ -60,7 +62,7 @@ class ZmqSubscriber:
                 # Log but don't crash
                 # self.logger.debug("Decode failed", error=str(e))
                 return None
-                
+
         except zmq.ZMQError as e:
             self.logger.error("ZMQ Error", error=str(e))
             raise e

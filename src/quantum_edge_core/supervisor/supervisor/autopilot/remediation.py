@@ -10,8 +10,8 @@ import uuid
 from pathlib import Path
 from typing import Deque, Optional
 
-from supervisor.autopilot.audit import AuditLogger
-from supervisor.autopilot.policy_manager import PolicyManager
+from quantum_edge_core.supervisor.supervisor.autopilot.audit import AuditLogger
+from quantum_edge_core.supervisor.supervisor.autopilot.policy_manager import PolicyManager
 
 
 @dataclass
