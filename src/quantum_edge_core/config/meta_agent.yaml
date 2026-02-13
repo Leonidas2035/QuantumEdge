@@ -1,7 +1,9 @@
 # Meta-Agent defaults (safe, no secrets).
 mode: "dev"
 provider: "gemini"
-model: "gemini-1.5-pro-latest"
+model: "gemini-2.0-flash"
+safety:
+  mode: "auto"
 project_root: "."
 projects_path: "src/quantum_edge_core/config/projects.yaml"
 offmarket_schedule_path: "src/quantum_edge_core/config/offmarket_schedule.yaml"

@@ -531,7 +531,17 @@ class MetaAgent:
                         return False, stages
 
                     change_set = build_change_set_from_response(target_project, response)
-                    outcome = apply_change_set_with_policy(change_set, PATCHES_DIR)
+
+                    safety_mode = (self.config.get("safety") or {}).get("mode", "manual")
+                    force_direct = (safety_mode == "auto")
+
+                    outcome = apply_change_set_with_policy(change_set, PATCHES_DIR, force_direct=force_direct)
+
+                    if outcome.applied:
+                        for f in outcome.created_files:
+                            print(f"[INFO] Successfully wrote to {f}")
+                        for f in outcome.changed_files:
+                            print(f"[INFO] Successfully wrote to {f}")
 
                     started_at = datetime.utcnow().isoformat() + "Z"
                     finished_at = datetime.utcnow().isoformat() + "Z"

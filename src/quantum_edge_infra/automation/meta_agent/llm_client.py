@@ -40,11 +40,12 @@ class LLMClient:
         self.api_key = (
             os.getenv(env_key_name)
             or os.getenv("GEMINI_API_KEY")
+            or os.getenv("GOOGLE_API_KEY")
             or FALLBACK_GEMINI_KEY
         )
 
         genai.configure(api_key=self.api_key)
-        self.model = model or "gemini-1.5-pro-latest"
+        self.model = model or "gemini-2.0-flash"
         # client will be initialized per-request in _send_gemini to support dynamic system_instruction
         self.client = None
 

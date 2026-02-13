@@ -122,7 +122,7 @@ def test_stage_pipeline_routes_through_safety_policy(tmp_path: Path, monkeypatch
 
     called = {"value": False}
 
-    def fake_apply(change_set, patches_dir):
+    def fake_apply(change_set, patches_dir, **kwargs):
         called["value"] = True
         safety_eval = SafetyEvaluation(
             write_mode="patch_only",
