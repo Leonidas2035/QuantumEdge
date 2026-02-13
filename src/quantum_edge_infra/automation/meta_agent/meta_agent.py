@@ -40,6 +40,7 @@ from report_schema import Report, write_json_report, write_md_report
 from safety_policy import load_safety_policy
 from write_engine import apply_change_set_with_policy
 from run_lock import RunLock, describe_existing_lock, resolve_lock_path
+
 try:
     from supervisor_runner import run_supervisor_cycle
 except Exception:
@@ -126,7 +127,7 @@ def load_task_from_file(path: str) -> Tuple[Dict, str]:
     metadata = yaml.safe_load(metadata_text) or {}
     if not isinstance(metadata, dict):
         raise yaml.YAMLError("Front matter must be a mapping.")
-    body = "\n".join(lines[end_index + 1:]).strip()
+    body = "\n".join(lines[end_index + 1 :]).strip()
     return metadata, body
 
 
@@ -374,11 +375,7 @@ class MetaAgent:
         self.config = self._load_config(resolved)
         self.builder = PromptBuilder()
         self.mode = self._resolve_mode()
-        self.client = LLMClient(
-            provider=self.config.get("provider"),
-            mode=self.mode,
-            model=self.config.get("model")
-        )
+        self.client = LLMClient(provider=self.config.get("provider"), mode=self.mode, model=self.config.get("model"))
         self.lock_busy = False
         # Architect Mode: default to global project root
         self.project_root = self.config.get("project_root") or _resolve_base_dir()
@@ -490,18 +487,14 @@ class MetaAgent:
                     with open(resolved_prompt, "r", encoding="utf-8") as handle:
                         stage_instructions = handle.read()
 
-                    print(
-                        f"[INFO] Collecting global project context for stage {name}..."
-                    )
+                    print(f"[INFO] Collecting global project context for stage {name}...")
                     scanner = ProjectScanner(target_project)
 
                     # Global Architect Mode: Gather Tree + All Source
                     tree_view = scanner.get_project_structure()
                     source_context = scanner.read_all_code()
 
-                    print(
-                        f"[INFO] Collected context for stage {name} (Architect Mode)."
-                    )
+                    print(f"[INFO] Collected context for stage {name} (Architect Mode).")
 
                     system_prompt = (
                         "You are a Global Architect. You have full vision of the project structure and source code.\n"
@@ -531,7 +524,17 @@ class MetaAgent:
                         return False, stages
 
                     change_set = build_change_set_from_response(target_project, response)
-                    outcome = apply_change_set_with_policy(change_set, PATCHES_DIR)
+
+                    safety_mode = (self.config.get("safety") or {}).get("mode", "manual")
+                    force_direct = safety_mode == "auto"
+
+                    outcome = apply_change_set_with_policy(change_set, PATCHES_DIR, force_direct=force_direct)
+
+                    if outcome.applied:
+                        for f in outcome.created_files:
+                            print(f"[INFO] Successfully wrote to {f}")
+                        for f in outcome.changed_files:
+                            print(f"[INFO] Successfully wrote to {f}")
 
                     started_at = datetime.utcnow().isoformat() + "Z"
                     finished_at = datetime.utcnow().isoformat() + "Z"
@@ -585,7 +588,9 @@ class MetaAgent:
         """
         report = run_task(task_path)
         if report.exit_code != 0:
-            print(f"[ERROR] Task {report.task_id} failed: {', '.join(report.errors) if report.errors else report.summary}")
+            print(
+                f"[ERROR] Task {report.task_id} failed: {', '.join(report.errors) if report.errors else report.summary}"
+            )
             return False
 
         print(f"[INFO] Task {report.task_id} completed.")
@@ -603,7 +608,9 @@ class MetaAgent:
 def parse_args(argv: Optional[list[str]] = None):
     parser = argparse.ArgumentParser(description="Meta-Agent CLI")
     parser.add_argument("--config", dest="config_path", help="Path to meta-agent config (YAML/JSON).")
-    parser.add_argument("--mode", default="auto", help="Execution mode (stages|task) or supervisor cadence (daily|weekly|adhoc|auto).")
+    parser.add_argument(
+        "--mode", default="auto", help="Execution mode (stages|task) or supervisor cadence (daily|weekly|adhoc|auto)."
+    )
     parser.add_argument("--task", dest="task_path", help="Path to a .md task file for task mode.")
     parser.add_argument("--task-id", dest="task_id", help="Task ID to resolve in tasks/<ID>.md for task mode.")
     parser.add_argument("--task-file", dest="task_file", help="Alias for --task (legacy).")
@@ -611,7 +618,12 @@ def parse_args(argv: Optional[list[str]] = None):
     parser.add_argument("--project", dest="filter_project", help="Filter tasks by project when listing.")
     parser.add_argument("--task-type", dest="filter_task_type", help="Filter tasks by task type when listing.")
     parser.add_argument("--supervisor-goal", dest="supervisor_goal", help="Run a supervisor goal (high-level string).")
-    parser.add_argument("--supervisor-project", dest="supervisor_project", help="Project root for supervisor goal runs.", default="ai_scalper_bot")
+    parser.add_argument(
+        "--supervisor-project",
+        dest="supervisor_project",
+        help="Project root for supervisor goal runs.",
+        default="ai_scalper_bot",
+    )
     parser.add_argument("--project-id", dest="stage_project_id", help="Override project id for stage pipeline.")
     parser.add_argument("--once", action="store_true", help="Run once and exit (default behavior).")
     return parser.parse_args(argv)
@@ -619,7 +631,9 @@ def parse_args(argv: Optional[list[str]] = None):
 
 def parse_run_task_args(argv: list[str]):
     parser = argparse.ArgumentParser(description="Run a TaskSpec")
-    parser.add_argument("--task", required=True, help="Path to task.yaml or task.md OR a natural language instruction string.")
+    parser.add_argument(
+        "--task", required=True, help="Path to task.yaml or task.md OR a natural language instruction string."
+    )
     parser.add_argument("--timeout-seconds", type=int, dest="timeout_seconds")
     parser.add_argument("--llm-timeout-seconds", type=int, dest="llm_timeout_seconds")
     parser.add_argument("--retries", type=int, default=0)
@@ -690,6 +704,7 @@ def parse_scheduler_status_args(argv: list[str]):
     parser = argparse.ArgumentParser(description="Scheduler status")
     parser.add_argument("--schedules-dir", dest="schedules_dir")
     return parser.parse_args(argv)
+
 
 def parse_watch_args(argv: list[str]):
     parser = argparse.ArgumentParser(description="Watch inbox for TaskSpecs")
@@ -834,9 +849,7 @@ def _health_cli(json_mode: bool, quiet: bool) -> int:
     if json_mode:
         payload = {
             "ok": ok,
-            "checks": [
-                {"name": name, "ok": passed, "detail": detail} for name, passed, detail in results
-            ],
+            "checks": [{"name": name, "ok": passed, "detail": detail} for name, passed, detail in results],
         }
         print(json.dumps(payload, ensure_ascii=True))
         return 0 if ok else 1
@@ -1056,7 +1069,6 @@ def main() -> int:
     if args.once:
         print("[INFO] --once specified; running a single pass.")
 
-
     if args.list_tasks:
         try:
             tasks = list_tasks(project=args.filter_project, task_type=args.filter_task_type)
@@ -1096,7 +1108,9 @@ def main() -> int:
         print(f"  Mode: {sup_result.get('mode')}")
         print(f"  Project: {sup_result.get('project')}")
         print(f"  Status: {sup_result.get('status')}")
-        print(f"  Tasks total: {len(sup_result.get('tasks', []))} (ok/partial/error: {ok_count}/{partial_count}/{err_count})")
+        print(
+            f"  Tasks total: {len(sup_result.get('tasks', []))} (ok/partial/error: {ok_count}/{partial_count}/{err_count})"
+        )
         if sup_result.get("supervisor_md_path"):
             print(f"  Summary (MD): {sup_result.get('supervisor_md_path')}")
         if sup_result.get("supervisor_json_path"):

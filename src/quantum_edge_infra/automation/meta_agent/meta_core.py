@@ -36,7 +36,7 @@ from write_engine import apply_change_set_with_policy
 import yaml
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
-CONFIG_PATH = os.path.join("config", "meta_agent.yaml")
+CONFIG_PATH = os.path.join("src", "quantum_edge_core", "config", "meta_agent.yaml")
 TASKS_DIR = os.path.join(BASE_DIR, "tasks")
 
 try:
@@ -150,7 +150,9 @@ def _build_summary(verdict: str, applied: bool, files_changed: int) -> str:
     if verdict == "allow":
         if files_changed == 0:
             return "No file changes detected."
-        return f"Applied changes to {files_changed} files." if applied else f"Patches generated for {files_changed} files."
+        return (
+            f"Applied changes to {files_changed} files." if applied else f"Patches generated for {files_changed} files."
+        )
     if verdict == "warn":
         return "Safety warnings: patches generated only."
     if verdict == "block":
@@ -556,7 +558,10 @@ def run_task(
         dry_run_used = False
         gates_enabled = bool(spec.gates.enabled and spec.gates.steps)
 
-        if verdict == "allow" and not force_patch_only:
+        safety_mode = (config.get("safety") or {}).get("mode", "manual")
+        is_auto_safety = safety_mode == "auto"
+
+        if (verdict == "allow" or is_auto_safety) and not force_patch_only:
             dry_run_used = bool(spec.execution.dry_run)
             if gates_enabled:
                 try:
@@ -616,6 +621,13 @@ def run_task(
                     "apply_done",
                     {"applied": applied},
                 )
+
+                if applied:
+                    for f in outcome.created_files:
+                        print(f"[INFO] Successfully wrote to {f}")
+                    for f in outcome.changed_files:
+                        print(f"[INFO] Successfully wrote to {f}")
+
                 _check_timeout(timeout_seconds, overall_start)
 
         safety_checks = list(patch_outcome.safety_eval.reasons or [])

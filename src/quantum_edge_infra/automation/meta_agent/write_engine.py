@@ -44,11 +44,9 @@ def apply_change_set_with_policy(
         )
 
     should_patch = (
-        force_patch_only
-        or safety_eval.write_mode == "patch_only"
-        or safety_eval.overall_verdict in {"warn", "block"}
+        force_patch_only or safety_eval.write_mode == "patch_only" or safety_eval.overall_verdict in {"warn", "block"}
     )
-    if force_direct and safety_eval.overall_verdict == "allow" and not force_patch_only:
+    if force_direct and not force_patch_only:
         should_patch = False
     apply_result = {
         "changed_files": [],
@@ -71,7 +69,7 @@ def apply_change_set_with_policy(
 
     if should_patch:
         apply_result = write_change_set_as_patches(change_set, patches_dir)
-    elif safety_eval.overall_verdict == "allow":
+    elif safety_eval.overall_verdict == "allow" or (force_direct and not force_patch_only):
         applied = True
         apply_result = apply_change_set_direct(change_set)
 
