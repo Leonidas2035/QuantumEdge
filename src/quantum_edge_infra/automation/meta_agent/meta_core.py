@@ -150,7 +150,9 @@ def _build_summary(verdict: str, applied: bool, files_changed: int) -> str:
     if verdict == "allow":
         if files_changed == 0:
             return "No file changes detected."
-        return f"Applied changes to {files_changed} files." if applied else f"Patches generated for {files_changed} files."
+        return (
+            f"Applied changes to {files_changed} files." if applied else f"Patches generated for {files_changed} files."
+        )
     if verdict == "warn":
         return "Safety warnings: patches generated only."
     if verdict == "block":
@@ -557,7 +559,7 @@ def run_task(
         gates_enabled = bool(spec.gates.enabled and spec.gates.steps)
 
         safety_mode = (config.get("safety") or {}).get("mode", "manual")
-        is_auto_safety = (safety_mode == "auto")
+        is_auto_safety = safety_mode == "auto"
 
         if (verdict == "allow" or is_auto_safety) and not force_patch_only:
             dry_run_used = bool(spec.execution.dry_run)

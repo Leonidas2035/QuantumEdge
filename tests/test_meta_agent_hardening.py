@@ -16,10 +16,7 @@ def test_change_set_blocks_outside_root(tmp_path: Path) -> None:
     project_root = tmp_path / "project"
     project_root.mkdir()
 
-    response = (
-        "===FILE: ../outside.txt===\nnope\n"
-        "===FILE: inside.txt===\nok\n"
-    )
+    response = "===FILE: ../outside.txt===\nnope\n===FILE: inside.txt===\nok\n"
     change_set = build_change_set_from_response(str(project_root), response)
     assert "inside.txt" in change_set.changes
     assert "outside.txt" not in change_set.changes
@@ -74,11 +71,7 @@ def test_stage_pipeline_routes_through_safety_policy(tmp_path: Path, monkeypatch
     config_dir.mkdir()
     projects_yaml = config_dir / "projects.yaml"
     projects_yaml.write_text(
-        "default: test_project\n"
-        "projects:\n"
-        "  test_project:\n"
-        "    path: project\n"
-        "    description: test\n",
+        "default: test_project\nprojects:\n  test_project:\n    path: project\n    description: test\n",
         encoding="utf-8",
     )
 
@@ -93,6 +86,7 @@ def test_stage_pipeline_routes_through_safety_policy(tmp_path: Path, monkeypatch
 
     # Ensure we import the correct meta_agent module from src/
     import importlib.util
+
     spec = importlib.util.spec_from_file_location("meta_agent_real", str(META_AGENT_DIR / "meta_agent.py"))
     meta_agent_mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(meta_agent_mod)

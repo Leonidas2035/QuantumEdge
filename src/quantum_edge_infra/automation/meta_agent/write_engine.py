@@ -44,9 +44,7 @@ def apply_change_set_with_policy(
         )
 
     should_patch = (
-        force_patch_only
-        or safety_eval.write_mode == "patch_only"
-        or safety_eval.overall_verdict in {"warn", "block"}
+        force_patch_only or safety_eval.write_mode == "patch_only" or safety_eval.overall_verdict in {"warn", "block"}
     )
     if force_direct and not force_patch_only:
         should_patch = False
