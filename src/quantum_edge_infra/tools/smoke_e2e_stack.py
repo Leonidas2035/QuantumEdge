@@ -17,6 +17,7 @@ from urllib.parse import quote_plus
 from urllib.request import urlopen
 
 from market_data.models import L1Event, L2Envelope, Priority
+from market_data.hub import MarketDataHubService
 from strategies.scalper_v1.bot.market_data.hub_source import HubMarketDataSource, HubSnapshotClient
 
 ROOT = Path(__file__).resolve().parent.parent

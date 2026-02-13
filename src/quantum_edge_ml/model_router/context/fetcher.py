@@ -52,10 +52,10 @@ class ContextFetcher:
             t = row.get("t")
             o = float(row.get("o", 0) or 0)
             h = float(row.get("h", 0) or 0)
-            l = float(row.get("l", 0) or 0)
+            low = float(row.get("l", 0) or 0)
             c = float(row.get("c", 0) or 0)
             v = float(row.get("v", 0) or 0)
-            ohlcv.append([_to_epoch(t), o, h, l, c, v])
+            ohlcv.append([_to_epoch(t), o, h, low, c, v])
             closes.append(c)
 
         if ohlcv:

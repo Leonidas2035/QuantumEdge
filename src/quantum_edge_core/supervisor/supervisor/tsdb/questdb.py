@@ -24,7 +24,8 @@ def _encode_field(value: object) -> str:
     if value is None:
         return '"null"'
     # strings
-    return f'"{str(value).replace(chr(34), r"\"")}"'
+    escaped = str(value).replace(chr(34), r"\"")
+    return f'"{escaped}"'
 
 
 def point_to_line(point: Point) -> str:

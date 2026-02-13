@@ -77,7 +77,8 @@ class TestPolicyIntegration(unittest.IsolatedAsyncioTestCase):
         await publisher.stop()
         bot.stop()
         # Ensure sockets closed
-        if bot.subscriber.socket: bot.subscriber.socket.close()
+        if bot.subscriber.socket:
+            bot.subscriber.socket.close()
 
 if __name__ == "__main__":
     unittest.main()

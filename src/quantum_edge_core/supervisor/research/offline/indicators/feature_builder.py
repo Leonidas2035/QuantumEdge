@@ -27,7 +27,7 @@ class FeatureBuilder:
             try:
                 with open(f, "r") as fp:
                     trades.append(json.load(fp))
-            except:
+            except Exception:
                 continue
 
         # Binance timestamps must be sorted ASC
@@ -81,22 +81,22 @@ class FeatureBuilder:
 
         try:
             f["ema_9"] = float(ema(df_ohlcv["close"], 9))
-        except:
+        except Exception:
             f["ema_9"] = float(df_ohlcv["close"].iloc[-1])
 
         try:
             f["ema_21"] = float(ema(df_ohlcv["close"], 21))
-        except:
+        except Exception:
             f["ema_21"] = float(df_ohlcv["close"].iloc[-1])
 
         try:
             f["rsi_14"] = float(rsi(df_ohlcv["close"], 14))
-        except:
+        except Exception:
             f["rsi_14"] = 50.0
 
         try:
             f["atr_14"] = float(atr(df_ohlcv.copy(), 14))
-        except:
+        except Exception:
             f["atr_14"] = 0.0
 
         try:
@@ -104,18 +104,18 @@ class FeatureBuilder:
             if np.isnan(vwap_val):
                 vwap_val = df_ohlcv["close"].iloc[-1]
             f["vwap"] = float(vwap_val)
-        except:
+        except Exception:
             f["vwap"] = float(df_ohlcv["close"].iloc[-1])
 
         # ------------ VOLATILITY ----------------
         try:
             f["vol_std_30"] = float(std_vol(df_ohlcv["close"], 30))
-        except:
+        except Exception:
             f["vol_std_30"] = 0.0
 
         try:
             f["vol_rv_30"] = float(realized_volatility(df_ohlcv["close"], 30))
-        except:
+        except Exception:
             f["vol_rv_30"] = 0.0
 
         # -------- ORDERFLOW ----------
@@ -125,7 +125,7 @@ class FeatureBuilder:
             f["buy_volume"] = float(delta["buy_volume"])
             f["sell_volume"] = float(delta["sell_volume"])
             f["taker_ratio"] = float(delta["taker_ratio"])
-        except:
+        except Exception:
             f["delta"] = 0.0
             f["buy_volume"] = 0.0
             f["sell_volume"] = 0.0
@@ -136,7 +136,7 @@ class FeatureBuilder:
         if ob and "bids" in ob and "asks" in ob:
             try:
                 f["ob_imbalance"] = float(orderbook_imbalance(ob["bids"], ob["asks"]))
-            except:
+            except Exception:
                 f["ob_imbalance"] = 0.0
         else:
             f["ob_imbalance"] = 0.0
