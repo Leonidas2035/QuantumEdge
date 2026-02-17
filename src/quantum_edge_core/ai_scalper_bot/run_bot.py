@@ -14,7 +14,7 @@ from quantum_edge_core.ai_scalper_bot.bot.execution.strategy_core import Adaptiv
 from quantum_edge_core.ai_scalper_bot.bot.execution.volatility import OnlineVolatility
 from quantum_edge_core.ai_scalper_bot.bot.execution.position import PositionManager
 from quantum_edge_core.ai_scalper_bot.bot.infrastructure.zmq_adapter import ZmqSubStream
-from quantum_edge_core.ai_scalper_bot.bot.infrastructure.exchange import BingXExecutionGateway
+from quantum_edge_core.ai_scalper_bot.bot.infrastructure.exchange import BinanceExecutionGateway
 from quantum_edge_core.ai_scalper_bot.bot.infrastructure.reporter import SupervisorReporter
 
 # Configure Logging
@@ -26,15 +26,15 @@ logger = logging.getLogger("QuantumEdgeBot")
 
 class BotEngine:
     def __init__(self):
-        logger.info("Initializing QuantumEdge AI Scalper (BingX Edition)...")
+        logger.info("Initializing QuantumEdge AI Scalper (Binance Edition)...")
         self.config = Config()
         
         # 1. Infrastructure (I/O)
         self.market_stream = ZmqSubStream(
             endpoint=f"tcp://127.0.0.1:{self.config.market_data_port}",
-            topic="" # Mock sends JSON without topic prefix
+            topic="trade" # Filter only trades
         )
-        self.gateway = BingXExecutionGateway(self.config)
+        self.gateway = BinanceExecutionGateway(self.config)
         self.reporter = SupervisorReporter(
             pub_endpoint=f"tcp://*:{self.config.supervisor_port}"
         )
@@ -69,8 +69,29 @@ class BotEngine:
                 if tick:
                     current_ts = time.time()
                     
+                    # Normalize tick data (handle p/q vs price/size/quantity)
+                    price = float(tick.get('p') or tick.get('price') or 0.0)
+                    qty = float(tick.get('q') or tick.get('size') or tick.get('quantity') or 0.0)
+
+                    # T/timestamp handling (ns or ms or s)
+                    ts_raw = tick.get('T') or tick.get('ts_ns') or tick.get('timestamp') or 0
+                    timestamp = float(ts_raw)
+                    # Heuristic for ns/ms/s
+                    if timestamp > 1e18: timestamp /= 1e9 # ns to s
+                    elif timestamp > 1e12: timestamp /= 1e3 # ms to s
+
+                    # m/is_buyer_maker handling
+                    is_buyer_maker = bool(tick.get('m', False))
+                    if 'taker_side' in tick:
+                        is_buyer_maker = (tick['taker_side'] == 'sell')
+
+                    # Create normalized dict for cache
+                    norm_tick = {
+                        'p': price, 'q': qty, 'T': timestamp * 1000, 'm': is_buyer_maker
+                    }
+
                     # 2. Critical Path: Update State
-                    self.cache.update(tick)
+                    self.cache.update(norm_tick)
                     
                     # Features need the Struct
                     market_state = self.cache._current_state 
@@ -79,8 +100,8 @@ class BotEngine:
                         # Re-parse for Feature usage
                         from quantum_edge_core.ai_scalper_bot.bot.core.models import MarketTick
                         tick_obj = MarketTick(
-                           price=float(tick['p']), quantity=float(tick['q']), 
-                           timestamp=float(tick.get('T',0)), is_buyer_maker=bool(tick.get('m', False))
+                           price=price, quantity=qty,
+                           timestamp=timestamp, is_buyer_maker=is_buyer_maker
                         )
                         
                         # Update Alpha Features

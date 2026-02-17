@@ -2,27 +2,27 @@ import ccxt.async_support as ccxt
 import logging
 from quantum_edge_core.ai_scalper_bot.bot.execution.strategy_core import TradeAction
 
-class BingXExecutionGateway:
+class BinanceExecutionGateway:
     def __init__(self, config):
-        self.logger = logging.getLogger("BingXGateway")
+        self.logger = logging.getLogger("BinanceGateway")
         self.symbol = config.symbol
         
-        # Init CCXT BingX
-        self.exchange = ccxt.bingx({
-            'apiKey': config.bingx_api_key,
-            'secret': config.bingx_secret,
+        # Init CCXT Binance Futures
+        self.exchange = ccxt.binance({
+            'apiKey': config.binance_api_key,
+            'secret': config.binance_secret,
             'options': {
-                'defaultType': 'swap', 
+                'defaultType': 'future',
             }
         })
         
-        if config.use_sandbox:
+        if config.use_testnet:
             self.exchange.set_sandbox_mode(True)
-            self.logger.warning("⚠️ RUNNING IN BINGX SANDBOX MODE (VST)")
+            self.logger.warning("⚠️ RUNNING IN BINANCE TESTNET MODE")
 
     async def execute(self, action: TradeAction) -> bool:
         """
-        Executes a TradeAction on BingX via CCXT.
+        Executes a TradeAction on Binance via CCXT.
         """
         side = 'buy' if 'BUY' in action.action_type else 'sell'
         # Hedge Short logic:
@@ -32,10 +32,7 @@ class BingXExecutionGateway:
         amount = action.qty
         
         try:
-            # Check for minimal amount (BingX often requires > 0.0001 BTC)
-            # For test, we force a minimum valid size if needed, or trust the strategy
-            
-            self.logger.info(f"🚀 BINGX: Sending Market {side.upper()} {amount} {self.symbol}...")
+            self.logger.info(f"🚀 BINANCE: Sending Market {side.upper()} {amount} {self.symbol}...")
             
             # Execute Market Order
             # Warning: create_market_order signature: symbol, side, amount, price=None, params={}
@@ -46,11 +43,11 @@ class BingXExecutionGateway:
                 amount=amount
             )
             
-            self.logger.info(f"✅ BINGX: Order Filled! ID: {order['id']}")
+            self.logger.info(f"✅ BINANCE: Order Filled! ID: {order['id']}")
             return True
             
         except Exception as e:
-            self.logger.error(f"❌ BINGX Error: {e}")
+            self.logger.error(f"❌ BINANCE Error: {e}")
             return False
             
     async def close(self):

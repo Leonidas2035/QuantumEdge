@@ -78,6 +78,13 @@ class ProcessManager:
         project_root = str(Path(__file__).parent.absolute())
 
         env = os.environ.copy()
+
+        # Inject env vars from config
+        config_env = self.config.get("env_vars", {})
+        if config_env:
+            for k, v in config_env.items():
+                env[str(k)] = str(v)
+
         python_path = env.get("PYTHONPATH", "")
         src_path = Path(project_root) / "src"
         core_path = src_path / "quantum_edge_core"
