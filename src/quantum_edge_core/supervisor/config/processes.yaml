@@ -20,8 +20,8 @@ processes:
       url: "http://127.0.0.1:8700/health"
       timeout_s: 2
     ports: [8700, 5555]
-  bot_qe_1:
-    enabled: false
+  ai_scalper_bot:
+    enabled: true
     cwd: "../.."
     cmd: ["python", "QuantumEdge.py", "run", "--profile", "qe1"]
     env:
@@ -29,5 +29,6 @@ processes:
     healthcheck:
       type: "tcp"
       host: "127.0.0.1"
-      port: 8765
+      port: 5557
       timeout_s: 1
+    ports: [5555, 5557, 5558]

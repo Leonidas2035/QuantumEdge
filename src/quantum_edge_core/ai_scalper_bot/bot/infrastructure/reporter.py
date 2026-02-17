@@ -26,19 +26,34 @@ class SupervisorReporter:
             logger.error(f"Failed to bind SupervisorReporter: {e}")
             raise
 
-    async def send_heartbeat(self, state: BotState, pnl: float, open_positions_qty: float):
+    async def send_heartbeat(self, state: BotState, pnl: float, open_positions_qty: float, drawdown_pct: float = 0.0):
         """
         Sends a JSON heartbeat packet.
-        Format: {"type": "heartbeat", "last_tick_ts": ..., "mode": "HEDGED", ...}
+        Schema:
+        {
+          "service_id": "ai_scalper_bot",
+          "timestamp": <unix_epoch_float>,
+          "state": "RUNNING",
+          "metrics": {
+              "pnl_session": <float>,
+              "active_positions_count": <int>,
+              "current_drawdown_pct": <float>,
+              "cpu_usage": <float>
+          },
+          "errors": []
+        }
         """
         msg = {
-            "type": "heartbeat",
-            "last_tick_ts": time.time(),
-            "service": "ai_scalper_bot",
-            "mode": state.name,
-            "pnl": pnl,
-            "active_positions": open_positions_qty,
-            "details": {"state": state.name}
+            "service_id": "ai_scalper_bot",
+            "timestamp": time.time(),
+            "state": state.name,  # Using BotState name (e.g., RUNNING, IDLE, ERROR)
+            "metrics": {
+                "pnl_session": float(pnl),
+                "active_positions_count": int(open_positions_qty),
+                "current_drawdown_pct": float(drawdown_pct),
+                "cpu_usage": 0.0
+            },
+            "errors": []
         }
         
         try:
