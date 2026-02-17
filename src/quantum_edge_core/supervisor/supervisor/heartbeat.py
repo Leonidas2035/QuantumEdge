@@ -2,15 +2,22 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date, datetime, timezone
-from typing import Any, Mapping, Optional
+from typing import Any, List, Mapping, Optional
 
 
 @dataclass
 class HeartbeatPayload:
     """Payload sent by the trading engine."""
 
+    # New Schema Fields
+    service_id: Optional[str] = None
+    state: Optional[str] = None
+    metrics: Optional[Mapping[str, Any]] = None
+    errors: Optional[List[str]] = None
+
+    # Legacy / Internal Fields
     uptime_s: Optional[float] = None
     pnl: Optional[float] = None
     active_positions: Optional[int] = None
@@ -61,6 +68,8 @@ class HeartbeatServer:
     def _parse_timestamp(value: Any) -> Optional[datetime]:
         if value is None:
             return None
+        if isinstance(value, (int, float)):
+            return datetime.fromtimestamp(value, tz=timezone.utc)
         if isinstance(value, datetime):
             if value.tzinfo is None:
                 return value.replace(tzinfo=timezone.utc)
@@ -90,16 +99,42 @@ class HeartbeatServer:
 
     def update_heartbeat(self, data: Mapping[str, Any]) -> None:
         """Update the heartbeat state from a payload mapping."""
+        metrics = data.get("metrics") or {}
+        if not isinstance(metrics, dict):
+            metrics = {}
+
+        # Map new schema to legacy fields for compatibility
+        pnl = data.get("pnl")
+        if pnl is None:
+             pnl = metrics.get("pnl_session")
+
+        active_positions = data.get("active_positions")
+        if active_positions is None:
+            active_positions = metrics.get("active_positions_count")
+
+        realized_pnl_today = data.get("realized_pnl_today")
+        if realized_pnl_today is None:
+            realized_pnl_today = metrics.get("pnl_session")
+
+        mode = data.get("mode") or data.get("state")
+
+        timestamp_raw = data.get("timestamp") or data.get("last_tick_ts")
+        last_tick_ts = self._parse_timestamp(timestamp_raw)
 
         payload = HeartbeatPayload(
+            service_id=data.get("service_id"),
+            state=data.get("state"),
+            metrics=metrics,
+            errors=data.get("errors"),
+
             uptime_s=data.get("uptime_s"),
-            pnl=data.get("pnl"),
-            active_positions=data.get("active_positions"),
-            last_tick_ts=self._parse_timestamp(data.get("last_tick_ts")),
-            mode=data.get("mode"),
+            pnl=pnl,
+            active_positions=active_positions,
+            last_tick_ts=last_tick_ts,
+            mode=mode,
             details=data.get("details"),
             equity=data.get("equity"),
-            realized_pnl_today=data.get("realized_pnl_today"),
+            realized_pnl_today=realized_pnl_today,
             unrealized_pnl=data.get("unrealized_pnl"),
             open_positions_notional=data.get("open_positions_notional"),
             base_currency=data.get("base_currency"),

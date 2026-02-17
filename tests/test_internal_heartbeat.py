@@ -32,19 +32,18 @@ def run_fake_bot():
         while True:
             # Construct payload matching HeartbeatPayload in supervisor/heartbeat.py
             # AND matching the fix we plan to apply in reporter.py
+            # New Schema
             payload = {
-                "uptime_s": 123.45,
-                "pnl": 10.5,
-                "active_positions": 1,
-                "last_tick_ts": time.time(),
-                "mode": "HEDGED",
-                "details": {"fake": True},
-                "equity": 10000.0,
-                "realized_pnl_today": 5.0,
-                "unrealized_pnl": 5.5,
-                "open_positions_notional": 100.0,
-                "base_currency": "USDT",
-                "trading_day": datetime.now(timezone.utc).date().isoformat()
+                "service_id": "ai_scalper_bot",
+                "timestamp": time.time(),
+                "state": "RUNNING",
+                "metrics": {
+                    "pnl_session": 10.5,
+                    "active_positions_count": 1,
+                    "current_drawdown_pct": 0.0,
+                    "cpu_usage": 0.0
+                },
+                "errors": []
             }
 
             json_str = json.dumps(payload)
@@ -53,7 +52,7 @@ def run_fake_bot():
             topic = b"heartbeat"
             socket.send_multipart([topic, json_str.encode("utf-8")])
 
-            logger.info(f"Sent heartbeat: {payload['mode']} pnl={payload['pnl']}")
+            logger.info(f"Sent heartbeat: {payload['state']} pnl={payload['metrics']['pnl_session']}")
             time.sleep(1.0)
 
     except KeyboardInterrupt:

@@ -70,15 +70,28 @@ class HardRiskEngine:
         equity = None
         realized_pnl = None
 
+        # Helper to get metrics if available
+        metrics = getattr(payload, "metrics", {}) or {}
+        if not isinstance(metrics, dict):
+            metrics = {}
+
         if hasattr(payload, "equity"):
             equity = payload.equity
         elif isinstance(payload, dict):
             equity = payload.get("equity")
 
+        # New Schema doesn't send equity in metrics, but if it did:
+        if equity is None:
+            equity = metrics.get("equity")
+
         if hasattr(payload, "realized_pnl_today"):
             realized_pnl = payload.realized_pnl_today
         elif isinstance(payload, dict):
             realized_pnl = payload.get("realized_pnl_today")
+
+        # Map pnl_session to realized_pnl if missing
+        if realized_pnl is None:
+            realized_pnl = metrics.get("pnl_session")
 
         if equity is not None:
             self.state.equity_now = float(equity)
