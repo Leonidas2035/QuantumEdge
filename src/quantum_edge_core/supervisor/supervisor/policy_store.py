@@ -29,7 +29,9 @@ def load_policy(path: Path) -> Dict[str, Any]:
     return data
 
 
-def load_active_policy(runtime_dir: Path, fallback_path: Path) -> Tuple[Dict[str, Any], str, Path]:
+def load_active_policy(
+    runtime_dir: Path, fallback_path: Path
+) -> Tuple[Dict[str, Any], str, Path]:
     active_path = runtime_dir / "policy_versions" / "active_policy.yaml"
     if active_path.exists():
         manifest_path = runtime_dir / "policy_versions" / "active_policy_manifest.json"
@@ -73,7 +75,9 @@ def save_new_policy(
         "diff_summary": diff_summary,
     }
     _atomic_write_json(manifest_path, manifest)
-    return PolicyVersion(version_id=version_id, policy_path=policy_path, manifest_path=manifest_path)
+    return PolicyVersion(
+        version_id=version_id, policy_path=policy_path, manifest_path=manifest_path
+    )
 
 
 def activate_policy(runtime_dir: Path, version_id: str, source: str = "manual") -> Path:
@@ -113,7 +117,9 @@ def _atomic_write_yaml(path: Path, payload: Dict[str, Any]) -> None:
 def _atomic_write_json(path: Path, payload: Dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = path.with_suffix(path.suffix + ".tmp")
-    tmp_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+    tmp_path.write_text(
+        json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
     tmp_path.replace(path)
 
 
@@ -125,7 +131,9 @@ def _atomic_copy(src: Path, dest: Path) -> None:
 
 
 def _stable_hash(payload: Dict[str, Any]) -> str:
-    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    encoded = json.dumps(
+        payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+    )
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
@@ -175,7 +183,9 @@ def _next_version_id(versions_dir: Path) -> str:
     return f"v{highest + 1:03d}"
 
 
-def _diff_dicts(old: Dict[str, Any], new: Dict[str, Any], prefix: str = "") -> list[Dict[str, Any]]:
+def _diff_dicts(
+    old: Dict[str, Any], new: Dict[str, Any], prefix: str = ""
+) -> list[Dict[str, Any]]:
     changes = []
     keys = set(old.keys()) | set(new.keys())
     for key in sorted(keys):

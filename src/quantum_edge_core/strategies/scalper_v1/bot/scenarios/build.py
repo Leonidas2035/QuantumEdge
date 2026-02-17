@@ -10,7 +10,14 @@ from typing import Dict, List, Optional
 
 import yaml
 
-from .cutter import CutterConfig, Episode, build_manifest, build_schema_payload, build_stats, cut_scenarios
+from .cutter import (
+    CutterConfig,
+    Episode,
+    build_manifest,
+    build_schema_payload,
+    build_stats,
+    cut_scenarios,
+)
 from .io import Tick, attach_depth, load_depth_snapshots, load_ticks
 from .specs import build_scenarios
 
@@ -37,7 +44,11 @@ def build_scenarios_pipeline(
     depth_snapshots = []
     if depth_path:
         depth_snapshots = load_depth_snapshots(depth_path, symbol=symbol)
-        attach_depth(ticks, depth_snapshots, max_age_ms=int(defaults.get("depth_max_age_ms", 3000)))
+        attach_depth(
+            ticks,
+            depth_snapshots,
+            max_age_ms=int(defaults.get("depth_max_age_ms", 3000)),
+        )
     depth_available = bool(depth_snapshots)
 
     cutter_cfg = CutterConfig(
@@ -51,7 +62,9 @@ def build_scenarios_pipeline(
         output_format=str(output_format or defaults.get("output_format", "csv")),
     )
 
-    episodes_by_scenario = cut_scenarios(ticks, cutter_cfg, thresholds, max_total_episodes=max_episodes)
+    episodes_by_scenario = cut_scenarios(
+        ticks, cutter_cfg, thresholds, max_total_episodes=max_episodes
+    )
     scenarios = {spec.scenario_id: spec for spec in build_scenarios(thresholds)}
 
     symbol_root = out_root / symbol
@@ -69,12 +82,22 @@ def build_scenarios_pipeline(
             out_path = episodes_dir / f"{ep.episode_id}.{fmt}"
             _write_episode(out_path, ep.ticks, fmt)
 
-        manifest = build_manifest(symbol, spec, episodes, cutter_cfg, label_horizons, depth_available)
+        manifest = build_manifest(
+            symbol, spec, episodes, cutter_cfg, label_horizons, depth_available
+        )
         stats = build_stats(episodes)
-        (scenario_dir / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
-        (scenario_dir / "stats.json").write_text(json.dumps(stats, indent=2), encoding="utf-8")
-        (scenario_dir / "schema.json").write_text(json.dumps(schema_payload, indent=2), encoding="utf-8")
-        (scenario_dir / "README.md").write_text(_render_readme(spec, manifest), encoding="utf-8")
+        (scenario_dir / "manifest.json").write_text(
+            json.dumps(manifest, indent=2), encoding="utf-8"
+        )
+        (scenario_dir / "stats.json").write_text(
+            json.dumps(stats, indent=2), encoding="utf-8"
+        )
+        (scenario_dir / "schema.json").write_text(
+            json.dumps(schema_payload, indent=2), encoding="utf-8"
+        )
+        (scenario_dir / "README.md").write_text(
+            _render_readme(spec, manifest), encoding="utf-8"
+        )
 
     _write_splits(symbol_root, episodes_by_scenario, defaults)
     _write_summary(symbol_root, episodes_by_scenario, thresholds)
@@ -94,9 +117,13 @@ def _write_episode(path: Path, ticks: List[Tick], fmt: str) -> None:
     if fmt == "csv":
         with path.open("w", newline="", encoding="utf-8") as handle:
             writer = csv.writer(handle)
-            writer.writerow(["ts_ms", "price", "qty", "side", "bid", "ask", "depth_usd"])
+            writer.writerow(
+                ["ts_ms", "price", "qty", "side", "bid", "ask", "depth_usd"]
+            )
             for t in ticks:
-                writer.writerow([t.ts_ms, t.price, t.qty, t.side or "", t.bid, t.ask, t.depth_usd])
+                writer.writerow(
+                    [t.ts_ms, t.price, t.qty, t.side or "", t.bid, t.ask, t.depth_usd]
+                )
 
 
 def _ticks_to_frame(ticks: List[Tick]):
@@ -115,7 +142,11 @@ def _ticks_to_frame(ticks: List[Tick]):
     )
 
 
-def _write_splits(root: Path, episodes_by_scenario: Dict[str, List[Episode]], defaults: Dict[str, object]) -> None:
+def _write_splits(
+    root: Path,
+    episodes_by_scenario: Dict[str, List[Episode]],
+    defaults: Dict[str, object],
+) -> None:
     splits_dir = root / "splits"
     splits_dir.mkdir(parents=True, exist_ok=True)
     all_eps = []
@@ -141,7 +172,9 @@ def _write_splits(root: Path, episodes_by_scenario: Dict[str, List[Episode]], de
         "val": all_eps[train_end:val_end],
         "test": all_eps[val_end:],
     }
-    (splits_dir / "split_time.json").write_text(json.dumps(split_time, indent=2), encoding="utf-8")
+    (splits_dir / "split_time.json").write_text(
+        json.dumps(split_time, indent=2), encoding="utf-8"
+    )
 
     holdout = set(defaults.get("holdout_scenarios", []))
     split_holdout = {
@@ -149,10 +182,16 @@ def _write_splits(root: Path, episodes_by_scenario: Dict[str, List[Episode]], de
         "test": [ep for ep in all_eps if ep["scenario_id"] in holdout],
         "holdout_scenarios": sorted(list(holdout)),
     }
-    (splits_dir / "split_scenario_holdout.json").write_text(json.dumps(split_holdout, indent=2), encoding="utf-8")
+    (splits_dir / "split_scenario_holdout.json").write_text(
+        json.dumps(split_holdout, indent=2), encoding="utf-8"
+    )
 
 
-def _write_summary(root: Path, episodes_by_scenario: Dict[str, List[Episode]], thresholds: Dict[str, object]) -> None:
+def _write_summary(
+    root: Path,
+    episodes_by_scenario: Dict[str, List[Episode]],
+    thresholds: Dict[str, object],
+) -> None:
     total_eps = sum(len(eps) for eps in episodes_by_scenario.values())
     summary = {
         "total_episodes": total_eps,
@@ -196,12 +235,18 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="Build scenario datasets (S00-S24).")
     parser.add_argument("--symbol", required=True)
     parser.add_argument("--ticks", required=True, help="Ticks file or directory.")
-    parser.add_argument("--depth", default=None, help="Depth snapshots file or directory.")
-    parser.add_argument("--out", required=True, help="Output root (data/scenarios/<SYMBOL>).")
+    parser.add_argument(
+        "--depth", default=None, help="Depth snapshots file or directory."
+    )
+    parser.add_argument(
+        "--out", required=True, help="Output root (data/scenarios/<SYMBOL>)."
+    )
     parser.add_argument("--episodes", type=int, default=200)
     parser.add_argument("--workers", type=int, default=4)
     parser.add_argument("--limit-rows", type=int, default=None)
-    parser.add_argument("--format", dest="output_format", default=None, help="csv|parquet")
+    parser.add_argument(
+        "--format", dest="output_format", default=None, help="csv|parquet"
+    )
     return parser.parse_args(argv)
 
 

@@ -47,7 +47,9 @@ def _build_config() -> SupervisorConfig:
 
 
 def test_idempotent_start(monkeypatch, tmp_path: Path) -> None:
-    spec = ProcessSpec(name="bot", enabled=True, cwd=tmp_path, cmd=["python", "-c", "print('x')"])
+    spec = ProcessSpec(
+        name="bot", enabled=True, cwd=tmp_path, cmd=["python", "-c", "print('x')"]
+    )
     manager = ProcessManager(
         paths=_build_paths(tmp_path),
         config=_build_config(),

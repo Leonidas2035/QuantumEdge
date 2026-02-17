@@ -33,20 +33,30 @@ class AccountState:
 
     def compute_margin_usage(self) -> Optional[float]:
         if self.equity and (self.maintenance_margin or self.initial_margin):
-            margin = self.maintenance_margin if self.maintenance_margin is not None else self.initial_margin
+            margin = (
+                self.maintenance_margin
+                if self.maintenance_margin is not None
+                else self.initial_margin
+            )
             if margin is None or self.equity <= 0:
                 return None
             return float(margin) / float(self.equity)
         return None
 
-    def compute_distance_to_liq_bps(self, mark_price: Optional[float]) -> Optional[float]:
+    def compute_distance_to_liq_bps(
+        self, mark_price: Optional[float]
+    ) -> Optional[float]:
         if not mark_price or mark_price <= 0:
             return None
         distances = []
         if self.liq_price_long and self.liq_price_long > 0:
-            distances.append(abs(mark_price - self.liq_price_long) / mark_price * 10000.0)
+            distances.append(
+                abs(mark_price - self.liq_price_long) / mark_price * 10000.0
+            )
         if self.liq_price_short and self.liq_price_short > 0:
-            distances.append(abs(mark_price - self.liq_price_short) / mark_price * 10000.0)
+            distances.append(
+                abs(mark_price - self.liq_price_short) / mark_price * 10000.0
+            )
         if not distances:
             return None
         return min(distances)

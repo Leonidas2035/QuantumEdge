@@ -15,8 +15,16 @@ class TradeStats:
     def __init__(self):
         self.trades: List[TradeRecord] = []
 
-    def record(self, pnl: float, ts: float = None, symbol: Optional[str] = None, side: Optional[str] = None):
-        self.trades.append(TradeRecord(timestamp=ts or time.time(), pnl=pnl, symbol=symbol, side=side))
+    def record(
+        self,
+        pnl: float,
+        ts: float = None,
+        symbol: Optional[str] = None,
+        side: Optional[str] = None,
+    ):
+        self.trades.append(
+            TradeRecord(timestamp=ts or time.time(), pnl=pnl, symbol=symbol, side=side)
+        )
 
     def _recent(self, window_seconds: float) -> List[TradeRecord]:
         cutoff = time.time() - window_seconds

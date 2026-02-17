@@ -9,12 +9,14 @@ import msgspec
 from typing import Optional
 from quantum_edge_core.events import MarketTrade
 
+
 class TradeSignal(msgspec.Struct):
     symbol: str
-    side: str # "buy" or "sell"
+    side: str  # "buy" or "sell"
     quantity: float
     reason: str
     timestamp: float
+
 
 class BaseStrategy(abc.ABC):
     @abc.abstractmethod

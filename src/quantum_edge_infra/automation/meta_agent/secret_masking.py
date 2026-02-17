@@ -30,9 +30,13 @@ JSON_RE = re.compile(
 
 TOKEN_RE = re.compile(r"\bsk-[A-Za-z0-9]{16,}\b")
 
-HIGH_ENTROPY_RE = re.compile(r"(?<![A-Za-z0-9])([A-Za-z0-9_/\+=\-]{24,})(?![A-Za-z0-9])")
+HIGH_ENTROPY_RE = re.compile(
+    r"(?<![A-Za-z0-9])([A-Za-z0-9_/\+=\-]{24,})(?![A-Za-z0-9])"
+)
 
-PLACEHOLDER_RE = re.compile(r"(?i)\b(change_me|your_|replace|example|placeholder|none|null)\b")
+PLACEHOLDER_RE = re.compile(
+    r"(?i)\b(change_me|your_|replace|example|placeholder|none|null)\b"
+)
 
 
 def _is_placeholder(value: str) -> bool:
@@ -53,7 +57,7 @@ def mask_secrets(text: str) -> str:
         return text
 
     masked = ASSIGNMENT_RE.sub(_mask_assignment, text)
-    masked = JSON_RE.sub(lambda m: f"{m.group(1)}{MASK}\"", masked)
+    masked = JSON_RE.sub(lambda m: f'{m.group(1)}{MASK}"', masked)
     masked = TOKEN_RE.sub("sk-" + MASK, masked)
 
     def _mask_entropy(match: re.Match) -> str:

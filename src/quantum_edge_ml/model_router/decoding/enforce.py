@@ -6,8 +6,16 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-from model_router.contracts.decision_v1 import ValidationError, decode_decision, fallback_decision
-from model_router.decoding.repair_prompts import SYSTEM_PROMPT, make_repair_prompt, make_user_prompt
+from model_router.contracts.decision_v1 import (
+    ValidationError,
+    decode_decision,
+    fallback_decision,
+)
+from model_router.decoding.repair_prompts import (
+    SYSTEM_PROMPT,
+    make_repair_prompt,
+    make_user_prompt,
+)
 
 
 @dataclass
@@ -45,10 +53,14 @@ def _append_audit(result: EnforceResult) -> None:
     }
     path = _runtime_log_path()
     with open(path, "a", encoding="utf-8") as handle:
-        handle.write(json.dumps(payload, separators=(",", ":"), ensure_ascii=False) + "\n")
+        handle.write(
+            json.dumps(payload, separators=(",", ":"), ensure_ascii=False) + "\n"
+        )
 
 
-async def enforce_decision(prompt: str, backend, *, timeout_s: float = 2.0, max_attempts: int = 2) -> EnforceResult:
+async def enforce_decision(
+    prompt: str, backend, *, timeout_s: float = 2.0, max_attempts: int = 2
+) -> EnforceResult:
     user_prompt = make_user_prompt(prompt)
     attempts = 0
     last_error = None
@@ -61,7 +73,9 @@ async def enforce_decision(prompt: str, backend, *, timeout_s: float = 2.0, max_
     for attempt in range(max_attempts):
         attempts += 1
         try:
-            raw = await backend.generate(current_prompt, system_prompt=SYSTEM_PROMPT, timeout_s=timeout_s)
+            raw = await backend.generate(
+                current_prompt, system_prompt=SYSTEM_PROMPT, timeout_s=timeout_s
+            )
             last_raw = raw
         except Exception as exc:
             last_error = f"backend_error:{exc}"

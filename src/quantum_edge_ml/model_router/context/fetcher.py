@@ -5,7 +5,12 @@ from dataclasses import dataclass
 from typing import Dict, List
 
 from model_router.context.cache import ContextCache
-from model_router.context.formatter import ContextFormatter, pct_change, realized_vol, utc_now
+from model_router.context.formatter import (
+    ContextFormatter,
+    pct_change,
+    realized_vol,
+    utc_now,
+)
 from model_router.context.models import ContextPackV1
 from model_router.context.sql_templates import QuestDBConfig, build_ohlcv_query
 
@@ -14,7 +19,9 @@ class QuestDBReader:
     def __init__(self, dsn: str) -> None:
         self.dsn = dsn
 
-    def query_rows(self, sql: str, params: Dict[str, object]) -> List[Dict[str, object]]:
+    def query_rows(
+        self, sql: str, params: Dict[str, object]
+    ) -> List[Dict[str, object]]:
         try:
             import psycopg
         except Exception as exc:  # pragma: no cover - optional
@@ -36,7 +43,9 @@ class ContextFetcher:
     formatter: ContextFormatter
     config: QuestDBConfig
 
-    def get_context(self, symbol: str, lookback_m: int, candle_count: int = 5) -> ContextPackV1:
+    def get_context(
+        self, symbol: str, lookback_m: int, candle_count: int = 5
+    ) -> ContextPackV1:
         cached = self.cache.get(symbol, lookback_m)
         if cached:
             return cached
@@ -91,7 +100,9 @@ def _to_epoch(ts) -> float:
 def _iso_from_epoch(epoch: float) -> str:
     import datetime
 
-    return datetime.datetime.fromtimestamp(epoch, tz=datetime.timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
+    return datetime.datetime.fromtimestamp(epoch, tz=datetime.timezone.utc).strftime(
+        "%Y-%m-%dT%H:%M:%SZ"
+    )
 
 
 def build_fetcher_from_env() -> ContextFetcher:
@@ -109,6 +120,8 @@ def build_fetcher_from_env() -> ContextFetcher:
     return ContextFetcher(
         reader=QuestDBReader(dsn),
         cache=ContextCache(cache_ttl),
-        formatter=ContextFormatter(max_candles=int(os.environ.get("QDB_CONTEXT_MAX_CANDLES", "5"))),
+        formatter=ContextFormatter(
+            max_candles=int(os.environ.get("QDB_CONTEXT_MAX_CANDLES", "5"))
+        ),
         config=cfg,
     )

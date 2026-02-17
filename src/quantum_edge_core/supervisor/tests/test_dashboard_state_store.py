@@ -25,13 +25,23 @@ def test_merge_limits_precedence(tmp_path: Path) -> None:
     store.ingest_event(
         {
             "type": "strategy_limits.v1",
-            "data": {"strategy_id": "SCALP", "symbol": "BTCUSDT", "max_position_notional": 1000, "allow_entries": True},
+            "data": {
+                "strategy_id": "SCALP",
+                "symbol": "BTCUSDT",
+                "max_position_notional": 1000,
+                "allow_entries": True,
+            },
         }
     )
     store.ingest_event(
         {
             "type": "regime_directive.v1",
-            "data": {"strategy_id": "SCALP", "symbol": "BTCUSDT", "allow_entries": False, "mode": "risk_off"},
+            "data": {
+                "strategy_id": "SCALP",
+                "symbol": "BTCUSDT",
+                "allow_entries": False,
+                "mode": "risk_off",
+            },
         }
     )
     strategies = store.strategies()
@@ -63,13 +73,27 @@ def test_performance_and_reset(tmp_path: Path) -> None:
     store.ingest_event(
         {
             "type": "dca_deal_closed.v1",
-            "data": {"strategy_id": "DCA_ETH", "symbol": "ETHUSDT", "deal_id": "d1", "net_pnl": 5, "fees": 1, "volume_quote": 100},
+            "data": {
+                "strategy_id": "DCA_ETH",
+                "symbol": "ETHUSDT",
+                "deal_id": "d1",
+                "net_pnl": 5,
+                "fees": 1,
+                "volume_quote": 100,
+            },
         }
     )
     store.ingest_event(
         {
             "type": "scalp_deal_closed.v1",
-            "data": {"strategy_id": "SCALP", "symbol": "BTCUSDT", "deal_id": "s1", "net_pnl": -2, "fees": 0.5, "volume_quote": 50},
+            "data": {
+                "strategy_id": "SCALP",
+                "symbol": "BTCUSDT",
+                "deal_id": "s1",
+                "net_pnl": -2,
+                "fees": 0.5,
+                "volume_quote": 50,
+            },
         }
     )
     perf = store.performance()

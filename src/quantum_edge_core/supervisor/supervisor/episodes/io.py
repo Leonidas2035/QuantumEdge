@@ -61,7 +61,9 @@ def iter_ticks(
         yield from _iter_csv(path, symbol_hint, limit_rows)
 
 
-def _iter_jsonl(path: Path, symbol_hint: Optional[str], limit_rows: Optional[int]) -> Iterator[Tick]:
+def _iter_jsonl(
+    path: Path, symbol_hint: Optional[str], limit_rows: Optional[int]
+) -> Iterator[Tick]:
     count = 0
     with path.open("r", encoding="utf-8") as handle:
         for line in handle:
@@ -81,7 +83,9 @@ def _iter_jsonl(path: Path, symbol_hint: Optional[str], limit_rows: Optional[int
             count += 1
 
 
-def _iter_csv(path: Path, symbol_hint: Optional[str], limit_rows: Optional[int]) -> Iterator[Tick]:
+def _iter_csv(
+    path: Path, symbol_hint: Optional[str], limit_rows: Optional[int]
+) -> Iterator[Tick]:
     count = 0
     with path.open("r", encoding="utf-8") as handle:
         reader = csv.DictReader(handle)
@@ -95,7 +99,9 @@ def _iter_csv(path: Path, symbol_hint: Optional[str], limit_rows: Optional[int])
             count += 1
 
 
-def _normalize_tick(raw: Dict[str, object], symbol_hint: Optional[str]) -> Optional[Tick]:
+def _normalize_tick(
+    raw: Dict[str, object], symbol_hint: Optional[str]
+) -> Optional[Tick]:
     ts_value = _pick(raw, ["ts", "timestamp", "time", "datetime"])
     price_value = _pick(raw, ["price", "last", "last_price", "close"])
     if ts_value is None or price_value is None:

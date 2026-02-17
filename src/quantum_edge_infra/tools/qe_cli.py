@@ -48,12 +48,16 @@ def _resolve_path(value: Optional[str], default_rel: str) -> Path:
     return (get_qe_paths()["qe_root"] / default_rel).resolve()
 
 
-def _run_target(target: Path, extra_args: List[str], env_overrides: Optional[dict[str, str]] = None) -> int:
+def _run_target(
+    target: Path, extra_args: List[str], env_overrides: Optional[dict[str, str]] = None
+) -> int:
     if not target.exists():
         print(f"[qe_cli] Missing target: {target}", file=sys.stderr)
         return 1
     cmd = [sys.executable, str(target)] + extra_args
-    return subprocess.call(cmd, env=_build_env(env_overrides), cwd=str(get_qe_paths()["qe_root"]))
+    return subprocess.call(
+        cmd, env=_build_env(env_overrides), cwd=str(get_qe_paths()["qe_root"])
+    )
 
 
 def _port_available(host: str, port: int) -> bool:
@@ -68,7 +72,16 @@ def _port_available(host: str, port: int) -> bool:
 
 def _scan_for_secret_files(root: Path) -> List[Path]:
     suspicious: List[Path] = []
-    ignore_dirs = {".git", ".venv", "venv", "__pycache__", "node_modules", "logs", "runtime", "data"}
+    ignore_dirs = {
+        ".git",
+        ".venv",
+        "venv",
+        "__pycache__",
+        "node_modules",
+        "logs",
+        "runtime",
+        "data",
+    }
     ignore_suffixes = {".env.example", ".env.sample", ".env.template"}
 
     for dirpath, dirnames, filenames in os.walk(root):
@@ -83,7 +96,11 @@ def _scan_for_secret_files(root: Path) -> List[Path]:
             lower = filename.lower()
             if any(lower.endswith(sfx) for sfx in ignore_suffixes):
                 continue
-            if lower in {"secrets.env", ".env"} or lower.endswith(".env") or lower.endswith(".enc"):
+            if (
+                lower in {"secrets.env", ".env"}
+                or lower.endswith(".env")
+                or lower.endswith(".enc")
+            ):
                 suspicious.append(Path(dirpath) / filename)
                 continue
             if lower in {"secrets", "backup_secrets"}:
@@ -145,7 +162,9 @@ def main() -> int:
     subparsers = parser.add_subparsers(dest="command", required=True)
 
     sup = subparsers.add_parser("supervisor")
-    sup.add_argument("--config", dest="config_path", help="Path to supervisor config YAML.")
+    sup.add_argument(
+        "--config", dest="config_path", help="Path to supervisor config YAML."
+    )
     sup.add_argument("args", nargs=argparse.REMAINDER)
 
     bot = subparsers.add_parser("bot")
@@ -153,7 +172,9 @@ def main() -> int:
     bot.add_argument("args", nargs=argparse.REMAINDER)
 
     meta = subparsers.add_parser("meta")
-    meta.add_argument("--config", dest="config_path", help="Path to meta-agent config YAML.")
+    meta.add_argument(
+        "--config", dest="config_path", help="Path to meta-agent config YAML."
+    )
     meta.add_argument("args", nargs=argparse.REMAINDER)
 
     subparsers.add_parser("diag")
@@ -181,11 +202,15 @@ def main() -> int:
         args.command = mapped
 
     if args.command == "supervisor":
-        cfg_path = _resolve_path(getattr(args, "config_path", None), "config/supervisor.yaml")
+        cfg_path = _resolve_path(
+            getattr(args, "config_path", None), "config/supervisor.yaml"
+        )
         env_overrides = {"SUPERVISOR_CONFIG": str(cfg_path)}
         sup_args = extra or ["run-foreground"]
         sup_args = ["--config", str(cfg_path)] + sup_args
-        return _run_target(paths["supervisor_dir"] / "supervisor.py", sup_args, env_overrides)
+        return _run_target(
+            paths["supervisor_dir"] / "supervisor.py", sup_args, env_overrides
+        )
 
     if args.command == "bot":
         cfg_path = _resolve_path(getattr(args, "config_path", None), "config/bot.yaml")
@@ -193,10 +218,14 @@ def main() -> int:
         return _run_target(paths["bot_dir"] / "run_bot.py", extra, env_overrides)
 
     if args.command == "meta":
-        cfg_path = _resolve_path(getattr(args, "config_path", None), "config/meta_agent.yaml")
+        cfg_path = _resolve_path(
+            getattr(args, "config_path", None), "config/meta_agent.yaml"
+        )
         env_overrides = {"META_AGENT_CONFIG": str(cfg_path)}
         meta_args = ["--config", str(cfg_path)] + extra
-        return _run_target(paths["meta_agent_dir"] / "meta_agent.py", meta_args, env_overrides)
+        return _run_target(
+            paths["meta_agent_dir"] / "meta_agent.py", meta_args, env_overrides
+        )
 
     return 1
 

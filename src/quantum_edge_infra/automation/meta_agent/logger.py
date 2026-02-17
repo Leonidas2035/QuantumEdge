@@ -32,7 +32,9 @@ def configure_logger(
         datefmt="%Y-%m-%dT%H:%M:%S",
     )
 
-    handler = RotatingFileHandler(log_path, maxBytes=1_000_000, backupCount=3, encoding="utf-8")
+    handler = RotatingFileHandler(
+        log_path, maxBytes=1_000_000, backupCount=3, encoding="utf-8"
+    )
     handler.setLevel(level_value)
     handler.setFormatter(formatter)
     logger.addHandler(handler)

@@ -86,7 +86,9 @@ def evaluate(
     (out_root / "reports").mkdir(parents=True, exist_ok=True)
 
     thresholds = thresholds or [0.50, 0.55, 0.60]
-    horizons = sorted(int(p.name.replace("horizon_h", "")) for p in data_root.glob("horizon_h*"))
+    horizons = sorted(
+        int(p.name.replace("horizon_h", "")) for p in data_root.glob("horizon_h*")
+    )
     eval_manifest = {
         "symbol": symbol,
         "created_at": datetime.now(timezone.utc).isoformat(),
@@ -96,7 +98,9 @@ def evaluate(
         "data_root": str(data_root),
         "models_root": str(models_root),
     }
-    (out_root / "eval_manifest.json").write_text(json.dumps(eval_manifest, indent=2), encoding="utf-8")
+    (out_root / "eval_manifest.json").write_text(
+        json.dumps(eval_manifest, indent=2), encoding="utf-8"
+    )
 
     for horizon in horizons:
         horizon_dir = data_root / f"horizon_h{horizon}"
@@ -115,13 +119,21 @@ def evaluate(
 
         horizon_out = out_root / f"horizon_h{horizon}"
         horizon_out.mkdir(parents=True, exist_ok=True)
-        (horizon_out / "eval_val.json").write_text(json.dumps(val_metrics, indent=2), encoding="utf-8")
-        (horizon_out / "eval_test.json").write_text(json.dumps(test_metrics, indent=2), encoding="utf-8")
+        (horizon_out / "eval_val.json").write_text(
+            json.dumps(val_metrics, indent=2), encoding="utf-8"
+        )
+        (horizon_out / "eval_test.json").write_text(
+            json.dumps(test_metrics, indent=2), encoding="utf-8"
+        )
 
         per_val = _per_scenario(val_df, model, horizon, threshold=thresholds[0])
         per_test = _per_scenario(test_df, model, horizon, threshold=thresholds[0])
-        (horizon_out / "per_scenario_val.json").write_text(json.dumps(per_val, indent=2), encoding="utf-8")
-        (horizon_out / "per_scenario_test.json").write_text(json.dumps(per_test, indent=2), encoding="utf-8")
+        (horizon_out / "per_scenario_val.json").write_text(
+            json.dumps(per_val, indent=2), encoding="utf-8"
+        )
+        (horizon_out / "per_scenario_test.json").write_text(
+            json.dumps(per_test, indent=2), encoding="utf-8"
+        )
 
     report = _render_report(out_root, horizons)
     (out_root / "reports" / "eval_report.md").write_text(report, encoding="utf-8")

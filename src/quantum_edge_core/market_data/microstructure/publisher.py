@@ -58,5 +58,7 @@ class MicrostructurePublisher:
             try:
                 asyncio.create_task(self._writer.enqueue(event))
             except RuntimeError:
-                logging.debug("QuestDB writer task scheduling failed for microstructure event")
+                logging.debug(
+                    "QuestDB writer task scheduling failed for microstructure event"
+                )
         return event

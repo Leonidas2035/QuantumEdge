@@ -27,6 +27,10 @@ class RouterPolicy:
     ) -> "RouterPolicy":
         return RouterPolicy(
             mode=mode or self.mode,
-            teacher_ratio=self.teacher_ratio if teacher_ratio is None else teacher_ratio,
-            force_teacher=self.force_teacher if force_teacher is None else force_teacher,
+            teacher_ratio=(
+                self.teacher_ratio if teacher_ratio is None else teacher_ratio
+            ),
+            force_teacher=(
+                self.force_teacher if force_teacher is None else force_teacher
+            ),
         )

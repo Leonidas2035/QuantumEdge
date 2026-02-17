@@ -1,4 +1,5 @@
 import pytest
+
 pytest.skip("Legacy test broken by src-layout migration", allow_module_level=True)
 import json
 import sys
@@ -45,7 +46,11 @@ def _write_artifact(path: Path, created_at: int) -> None:
         created_at=created_at,
         model_format="xgboost_json",
         model_api="predict_proba",
-        artifact={"python": "3.11.0", "platform": "win32", "serializer": "xgboost_json"},
+        artifact={
+            "python": "3.11.0",
+            "platform": "win32",
+            "serializer": "xgboost_json",
+        },
     )
     manifest.write(path / "manifest.json")
 
@@ -58,9 +63,13 @@ def test_publish_then_reload(tmp_path: Path, monkeypatch):
     v1_dir = artifacts_root / "v1"
     _write_artifact(v1_dir, created_at=100)
     publish_model(v1_dir, runtime_root, keep_previous=False)
-    manifest_path = runtime_root / "models" / "BTCUSDT" / "1" / "current" / "manifest.json"
+    manifest_path = (
+        runtime_root / "models" / "BTCUSDT" / "1" / "current" / "manifest.json"
+    )
     m1 = json.loads(manifest_path.read_text(encoding="utf-8"))
-    models, errors = rm.load_runtime_models("BTCUSDT", [1], models_root=runtime_root / "models")
+    models, errors = rm.load_runtime_models(
+        "BTCUSDT", [1], models_root=runtime_root / "models"
+    )
     assert 1 in models
     assert errors == {}
 
@@ -69,6 +78,8 @@ def test_publish_then_reload(tmp_path: Path, monkeypatch):
     publish_model(v2_dir, runtime_root, keep_previous=False)
     m2 = json.loads(manifest_path.read_text(encoding="utf-8"))
     assert m2["created_at"] != m1["created_at"]
-    models, errors = rm.load_runtime_models("BTCUSDT", [1], models_root=runtime_root / "models")
+    models, errors = rm.load_runtime_models(
+        "BTCUSDT", [1], models_root=runtime_root / "models"
+    )
     assert 1 in models
     assert errors == {}

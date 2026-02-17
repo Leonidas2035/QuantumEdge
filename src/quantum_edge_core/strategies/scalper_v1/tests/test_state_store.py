@@ -21,5 +21,7 @@ def test_state_store_idempotency_and_persistence(tmp_path: Path):
     store.record_order(record)
     assert store.is_duplicate(oid)
 
-    store.save_position_state({"symbol": "BTCUSDT", "position": 1.0, "entry_price": 30000.0})
+    store.save_position_state(
+        {"symbol": "BTCUSDT", "position": 1.0, "entry_price": 30000.0}
+    )
     assert (tmp_path / "position_state.json").exists()

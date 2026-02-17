@@ -12,11 +12,16 @@ from supervisor.autopilot.collector import MetricsCollector
 from supervisor.autopilot.policy_manager import PolicyManager
 from supervisor.autopilot.quality import QualityMonitor
 from supervisor.autopilot.remediation import RemediationManager
-from supervisor.autopilot.state_machine import AutopilotController, AutopilotStateMachine
+from supervisor.autopilot.state_machine import (
+    AutopilotController,
+    AutopilotStateMachine,
+)
 from supervisor.config import AutopilotConfig, PathsConfig
 
 
-def build_controller(app, cfg: AutopilotConfig, paths: PathsConfig) -> AutopilotController:
+def build_controller(
+    app, cfg: AutopilotConfig, paths: PathsConfig
+) -> AutopilotController:
     metrics_path = _resolve_path(paths.qe_root, cfg.metrics_path)
     collector = MetricsCollector(cfg.metrics_url, metrics_path)
     quality = QualityMonitor(
@@ -29,13 +34,17 @@ def build_controller(app, cfg: AutopilotConfig, paths: PathsConfig) -> Autopilot
         data_stale_window_sec=cfg.quality_data_stale_window_sec,
         policy_mismatch_reject_ratio=cfg.quality_policy_mismatch_reject_ratio,
     )
-    state_machine = AutopilotStateMachine(cfg.allowed_states, cfg.min_dwell_sec, cfg.max_transitions_per_hour)
+    state_machine = AutopilotStateMachine(
+        cfg.allowed_states, cfg.min_dwell_sec, cfg.max_transitions_per_hour
+    )
     audit_path = paths.runtime_dir / "audit" / "autopilot_actions.jsonl"
     audit = AuditLogger(audit_path)
     policy_dir = _resolve_path(paths.qe_root, cfg.policy_artifacts_dir)
     runtime_policy_dir = _resolve_path(paths.qe_root, cfg.policy_runtime_dir)
     history_dir = paths.runtime_dir / "policy_rollouts" / cfg.policy_symbol
-    policy_manager = PolicyManager(policy_dir, runtime_policy_dir, history_dir, cfg.policy_history_keep)
+    policy_manager = PolicyManager(
+        policy_dir, runtime_policy_dir, history_dir, cfg.policy_history_keep
+    )
     kill_switch_path = paths.quantumedge_root / "state" / "kill_switch.json"
     remediation = RemediationManager(
         app=app,
@@ -72,7 +81,9 @@ def autopilot_status(controller: AutopilotController) -> Dict[str, Any]:
     return controller.status()
 
 
-def autopilot_enable(override_path: Path, enabled: bool, audit: AuditLogger | None = None) -> Dict[str, Any]:
+def autopilot_enable(
+    override_path: Path, enabled: bool, audit: AuditLogger | None = None
+) -> Dict[str, Any]:
     override_path.parent.mkdir(parents=True, exist_ok=True)
     payload: Dict[str, Any] = {}
     if override_path.exists():
@@ -152,7 +163,9 @@ def policy_rollout(
     return {"status": "applied", "runtime_path": str(dest)}
 
 
-def policy_rollback(manager: PolicyManager, reason: str, audit: AuditLogger | None = None) -> Dict[str, Any]:
+def policy_rollback(
+    manager: PolicyManager, reason: str, audit: AuditLogger | None = None
+) -> Dict[str, Any]:
     dest = manager.rollback(reason)
     if audit:
         audit.log(
@@ -163,7 +176,10 @@ def policy_rollback(manager: PolicyManager, reason: str, audit: AuditLogger | No
                 "correlation_id": str(uuid.uuid4()),
             }
         )
-    return {"status": "rollback" if dest else "no_history", "runtime_path": str(dest) if dest else None}
+    return {
+        "status": "rollback" if dest else "no_history",
+        "runtime_path": str(dest) if dest else None,
+    }
 
 
 def _resolve_path(base: Path, value: str) -> Path:

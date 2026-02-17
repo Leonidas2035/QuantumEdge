@@ -9,7 +9,12 @@ from typing import Optional
 from binance.client import Client
 from binance.exceptions import BinanceAPIException, BinanceRequestException
 
-from LockBotBTC.lockbot_btc.execution.base import CancelAllResult, CancelResult, ExecutionConfig, SubmitResult
+from LockBotBTC.lockbot_btc.execution.base import (
+    CancelAllResult,
+    CancelResult,
+    ExecutionConfig,
+    SubmitResult,
+)
 
 
 class BinanceFuturesExecutor:
@@ -44,7 +49,12 @@ class BinanceFuturesExecutor:
     ) -> SubmitResult:
         client = self._ensure_client()
         if not client:
-            return SubmitResult(ok=False, client_order_id=client_order_id, error_code="missing_keys", retryable=False)
+            return SubmitResult(
+                ok=False,
+                client_order_id=client_order_id,
+                error_code="missing_keys",
+                retryable=False,
+            )
         params = {
             "symbol": symbol,
             "side": side,
@@ -90,10 +100,21 @@ class BinanceFuturesExecutor:
                 retryable=False,
             )
 
-    def cancel_order(self, *, symbol: str, client_order_id: Optional[str] = None, order_id: Optional[str] = None) -> CancelResult:
+    def cancel_order(
+        self,
+        *,
+        symbol: str,
+        client_order_id: Optional[str] = None,
+        order_id: Optional[str] = None,
+    ) -> CancelResult:
         client = self._ensure_client()
         if not client:
-            return CancelResult(ok=False, client_order_id=client_order_id, order_id=order_id, error_code="missing_keys")
+            return CancelResult(
+                ok=False,
+                client_order_id=client_order_id,
+                order_id=order_id,
+                error_code="missing_keys",
+            )
         try:
             params = {"symbol": symbol, "recvWindow": self._cfg.recv_window}
             if client_order_id:
@@ -103,7 +124,9 @@ class BinanceFuturesExecutor:
             response = self._submit_with_retries(client.futures_cancel_order, params)
             return CancelResult(
                 ok=True,
-                client_order_id=str(response.get("clientOrderId") or client_order_id or ""),
+                client_order_id=str(
+                    response.get("clientOrderId") or client_order_id or ""
+                ),
                 order_id=str(response.get("orderId") or order_id or ""),
                 status=str(response.get("status") or ""),
             )
@@ -140,7 +163,9 @@ class BinanceFuturesExecutor:
         if not client:
             return CancelAllResult(ok=False, error_code="missing_keys")
         try:
-            response = self._submit_with_retries(client.futures_cancel_all_open_orders, {"symbol": symbol})
+            response = self._submit_with_retries(
+                client.futures_cancel_all_open_orders, {"symbol": symbol}
+            )
             return CancelAllResult(ok=True, status=str(response.get("msg") or "ok"))
         except BinanceAPIException as exc:
             return CancelAllResult(
@@ -150,9 +175,19 @@ class BinanceFuturesExecutor:
                 retryable=_is_retryable(exc),
             )
         except BinanceRequestException as exc:
-            return CancelAllResult(ok=False, error_code="request_error", error_detail=str(exc), retryable=True)
+            return CancelAllResult(
+                ok=False,
+                error_code="request_error",
+                error_detail=str(exc),
+                retryable=True,
+            )
         except Exception as exc:
-            return CancelAllResult(ok=False, error_code="unexpected", error_detail=str(exc), retryable=False)
+            return CancelAllResult(
+                ok=False,
+                error_code="unexpected",
+                error_detail=str(exc),
+                retryable=False,
+            )
 
     def _submit_with_retries(self, fn, params: dict, max_attempts: int = 3) -> dict:
         backoff = 0.4

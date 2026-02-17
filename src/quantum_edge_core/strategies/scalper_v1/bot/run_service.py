@@ -18,9 +18,20 @@ from bot import run_bot as bot_main
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="QuantumEdge service runner")
-    parser.add_argument("--config", default="config/settings.yaml", help="Path to settings YAML")
-    parser.add_argument("--mode", choices=["live", "paper", "demo"], default=None, help="Override app.mode")
-    parser.add_argument("--once", action="store_true", help="Run a single loop iteration (debug/testing)")
+    parser.add_argument(
+        "--config", default="config/settings.yaml", help="Path to settings YAML"
+    )
+    parser.add_argument(
+        "--mode",
+        choices=["live", "paper", "demo"],
+        default=None,
+        help="Override app.mode",
+    )
+    parser.add_argument(
+        "--once",
+        action="store_true",
+        help="Run a single loop iteration (debug/testing)",
+    )
     parser.add_argument(
         "--allow-no-models",
         action="store_true",
@@ -43,8 +54,11 @@ def _override_config(cfg_path: str, mode: Optional[str], allow_no_models: bool) 
         global_config.data["ml"]["require_models"] = False
 
 
-def _install_signal_handlers(loop: asyncio.AbstractEventLoop, stop_event: asyncio.Event, logger: logging.Logger) -> None:
+def _install_signal_handlers(
+    loop: asyncio.AbstractEventLoop, stop_event: asyncio.Event, logger: logging.Logger
+) -> None:
     """Attach signal handlers with a Windows-safe fallback."""
+
     def _trigger(signame: str) -> None:
         logger.info("Received %s, shutting down gracefully...", signame)
         loop.call_soon_threadsafe(stop_event.set)
@@ -62,7 +76,9 @@ def _install_signal_handlers(loop: asyncio.AbstractEventLoop, stop_event: asynci
 async def _run(args: argparse.Namespace) -> int:
     # Logging setup
     log_dir = Path("logs")
-    logger = setup_logging(log_dir / "quantumedge.log", level=global_config.get("app.log_level", "INFO"))
+    logger = setup_logging(
+        log_dir / "quantumedge.log", level=global_config.get("app.log_level", "INFO")
+    )
 
     # Ops status writer
     ops_cfg = global_config.get("ops", {}) or {}
@@ -75,11 +91,18 @@ async def _run(args: argparse.Namespace) -> int:
     _install_signal_handlers(loop, stop_event, logger)
 
     try:
-        result = await bot_main.main(stop_event=stop_event, once=args.once, status_writer=status_writer, logger=logger)
+        result = await bot_main.main(
+            stop_event=stop_event,
+            once=args.once,
+            status_writer=status_writer,
+            logger=logger,
+        )
         return int(result) if result is not None else 0
     except Exception as exc:  # pylint: disable=broad-except
         logger.exception("Service run failed: %s", exc)
-        status_writer.flush({"ts": "error", "is_running": False, "last_error": str(exc)})
+        status_writer.flush(
+            {"ts": "error", "is_running": False, "last_error": str(exc)}
+        )
         return 1
 
 

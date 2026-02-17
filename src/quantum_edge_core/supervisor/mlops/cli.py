@@ -17,7 +17,9 @@ def _parse_horizons(raw: str) -> List[int]:
 
 
 def parse_ml_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(prog="supervisor.py ml", description="ModelOps commands")
+    parser = argparse.ArgumentParser(
+        prog="supervisor.py ml", description="ModelOps commands"
+    )
     sub = parser.add_subparsers(dest="ml_command", required=True)
 
     dataset = sub.add_parser("dataset", help="Build dataset")
@@ -90,4 +92,3 @@ def run_ml_command(args: argparse.Namespace) -> int:
         return 0
 
     raise SystemExit("Unknown ml command")
-

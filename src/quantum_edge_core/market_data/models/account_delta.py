@@ -62,14 +62,18 @@ class PositionPatch(msgspec.Struct):
 class SpotPatch(msgspec.Struct):
     """Minimal spot delta patch (UserDataStream events)."""
 
-    balances_update: Optional[List[BalancePatch]] = None  # triggered by outboundAccountPosition
+    balances_update: Optional[List[BalancePatch]] = (
+        None  # triggered by outboundAccountPosition
+    )
     orders_update: Optional[List[OrderPatch]] = None  # triggered by executionReport
 
 
 class UsdmPatch(msgspec.Struct):
     """Minimal USD-M delta patch (ACCOUNT_UPDATE, ORDER_TRADE_UPDATE)."""
 
-    account_update: Optional[AccountTotalsPatch] = None  # from ACCOUNT_UPDATE accountTotals
+    account_update: Optional[AccountTotalsPatch] = (
+        None  # from ACCOUNT_UPDATE accountTotals
+    )
     assets_update: Optional[List[AssetPatch]] = None  # ACCOUNT_UPDATE assets
     positions_update: Optional[List[PositionPatch]] = None  # ACCOUNT_UPDATE positions
     orders_update: Optional[List[OrderPatch]] = None  # ORDER_TRADE_UPDATE data

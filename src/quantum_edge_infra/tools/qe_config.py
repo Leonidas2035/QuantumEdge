@@ -9,6 +9,7 @@ import yaml
 
 from tools.qe_paths import find_repo_root, get_paths
 
+
 def _find_qe_root() -> Path:
     return find_repo_root()
 
@@ -59,7 +60,9 @@ def get_qe_config() -> Dict[str, Any]:
     if config_path.exists():
         raw = _load_yaml(config_path)
 
-    supervisor_raw = raw.get("supervisor", {}) if isinstance(raw.get("supervisor", {}), dict) else {}
+    supervisor_raw = (
+        raw.get("supervisor", {}) if isinstance(raw.get("supervisor", {}), dict) else {}
+    )
     env_host = os.getenv("SUPERVISOR_HOST") or os.getenv("QE_SUPERVISOR_HOST")
     env_port = os.getenv("SUPERVISOR_PORT") or os.getenv("QE_SUPERVISOR_PORT")
     env_url = os.getenv("SUPERVISOR_URL")

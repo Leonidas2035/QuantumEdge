@@ -7,7 +7,7 @@ from typing import Dict, List
 
 @dataclass
 class FileChange:
-    path: str               # relative to project root
+    path: str  # relative to project root
     old_content: str
     new_content: str
 
@@ -21,9 +21,16 @@ class ChangeSet:
 class FileManager:
     FILE_PATTERN = r"===FILE:\s*(.*?)===\n(.*?)(?=\n===FILE:|$)"
 
-    def __init__(self, base_output_dir: str = "output", target_project: str | None = None, mode: str = "write_dev"):
+    def __init__(
+        self,
+        base_output_dir: str = "output",
+        target_project: str | None = None,
+        mode: str = "write_dev",
+    ):
         self.base_output_dir = os.path.abspath(base_output_dir)
-        self.target_project = os.path.abspath(target_project) if target_project else None
+        self.target_project = (
+            os.path.abspath(target_project) if target_project else None
+        )
         self.mode = mode
 
     def _ensure_dir(self, path: str) -> None:
@@ -103,7 +110,10 @@ class FileManager:
         """
         from warnings import warn
 
-        warn("process_output is deprecated; use ChangeSet helpers instead.", DeprecationWarning)
+        warn(
+            "process_output is deprecated; use ChangeSet helpers instead.",
+            DeprecationWarning,
+        )
         matches = re.findall(self.FILE_PATTERN, response, flags=re.S | re.M)
         written_files: list[str] = []
         created_files: list[str] = []
@@ -144,7 +154,11 @@ def build_change_set_from_response(project_root: str, model_output: str) -> Chan
     change_set = ChangeSet(project_root=project_root_abs, changes={})
     for path, code in matches:
         rel_path = os.path.normpath(path.strip())
-        abs_path = os.path.join(project_root_abs, rel_path) if not os.path.isabs(rel_path) else os.path.abspath(rel_path)
+        abs_path = (
+            os.path.join(project_root_abs, rel_path)
+            if not os.path.isabs(rel_path)
+            else os.path.abspath(rel_path)
+        )
         if os.path.commonpath([abs_path, project_root_abs]) != project_root_abs:
             # Skip files outside project root for safety
             continue
@@ -153,7 +167,9 @@ def build_change_set_from_response(project_root: str, model_output: str) -> Chan
                 old_content = handle.read()
         except OSError:
             old_content = ""
-        change_set.changes[rel_path] = FileChange(path=rel_path, old_content=old_content, new_content=code)
+        change_set.changes[rel_path] = FileChange(
+            path=rel_path, old_content=old_content, new_content=code
+        )
     return change_set
 
 
@@ -201,7 +217,9 @@ def _write_patch_file(base_dir: str, rel_path: str, old: str, new: str) -> str:
     return abs_patch_path
 
 
-def write_change_set_as_patches(change_set: ChangeSet, patches_dir: str) -> Dict[str, List[str]]:
+def write_change_set_as_patches(
+    change_set: ChangeSet, patches_dir: str
+) -> Dict[str, List[str]]:
     """
     Writes change set as patch files (patch-only mode).
     """
@@ -214,7 +232,9 @@ def write_change_set_as_patches(change_set: ChangeSet, patches_dir: str) -> Dict
     deleted_files: List[str] = []
 
     for rel_path, change in change_set.changes.items():
-        patch_path = _write_patch_file(patches_dir_abs, rel_path, change.old_content, change.new_content)
+        patch_path = _write_patch_file(
+            patches_dir_abs, rel_path, change.old_content, change.new_content
+        )
         patch_files.append(patch_path)
         if change.old_content == "":
             created_files.append(rel_path)

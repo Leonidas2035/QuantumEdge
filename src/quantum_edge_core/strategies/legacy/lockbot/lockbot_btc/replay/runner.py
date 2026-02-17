@@ -12,7 +12,11 @@ from typing import Any, Dict, Iterable, List, Optional
 import msgspec
 import yaml
 
-from LockBotBTC.lockbot.contracts.lockbot_control_v1 import ACK_TOPIC, CMD_TOPIC, STATUS_TOPIC
+from LockBotBTC.lockbot.contracts.lockbot_control_v1 import (
+    ACK_TOPIC,
+    CMD_TOPIC,
+    STATUS_TOPIC,
+)
 from LockBotBTC.lockbot_btc.config import LockbotConfig
 from LockBotBTC.lockbot_btc.ddn.config import DDNConfig, DDNProfile
 from LockBotBTC.lockbot_btc.main import LockBotService
@@ -28,10 +32,15 @@ if SUPERVISOR_DIR.exists() and str(SUPERVISOR_DIR) not in sys.path:
 
 from supervisor.lockbot.models import PolicyRunnerConfig, load_lockbot_policy_config
 from supervisor.lockbot.policy_runner import LockbotPolicyRunner
-from supervisor.lockbot.replay.policy_adapter import PolicyReplayAdapter, ReplayControlClient
+from supervisor.lockbot.replay.policy_adapter import (
+    PolicyReplayAdapter,
+    ReplayControlClient,
+)
 
 
-def load_dataset(path: Path, *, time_min: Optional[int] = None, time_max: Optional[int] = None) -> List[Dict[str, Any]]:
+def load_dataset(
+    path: Path, *, time_min: Optional[int] = None, time_max: Optional[int] = None
+) -> List[Dict[str, Any]]:
     events: List[Dict[str, Any]] = []
     with path.open("r", encoding="utf-8") as handle:
         for line in handle:
@@ -83,7 +92,9 @@ def run_replay(
         clock=clock,
     )
     runner = LockbotPolicyRunner(policy_cfg, control_client)
-    policy_adapter = PolicyReplayAdapter(runner, bus, market_topics=policy_cfg.hub_topics, symbol=policy_cfg.symbol)
+    policy_adapter = PolicyReplayAdapter(
+        runner, bus, market_topics=policy_cfg.hub_topics, symbol=policy_cfg.symbol
+    )
 
     recorder = _ReplayRecorder(out_dir / "decisions.jsonl")
     fill_cfg = ReplayFillConfig(tier=paper_fill_model)
@@ -114,7 +125,15 @@ def run_replay(
     ordered = _sort_events([_normalize_event(event) for event in events])
     if not ordered:
         metrics_snapshot = metrics.build()
-        _write_outputs(out_dir, metrics_snapshot, metadata or {}, policy_cfg, bot_cfg, ddn_cfg, paper_fill_model)
+        _write_outputs(
+            out_dir,
+            metrics_snapshot,
+            metadata or {},
+            policy_cfg,
+            bot_cfg,
+            ddn_cfg,
+            paper_fill_model,
+        )
         recorder.close()
         return
 
@@ -132,10 +151,18 @@ def run_replay(
             if topic in market_topics:
                 bot_adapter.on_market_event(topic, event)
             elif topic in account_topics:
-                payload = event.get("payload") if isinstance(event.get("payload"), dict) else {}
+                payload = (
+                    event.get("payload")
+                    if isinstance(event.get("payload"), dict)
+                    else {}
+                )
                 bot_adapter.on_account_event(topic, payload)
             if topic == f"{bot_cfg.symbol}:mark_price_1s":
-                payload = event.get("payload") if isinstance(event.get("payload"), dict) else {}
+                payload = (
+                    event.get("payload")
+                    if isinstance(event.get("payload"), dict)
+                    else {}
+                )
                 if payload.get("mark_price") is not None:
                     last_mark = float(payload.get("mark_price"))
             bus.publish(topic, event)
@@ -150,7 +177,15 @@ def run_replay(
             next_tick_ms += tick_s * 1000
 
     metrics_snapshot = metrics.build()
-    _write_outputs(out_dir, metrics_snapshot, metadata or {}, policy_cfg, bot_cfg, ddn_cfg, paper_fill_model)
+    _write_outputs(
+        out_dir,
+        metrics_snapshot,
+        metadata or {},
+        policy_cfg,
+        bot_cfg,
+        ddn_cfg,
+        paper_fill_model,
+    )
     recorder.close()
 
 
@@ -167,7 +202,14 @@ def _normalize_event(event: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _sort_events(events: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    return sorted(events, key=lambda item: (int(item.get("ts_event") or 0), int(item.get("seq") or 0), str(item.get("topic") or "")))
+    return sorted(
+        events,
+        key=lambda item: (
+            int(item.get("ts_event") or 0),
+            int(item.get("seq") or 0),
+            str(item.get("topic") or ""),
+        ),
+    )
 
 
 def _write_outputs(
@@ -215,7 +257,9 @@ def _write_outputs(
 
 def _git_sha() -> str:
     try:
-        result = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True, check=True)
+        result = subprocess.run(
+            ["git", "rev-parse", "HEAD"], capture_output=True, text=True, check=True
+        )
     except Exception:
         return "unknown"
     return result.stdout.strip() or "unknown"
@@ -230,7 +274,9 @@ def _as_dict(message: Any) -> Dict[str, Any]:
         return dict(message)
 
 
-def load_ddn_config(path: Optional[Path], *, base: Optional[DDNConfig] = None) -> Optional[DDNConfig]:
+def load_ddn_config(
+    path: Optional[Path], *, base: Optional[DDNConfig] = None
+) -> Optional[DDNConfig]:
     if not path:
         return None
     if not path.exists():
@@ -252,20 +298,38 @@ def load_ddn_config(path: Optional[Path], *, base: Optional[DDNConfig] = None) -
         cfg.profiles = profiles
     cfg.max_band_abs = float(raw.get("max_band_abs", cfg.max_band_abs))
     cfg.max_margin_usage = float(raw.get("max_margin_usage", cfg.max_margin_usage))
-    cfg.min_distance_to_liq_bps = float(raw.get("min_distance_to_liq_bps", cfg.min_distance_to_liq_bps))
-    cfg.max_step_notional_usd = float(raw.get("max_step_notional_usd", cfg.max_step_notional_usd))
-    cfg.min_step_notional_usd = float(raw.get("min_step_notional_usd", cfg.min_step_notional_usd))
-    cfg.max_steps_per_minute = int(raw.get("max_steps_per_minute", cfg.max_steps_per_minute))
-    cfg.cooldown_ms_after_reject = int(raw.get("cooldown_ms_after_reject", cfg.cooldown_ms_after_reject))
+    cfg.min_distance_to_liq_bps = float(
+        raw.get("min_distance_to_liq_bps", cfg.min_distance_to_liq_bps)
+    )
+    cfg.max_step_notional_usd = float(
+        raw.get("max_step_notional_usd", cfg.max_step_notional_usd)
+    )
+    cfg.min_step_notional_usd = float(
+        raw.get("min_step_notional_usd", cfg.min_step_notional_usd)
+    )
+    cfg.max_steps_per_minute = int(
+        raw.get("max_steps_per_minute", cfg.max_steps_per_minute)
+    )
+    cfg.cooldown_ms_after_reject = int(
+        raw.get("cooldown_ms_after_reject", cfg.cooldown_ms_after_reject)
+    )
     cfg.panic_on_lag_ms = int(raw.get("panic_on_lag_ms", cfg.panic_on_lag_ms))
     cfg.taker_fee_bps = float(raw.get("taker_fee_bps", cfg.taker_fee_bps))
     cfg.maker_fee_bps = float(raw.get("maker_fee_bps", cfg.maker_fee_bps))
-    cfg.expected_slippage_bps_market = float(raw.get("expected_slippage_bps_market", cfg.expected_slippage_bps_market))
+    cfg.expected_slippage_bps_market = float(
+        raw.get("expected_slippage_bps_market", cfg.expected_slippage_bps_market)
+    )
     cfg.funding_weight = float(raw.get("funding_weight", cfg.funding_weight))
-    cfg.min_expected_edge_bps = float(raw.get("min_expected_edge_bps", cfg.min_expected_edge_bps))
-    cfg.max_cost_bps_per_step = float(raw.get("max_cost_bps_per_step", cfg.max_cost_bps_per_step))
+    cfg.min_expected_edge_bps = float(
+        raw.get("min_expected_edge_bps", cfg.min_expected_edge_bps)
+    )
+    cfg.max_cost_bps_per_step = float(
+        raw.get("max_cost_bps_per_step", cfg.max_cost_bps_per_step)
+    )
     cfg.volatility_window = int(raw.get("volatility_window", cfg.volatility_window))
-    cfg.step_volatility_scale = float(raw.get("step_volatility_scale", cfg.step_volatility_scale))
+    cfg.step_volatility_scale = float(
+        raw.get("step_volatility_scale", cfg.step_volatility_scale)
+    )
     return cfg
 
 
@@ -282,7 +346,9 @@ class _ReplayRecorder:
         self._fh = self._path.open("w", encoding="utf-8")
 
     def record(self, record_type: str, payload: Dict[str, Any]) -> None:
-        self._fh.write(json.dumps({"type": record_type, "data": payload}, sort_keys=True) + "\n")
+        self._fh.write(
+            json.dumps({"type": record_type, "data": payload}, sort_keys=True) + "\n"
+        )
 
     def close(self) -> None:
         self._fh.close()

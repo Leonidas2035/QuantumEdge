@@ -17,9 +17,17 @@ class ScenarioRule:
     def evaluate(self, metrics: Dict[str, Any]) -> Tuple[bool, float, Optional[str]]:
         val = metrics.get(self.metric)
         if val is None:
-            return (not self.required), 0.0, f"missing:{self.metric}" if self.required else None
+            return (
+                (not self.required),
+                0.0,
+                f"missing:{self.metric}" if self.required else None,
+            )
         ok = _apply_op(val, self.op, self.value)
-        return ok, self.weight if ok else 0.0, None if ok else f"{self.metric}:{self.op}:{self.value}"
+        return (
+            ok,
+            self.weight if ok else 0.0,
+            None if ok else f"{self.metric}:{self.op}:{self.value}",
+        )
 
 
 @dataclass
@@ -56,7 +64,9 @@ def build_scenarios(thresholds: Dict[str, Any]) -> List[ScenarioSpec]:
             "Directional uptrend with clean pullbacks.",
             "High slope + high fit, low alternation.",
             [
-                ScenarioRule("trend_slope_bps_per_min", "gte", t["strong_trend_bps_per_min"]),
+                ScenarioRule(
+                    "trend_slope_bps_per_min", "gte", t["strong_trend_bps_per_min"]
+                ),
                 ScenarioRule("trend_r2", "gte", t["trend_r2_min"]),
                 ScenarioRule("alternation_rate", "lte", t["alternation_low"]),
                 ScenarioRule("vol_bps", "lte", t["vol_high_bps"], required=False),
@@ -69,7 +79,9 @@ def build_scenarios(thresholds: Dict[str, Any]) -> List[ScenarioSpec]:
             "Directional downtrend with clean pullbacks.",
             "Negative slope + high fit, low alternation.",
             [
-                ScenarioRule("trend_slope_bps_per_min", "lte", -t["strong_trend_bps_per_min"]),
+                ScenarioRule(
+                    "trend_slope_bps_per_min", "lte", -t["strong_trend_bps_per_min"]
+                ),
                 ScenarioRule("trend_r2", "gte", t["trend_r2_min"]),
                 ScenarioRule("alternation_rate", "lte", t["alternation_low"]),
                 ScenarioRule("vol_bps", "lte", t["vol_high_bps"], required=False),
@@ -82,7 +94,11 @@ def build_scenarios(thresholds: Dict[str, Any]) -> List[ScenarioSpec]:
             "Uptrend but with frequent pullbacks.",
             "Moderate slope + higher alternation.",
             [
-                ScenarioRule("trend_slope_bps_per_min", "between", [t["mild_trend_bps_per_min"], t["strong_trend_bps_per_min"]]),
+                ScenarioRule(
+                    "trend_slope_bps_per_min",
+                    "between",
+                    [t["mild_trend_bps_per_min"], t["strong_trend_bps_per_min"]],
+                ),
                 ScenarioRule("trend_r2", "gte", t["mild_r2_min"]),
                 ScenarioRule("alternation_rate", "gte", t["alternation_low"]),
             ],
@@ -94,7 +110,11 @@ def build_scenarios(thresholds: Dict[str, Any]) -> List[ScenarioSpec]:
             "Downtrend but with frequent pullbacks.",
             "Moderate negative slope + higher alternation.",
             [
-                ScenarioRule("trend_slope_bps_per_min", "between", [-t["strong_trend_bps_per_min"], -t["mild_trend_bps_per_min"]]),
+                ScenarioRule(
+                    "trend_slope_bps_per_min",
+                    "between",
+                    [-t["strong_trend_bps_per_min"], -t["mild_trend_bps_per_min"]],
+                ),
                 ScenarioRule("trend_r2", "gte", t["mild_r2_min"]),
                 ScenarioRule("alternation_rate", "gte", t["alternation_low"]),
             ],
@@ -106,7 +126,9 @@ def build_scenarios(thresholds: Dict[str, Any]) -> List[ScenarioSpec]:
             "Low slope, tight range, low vol.",
             "Near-zero slope + narrow range.",
             [
-                ScenarioRule("trend_slope_bps_per_min", "abs_lte", t["range_slope_bps_per_min"]),
+                ScenarioRule(
+                    "trend_slope_bps_per_min", "abs_lte", t["range_slope_bps_per_min"]
+                ),
                 ScenarioRule("range_bps", "lte", t["range_tight_bps"]),
                 ScenarioRule("vol_bps", "lte", t["vol_low_bps"]),
             ],
@@ -118,7 +140,9 @@ def build_scenarios(thresholds: Dict[str, Any]) -> List[ScenarioSpec]:
             "Low slope, wider oscillations.",
             "Near-zero slope + wide range.",
             [
-                ScenarioRule("trend_slope_bps_per_min", "abs_lte", t["range_slope_bps_per_min"]),
+                ScenarioRule(
+                    "trend_slope_bps_per_min", "abs_lte", t["range_slope_bps_per_min"]
+                ),
                 ScenarioRule("range_bps", "gte", t["range_wide_bps"]),
             ],
             "S05",
@@ -129,9 +153,13 @@ def build_scenarios(thresholds: Dict[str, Any]) -> List[ScenarioSpec]:
             "Alternating returns with low trend.",
             "High alternation + low slope.",
             [
-                ScenarioRule("trend_slope_bps_per_min", "abs_lte", t["range_slope_bps_per_min"]),
+                ScenarioRule(
+                    "trend_slope_bps_per_min", "abs_lte", t["range_slope_bps_per_min"]
+                ),
                 ScenarioRule("alternation_rate", "gte", t["alternation_high"]),
-                ScenarioRule("range_bps", "between", [t["range_tight_bps"], t["range_wide_bps"]]),
+                ScenarioRule(
+                    "range_bps", "between", [t["range_tight_bps"], t["range_wide_bps"]]
+                ),
             ],
             "S06",
         ),
@@ -141,8 +169,12 @@ def build_scenarios(thresholds: Dict[str, Any]) -> List[ScenarioSpec]:
             "Trend early, range later.",
             "Slope decays over window.",
             [
-                ScenarioRule("slope_first_bps_per_min", "gte", t["mild_trend_bps_per_min"]),
-                ScenarioRule("slope_last_bps_per_min", "abs_lte", t["range_slope_bps_per_min"]),
+                ScenarioRule(
+                    "slope_first_bps_per_min", "gte", t["mild_trend_bps_per_min"]
+                ),
+                ScenarioRule(
+                    "slope_last_bps_per_min", "abs_lte", t["range_slope_bps_per_min"]
+                ),
                 ScenarioRule("range_last_bps", "lte", t["range_tight_bps"]),
             ],
             "S07",
@@ -329,7 +361,9 @@ def build_scenarios(thresholds: Dict[str, Any]) -> List[ScenarioSpec]:
             "Choppy with frequent sign flips.",
             [
                 ScenarioRule("alternation_rate", "gte", t["alternation_high"]),
-                ScenarioRule("trend_slope_bps_per_min", "abs_lte", t["mild_trend_bps_per_min"]),
+                ScenarioRule(
+                    "trend_slope_bps_per_min", "abs_lte", t["mild_trend_bps_per_min"]
+                ),
                 ScenarioRule("vol_bps", "gte", t["vol_low_bps"], required=False),
             ],
             "S24",

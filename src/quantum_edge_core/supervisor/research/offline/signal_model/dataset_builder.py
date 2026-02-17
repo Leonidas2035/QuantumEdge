@@ -14,12 +14,20 @@ class DatasetBuilder:
     The tick schema is expected to be: timestamp,price,qty,side
     """
 
-    def __init__(self, symbol: str = "BTCUSDT", horizon: int = 1, data_dir: Optional[Path] = None, limit_files: Optional[int] = None):
+    def __init__(
+        self,
+        symbol: str = "BTCUSDT",
+        horizon: int = 1,
+        data_dir: Optional[Path] = None,
+        limit_files: Optional[int] = None,
+    ):
         self.root = Path(os.getenv("QE_ROOT") or Path(__file__).resolve().parents[4])
         self.symbol = symbol
         self.horizon = horizon
         self.limit_files = limit_files
-        base_dir = Path(data_dir) if data_dir is not None else (self.root / "data" / "ticks")
+        base_dir = (
+            Path(data_dir) if data_dir is not None else (self.root / "data" / "ticks")
+        )
         if not base_dir.is_absolute():
             base_dir = (self.root / base_dir).resolve()
         self.data_dir = base_dir
@@ -90,7 +98,9 @@ class DatasetBuilder:
 
         df = df.copy()
         df = df[required_cols + [c for c in df.columns if c not in required_cols]]
-        df["timestamp"] = pd.to_numeric(df["timestamp"], errors="coerce").astype("Int64")
+        df["timestamp"] = pd.to_numeric(df["timestamp"], errors="coerce").astype(
+            "Int64"
+        )
         df["price"] = pd.to_numeric(df["price"], errors="coerce")
         df["qty"] = pd.to_numeric(df["qty"], errors="coerce")
         df["side"] = df["side"].astype(str).str.lower()
@@ -102,7 +112,12 @@ class DatasetBuilder:
 
     def _compute_features(self, df: pd.DataFrame) -> pd.DataFrame:
         df = df.copy()
-        df["side_sign"] = df["side"].astype(str).str.contains("sell").map(lambda v: -1.0 if v else 1.0)
+        df["side_sign"] = (
+            df["side"]
+            .astype(str)
+            .str.contains("sell")
+            .map(lambda v: -1.0 if v else 1.0)
+        )
         bars = build_feature_frame(df)
         bars = bars.dropna(subset=FEATURE_NAMES)
 
@@ -130,7 +145,9 @@ class DatasetBuilder:
 
         featured = self._compute_features(normalized)
         if featured.empty:
-            print(f"[ERROR] Not enough data to compute features/targets for {self.symbol}.")
+            print(
+                f"[ERROR] Not enough data to compute features/targets for {self.symbol}."
+            )
             return pd.DataFrame(), pd.Series(dtype=int), normalized
 
         X = featured[FEATURE_NAMES].copy()

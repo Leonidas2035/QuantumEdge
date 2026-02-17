@@ -13,7 +13,6 @@ import re
 import sys
 from pathlib import Path
 
-
 ROOT = Path(__file__).resolve().parents[1]
 SKIP_DIRS = {".git", "venv", ".venv", "__pycache__", "logs", "data", "storage"}
 SUSPECT_FILE_TOKENS = ("secret", "secrets", ".env", "apikey", "api-key")

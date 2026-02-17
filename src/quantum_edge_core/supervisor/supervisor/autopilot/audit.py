@@ -15,7 +15,9 @@ class AuditLogger:
 
     def log(self, record: Dict[str, Any]) -> None:
         payload = dict(record)
-        payload.setdefault("ts_utc", datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"))
+        payload.setdefault(
+            "ts_utc", datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+        )
         try:
             with self.path.open("a", encoding="utf-8") as handle:
                 handle.write(json.dumps(payload) + "\n")

@@ -60,7 +60,9 @@ def train_horizons(
             limit_files=None,
         )
         if not ok:
-            raise RuntimeError(f"Training failed for {symbol} horizon {horizon}: {info.get('error')}")
+            raise RuntimeError(
+                f"Training failed for {symbol} horizon {horizon}: {info.get('error')}"
+            )
 
         model_path = Path(info["model_path"])
         model_sha = sha256_file(model_path)

@@ -1,4 +1,5 @@
 import pytest
+
 pytest.skip("Legacy test broken by src-layout migration", allow_module_level=True)
 import pytest
 
@@ -47,9 +48,13 @@ def test_walls_threshold_qty():
     config.symbols = ["BTCUSDT"]
     config.walls.per_symbol_threshold_qty = {"BTCUSDT": 50.0}
     config.walls.max_distance_bps = 1000
-    aggregator = OrderBookAggregator(config, DummyPublisher(), DummyBus(), DummySnapshot())
+    aggregator = OrderBookAggregator(
+        config, DummyPublisher(), DummyBus(), DummySnapshot()
+    )
     levels = [DepthLevel(price=40000, qty=60), DepthLevel(price=40050, qty=49)]
-    walls = aggregator._filter_walls(levels, mid=40025, threshold_qty=50.0, threshold_notional=2_000_000, side="bid")
+    walls = aggregator._filter_walls(
+        levels, mid=40025, threshold_qty=50.0, threshold_notional=2_000_000, side="bid"
+    )
     assert len(walls) == 1
     assert walls[0].price == pytest.approx(40000)
 
@@ -60,7 +65,11 @@ def test_walls_notional_fallback():
     config.walls.per_symbol_threshold_qty = {}
     config.walls.default_threshold_notional_usd = 2_000_000
     config.walls.max_distance_bps = 1000
-    aggregator = OrderBookAggregator(config, DummyPublisher(), DummyBus(), DummySnapshot())
+    aggregator = OrderBookAggregator(
+        config, DummyPublisher(), DummyBus(), DummySnapshot()
+    )
     levels = [DepthLevel(price=50000, qty=50)]
-    walls = aggregator._filter_walls(levels, mid=50000, threshold_qty=None, threshold_notional=2_000_000, side="bid")
+    walls = aggregator._filter_walls(
+        levels, mid=50000, threshold_qty=None, threshold_notional=2_000_000, side="bid"
+    )
     assert walls[0].notional == pytest.approx(2_500_000)

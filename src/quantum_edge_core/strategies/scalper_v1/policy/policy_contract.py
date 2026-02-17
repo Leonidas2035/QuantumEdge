@@ -134,4 +134,3 @@ class Policy:
         now_ts = int(time.time()) if now_ts is None else int(now_ts)
         grace = max(0, int(grace_sec))
         return now_ts <= int(self.ts) + int(self.ttl_sec) + grace
-

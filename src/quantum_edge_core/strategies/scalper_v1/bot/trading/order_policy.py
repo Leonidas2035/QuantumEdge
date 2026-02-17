@@ -16,7 +16,12 @@ from typing import Any, Dict, Optional
 
 from quantumedge.execution.policies import Market, OrderSide
 from quantumedge.execution.smart_executor import SmartMakerExecutor
-from quantumedge.execution.types import BookState, ExecutionReport, OrderRequest, SmartMakerConfig
+from quantumedge.execution.types import (
+    BookState,
+    ExecutionReport,
+    OrderRequest,
+    SmartMakerConfig,
+)
 
 from bot.trading.smart_executor_adapter import TraderExecutionAdapter
 
@@ -24,7 +29,9 @@ from bot.trading.smart_executor_adapter import TraderExecutionAdapter
 class OrderPolicy:
     """Encapsulate scalp order preferences (limit vs market, offsets, cancels)."""
 
-    def __init__(self, settings: Dict[str, Any], logger: Optional[logging.Logger] = None):
+    def __init__(
+        self, settings: Dict[str, Any], logger: Optional[logging.Logger] = None
+    ):
         self.settings = settings or {}
         self.logger = logger or logging.getLogger(__name__)
 
@@ -33,8 +40,12 @@ class OrderPolicy:
         self.post_only = bool(policy.get("post_only", False))
         self.near_touch_offset_bps = float(policy.get("near_touch_offset_bps", 1.0))
         self.cancel_timeout_ms = int(policy.get("cancel_timeout_ms", 1500))
-        self.max_partial_fill_time_ms = int(policy.get("max_partial_fill_time_ms", 2000))
-        self.min_fill_ratio_before_cancel = float(policy.get("min_fill_ratio_before_cancel", 0.25))
+        self.max_partial_fill_time_ms = int(
+            policy.get("max_partial_fill_time_ms", 2000)
+        )
+        self.min_fill_ratio_before_cancel = float(
+            policy.get("min_fill_ratio_before_cancel", 0.25)
+        )
         smart_cfg = self.settings.get("smart_executor", {}) or {}
         self.smart_enabled = bool(smart_cfg.get("enabled", False))
         self.smart_require_book = bool(smart_cfg.get("require_book", True))
@@ -107,14 +118,19 @@ class OrderPolicy:
             if not book:
                 if self.smart_require_book:
                     return {"executed": False, "reason": "no_book"}
-                self.logger.warning("Smart executor missing book for %s; falling back to legacy flow.", symbol)
+                self.logger.warning(
+                    "Smart executor missing book for %s; falling back to legacy flow.",
+                    symbol,
+                )
             else:
                 adapter = TraderExecutionAdapter(trader, self.smart_market, self.logger)
                 executor = SmartMakerExecutor(
                     adapter,
                     self.smart_config,
                     logger=self.logger,
-                    event_sink=lambda evt: self.logger.info("smart_exec=%s", json.dumps(evt, separators=(",", ":"))),
+                    event_sink=lambda evt: self.logger.info(
+                        "smart_exec=%s", json.dumps(evt, separators=(",", ":"))
+                    ),
                 )
                 request = OrderRequest(
                     symbol=symbol_key,
@@ -158,9 +174,16 @@ class OrderPolicy:
             },
         )
         await trader.process(decision_obj, price, timestamp, symbol=symbol)
-        return {"filled": True, "order_type": order_type, "size": size, "executed": True}
+        return {
+            "filled": True,
+            "order_type": order_type,
+            "size": size,
+            "executed": True,
+        }
 
-    async def close_position(self, trader, size: float, price: float, timestamp: int, symbol: str) -> Dict[str, Any]:
+    async def close_position(
+        self, trader, size: float, price: float, timestamp: int, symbol: str
+    ) -> Dict[str, Any]:
         """Close an open position using the existing executor API."""
         decision_obj = type(
             "TmpDecision",

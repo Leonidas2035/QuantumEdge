@@ -48,10 +48,16 @@ def _candidate_files(
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Prune replayed L2 spool files safely.")
+    parser = argparse.ArgumentParser(
+        description="Prune replayed L2 spool files safely."
+    )
     parser.add_argument("--spool-dir", default="spool/l2", help="Spool directory root")
-    parser.add_argument("--state-file", default="spool/l2/.replay_state.json", help="Replay cursor file")
-    parser.add_argument("--retention-days", type=int, default=7, help="Minimum age in days")
+    parser.add_argument(
+        "--state-file", default="spool/l2/.replay_state.json", help="Replay cursor file"
+    )
+    parser.add_argument(
+        "--retention-days", type=int, default=7, help="Minimum age in days"
+    )
     parser.add_argument(
         "--apply",
         action="store_true",
@@ -81,7 +87,9 @@ def main() -> None:
     if not candidates:
         print("No spool files qualify for pruning.")
         return
-    print(f"Found {len(candidates)} candidate files (retention {args.retention_days} days).")
+    print(
+        f"Found {len(candidates)} candidate files (retention {args.retention_days} days)."
+    )
     for path in candidates:
         print("  ", path)
     if args.apply:

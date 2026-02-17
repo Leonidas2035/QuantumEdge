@@ -62,7 +62,9 @@ class MetricsCollector:
             self._stale_count += 0
 
     def on_command(self, command: Dict[str, Any], mark_price: Optional[float]) -> None:
-        payload = command.get("payload") if isinstance(command.get("payload"), dict) else {}
+        payload = (
+            command.get("payload") if isinstance(command.get("payload"), dict) else {}
+        )
         cmd = payload.get("cmd") or command.get("cmd")
         if cmd:
             self._cmd_counts[str(cmd)] += 1
@@ -79,9 +81,15 @@ class MetricsCollector:
                 self._apply_fill_model(action, float(qty), mark_price)
 
     def on_status(self, status: Dict[str, Any]) -> None:
-        payload = status.get("payload") if isinstance(status.get("payload"), dict) else {}
+        payload = (
+            status.get("payload") if isinstance(status.get("payload"), dict) else {}
+        )
         if "payload" in payload:
-            payload = payload.get("payload") if isinstance(payload.get("payload"), dict) else payload
+            payload = (
+                payload.get("payload")
+                if isinstance(payload.get("payload"), dict)
+                else payload
+            )
         risk = payload.get("risk") if isinstance(payload.get("risk"), dict) else {}
         distance = risk.get("distance_to_liq_bps")
         margin = risk.get("margin_usage")
@@ -103,7 +111,9 @@ class MetricsCollector:
         if verdict == "REJECT" and "RATE_LIMIT" in (ddn.get("last_reasons") or []):
             self._rate_limit_hits += 1
         self._last_ddn_verdict = verdict
-        market = payload.get("market") if isinstance(payload.get("market"), dict) else {}
+        market = (
+            payload.get("market") if isinstance(payload.get("market"), dict) else {}
+        )
         mark = market.get("mark_price")
         if mark is not None:
             mark = float(mark)
@@ -142,7 +152,9 @@ class MetricsCollector:
         )
         return metrics
 
-    def _apply_fill_model(self, action: str, qty: float, mark_price: Optional[float]) -> None:
+    def _apply_fill_model(
+        self, action: str, qty: float, mark_price: Optional[float]
+    ) -> None:
         if mark_price is None:
             return
         if action == "ADD_LONG":

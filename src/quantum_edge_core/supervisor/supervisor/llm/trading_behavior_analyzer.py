@@ -36,23 +36,34 @@ class TradingBehaviorAnalyzer:
         self._logger = logger
         self._rate_limiter = PerMinuteRateLimiter(config.max_calls_per_minute)
 
-    def analyze(self, trade_history: List[Dict[str, Any]], signal_history: List[Dict[str, Any]]) -> BehaviorResult:
+    def analyze(
+        self, trade_history: List[Dict[str, Any]], signal_history: List[Dict[str, Any]]
+    ) -> BehaviorResult:
         timestamp = datetime.now(timezone.utc)
         if not trade_history and not signal_history:
-            return BehaviorResult("UNKNOWN", "UNKNOWN", ["NO_DATA"], "Insufficient history", timestamp)
+            return BehaviorResult(
+                "UNKNOWN", "UNKNOWN", ["NO_DATA"], "Insufficient history", timestamp
+            )
 
         if not self._config.enabled or not self._llm:
-            return self._heuristic(trade_history, signal_history, timestamp, "LLM disabled")
+            return self._heuristic(
+                trade_history, signal_history, timestamp, "LLM disabled"
+            )
 
         if not self._rate_limiter.allow():
-            return self._heuristic(trade_history, signal_history, timestamp, "rate limited")
+            return self._heuristic(
+                trade_history, signal_history, timestamp, "rate limited"
+            )
 
         prompt = self._build_prompt(trade_history, signal_history)
         try:
             response = self._llm.complete(
                 model=self._config.model,
                 messages=[
-                    {"role": "system", "content": "Assess trading behavior. Respond JSON {\"pnl_quality\":,\"signal_quality\":,\"behavior_flags\":[],\"comment\":...}."},
+                    {
+                        "role": "system",
+                        "content": 'Assess trading behavior. Respond JSON {"pnl_quality":,"signal_quality":,"behavior_flags":[],"comment":...}.',
+                    },
                     {"role": "user", "content": prompt},
                 ],
                 temperature=self._config.temperature,
@@ -61,14 +72,24 @@ class TradingBehaviorAnalyzer:
             return self._parse_response(response, timestamp)
         except Exception as exc:  # pragma: no cover - network/LLM errors
             self._logger.warning("Trading behavior analyzer fallback: %s", exc)
-            return self._heuristic(trade_history, signal_history, timestamp, f"LLM error: {exc}")
+            return self._heuristic(
+                trade_history, signal_history, timestamp, f"LLM error: {exc}"
+            )
 
-    def _build_prompt(self, trades: List[Dict[str, Any]], signals: List[Dict[str, Any]]) -> str:
+    def _build_prompt(
+        self, trades: List[Dict[str, Any]], signals: List[Dict[str, Any]]
+    ) -> str:
         last_trades = trades[-self._config.history_trades :]
         last_signals = signals[-self._config.history_signals :]
-        pnl_samples = [t.get("pnl") for t in last_trades if isinstance(t.get("pnl"), (int, float))]
-        win_count = sum(1 for t in last_trades if (t.get("result") or "").upper() == "WIN")
-        loss_count = sum(1 for t in last_trades if (t.get("result") or "").upper() == "LOSS")
+        pnl_samples = [
+            t.get("pnl") for t in last_trades if isinstance(t.get("pnl"), (int, float))
+        ]
+        win_count = sum(
+            1 for t in last_trades if (t.get("result") or "").upper() == "WIN"
+        )
+        loss_count = sum(
+            1 for t in last_trades if (t.get("result") or "").upper() == "LOSS"
+        )
         winrate = win_count / max(1, (win_count + loss_count))
         signal_bias = sum(1 if s.get("side") == "BUY" else -1 for s in last_signals)
         return (
@@ -115,7 +136,9 @@ class TradingBehaviorAnalyzer:
             flags.append("POSSIBLE_TILT")
 
         comment = f"Heuristic behavior assessment ({reason})"
-        return BehaviorResult(pnl_quality, signal_quality, flags or ["NORMAL"], comment, timestamp)
+        return BehaviorResult(
+            pnl_quality, signal_quality, flags or ["NORMAL"], comment, timestamp
+        )
 
     def _parse_response(self, raw: str, timestamp: datetime) -> BehaviorResult:
         payload = json.loads(raw.strip())
@@ -124,4 +147,6 @@ class TradingBehaviorAnalyzer:
         flags = payload.get("behavior_flags") or []
         flag_list = [str(f) for f in flags if isinstance(f, str)]
         comment = str(payload.get("comment") or "LLM behavior assessment")
-        return BehaviorResult(pnl_quality, signal_quality, flag_list or ["NORMAL"], comment, timestamp)
+        return BehaviorResult(
+            pnl_quality, signal_quality, flag_list or ["NORMAL"], comment, timestamp
+        )

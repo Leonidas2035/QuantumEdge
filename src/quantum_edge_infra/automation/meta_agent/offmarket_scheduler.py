@@ -35,7 +35,9 @@ def _resolve_base_dir() -> str:
             pass
     base = os.path.abspath(os.path.dirname(__file__))
     parent = os.path.abspath(os.path.join(base, os.pardir))
-    if os.path.isdir(os.path.join(parent, "config")) and os.path.isdir(os.path.join(parent, "ai_scalper_bot")):
+    if os.path.isdir(os.path.join(parent, "config")) and os.path.isdir(
+        os.path.join(parent, "ai_scalper_bot")
+    ):
         return parent
     return base
 
@@ -152,7 +154,9 @@ def evaluate_windows(now_local: datetime, windows) -> bool:
             if day_match and start_min <= minutes < end_min:
                 return True
         else:
-            if (day_match and minutes >= start_min) or (prev_day_match and minutes < end_min):
+            if (day_match and minutes >= start_min) or (
+                prev_day_match and minutes < end_min
+            ):
                 return True
     return False
 
@@ -161,11 +165,15 @@ def _window_end(now_local: datetime, window) -> datetime:
     start_min = _minute_of_day(window.start)
     end_min = _minute_of_day(window.end)
     if start_min <= end_min:
-        end_time = now_local.replace(hour=end_min // 60, minute=end_min % 60, second=0, microsecond=0)
+        end_time = now_local.replace(
+            hour=end_min // 60, minute=end_min % 60, second=0, microsecond=0
+        )
         if end_time < now_local:
             end_time += timedelta(days=1)
         return end_time
-    end_time = now_local.replace(hour=end_min // 60, minute=end_min % 60, second=0, microsecond=0)
+    end_time = now_local.replace(
+        hour=end_min // 60, minute=end_min % 60, second=0, microsecond=0
+    )
     if now_local.hour * 60 + now_local.minute < end_min:
         return end_time
     return end_time + timedelta(days=1)
@@ -181,7 +189,9 @@ def _cron_match(value: str, current: int) -> bool:
     return current == int(text)
 
 
-def compute_next_fire(schedule: ScheduleSpec, last_fire: Optional[datetime], now_local: datetime) -> Optional[datetime]:
+def compute_next_fire(
+    schedule: ScheduleSpec, last_fire: Optional[datetime], now_local: datetime
+) -> Optional[datetime]:
     trigger = schedule.trigger
     if trigger.type == "interval":
         if last_fire is None:
@@ -191,19 +201,25 @@ def compute_next_fire(schedule: ScheduleSpec, last_fire: Optional[datetime], now
         return None if last_fire else now_local
     if trigger.type == "cron":
         for _ in range(0, 24 * 60):
-            if _cron_match(trigger.minute or "*", now_local.minute) and _cron_match(trigger.hour or "*", now_local.hour):
+            if _cron_match(trigger.minute or "*", now_local.minute) and _cron_match(
+                trigger.hour or "*", now_local.hour
+            ):
                 return now_local
             now_local += timedelta(minutes=1)
         return None
     return None
 
 
-def _trigger_due(schedule: ScheduleSpec, last_fire: Optional[datetime], now_local: datetime) -> bool:
+def _trigger_due(
+    schedule: ScheduleSpec, last_fire: Optional[datetime], now_local: datetime
+) -> bool:
     trigger = schedule.trigger
     if trigger.type == "interval":
         if last_fire is None:
             return True
-        return (now_local - last_fire).total_seconds() >= int(trigger.every_seconds or 0)
+        return (now_local - last_fire).total_seconds() >= int(
+            trigger.every_seconds or 0
+        )
     if trigger.type == "once":
         return last_fire is None
     if trigger.type == "cron":
@@ -211,7 +227,9 @@ def _trigger_due(schedule: ScheduleSpec, last_fire: Optional[datetime], now_loca
             return False
         if not _cron_match(trigger.hour or "*", now_local.hour):
             return False
-        if last_fire and last_fire.replace(second=0, microsecond=0) == now_local.replace(second=0, microsecond=0):
+        if last_fire and last_fire.replace(
+            second=0, microsecond=0
+        ) == now_local.replace(second=0, microsecond=0):
             return False
         return True
     return False
@@ -231,11 +249,15 @@ def _resolve_path_under_base(path: str, base_abs: str) -> str:
     return candidate
 
 
-def enqueue_task(schedule: ScheduleSpec, task_template: dict, inbox_dir: str, now_local: datetime) -> str:
+def enqueue_task(
+    schedule: ScheduleSpec, task_template: dict, inbox_dir: str, now_local: datetime
+) -> str:
     os.makedirs(inbox_dir, exist_ok=True)
     payload = dict(task_template)
     payload.setdefault("project_id", schedule.project_id)
-    payload.setdefault("task_id", f"{schedule.schedule_id}_{now_local.strftime('%Y%m%d_%H%M%S')}")
+    payload.setdefault(
+        "task_id", f"{schedule.schedule_id}_{now_local.strftime('%Y%m%d_%H%M%S')}"
+    )
     payload.setdefault("created_at", now_local.astimezone(timezone.utc).isoformat())
     payload.setdefault("metadata", {})
     payload["metadata"]["schedule_id"] = schedule.schedule_id
@@ -378,7 +400,9 @@ def tick(
                 run_id = _extract_run_id(archived_name, pending_base)
                 if run_id:
                     entry["last_run_id"] = run_id
-                    report_path = os.path.join(runtime_dir, "runs", run_id, "report.json")
+                    report_path = os.path.join(
+                        runtime_dir, "runs", run_id, "report.json"
+                    )
                     try:
                         with open(report_path, "r", encoding="utf-8") as handle:
                             report_data = json.load(handle)
@@ -390,7 +414,10 @@ def tick(
 
         last_fire = _parse_iso(entry.get("last_fire"))
         next_eligible_at = _parse_iso(entry.get("next_eligible_at"))
-        if next_eligible_at and (now_utc or datetime.now(timezone.utc)) < next_eligible_at:
+        if (
+            next_eligible_at
+            and (now_utc or datetime.now(timezone.utc)) < next_eligible_at
+        ):
             continue
 
         if not evaluate_windows(now_local, schedule.windows):
@@ -431,7 +458,9 @@ def tick(
         if result.get("lock_busy"):
             for entry in state["schedules"].values():
                 backoff = _calc_backoff(1, 5, 30, False)
-                entry["next_eligible_at"] = _format_iso((now_utc or datetime.now(timezone.utc)) + timedelta(seconds=backoff))
+                entry["next_eligible_at"] = _format_iso(
+                    (now_utc or datetime.now(timezone.utc)) + timedelta(seconds=backoff)
+                )
 
     for item in reports_total:
         task_name = item.get("task_name")
@@ -461,17 +490,29 @@ def tick(
                 schedule.retries.backoff_max_seconds,
                 schedule.retries.jitter,
             )
-            entry["next_eligible_at"] = _format_iso((now_utc or datetime.now(timezone.utc)) + timedelta(seconds=delay))
+            entry["next_eligible_at"] = _format_iso(
+                (now_utc or datetime.now(timezone.utc)) + timedelta(seconds=delay)
+            )
             if attempts >= schedule.policy.max_attempts:
                 entry["attempts"] = 0
-                end_time = _window_end(now_local, schedule.windows[0]) if schedule.windows else now_local + timedelta(hours=1)
-                entry["next_eligible_at"] = _format_iso(end_time.astimezone(timezone.utc))
+                end_time = (
+                    _window_end(now_local, schedule.windows[0])
+                    if schedule.windows
+                    else now_local + timedelta(hours=1)
+                )
+                entry["next_eligible_at"] = _format_iso(
+                    end_time.astimezone(timezone.utc)
+                )
         else:
             entry["attempts"] = 0
             entry["next_eligible_at"] = None
 
     _save_state_atomic(state_path, state)
-    return {"processed": processed_total, "enqueued": enqueued, "state_path": state_path}
+    return {
+        "processed": processed_total,
+        "enqueued": enqueued,
+        "state_path": state_path,
+    }
 
 
 def status(schedules_dir: str, runtime_dir: str) -> List[dict]:

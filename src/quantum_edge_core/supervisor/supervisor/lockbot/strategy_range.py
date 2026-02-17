@@ -4,7 +4,13 @@ from __future__ import annotations
 
 from typing import Optional
 
-from supervisor.lockbot.models import BotStatusSnapshot, MarketSnapshot, PolicyIntent, RangePolicyConfig, StrategyDecision
+from supervisor.lockbot.models import (
+    BotStatusSnapshot,
+    MarketSnapshot,
+    PolicyIntent,
+    RangePolicyConfig,
+    StrategyDecision,
+)
 
 
 def evaluate_range(
@@ -14,7 +20,12 @@ def evaluate_range(
 ) -> StrategyDecision:
     if market.mark_price is None or market.vwap is None:
         return StrategyDecision(intent=None, action="NOOP", reason="missing_price")
-    if market.band_1u is None or market.band_1l is None or market.band_2u is None or market.band_2l is None:
+    if (
+        market.band_1u is None
+        or market.band_1l is None
+        or market.band_2u is None
+        or market.band_2l is None
+    ):
         return StrategyDecision(intent=None, action="NOOP", reason="missing_bands")
 
     mark = market.mark_price
@@ -51,7 +62,9 @@ def evaluate_range(
         "mark": mark,
         "vwap": market.vwap,
     }
-    return StrategyDecision(intent=intent, action="EXEC_STEP", reason="range_band2", debug=debug)
+    return StrategyDecision(
+        intent=intent, action="EXEC_STEP", reason="range_band2", debug=debug
+    )
 
 
 def _range_bias(mark: float, band_2u: float, band_2l: float) -> Optional[str]:

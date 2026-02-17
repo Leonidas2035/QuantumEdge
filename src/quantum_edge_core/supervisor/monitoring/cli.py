@@ -7,7 +7,9 @@ import json
 
 
 def parse_telemetry_args(argv: list[str]) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(prog="supervisor.py telemetry", description="Telemetry commands")
+    parser = argparse.ArgumentParser(
+        prog="supervisor.py telemetry", description="Telemetry commands"
+    )
     sub = parser.add_subparsers(dest="telemetry_cmd", required=True)
     sub.add_parser("summary")
     sub.add_parser("alerts")

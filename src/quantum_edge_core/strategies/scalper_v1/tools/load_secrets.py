@@ -27,9 +27,14 @@ def main() -> None:
     password = get_runtime_password(supervisor)
 
     try:
-        secrets = load_secrets(password, secret_file=Path(__file__).resolve().parents[1] / "config" / "secrets.enc")
+        secrets = load_secrets(
+            password,
+            secret_file=Path(__file__).resolve().parents[1] / "config" / "secrets.enc",
+        )
     except SecretsFileNotFound:
-        print("[ERROR] Encrypted secrets file not found. Run tools/init_secrets.py first.")
+        print(
+            "[ERROR] Encrypted secrets file not found. Run tools/init_secrets.py first."
+        )
         sys.exit(1)
     except SecretsIntegrityError as exc:
         print(f"[ERROR] Unable to decrypt secrets: {exc}")

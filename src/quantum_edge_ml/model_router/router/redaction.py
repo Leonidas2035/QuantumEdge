@@ -23,7 +23,9 @@ def hash_prompt(prompt: str) -> str:
     return hashlib.sha256(prompt.encode("utf-8")).hexdigest()
 
 
-def redact_prompt(prompt: str, *, store_prompt: bool, max_len: int = 512) -> RedactionResult:
+def redact_prompt(
+    prompt: str, *, store_prompt: bool, max_len: int = 512
+) -> RedactionResult:
     redacted = prompt
     for pattern in REDACT_PATTERNS:
         redacted = pattern.sub("[REDACTED]", redacted)

@@ -188,34 +188,68 @@ def load_lockbot_policy_config(path: Path) -> PolicyRunnerConfig:
     topics = raw.get("hub_topics")
     if isinstance(topics, list) and topics:
         cfg.hub_topics = [str(t) for t in topics]
-    cfg.tick_interval_ms = _coerce_int(raw.get("tick_interval_ms"), cfg.tick_interval_ms)
-    cfg.max_market_lag_ms = _coerce_int(raw.get("max_market_lag_ms"), cfg.max_market_lag_ms)
-    cfg.max_account_lag_ms = _coerce_int(raw.get("max_account_lag_ms"), cfg.max_account_lag_ms)
+    cfg.tick_interval_ms = _coerce_int(
+        raw.get("tick_interval_ms"), cfg.tick_interval_ms
+    )
+    cfg.max_market_lag_ms = _coerce_int(
+        raw.get("max_market_lag_ms"), cfg.max_market_lag_ms
+    )
+    cfg.max_account_lag_ms = _coerce_int(
+        raw.get("max_account_lag_ms"), cfg.max_account_lag_ms
+    )
     cfg.stale_action = str(raw.get("stale_action", cfg.stale_action)).upper()
-    cfg.max_cmds_per_sec = _coerce_int(raw.get("max_cmds_per_sec"), cfg.max_cmds_per_sec)
-    cfg.max_exec_steps_per_minute = _coerce_int(raw.get("max_exec_steps_per_minute"), cfg.max_exec_steps_per_minute)
-    cfg.max_cmds_per_tick = _coerce_int(raw.get("max_cmds_per_tick"), cfg.max_cmds_per_tick)
-    cfg.cooldown_after_reject_ms = _coerce_int(raw.get("cooldown_after_reject_ms"), cfg.cooldown_after_reject_ms)
+    cfg.max_cmds_per_sec = _coerce_int(
+        raw.get("max_cmds_per_sec"), cfg.max_cmds_per_sec
+    )
+    cfg.max_exec_steps_per_minute = _coerce_int(
+        raw.get("max_exec_steps_per_minute"), cfg.max_exec_steps_per_minute
+    )
+    cfg.max_cmds_per_tick = _coerce_int(
+        raw.get("max_cmds_per_tick"), cfg.max_cmds_per_tick
+    )
+    cfg.cooldown_after_reject_ms = _coerce_int(
+        raw.get("cooldown_after_reject_ms"), cfg.cooldown_after_reject_ms
+    )
     cfg.min_leg_qty = _coerce_float(raw.get("min_leg_qty"), cfg.min_leg_qty)
     cfg.execution_enabled = bool(raw.get("execution_enabled", cfg.execution_enabled))
-    cfg.reject_pause_threshold = _coerce_int(raw.get("reject_pause_threshold"), cfg.reject_pause_threshold)
+    cfg.reject_pause_threshold = _coerce_int(
+        raw.get("reject_pause_threshold"), cfg.reject_pause_threshold
+    )
     cfg.audit_log_path = str(raw.get("audit_log_path", cfg.audit_log_path))
 
     regime_raw = raw.get("regime", {}) if isinstance(raw, dict) else {}
     cfg.regime = RegimeDetectorConfig(
         adx_period=_coerce_int(regime_raw.get("adx_period"), cfg.regime.adx_period),
         atr_period=_coerce_int(regime_raw.get("atr_period"), cfg.regime.atr_period),
-        atr_baseline_period=_coerce_int(regime_raw.get("atr_baseline_period"), cfg.regime.atr_baseline_period),
+        atr_baseline_period=_coerce_int(
+            regime_raw.get("atr_baseline_period"), cfg.regime.atr_baseline_period
+        ),
         ema_fast=_coerce_int(regime_raw.get("ema_fast"), cfg.regime.ema_fast),
         ema_slow=_coerce_int(regime_raw.get("ema_slow"), cfg.regime.ema_slow),
-        trend_adx_enter=_coerce_float(regime_raw.get("trend_adx_enter"), cfg.regime.trend_adx_enter),
-        trend_adx_exit=_coerce_float(regime_raw.get("trend_adx_exit"), cfg.regime.trend_adx_exit),
-        slope_bps_enter=_coerce_float(regime_raw.get("slope_bps_enter"), cfg.regime.slope_bps_enter),
-        chaos_atr_mult=_coerce_float(regime_raw.get("chaos_atr_mult"), cfg.regime.chaos_atr_mult),
-        chaos_liq_intensity=_coerce_float(regime_raw.get("chaos_liq_intensity"), cfg.regime.chaos_liq_intensity),
-        chaos_band_bps=_coerce_float(regime_raw.get("chaos_band_bps"), cfg.regime.chaos_band_bps),
-        min_regime_hold_s=_coerce_int(regime_raw.get("min_regime_hold_s"), cfg.regime.min_regime_hold_s),
-        confirm_cycles=_coerce_int(regime_raw.get("confirm_cycles"), cfg.regime.confirm_cycles),
+        trend_adx_enter=_coerce_float(
+            regime_raw.get("trend_adx_enter"), cfg.regime.trend_adx_enter
+        ),
+        trend_adx_exit=_coerce_float(
+            regime_raw.get("trend_adx_exit"), cfg.regime.trend_adx_exit
+        ),
+        slope_bps_enter=_coerce_float(
+            regime_raw.get("slope_bps_enter"), cfg.regime.slope_bps_enter
+        ),
+        chaos_atr_mult=_coerce_float(
+            regime_raw.get("chaos_atr_mult"), cfg.regime.chaos_atr_mult
+        ),
+        chaos_liq_intensity=_coerce_float(
+            regime_raw.get("chaos_liq_intensity"), cfg.regime.chaos_liq_intensity
+        ),
+        chaos_band_bps=_coerce_float(
+            regime_raw.get("chaos_band_bps"), cfg.regime.chaos_band_bps
+        ),
+        min_regime_hold_s=_coerce_int(
+            regime_raw.get("min_regime_hold_s"), cfg.regime.min_regime_hold_s
+        ),
+        confirm_cycles=_coerce_int(
+            regime_raw.get("confirm_cycles"), cfg.regime.confirm_cycles
+        ),
     )
 
     range_raw = raw.get("range", {}) if isinstance(raw, dict) else {}
@@ -223,10 +257,18 @@ def load_lockbot_policy_config(path: Path) -> PolicyRunnerConfig:
         target=_coerce_float(range_raw.get("target"), cfg.range_policy.target),
         band_low=_coerce_float(range_raw.get("band_low"), cfg.range_policy.band_low),
         band_high=_coerce_float(range_raw.get("band_high"), cfg.range_policy.band_high),
-        step_qty_hint=_coerce_float(range_raw.get("step_qty_hint"), cfg.range_policy.step_qty_hint),
-        heatmap_block=_coerce_float(range_raw.get("heatmap_block"), cfg.range_policy.heatmap_block),
-        funding_max_abs=_coerce_float(range_raw.get("funding_max_abs"), cfg.range_policy.funding_max_abs),
-        min_edge_bps=_coerce_float(range_raw.get("min_edge_bps"), cfg.range_policy.min_edge_bps),
+        step_qty_hint=_coerce_float(
+            range_raw.get("step_qty_hint"), cfg.range_policy.step_qty_hint
+        ),
+        heatmap_block=_coerce_float(
+            range_raw.get("heatmap_block"), cfg.range_policy.heatmap_block
+        ),
+        funding_max_abs=_coerce_float(
+            range_raw.get("funding_max_abs"), cfg.range_policy.funding_max_abs
+        ),
+        min_edge_bps=_coerce_float(
+            range_raw.get("min_edge_bps"), cfg.range_policy.min_edge_bps
+        ),
     )
 
     trend_raw = raw.get("trend", {}) if isinstance(raw, dict) else {}
@@ -237,15 +279,29 @@ def load_lockbot_policy_config(path: Path) -> PolicyRunnerConfig:
         avwap_pref = cfg.trend_policy.avwap_anchor_preference
     cfg.trend_policy = TrendPolicyConfig(
         target_up=_coerce_float(trend_raw.get("target_up"), cfg.trend_policy.target_up),
-        target_down=_coerce_float(trend_raw.get("target_down"), cfg.trend_policy.target_down),
+        target_down=_coerce_float(
+            trend_raw.get("target_down"), cfg.trend_policy.target_down
+        ),
         band_low=_coerce_float(trend_raw.get("band_low"), cfg.trend_policy.band_low),
         band_high=_coerce_float(trend_raw.get("band_high"), cfg.trend_policy.band_high),
-        step_qty_hint=_coerce_float(trend_raw.get("step_qty_hint"), cfg.trend_policy.step_qty_hint),
-        pullback_bps=_coerce_float(trend_raw.get("pullback_bps"), cfg.trend_policy.pullback_bps),
-        heatmap_block=_coerce_float(trend_raw.get("heatmap_block"), cfg.trend_policy.heatmap_block),
-        funding_max_abs=_coerce_float(trend_raw.get("funding_max_abs"), cfg.trend_policy.funding_max_abs),
-        min_edge_bps=_coerce_float(trend_raw.get("min_edge_bps"), cfg.trend_policy.min_edge_bps),
-        target_refresh_s=_coerce_int(trend_raw.get("target_refresh_s"), cfg.trend_policy.target_refresh_s),
+        step_qty_hint=_coerce_float(
+            trend_raw.get("step_qty_hint"), cfg.trend_policy.step_qty_hint
+        ),
+        pullback_bps=_coerce_float(
+            trend_raw.get("pullback_bps"), cfg.trend_policy.pullback_bps
+        ),
+        heatmap_block=_coerce_float(
+            trend_raw.get("heatmap_block"), cfg.trend_policy.heatmap_block
+        ),
+        funding_max_abs=_coerce_float(
+            trend_raw.get("funding_max_abs"), cfg.trend_policy.funding_max_abs
+        ),
+        min_edge_bps=_coerce_float(
+            trend_raw.get("min_edge_bps"), cfg.trend_policy.min_edge_bps
+        ),
+        target_refresh_s=_coerce_int(
+            trend_raw.get("target_refresh_s"), cfg.trend_policy.target_refresh_s
+        ),
         avwap_anchor_preference=avwap_pref,
     )
     return cfg

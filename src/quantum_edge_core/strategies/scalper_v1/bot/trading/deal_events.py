@@ -5,7 +5,6 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Callable, Dict, Optional, Set
 
-
 EmitFn = Callable[[str, Dict[str, object], Optional[str]], None]
 
 
@@ -13,7 +12,9 @@ EmitFn = Callable[[str, Dict[str, object], Optional[str]], None]
 class DealEventEmitter:
     emit_fn: EmitFn
 
-    def emit(self, event_type: str, payload: Dict[str, object], symbol: Optional[str]) -> None:
+    def emit(
+        self, event_type: str, payload: Dict[str, object], symbol: Optional[str]
+    ) -> None:
         self.emit_fn(event_type, payload, symbol)
 
 

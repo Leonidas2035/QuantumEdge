@@ -55,7 +55,9 @@ def write_backtest_reports(
 ) -> Path:
     out_dir.mkdir(parents=True, exist_ok=True)
     results_path = out_dir / "results.json"
-    results_path.write_text(json.dumps(result.to_dict(), indent=2, sort_keys=True), encoding="utf-8")
+    results_path.write_text(
+        json.dumps(result.to_dict(), indent=2, sort_keys=True), encoding="utf-8"
+    )
     summary_path = out_dir / "summary.md"
     summary_path.write_text(_summary_markdown(result), encoding="utf-8")
     if write_trades:

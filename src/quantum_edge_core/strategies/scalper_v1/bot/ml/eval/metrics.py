@@ -56,9 +56,15 @@ def _safe_brier(y_true: np.ndarray, y_prob: np.ndarray) -> Optional[float]:
         return None
 
 
-def _threshold_metrics(y_true: np.ndarray, y_prob: np.ndarray, threshold: float) -> Dict[str, Optional[float]]:
+def _threshold_metrics(
+    y_true: np.ndarray, y_prob: np.ndarray, threshold: float
+) -> Dict[str, Optional[float]]:
     try:
-        from sklearn.metrics import confusion_matrix, precision_recall_fscore_support, accuracy_score
+        from sklearn.metrics import (
+            confusion_matrix,
+            precision_recall_fscore_support,
+            accuracy_score,
+        )
 
         preds = (y_prob >= threshold).astype(int)
         precision, recall, f1, _ = precision_recall_fscore_support(
@@ -83,7 +89,9 @@ def _threshold_metrics(y_true: np.ndarray, y_prob: np.ndarray, threshold: float)
         }
 
 
-def compute_metrics(y_true: np.ndarray, y_prob: np.ndarray, thresholds: Iterable[float]) -> Dict[str, object]:
+def compute_metrics(
+    y_true: np.ndarray, y_prob: np.ndarray, thresholds: Iterable[float]
+) -> Dict[str, object]:
     metrics: Dict[str, object] = {
         "rows": len(y_true),
         "class_balance": {

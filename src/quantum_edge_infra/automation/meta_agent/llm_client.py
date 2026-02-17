@@ -38,7 +38,10 @@ class LLMClient:
 
         env_key_name = f"GEMINI_API_KEY_{self.mode.upper()}"
         self.api_key = (
-            os.getenv(env_key_name) or os.getenv("GEMINI_API_KEY") or os.getenv("GOOGLE_API_KEY") or FALLBACK_GEMINI_KEY
+            os.getenv(env_key_name)
+            or os.getenv("GEMINI_API_KEY")
+            or os.getenv("GOOGLE_API_KEY")
+            or FALLBACK_GEMINI_KEY
         )
 
         genai.configure(api_key=self.api_key)
@@ -103,7 +106,9 @@ class LLMClient:
             chunks.append(current)
         return chunks
 
-    def send_request(self, context: str, instructions: str, system_prompt: Optional[str] = None) -> str:
+    def send_request(
+        self, context: str, instructions: str, system_prompt: Optional[str] = None
+    ) -> str:
         """
         Unified interface for sending context and instructions to the LLM.
         """
@@ -135,9 +140,13 @@ class LLMClient:
             )
 
             # Initialize model with system instruction natively
-            model = genai.GenerativeModel(model_name=self.model, system_instruction=sys_instr)
+            model = genai.GenerativeModel(
+                model_name=self.model, system_instruction=sys_instr
+            )
 
-            response = model.generate_content(prompt, generation_config=generation_config)
+            response = model.generate_content(
+                prompt, generation_config=generation_config
+            )
             return response.text
         except Exception as e:
             return f"[ERROR] Gemini failed: {e!s}"

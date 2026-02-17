@@ -47,7 +47,9 @@ class BinanceUserStreamBase(ABC):
             ws_url = self._ws_endpoint(listen_key)
             self._keepalive_task = asyncio.create_task(self._keepalive_loop(listen_key))
             try:
-                async with websockets.connect(ws_url, ping_interval=20, close_timeout=5) as ws:
+                async with websockets.connect(
+                    ws_url, ping_interval=20, close_timeout=5
+                ) as ws:
                     backoff = 1.0
                     if self._on_reconnect:
                         await self._on_reconnect()
@@ -95,24 +97,19 @@ class BinanceUserStreamBase(ABC):
         return await loop.run_in_executor(None, func)
 
     @abstractmethod
-    def _ws_endpoint(self, listen_key: str) -> str:
-        ...
+    def _ws_endpoint(self, listen_key: str) -> str: ...
 
     @abstractmethod
-    def _create_listen_key(self) -> str:
-        ...
+    def _create_listen_key(self) -> str: ...
 
     @abstractmethod
-    def _keepalive_listen_key(self, listen_key: str) -> None:
-        ...
+    def _keepalive_listen_key(self, listen_key: str) -> None: ...
 
     @abstractmethod
-    def _keepalive_interval(self) -> float:
-        ...
+    def _keepalive_interval(self) -> float: ...
 
     @abstractmethod
-    def _parse_event(self, payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-        ...
+    def _parse_event(self, payload: Dict[str, Any]) -> Optional[Dict[str, Any]]: ...
 
     async def _cleanup(self) -> None:  # pragma: no cover
         return
@@ -125,5 +122,7 @@ class suppress:
     def __enter__(self) -> None:
         return None
 
-    def __exit__(self, exc_type: Optional[type], exc: Optional[Exception], tb: Optional[Any]) -> bool:
+    def __exit__(
+        self, exc_type: Optional[type], exc: Optional[Exception], tb: Optional[Any]
+    ) -> bool:
         return isinstance(exc, self._exc)

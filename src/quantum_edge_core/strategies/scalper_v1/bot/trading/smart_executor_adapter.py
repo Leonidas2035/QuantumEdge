@@ -14,7 +14,9 @@ Market = Any
 
 
 class TraderExecutionAdapter(ExecutionClient):
-    def __init__(self, trader, market: Market, logger: Optional[logging.Logger] = None) -> None:
+    def __init__(
+        self, trader, market: Market, logger: Optional[logging.Logger] = None
+    ) -> None:
         self._trader = trader
         self._market = market
         self._logger = logger or logging.getLogger(__name__)
@@ -34,7 +36,9 @@ class TraderExecutionAdapter(ExecutionClient):
         client_order_id: Optional[str] = None,
     ) -> bool:
         if hasattr(self._trader, "cancel_order"):
-            return await self._trader.cancel_order(symbol, order_id=order_id, client_order_id=client_order_id)
+            return await self._trader.cancel_order(
+                symbol, order_id=order_id, client_order_id=client_order_id
+            )
         return True
 
     async def _place_with_submit(self, placement: OrderPlacement) -> OrderAck:
@@ -69,10 +73,21 @@ class TraderExecutionAdapter(ExecutionClient):
         decision = type(
             "TmpDecision",
             (),
-            {"action": side, "size": float(placement.quantity), "order_type": placement.order_type.lower()},
+            {
+                "action": side,
+                "size": float(placement.quantity),
+                "order_type": placement.order_type.lower(),
+            },
         )
-        await self._trader.process(decision, float(placement.price or 0.0), (0), symbol=placement.symbol)
-        return OrderAck(order_id=None, client_order_id=placement.client_order_id, status="FILLED", filled_qty=placement.quantity)
+        await self._trader.process(
+            decision, float(placement.price or 0.0), (0), symbol=placement.symbol
+        )
+        return OrderAck(
+            order_id=None,
+            client_order_id=placement.client_order_id,
+            status="FILLED",
+            filled_qty=placement.quantity,
+        )
 
 
 def _as_decimal(value: object) -> Optional[Decimal]:

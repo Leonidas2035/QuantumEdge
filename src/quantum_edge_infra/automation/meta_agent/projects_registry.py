@@ -33,7 +33,9 @@ def _resolve_base_dir() -> str:
             pass
     base = os.path.abspath(os.path.dirname(__file__))
     parent = os.path.abspath(os.path.join(base, os.pardir))
-    if os.path.isdir(os.path.join(parent, "config")) and os.path.isdir(os.path.join(parent, "ai_scalper_bot")):
+    if os.path.isdir(os.path.join(parent, "config")) and os.path.isdir(
+        os.path.join(parent, "ai_scalper_bot")
+    ):
         return parent
     return base
 

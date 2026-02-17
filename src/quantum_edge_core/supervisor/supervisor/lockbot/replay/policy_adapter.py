@@ -42,7 +42,9 @@ class ReplayControlClient:
         self._bus.subscribe(self._ack_topic, self._on_ack)
         self._bus.subscribe(self._status_topic, self._on_status)
 
-    def send_command(self, cmd: str, payload: Dict[str, Any], ttl_ms: Optional[int] = None) -> str:
+    def send_command(
+        self, cmd: str, payload: Dict[str, Any], ttl_ms: Optional[int] = None
+    ) -> str:
         self._cmd_counter += 1
         cmd_id = f"replay-{self._cmd_counter}"
         command = build_command(
@@ -79,7 +81,9 @@ class ReplayControlClient:
         self._acks[cmd_id] = payload
 
     def _on_status(self, _topic: str, status: Any) -> None:
-        payload = msgspec.structs.asdict(status) if not isinstance(status, dict) else status
+        payload = (
+            msgspec.structs.asdict(status) if not isinstance(status, dict) else status
+        )
         self._last_status = payload
 
 
@@ -137,5 +141,7 @@ def _to_lockbot_event(payload: Dict[str, Any]) -> LockbotMarketEvent:
         ts_event=ts_event,
         ts_pub=ts_pub,
         source=str(payload.get("source") or "replay"),
-        payload=payload.get("payload") if isinstance(payload.get("payload"), dict) else {},
+        payload=(
+            payload.get("payload") if isinstance(payload.get("payload"), dict) else {}
+        ),
     )

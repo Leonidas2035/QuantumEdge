@@ -25,7 +25,9 @@ from supervisor.regime_sm import load_directives_config, load_regime_config
 
 
 def _load_supervisor_app_class():
-    module_path = Path(__file__).resolve().parents[2] / "SupervisorAgent" / "supervisor.py"
+    module_path = (
+        Path(__file__).resolve().parents[2] / "SupervisorAgent" / "supervisor.py"
+    )
     spec = importlib.util.spec_from_file_location("supervisor_app_module", module_path)
     if spec is None or spec.loader is None:
         raise RuntimeError("Unable to load SupervisorApp module")
@@ -78,16 +80,22 @@ def _build_test_app(tmp_path: Path):
     llm_config = load_llm_supervisor_config(config_dir / "llm_supervisor.yaml")
     trend_config = load_trend_evaluator_config(config_dir / "llm_trend_evaluator.yaml")
     market_risk_config = load_market_risk_config(config_dir / "llm_market_risk.yaml")
-    behavior_config = load_trading_behavior_config(config_dir / "llm_trading_behavior.yaml")
+    behavior_config = load_trading_behavior_config(
+        config_dir / "llm_trading_behavior.yaml"
+    )
     snapshot_config = load_snapshot_scheduler_config(config_dir / "supervisor.yaml")
-    meta_config = load_meta_supervisor_config(config_dir / "meta_supervisor.yaml", paths)
+    meta_config = load_meta_supervisor_config(
+        config_dir / "meta_supervisor.yaml", paths
+    )
     dashboard_config = load_dashboard_config(config_dir / "dashboard.yaml")
     lockbot_cfg = load_lockbot_config(config_dir / "lockbot.yaml")
     lockbot_cfg = replace(lockbot_cfg, enabled=False)
     tsdb_config = load_tsdb_config(config_dir / "tsdb.yaml")
     tsdb_retention = load_tsdb_retention_config(config_dir / "tsdb_retention.yaml")
     autopilot_cfg = load_autopilot_config(config_dir / "autopilot.yaml")
-    control_policy_path = resolve_active_policy_path(paths.runtime_dir, config_dir / "policy.yaml")
+    control_policy_path = resolve_active_policy_path(
+        paths.runtime_dir, config_dir / "policy.yaml"
+    )
     regime_cfg = load_regime_config(control_policy_path)
     guard_cfg = load_guard_config(control_policy_path)
     directives_cfg = load_directives_config(control_policy_path)
@@ -120,19 +128,33 @@ def test_dashboard_api_shapes(tmp_path: Path) -> None:
     app.dashboard_store.ingest_event(
         {
             "type": "strategy_telemetry.v1",
-            "data": {"strategy_id": "SCALP", "symbol": "BTCUSDT", "position_notional": 10},
+            "data": {
+                "strategy_id": "SCALP",
+                "symbol": "BTCUSDT",
+                "position_notional": 10,
+            },
         }
     )
     app.dashboard_store.ingest_event(
         {
             "type": "strategy_limits.v1",
-            "data": {"strategy_id": "SCALP", "symbol": "BTCUSDT", "max_position_notional": 100},
+            "data": {
+                "strategy_id": "SCALP",
+                "symbol": "BTCUSDT",
+                "max_position_notional": 100,
+            },
         }
     )
     app.dashboard_store.ingest_event(
         {
             "type": "scalp_deal_closed.v1",
-            "data": {"strategy_id": "SCALP", "symbol": "BTCUSDT", "deal_id": "s1", "net_pnl": 1, "fees": 0.1},
+            "data": {
+                "strategy_id": "SCALP",
+                "symbol": "BTCUSDT",
+                "deal_id": "s1",
+                "net_pnl": 1,
+                "fees": 0.1,
+            },
         }
     )
 

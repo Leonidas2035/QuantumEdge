@@ -49,9 +49,13 @@ class LockBotService:
         self._account_state = AccountState()
         self._ddn = DDNEngine(cfg.ddn)
         self._order_tracker = OrderTracker()
-        self._exec_ledger = ExecutionLedger(cfg.execution.ledger_path, logging.getLogger(__name__))
+        self._exec_ledger = ExecutionLedger(
+            cfg.execution.ledger_path, logging.getLogger(__name__)
+        )
         self._ipc_enabled = ipc_enabled
-        self._publisher = BotPublisher(cfg.bot_pub_endpoint) if ipc_enabled else _NullPublisher()
+        self._publisher = (
+            BotPublisher(cfg.bot_pub_endpoint) if ipc_enabled else _NullPublisher()
+        )
         self._exec_manager = ExecutionManager(
             config=cfg.execution,
             ddn_cfg=cfg.ddn,
@@ -62,8 +66,16 @@ class LockBotService:
             emit=self._emit_exec_event,
             logger=logging.getLogger(__name__),
         )
-        self._hub_sub = HubSubscriber(cfg.hub_sub_endpoint, cfg.market_topics) if ipc_enabled else None
-        self._cmd_sub = ControlSubscriber(cfg.supervisor_cmd_sub_endpoint, CMD_TOPIC) if ipc_enabled else None
+        self._hub_sub = (
+            HubSubscriber(cfg.hub_sub_endpoint, cfg.market_topics)
+            if ipc_enabled
+            else None
+        )
+        self._cmd_sub = (
+            ControlSubscriber(cfg.supervisor_cmd_sub_endpoint, CMD_TOPIC)
+            if ipc_enabled
+            else None
+        )
         self._account_sub: Optional[RawSubscriber] = None
         if ipc_enabled and cfg.account_topics:
             self._account_sub = RawSubscriber(cfg.hub_sub_endpoint, cfg.account_topics)
@@ -105,29 +117,58 @@ class LockBotService:
             await self._account_sub.stop()
         self._publisher.close()
 
-    def process_command(self, command: Dict[str, Any], *, now_ms: Optional[int] = None) -> AckEnvelope:
+    def process_command(
+        self, command: Dict[str, Any], *, now_ms: Optional[int] = None
+    ) -> AckEnvelope:
         ok, reason = validate_command(command)
         cmd_id = str(command.get("cmd_id") or "")
         now_ms = now_ms if now_ms is not None else int(time.time() * 1000)
         ttl_ms = int(command.get("ttl_ms") or self._cfg.cmd_ttl_ms)
         if self._bot_state.is_duplicate(cmd_id):
-            return self._build_ack(cmd_id, "IGNORED_DUPLICATE", state_version=self._bot_state.state_version, now_ms=now_ms)
+            return self._build_ack(
+                cmd_id,
+                "IGNORED_DUPLICATE",
+                state_version=self._bot_state.state_version,
+                now_ms=now_ms,
+            )
         if not ok:
-            return self._build_ack(cmd_id, "REJECTED", error_code=reason, state_version=self._bot_state.state_version, now_ms=now_ms)
+            return self._build_ack(
+                cmd_id,
+                "REJECTED",
+                error_code=reason,
+                state_version=self._bot_state.state_version,
+                now_ms=now_ms,
+            )
         ts_cmd = int(command.get("ts_cmd") or 0)
         if ts_cmd + ttl_ms < now_ms:
             self._bot_state.remember_cmd(cmd_id)
-            return self._build_ack(cmd_id, "EXPIRED", error_code="ttl", state_version=self._bot_state.state_version, now_ms=now_ms)
+            return self._build_ack(
+                cmd_id,
+                "EXPIRED",
+                error_code="ttl",
+                state_version=self._bot_state.state_version,
+                now_ms=now_ms,
+            )
 
-        payload = command.get("payload") if isinstance(command.get("payload"), dict) else {}
+        payload = (
+            command.get("payload") if isinstance(command.get("payload"), dict) else {}
+        )
         cmd_type = payload.get("cmd")
         if cmd_type:
             self._bot_state.record_command(cmd_id, str(cmd_type), now_ms, payload)
         if cmd_type in {"ARM_EXECUTION", "DISARM_EXECUTION", "CANCEL_ALL"}:
-            ack_status, error_code = self._handle_exec_command(cmd_type, payload, now_ms, cmd_id)
+            ack_status, error_code = self._handle_exec_command(
+                cmd_type, payload, now_ms, cmd_id
+            )
             self._bot_state.remember_cmd(cmd_id)
             self._bot_state.bump_state()
-            return self._build_ack(cmd_id, ack_status, error_code=error_code, state_version=self._bot_state.state_version, now_ms=now_ms)
+            return self._build_ack(
+                cmd_id,
+                ack_status,
+                error_code=error_code,
+                state_version=self._bot_state.state_version,
+                now_ms=now_ms,
+            )
         intent = self._build_intent(cmd_type, payload)
         decision = self._ddn.evaluate(self._build_ddn_context(intent, now_ms=now_ms))
         verdict = decision.verdict
@@ -161,8 +202,14 @@ class LockBotService:
                 self._bot_state.mode = "LOCKED"
         self._bot_state.remember_cmd(cmd_id)
         self._bot_state.bump_state()
-        ack_status = "ACCEPTED" if verdict in {"ALLOW", "MODIFY", "PANIC_ONLY"} else "REJECTED"
-        error_code = decision.reasons[0] if ack_status == "REJECTED" and decision.reasons else None
+        ack_status = (
+            "ACCEPTED" if verdict in {"ALLOW", "MODIFY", "PANIC_ONLY"} else "REJECTED"
+        )
+        error_code = (
+            decision.reasons[0]
+            if ack_status == "REJECTED" and decision.reasons
+            else None
+        )
         if verdict in {"ALLOW", "MODIFY", "PANIC_ONLY"} and decision.order_plans:
             account_lag = _lag_ms(now_ms, self._account_state.last_account_ts)
             self._exec_manager.submit_plans(
@@ -174,7 +221,13 @@ class LockBotService:
                 account_lag_ms=account_lag,
                 mark_price=self._market_state.mark_price,
             )
-        return self._build_ack(cmd_id, ack_status, error_code=error_code, state_version=self._bot_state.state_version, now_ms=now_ms)
+        return self._build_ack(
+            cmd_id,
+            ack_status,
+            error_code=error_code,
+            state_version=self._bot_state.state_version,
+            now_ms=now_ms,
+        )
 
     def build_status(self, *, now_ms: Optional[int] = None) -> StatusEnvelope:
         now_ms = now_ms if now_ms is not None else int(time.time() * 1000)
@@ -299,20 +352,42 @@ class LockBotService:
             return
         positions = payload.get("positions")
         if isinstance(positions, dict):
-            self._account_state.long_qty = positions.get("long_qty", self._account_state.long_qty)
-            self._account_state.short_qty = positions.get("short_qty", self._account_state.short_qty)
-            self._account_state.long_avg_px = positions.get("long_avg_px", self._account_state.long_avg_px)
-            self._account_state.short_avg_px = positions.get("short_avg_px", self._account_state.short_avg_px)
-            self._account_state.liq_price_long = positions.get("liq_price_long", self._account_state.liq_price_long)
-            self._account_state.liq_price_short = positions.get("liq_price_short", self._account_state.liq_price_short)
+            self._account_state.long_qty = positions.get(
+                "long_qty", self._account_state.long_qty
+            )
+            self._account_state.short_qty = positions.get(
+                "short_qty", self._account_state.short_qty
+            )
+            self._account_state.long_avg_px = positions.get(
+                "long_avg_px", self._account_state.long_avg_px
+            )
+            self._account_state.short_avg_px = positions.get(
+                "short_avg_px", self._account_state.short_avg_px
+            )
+            self._account_state.liq_price_long = positions.get(
+                "liq_price_long", self._account_state.liq_price_long
+            )
+            self._account_state.liq_price_short = positions.get(
+                "liq_price_short", self._account_state.liq_price_short
+            )
         risk = payload.get("risk")
         if isinstance(risk, dict):
-            self._account_state.margin_usage = risk.get("margin_usage", self._account_state.margin_usage)
-            self._account_state.distance_to_liq_bps = risk.get("distance_to_liq_bps", self._account_state.distance_to_liq_bps)
-            self._account_state.initial_margin = risk.get("initial_margin", self._account_state.initial_margin)
-            self._account_state.maintenance_margin = risk.get("maintenance_margin", self._account_state.maintenance_margin)
+            self._account_state.margin_usage = risk.get(
+                "margin_usage", self._account_state.margin_usage
+            )
+            self._account_state.distance_to_liq_bps = risk.get(
+                "distance_to_liq_bps", self._account_state.distance_to_liq_bps
+            )
+            self._account_state.initial_margin = risk.get(
+                "initial_margin", self._account_state.initial_margin
+            )
+            self._account_state.maintenance_margin = risk.get(
+                "maintenance_margin", self._account_state.maintenance_margin
+            )
             self._account_state.equity = risk.get("equity", self._account_state.equity)
-            self._account_state.leverage = risk.get("leverage", self._account_state.leverage)
+            self._account_state.leverage = risk.get(
+                "leverage", self._account_state.leverage
+            )
 
     async def _account_loop(self) -> None:
         if not self._account_sub:
@@ -383,7 +458,9 @@ class LockBotService:
                 profile = "trend"
             elif regime == "CHAOS":
                 profile = "neutral"
-            return DDNIntent(action="SET_REGIME", profile=profile, reason=payload.get("reason"))
+            return DDNIntent(
+                action="SET_REGIME", profile=profile, reason=payload.get("reason")
+            )
         if cmd_type == "SET_DELTA_TARGET":
             return DDNIntent(
                 action="SET_DELTA_TARGET",
@@ -428,11 +505,18 @@ class LockBotService:
                 return "REJECTED", self._exec_manager.gate.disarm_reason or "disarmed"
             return "ACCEPTED", None
         if cmd_type == "DISARM_EXECUTION":
-            self._exec_manager.disarm(str(payload.get("reason") or "manual_disarm"), now_ms, cmd_id=cmd_id)
+            self._exec_manager.disarm(
+                str(payload.get("reason") or "manual_disarm"), now_ms, cmd_id=cmd_id
+            )
             return "ACCEPTED", None
         if cmd_type == "CANCEL_ALL":
             scope = str(payload.get("scope") or "OPEN_ONLY")
-            self._exec_manager.cancel_all(str(payload.get("reason") or "manual_cancel"), scope, now_ms, cmd_id=cmd_id)
+            self._exec_manager.cancel_all(
+                str(payload.get("reason") or "manual_cancel"),
+                scope,
+                now_ms,
+                cmd_id=cmd_id,
+            )
             return "ACCEPTED", None
         return "REJECTED", "unsupported"
 
@@ -451,25 +535,39 @@ class LockBotService:
         if self._ipc_enabled:
             self._publisher.publish_exec(EXEC_TOPIC, event)
 
-    def _apply_hub_account_payload(self, payload: Dict[str, Any], ts_event: int) -> None:
+    def _apply_hub_account_payload(
+        self, payload: Dict[str, Any], ts_event: int
+    ) -> None:
         patch = payload.get("patch", {})
         if payload.get("schema") == "hub.account_delta.v1":
             usdm = patch.get("usdm", {}) if isinstance(patch, dict) else {}
             orders = usdm.get("orders_update") if isinstance(usdm, dict) else None
             positions = usdm.get("positions_update") if isinstance(usdm, dict) else None
-            account_totals = usdm.get("account_update") if isinstance(usdm, dict) else None
+            account_totals = (
+                usdm.get("account_update") if isinstance(usdm, dict) else None
+            )
             if isinstance(account_totals, dict):
-                self._account_state.equity = _to_float(account_totals.get("totalMarginBalance"))
-                self._account_state.initial_margin = _to_float(account_totals.get("totalWalletBalance"))
-                self._account_state.maintenance_margin = _to_float(account_totals.get("totalUnrealizedProfit"))
+                self._account_state.equity = _to_float(
+                    account_totals.get("totalMarginBalance")
+                )
+                self._account_state.initial_margin = _to_float(
+                    account_totals.get("totalWalletBalance")
+                )
+                self._account_state.maintenance_margin = _to_float(
+                    account_totals.get("totalUnrealizedProfit")
+                )
             if isinstance(positions, list):
                 self._apply_positions_update(positions)
             if isinstance(orders, list):
                 for order in orders:
                     if isinstance(order, dict):
-                        self._exec_manager.handle_order_update(order, ts_event, "account_delta")
+                        self._exec_manager.handle_order_update(
+                            order, ts_event, "account_delta"
+                        )
         if payload.get("schema") == "hub.account_snapshot.v1":
-            usdm = payload.get("usdm", {}) if isinstance(payload.get("usdm"), dict) else {}
+            usdm = (
+                payload.get("usdm", {}) if isinstance(payload.get("usdm"), dict) else {}
+            )
             positions = usdm.get("positions") if isinstance(usdm, dict) else None
             orders = usdm.get("open_orders") if isinstance(usdm, dict) else None
             if isinstance(positions, list):
@@ -477,7 +575,9 @@ class LockBotService:
             if isinstance(orders, list):
                 for order in orders:
                     if isinstance(order, dict):
-                        self._exec_manager.handle_order_update(order, ts_event, "account_snapshot")
+                        self._exec_manager.handle_order_update(
+                            order, ts_event, "account_snapshot"
+                        )
 
     def _apply_positions_update(self, positions: list[dict]) -> None:
         long_qty = 0.0
@@ -509,8 +609,12 @@ class LockBotService:
         if liq_short:
             self._account_state.liq_price_short = liq_short
 
-    def _build_ddn_context(self, intent: DDNIntent, *, now_ms: Optional[int] = None) -> DDNContext:
-        profile = self._cfg.ddn.profiles.get(self._bot_state.ddn_profile) or self._cfg.ddn.profiles.get("neutral")
+    def _build_ddn_context(
+        self, intent: DDNIntent, *, now_ms: Optional[int] = None
+    ) -> DDNContext:
+        profile = self._cfg.ddn.profiles.get(
+            self._bot_state.ddn_profile
+        ) or self._cfg.ddn.profiles.get("neutral")
         if profile is None:
             profile = self._cfg.ddn.__class__.default().profiles["neutral"]
         active_profile = profile
@@ -520,8 +624,12 @@ class LockBotService:
             if intent.action == "SET_REGIME":
                 use_defaults = True
         target = active_profile.target if use_defaults else self._bot_state.ddn_target
-        band_low = active_profile.band_low if use_defaults else self._bot_state.ddn_band_low
-        band_high = active_profile.band_high if use_defaults else self._bot_state.ddn_band_high
+        band_low = (
+            active_profile.band_low if use_defaults else self._bot_state.ddn_band_low
+        )
+        band_high = (
+            active_profile.band_high if use_defaults else self._bot_state.ddn_band_high
+        )
         active_profile = active_profile.__class__(
             name=active_profile.name,
             target=target,
@@ -539,7 +647,9 @@ class LockBotService:
             margin_usage = self._account_state.compute_margin_usage()
         distance_bps = self._account_state.distance_to_liq_bps
         if distance_bps is None:
-            distance_bps = self._account_state.compute_distance_to_liq_bps(self._market_state.mark_price)
+            distance_bps = self._account_state.compute_distance_to_liq_bps(
+                self._market_state.mark_price
+            )
         market = DDNMarketSnapshot(
             mark_price=self._market_state.mark_price,
             vwap_d=self._market_state.vwap_d,
@@ -602,7 +712,10 @@ async def _run(config_path: Optional[Path]) -> None:
     logging.basicConfig(
         level=cfg.log_level,
         format="%(asctime)s %(levelname)s %(name)s %(message)s",
-        handlers=[logging.FileHandler(log_path, encoding="utf-8"), logging.StreamHandler()],
+        handlers=[
+            logging.FileHandler(log_path, encoding="utf-8"),
+            logging.StreamHandler(),
+        ],
     )
     service = LockBotService(cfg)
     await service.start()

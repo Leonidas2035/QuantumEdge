@@ -17,9 +17,14 @@ def test_signature_deterministic():
         "timestamp": 1700000000000,
     }
     query = build_query_string(params)
-    assert query == "quantity=0.001&recvWindow=5000&side=BUY&symbol=BTC-USDT&timestamp=1700000000000"
+    assert (
+        query
+        == "quantity=0.001&recvWindow=5000&side=BUY&symbol=BTC-USDT&timestamp=1700000000000"
+    )
     signature = sign_query(query, "testsecret")
-    assert signature == "f67741a255b564ab12ccaeb385fce4402e8163d688437081c1de07358cd1b26e"
+    assert (
+        signature == "f67741a255b564ab12ccaeb385fce4402e8163d688437081c1de07358cd1b26e"
+    )
 
 
 def test_symbol_mapping():

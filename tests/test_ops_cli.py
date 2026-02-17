@@ -1,4 +1,5 @@
 import pytest
+
 pytest.skip("Legacy test broken by src-layout migration", allow_module_level=True)
 import json
 import sys
@@ -13,7 +14,13 @@ if str(META_AGENT_DIR) not in sys.path:
 
 import meta_agent as meta_agent_mod
 import watch as watch_mod
-from task_contract import Report, ReportArtifacts, ReportChanges, ReportSafety, PatchInfo
+from task_contract import (
+    Report,
+    ReportArtifacts,
+    ReportChanges,
+    ReportSafety,
+    PatchInfo,
+)
 
 
 class DummyLogger:
@@ -30,7 +37,11 @@ def _make_report(run_id: str, verdict: str, exit_code: int) -> Report:
         verdict=verdict,
         exit_code=exit_code,
         summary="summary",
-        changes=ReportChanges(patches=[PatchInfo(path="a", patch_file="b")], applied=False, files_changed=1),
+        changes=ReportChanges(
+            patches=[PatchInfo(path="a", patch_file="b")],
+            applied=False,
+            files_changed=1,
+        ),
         safety=ReportSafety(policy_version="safety_policy.yaml", checks=[]),
         artifacts=ReportArtifacts(
             report_path="runtime/runs/x/report.json",

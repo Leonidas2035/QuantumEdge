@@ -6,7 +6,12 @@ from file_manager import (
     apply_change_set_direct,
     write_change_set_as_patches,
 )
-from safety_policy import SafetyEvaluation, SafetyPolicy, evaluate_change_set, load_safety_policy
+from safety_policy import (
+    SafetyEvaluation,
+    SafetyPolicy,
+    evaluate_change_set,
+    load_safety_policy,
+)
 
 
 @dataclass
@@ -44,7 +49,9 @@ def apply_change_set_with_policy(
         )
 
     should_patch = (
-        force_patch_only or safety_eval.write_mode == "patch_only" or safety_eval.overall_verdict in {"warn", "block"}
+        force_patch_only
+        or safety_eval.write_mode == "patch_only"
+        or safety_eval.overall_verdict in {"warn", "block"}
     )
     if force_direct and not force_patch_only:
         should_patch = False
@@ -69,7 +76,9 @@ def apply_change_set_with_policy(
 
     if should_patch:
         apply_result = write_change_set_as_patches(change_set, patches_dir)
-    elif safety_eval.overall_verdict == "allow" or (force_direct and not force_patch_only):
+    elif safety_eval.overall_verdict == "allow" or (
+        force_direct and not force_patch_only
+    ):
         applied = True
         apply_result = apply_change_set_direct(change_set)
 

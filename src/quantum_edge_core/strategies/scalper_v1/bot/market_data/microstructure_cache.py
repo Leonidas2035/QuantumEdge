@@ -21,9 +21,18 @@ class MicrostructureCache:
         symbol = str(event.get("s") or "")
         if not symbol:
             return
-        ts_raw = event.get("ts_event") or event.get("ts_ingest") or event.get("E") or event.get("T")
+        ts_raw = (
+            event.get("ts_event")
+            or event.get("ts_ingest")
+            or event.get("E")
+            or event.get("T")
+        )
         try:
-            ts_ms = int(ts_raw) // 1_000_000 if ts_raw and int(ts_raw) > 1_000_000_000_000 else int(ts_raw or 0)
+            ts_ms = (
+                int(ts_raw) // 1_000_000
+                if ts_raw and int(ts_raw) > 1_000_000_000_000
+                else int(ts_raw or 0)
+            )
         except Exception:
             ts_ms = 0
         values = {
@@ -40,7 +49,11 @@ class MicrostructureCache:
         snapshot = self._cache.get(symbol)
         if not snapshot:
             return None
-        if self._max_age_ms and snapshot.ts_ms and now_ms - snapshot.ts_ms > self._max_age_ms:
+        if (
+            self._max_age_ms
+            and snapshot.ts_ms
+            and now_ms - snapshot.ts_ms > self._max_age_ms
+        ):
             return None
         return dict(snapshot.values)
 

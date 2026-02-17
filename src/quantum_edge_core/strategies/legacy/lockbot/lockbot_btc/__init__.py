@@ -1,2 +1,1 @@
 """LockBotBTC service package."""
-

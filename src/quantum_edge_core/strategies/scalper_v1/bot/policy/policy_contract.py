@@ -5,4 +5,3 @@ from policy.policy_contract import (  # noqa: F401
     Policy,
     policy_fingerprint,
 )
-

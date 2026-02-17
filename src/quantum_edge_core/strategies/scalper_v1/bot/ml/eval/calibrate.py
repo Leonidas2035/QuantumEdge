@@ -81,7 +81,9 @@ def calibrate(
     out_root = out_root.resolve()
     out_root.mkdir(parents=True, exist_ok=True)
 
-    horizons = sorted(int(p.name.replace("horizon_h", "")) for p in data_root.glob("horizon_h*"))
+    horizons = sorted(
+        int(p.name.replace("horizon_h", "")) for p in data_root.glob("horizon_h*")
+    )
     for horizon in horizons:
         horizon_dir = data_root / f"horizon_h{horizon}"
         model_path = models_root / symbol / f"h{horizon}" / "model.json"
@@ -125,8 +127,12 @@ def calibrate(
             "schema_hash": schema_hash(),
             "model_path": str(model_path),
         }
-        (horizon_out / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
-        (horizon_out / "calibration_metrics.json").write_text(json.dumps(metrics, indent=2), encoding="utf-8")
+        (horizon_out / "manifest.json").write_text(
+            json.dumps(manifest, indent=2), encoding="utf-8"
+        )
+        (horizon_out / "calibration_metrics.json").write_text(
+            json.dumps(metrics, indent=2), encoding="utf-8"
+        )
 
     return 0
 

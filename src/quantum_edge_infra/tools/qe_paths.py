@@ -20,7 +20,9 @@ def find_repo_root(start: Optional[Path] = None) -> Path:
             return parent.resolve()
         if (parent / "scripts" / "run_orchestrator.py").exists():
             return parent.resolve()
-        if (parent / "src" / "quantum_edge_core" / "config" / "quantumedge.yaml").exists():
+        if (
+            parent / "src" / "quantum_edge_core" / "config" / "quantumedge.yaml"
+        ).exists():
             return parent.resolve()
     return Path(__file__).resolve().parents[3]
 
@@ -53,7 +55,11 @@ def get_paths() -> Dict[str, Path]:
         "artifacts_dir": qe_root / "artifacts",
         "bot_dir": qe_root / "scripts",
         "supervisor_dir": qe_root / "src" / "quantum_edge_core" / "supervisor",
-        "meta_agent_dir": qe_root / "src" / "quantum_edge_infra" / "automation" / "meta_agent",
+        "meta_agent_dir": qe_root
+        / "src"
+        / "quantum_edge_infra"
+        / "automation"
+        / "meta_agent",
         "bot_config_dir": qe_root / "src" / "quantum_edge_core" / "config",
         "supervisor_config_dir": qe_root / "src" / "quantum_edge_core" / "config",
         "meta_agent_config_dir": qe_root / "src" / "quantum_edge_core" / "config",
@@ -87,7 +93,9 @@ def get_paths() -> Dict[str, Path]:
     return defaults
 
 
-def ensure_dirs(paths: Dict[str, Path], include_logs: bool = True, include_data: bool = True) -> None:
+def ensure_dirs(
+    paths: Dict[str, Path], include_logs: bool = True, include_data: bool = True
+) -> None:
     keys = ["runtime_dir", "artifacts_dir"]
     if include_logs:
         keys.append("logs_dir")

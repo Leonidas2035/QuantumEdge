@@ -62,7 +62,9 @@ class OrderTracker:
         self._by_client[client_order_id] = record
         return record
 
-    def update_from_exchange(self, update: dict, ts_ms: int, source: str) -> Optional[OrderRecord]:
+    def update_from_exchange(
+        self, update: dict, ts_ms: int, source: str
+    ) -> Optional[OrderRecord]:
         client_order_id = str(update.get("clientOrderId") or "")
         order_id = str(update.get("orderId") or "")
         record = None
@@ -100,6 +102,9 @@ class OrderTracker:
     def missing_ack(self, now_ms: int, timeout_ms: int) -> list[OrderRecord]:
         missing = []
         for record in self._by_client.values():
-            if record.status == "SUBMITTED" and now_ms - record.submitted_ts > timeout_ms:
+            if (
+                record.status == "SUBMITTED"
+                and now_ms - record.submitted_ts > timeout_ms
+            ):
                 missing.append(record)
         return missing

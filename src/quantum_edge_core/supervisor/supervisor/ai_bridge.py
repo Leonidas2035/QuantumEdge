@@ -12,9 +12,12 @@ from quantum_edge_core.supervisor.supervisor.prompts import JSON_SCHEMA
 
 logger = logging.getLogger(__name__)
 
+
 class MalformedResponseError(Exception):
     """Raised when AI response does not match the schema."""
+
     pass
+
 
 class AiBridge:
     @staticmethod
@@ -46,14 +49,14 @@ class AiBridge:
         # Nested Object Keys
         params = response["params_override"]
         if not isinstance(params, dict):
-             raise MalformedResponseError("params_override must be an object")
-             
+            raise MalformedResponseError("params_override must be an object")
+
         for pk in ["leverage_cap", "min_order_size"]:
             if pk not in params:
                 raise MalformedResponseError(f"Missing params_override key: {pk}")
             try:
                 float(params[pk])
             except (ValueError, TypeError):
-                 raise MalformedResponseError(f"Invalid number for {pk}: {params[pk]}")
+                raise MalformedResponseError(f"Invalid number for {pk}: {params[pk]}")
 
         return response

@@ -52,7 +52,9 @@ class TsdbSink:
         self._writer = self._build_writer()
         self._task = asyncio.create_task(self._writer.run(self._bus, self._stop))
 
-    async def publish(self, event: dict, priority: EventPriority = EventPriority.NORMAL) -> bool:
+    async def publish(
+        self, event: dict, priority: EventPriority = EventPriority.NORMAL
+    ) -> bool:
         if not self.enabled:
             return False
         await self.start()

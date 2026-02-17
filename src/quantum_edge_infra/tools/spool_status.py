@@ -31,7 +31,9 @@ def _read_state(path: Path) -> Optional[dict]:
 
 def main() -> None:
     parser = argparse.ArgumentParser(description="Report L2 spool usage and cursor.")
-    parser.add_argument("--spool-dir", help="Spool root (defaults to config)", default=None)
+    parser.add_argument(
+        "--spool-dir", help="Spool root (defaults to config)", default=None
+    )
     parser.add_argument("--state-file", help="Replay cursor file", default=None)
     args = parser.parse_args()
     config = L2Config()
@@ -42,9 +44,13 @@ def main() -> None:
     print(f"Files: {summary.files}")
     print(f"Size: {_format_bytes(summary.bytes)} / {config.max_spool_gb} GiB budget")
     if summary.oldest:
-        print(f"Oldest file: {summary.oldest} (modified {summary.oldest.stat().st_mtime})")
+        print(
+            f"Oldest file: {summary.oldest} (modified {summary.oldest.stat().st_mtime})"
+        )
     if summary.newest:
-        print(f"Newest file: {summary.newest} (modified {summary.newest.stat().st_mtime})")
+        print(
+            f"Newest file: {summary.newest} (modified {summary.newest.stat().st_mtime})"
+        )
     print(f"Budget mode: {config.on_budget_exceeded or 'block'}")
     state = _read_state(state_path)
     if state:

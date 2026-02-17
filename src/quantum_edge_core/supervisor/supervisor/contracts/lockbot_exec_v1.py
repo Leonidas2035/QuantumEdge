@@ -6,7 +6,6 @@ from typing import Any, Dict
 
 import msgspec
 
-
 SCHEMA_VERSION = "lockbot_exec.v1"
 
 EXEC_TOPIC = "LOCKBOT:BTCUSDT:exec"

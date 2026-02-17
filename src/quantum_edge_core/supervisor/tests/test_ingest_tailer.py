@@ -12,6 +12,8 @@ def test_tailer_reads_new_lines(tmp_path: Path):
     assert len(first.lines) == 1
     assert first.offset > 0
 
-    path.write_text(path.read_text(encoding="utf-8") + '{"type":"pong"}\n', encoding="utf-8")
+    path.write_text(
+        path.read_text(encoding="utf-8") + '{"type":"pong"}\n', encoding="utf-8"
+    )
     second = tailer.read_new_lines(first.offset)
     assert len(second.lines) == 1

@@ -28,11 +28,15 @@ class WorkerLimits:
 
 def load_cpu_affinity_config(cfg) -> CpuAffinityConfig:
     raw = cfg.get("cpu", {}) or {}
-    enabled = _parse_bool(os.getenv("CPU_PIN_ENABLE"), bool(raw.get("pin_enable", False)))
+    enabled = _parse_bool(
+        os.getenv("CPU_PIN_ENABLE"), bool(raw.get("pin_enable", False))
+    )
     mode = str(os.getenv("CPU_PIN_MODE") or raw.get("pin_mode", "auto_pcores")).lower()
     explicit = str(os.getenv("CPU_PIN_CPUS") or raw.get("pin_cpus", "")).strip()
     explicit_cpus = _parse_cpu_list(explicit)
-    max_cores = _parse_int(os.getenv("CPU_PIN_MAX_CORES"), int(raw.get("pin_max_cores", 0) or 0))
+    max_cores = _parse_int(
+        os.getenv("CPU_PIN_MAX_CORES"), int(raw.get("pin_max_cores", 0) or 0)
+    )
     return CpuAffinityConfig(
         enabled=enabled,
         mode=mode,
@@ -44,19 +48,31 @@ def load_cpu_affinity_config(cfg) -> CpuAffinityConfig:
 def load_worker_limits(cfg) -> WorkerLimits:
     raw = cfg.get("workers", {}) or {}
     return WorkerLimits(
-        marketdata=_parse_int(os.getenv("WORKERS_MARKETDATA"), int(raw.get("marketdata", 0) or 0)),
-        feature=_parse_int(os.getenv("WORKERS_FEATURE"), int(raw.get("feature", 0) or 0)),
-        execution=_parse_int(os.getenv("WORKERS_EXECUTION"), int(raw.get("execution", 0) or 0)),
-        supervisor_web=_parse_int(os.getenv("WORKERS_SUPERVISOR_WEB"), int(raw.get("supervisor_web", 0) or 0)),
+        marketdata=_parse_int(
+            os.getenv("WORKERS_MARKETDATA"), int(raw.get("marketdata", 0) or 0)
+        ),
+        feature=_parse_int(
+            os.getenv("WORKERS_FEATURE"), int(raw.get("feature", 0) or 0)
+        ),
+        execution=_parse_int(
+            os.getenv("WORKERS_EXECUTION"), int(raw.get("execution", 0) or 0)
+        ),
+        supervisor_web=_parse_int(
+            os.getenv("WORKERS_SUPERVISOR_WEB"), int(raw.get("supervisor_web", 0) or 0)
+        ),
     )
 
 
-def apply_cpu_affinity(cfg: CpuAffinityConfig, logger: Optional[logging.Logger] = None, pid: int = 0) -> List[int]:
+def apply_cpu_affinity(
+    cfg: CpuAffinityConfig, logger: Optional[logging.Logger] = None, pid: int = 0
+) -> List[int]:
     logger = logger or logging.getLogger("cpu_affinity")
     if not cfg.enabled:
         return []
     if sys.platform != "linux":
-        logger.warning("CPU affinity requested but platform is %s; skipping.", sys.platform)
+        logger.warning(
+            "CPU affinity requested but platform is %s; skipping.", sys.platform
+        )
         return []
     if not hasattr(os, "sched_setaffinity"):
         logger.warning("CPU affinity not supported in this Python build; skipping.")
@@ -74,7 +90,9 @@ def apply_cpu_affinity(cfg: CpuAffinityConfig, logger: Optional[logging.Logger] 
 
     try:
         os.sched_setaffinity(pid, set(cpus))
-        logger.info("Pinned process %s to CPUs: %s", pid, ",".join(str(c) for c in cpus))
+        logger.info(
+            "Pinned process %s to CPUs: %s", pid, ",".join(str(c) for c in cpus)
+        )
         return cpus
     except Exception as exc:
         logger.warning("Failed to set CPU affinity: %s", exc)
@@ -93,7 +111,9 @@ def _detect_p_cores(max_cores: int) -> List[int]:
         freq = _read_int(cpu_dir / "cpufreq/cpuinfo_max_freq")
         if core_id is None or freq is None:
             continue
-        entry = cores.setdefault(core_id, {"freq": freq, "cpus": [], "siblings": siblings})
+        entry = cores.setdefault(
+            core_id, {"freq": freq, "cpus": [], "siblings": siblings}
+        )
         entry["freq"] = max(int(entry["freq"]), freq)
         entry["cpus"].append(cpu_id)
 
@@ -107,7 +127,7 @@ def _detect_p_cores(max_cores: int) -> List[int]:
 
     cpu_ids = [cpu_id for _, cpu_id in selected]
     if max_cores and max_cores > 0:
-        cpu_ids = cpu_ids[: max_cores]
+        cpu_ids = cpu_ids[:max_cores]
     return cpu_ids
 
 

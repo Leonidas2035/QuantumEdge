@@ -84,7 +84,9 @@ class CircuitBreakerManager:
         if self.error_window.triggered(now):
             self._trip("CB_EXCHANGE_ERRORS", now)
 
-    def record_spread(self, spread_bps: Optional[float], now: Optional[float] = None) -> None:
+    def record_spread(
+        self, spread_bps: Optional[float], now: Optional[float] = None
+    ) -> None:
         if spread_bps is None or self.spread_bps <= 0:
             return
         if spread_bps < self.spread_bps:
@@ -94,7 +96,9 @@ class CircuitBreakerManager:
         if self.spread_window.triggered(now):
             self._trip("CB_SPREAD_WIDE_PERSISTENT", now)
 
-    def record_latency(self, latency_ms: Optional[float], now: Optional[float] = None) -> None:
+    def record_latency(
+        self, latency_ms: Optional[float], now: Optional[float] = None
+    ) -> None:
         if latency_ms is None or self.latency_ms <= 0:
             return
         if latency_ms < self.latency_ms:
@@ -104,7 +108,9 @@ class CircuitBreakerManager:
         if self.latency_window.triggered(now):
             self._trip("CB_LATENCY_HIGH", now)
 
-    def record_slippage(self, slippage_bps: Optional[float], now: Optional[float] = None) -> None:
+    def record_slippage(
+        self, slippage_bps: Optional[float], now: Optional[float] = None
+    ) -> None:
         if slippage_bps is None or self.slippage_bps <= 0:
             return
         if slippage_bps < self.slippage_bps:
@@ -120,7 +126,9 @@ class CircuitBreakerManager:
         if self.data_window.triggered(now):
             self._trip("CB_DATA_STALE", now)
 
-    def record_drawdown(self, drawdown_pct: Optional[float], now: Optional[float] = None) -> None:
+    def record_drawdown(
+        self, drawdown_pct: Optional[float], now: Optional[float] = None
+    ) -> None:
         if drawdown_pct is None or self.max_drawdown_pct <= 0:
             return
         if drawdown_pct < self.max_drawdown_pct:
@@ -128,7 +136,9 @@ class CircuitBreakerManager:
         now = now or time.time()
         self._trip("CB_PNL_DRAWDOWN", now)
 
-    def record_daily_loss(self, loss_pct: Optional[float], now: Optional[float] = None) -> None:
+    def record_daily_loss(
+        self, loss_pct: Optional[float], now: Optional[float] = None
+    ) -> None:
         if loss_pct is None or self.max_daily_loss_pct <= 0:
             return
         if loss_pct < self.max_daily_loss_pct:
@@ -143,7 +153,12 @@ class CircuitBreakerManager:
             self._active_reason = None
         active = bool(self._active_until and now < self._active_until)
         cooldown_remaining = max(self._active_until - now, 0.0) if active else 0.0
-        return BreakerStatus(active=active, reason=self._active_reason, active_until=self._active_until, cooldown_remaining=cooldown_remaining)
+        return BreakerStatus(
+            active=active,
+            reason=self._active_reason,
+            active_until=self._active_until,
+            cooldown_remaining=cooldown_remaining,
+        )
 
     def snapshot(self) -> Dict[str, object]:
         status = self.status()

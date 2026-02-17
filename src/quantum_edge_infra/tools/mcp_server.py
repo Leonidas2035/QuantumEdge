@@ -8,6 +8,7 @@ mcp = FastMCP("QuantumEdge Orchestrator")
 
 # --- CATEGORY 1: DATA SKILLS (QuestDB) ---
 
+
 @mcp.tool()
 def query_market_data(symbol: str, limit: int = 100) -> str:
     """
@@ -19,7 +20,9 @@ def query_market_data(symbol: str, limit: int = 100) -> str:
     # TODO: Реалізувати реальний запит через requests/psycopg2
     return f"Executed Query: {query}. [Mock Data: Price=98000, Vol=1.5]"
 
+
 # --- CATEGORY 2: DEVOPS SKILLS (GKE/Docker) ---
+
 
 @mcp.tool()
 def check_container_logs(service_name: str, lines: int = 50) -> str:
@@ -31,13 +34,16 @@ def check_container_logs(service_name: str, lines: int = 50) -> str:
         # Безпечний виклик команди
         result = subprocess.run(
             ["docker", "logs", "--tail", str(lines), service_name],
-            capture_output=True, text=True
+            capture_output=True,
+            text=True,
         )
         return result.stdout if result.returncode == 0 else result.stderr
     except Exception as e:
         return f"Error reading logs: {e!s}"
 
+
 # --- CATEGORY 3: CODING SKILLS (Safety Wrappers) ---
+
 
 @mcp.tool()
 def list_project_structure() -> str:
@@ -57,6 +63,7 @@ def list_project_structure() -> str:
             structure.append(f"{subindent}{f}")
     return "\n".join(structure)
 
+
 @mcp.tool()
 def run_tests(test_path: str = "tests/") -> str:
     """
@@ -64,14 +71,14 @@ def run_tests(test_path: str = "tests/") -> str:
     Агент ПОВИНЕН викликати це після зміни коду.
     """
     try:
-        result = subprocess.run(
-            ["pytest", test_path], capture_output=True, text=True
-        )
+        result = subprocess.run(["pytest", test_path], capture_output=True, text=True)
         return result.stdout
     except Exception as e:
         return f"Test Execution Failed: {e!s}"
 
+
 # --- CATEGORY 4: TRADING CONTEXT ---
+
 
 @mcp.tool()
 def get_risk_status() -> Dict:
@@ -84,8 +91,9 @@ def get_risk_status() -> Dict:
         "status": "ACTIVE",
         "current_drawdown_pct": 1.2,
         "open_positions": 2,
-        "max_allowed_drawdown": 4.0
+        "max_allowed_drawdown": 4.0,
     }
+
 
 if __name__ == "__main__":
     mcp.run()

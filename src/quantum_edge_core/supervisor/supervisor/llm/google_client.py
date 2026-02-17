@@ -1,4 +1,5 @@
 """Google AI Client for concise risk assessment queries."""
+
 import logging
 import os
 import asyncio
@@ -7,11 +8,17 @@ import google.generativeai as genai
 
 logger = logging.getLogger(__name__)
 
+
 class GoogleClient:
     """
     Client for interacting with Google AI (Gemini) with concise prompts.
     """
-    def __init__(self, api_key_env: str = "GOOGLE_API_KEY", logger: Optional[logging.Logger] = None):
+
+    def __init__(
+        self,
+        api_key_env: str = "GOOGLE_API_KEY",
+        logger: Optional[logging.Logger] = None,
+    ):
         self.api_key_env = api_key_env
         self.logger = logger or logging.getLogger(__name__)
         self.api_key = os.getenv(api_key_env)
@@ -20,7 +27,9 @@ class GoogleClient:
         else:
             self.logger.warning(f"Google API Key ({api_key_env}) not set.")
 
-    async def generate_content_async(self, prompt: str, model_name: str = "gemini-2.0-flash") -> Optional[str]:
+    async def generate_content_async(
+        self, prompt: str, model_name: str = "gemini-2.0-flash"
+    ) -> Optional[str]:
         """
         Asynchronously generates content using Google AI.
         Non-blocking wrapper around synchronous API.

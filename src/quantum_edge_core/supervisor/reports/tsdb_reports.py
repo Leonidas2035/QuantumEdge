@@ -14,7 +14,6 @@ from reports.sql_templates import (
     latency_stats_sql,
 )
 
-
 _DURATION_RE = re.compile(r"^(?P<value>\\d+)(?P<unit>[smhd])$")
 
 
@@ -51,7 +50,9 @@ def _safe_query(client: QuestDbClient, sql: str) -> Dict[str, Any]:
         return {"error": str(exc), "sql": sql}
 
 
-def build_report(client: QuestDbClient, last: Optional[str] = None, bucket: Optional[str] = None) -> Dict[str, Any]:
+def build_report(
+    client: QuestDbClient, last: Optional[str] = None, bucket: Optional[str] = None
+) -> Dict[str, Any]:
     window = _parse_duration(last)
     bucket_value = bucket or _default_bucket(window)
     end_ts = datetime.now(timezone.utc)
@@ -70,6 +71,8 @@ def build_report(client: QuestDbClient, last: Optional[str] = None, bucket: Opti
         "order_counts": _safe_query(client, order_counts_sql(start_iso, bucket_value)),
         "fill_counts": _safe_query(client, fill_counts_sql(start_iso, bucket_value)),
         "risk_events": _safe_query(client, risk_events_counts_sql(start_iso)),
-        "latency_stats": _safe_query(client, latency_stats_sql(start_iso, bucket_value)),
+        "latency_stats": _safe_query(
+            client, latency_stats_sql(start_iso, bucket_value)
+        ),
     }
     return report

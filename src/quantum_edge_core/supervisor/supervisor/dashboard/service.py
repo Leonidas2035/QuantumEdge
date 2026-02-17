@@ -38,11 +38,17 @@ class DashboardService:
         self.pnl_window_minutes = int(overview_cfg.get("pnl_window_minutes", 60))
 
         health_cfg = self.cfg.get("health", {}) or {}
-        self.snapshot_recent_minutes = int(health_cfg.get("require_snapshot_recent_minutes", 10))
-        self.heartbeat_recent_seconds = int(health_cfg.get("require_heartbeat_recent_seconds", 60))
+        self.snapshot_recent_minutes = int(
+            health_cfg.get("require_snapshot_recent_minutes", 10)
+        )
+        self.heartbeat_recent_seconds = int(
+            health_cfg.get("require_heartbeat_recent_seconds", 60)
+        )
 
         self.max_events_default = int(self.cfg.get("max_events", 200))
-        self.allowed_event_types = [str(t) for t in (self.cfg.get("events_types") or [])]
+        self.allowed_event_types = [
+            str(t) for t in (self.cfg.get("events_types") or [])
+        ]
 
     # Public API
     def get_overview(self) -> OverviewData:
@@ -53,9 +59,14 @@ class DashboardService:
         events = self._load_recent_events(minutes=self.pnl_window_minutes)
         pnl_1h = self._calc_pnl(events)
         open_positions = 0
-        if heartbeat_state.last_payload and "open_positions" in heartbeat_state.last_payload:
+        if (
+            heartbeat_state.last_payload
+            and "open_positions" in heartbeat_state.last_payload
+        ):
             try:
-                open_positions = int(heartbeat_state.last_payload.get("open_positions", 0))
+                open_positions = int(
+                    heartbeat_state.last_payload.get("open_positions", 0)
+                )
             except Exception:
                 open_positions = 0
 
@@ -103,9 +114,16 @@ class DashboardService:
         if len(issues) > 2:
             status = "FAIL"
 
-        return HealthStatus(status=status, issues=issues, last_heartbeat_at=last_hb, last_snapshot_at=last_snap)
+        return HealthStatus(
+            status=status,
+            issues=issues,
+            last_heartbeat_at=last_hb,
+            last_snapshot_at=last_snap,
+        )
 
-    def list_events(self, limit: Optional[int] = None, types: Optional[Sequence[str]] = None) -> List[DashboardEvent]:
+    def list_events(
+        self, limit: Optional[int] = None, types: Optional[Sequence[str]] = None
+    ) -> List[DashboardEvent]:
         if not self.enabled:
             return []
         limit_val = limit or self.max_events_default
@@ -137,7 +155,9 @@ class DashboardService:
     def _calc_pnl(self, events: Iterable[BaseEvent]) -> float:
         pnl = 0.0
         for ev in events:
-            if ev.type == EventType.ORDER_RESULT and isinstance(ev.data.get("pnl"), (int, float)):
+            if ev.type == EventType.ORDER_RESULT and isinstance(
+                ev.data.get("pnl"), (int, float)
+            ):
                 pnl += float(ev.data.get("pnl", 0.0))
         return pnl
 
@@ -150,7 +170,9 @@ class DashboardService:
         except Exception:
             return None
 
-    def _load_recent_events(self, minutes: Optional[int] = None, max_events: Optional[int] = None) -> List[BaseEvent]:
+    def _load_recent_events(
+        self, minutes: Optional[int] = None, max_events: Optional[int] = None
+    ) -> List[BaseEvent]:
         files = sorted(self.events_dir.glob("events_*.jsonl"), reverse=True)
         events: List[BaseEvent] = []
         cutoff: Optional[datetime] = None

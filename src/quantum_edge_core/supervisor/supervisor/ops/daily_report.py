@@ -23,7 +23,10 @@ def generate_daily_report(
 
     output_dir.mkdir(parents=True, exist_ok=True)
     report_path = output_dir / f"{target_date.isoformat()}_report.md"
-    report_path.write_text(_render_markdown(target_date, totals, ml_stats, policy_changes), encoding="utf-8")
+    report_path.write_text(
+        _render_markdown(target_date, totals, ml_stats, policy_changes),
+        encoding="utf-8",
+    )
     return report_path
 
 
@@ -65,10 +68,18 @@ def _aggregate_summaries(summaries: Iterable[Dict[str, Any]]) -> Dict[str, Any]:
         totals["trades"] += float(summary.get("trades") or 0.0)
         totals["wins"] += float(summary.get("wins") or 0.0)
         totals["losses"] += float(summary.get("losses") or 0.0)
-        totals["blocked_actions_count"] += float(summary.get("blocked_actions_count") or 0.0)
-        totals["actions_proposed_count"] += float(summary.get("actions_proposed_count") or 0.0)
-        totals["actions_applied_count"] += float(summary.get("actions_applied_count") or 0.0)
-        totals["actions_rejected_count"] += float(summary.get("actions_rejected_count") or 0.0)
+        totals["blocked_actions_count"] += float(
+            summary.get("blocked_actions_count") or 0.0
+        )
+        totals["actions_proposed_count"] += float(
+            summary.get("actions_proposed_count") or 0.0
+        )
+        totals["actions_applied_count"] += float(
+            summary.get("actions_applied_count") or 0.0
+        )
+        totals["actions_rejected_count"] += float(
+            summary.get("actions_rejected_count") or 0.0
+        )
         totals["errors_count"] += float(summary.get("errors_count") or 0.0)
         pnl = summary.get("pnl_total")
         if pnl is not None:
@@ -104,7 +115,9 @@ def _aggregate_summaries(summaries: Iterable[Dict[str, Any]]) -> Dict[str, Any]:
     }
 
 
-def _aggregate_ml_stats(telemetry_path: Optional[Path], target_date: date) -> Dict[str, Any]:
+def _aggregate_ml_stats(
+    telemetry_path: Optional[Path], target_date: date
+) -> Dict[str, Any]:
     if telemetry_path is None or not telemetry_path.exists():
         return {}
 
@@ -157,7 +170,9 @@ def _aggregate_ml_stats(telemetry_path: Optional[Path], target_date: date) -> Di
     }
 
 
-def _collect_policy_changes(runtime_dir: Path, target_date: date) -> list[Dict[str, Any]]:
+def _collect_policy_changes(
+    runtime_dir: Path, target_date: date
+) -> list[Dict[str, Any]]:
     versions_dir = runtime_dir / "policy_versions"
     changes: list[Dict[str, Any]] = []
     if not versions_dir.exists():
@@ -179,7 +194,12 @@ def _collect_policy_changes(runtime_dir: Path, target_date: date) -> list[Dict[s
     return sorted(changes, key=lambda item: item.get("created_at") or "")
 
 
-def _render_markdown(target_date: date, totals: Dict[str, Any], ml_stats: Dict[str, Any], policy_changes: list[Dict[str, Any]]) -> str:
+def _render_markdown(
+    target_date: date,
+    totals: Dict[str, Any],
+    ml_stats: Dict[str, Any],
+    policy_changes: list[Dict[str, Any]],
+) -> str:
     lines = [
         f"# Supervisor Daily Report — {target_date.isoformat()}",
         "",

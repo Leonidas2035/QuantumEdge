@@ -28,12 +28,18 @@ from market_data.models.orderbook import DEPTH_EVENT_TYPE, DepthL2Event
 class HubSourceConfig:
     def __init__(self, data: Dict[str, Any], symbols: Iterable[str]) -> None:
         hub = (data.get("hub") or {}) if isinstance(data, dict) else {}
-        self.pub_endpoint = hub.get("pub_endpoint", "ipc:///tmp/quantum_market_data.ipc")
-        self.snapshot_endpoint = hub.get("snapshot_endpoint", "ipc:///tmp/quantum_market_snapshot.ipc")
+        self.pub_endpoint = hub.get(
+            "pub_endpoint", "ipc:///tmp/quantum_market_data.ipc"
+        )
+        self.snapshot_endpoint = hub.get(
+            "snapshot_endpoint", "ipc:///tmp/quantum_market_snapshot.ipc"
+        )
         self.rcvhwm = int(hub.get("rcvhwm", 1000))
         self.conflate_l1 = bool(hub.get("conflate_l1", False))
         self.include_microstructure = bool(hub.get("include_microstructure", True))
-        self.microstructure_topic_suffix = str(hub.get("microstructure_topic_suffix", "microstructure.v1"))
+        self.microstructure_topic_suffix = str(
+            hub.get("microstructure_topic_suffix", "microstructure.v1")
+        )
         self.topics = hub.get("topics") or self._default_topics(symbols)
         self.snapshot_timeout_ms = int(hub.get("snapshot_timeout_ms", 500))
 
@@ -45,7 +51,9 @@ class HubSourceConfig:
 
 
 class HubSnapshotClient:
-    def __init__(self, endpoint: str, timeout_ms: int = 500, connect: bool = True) -> None:
+    def __init__(
+        self, endpoint: str, timeout_ms: int = 500, connect: bool = True
+    ) -> None:
         self._ctx = zmq.asyncio.Context.instance()
         self._socket = self._ctx.socket(zmq.REQ)
         self._socket.setsockopt(zmq.LINGER, 0)
@@ -53,7 +61,9 @@ class HubSnapshotClient:
         if connect:
             self._socket.connect(endpoint)
 
-    async def request(self, symbol: str, event_type: str, limit: int = 0) -> Optional[SnapshotResponse]:
+    async def request(
+        self, symbol: str, event_type: str, limit: int = 0
+    ) -> Optional[SnapshotResponse]:
         req = SnapshotRequest(symbol=symbol, event_type=event_type, limit=limit)
         await self._socket.send(msgspec.msgpack.encode(req))
         try:
@@ -77,7 +87,9 @@ class HubMarketDataSource:
         connect_snapshot: bool = True,
     ) -> None:
         self.symbols = symbols
-        self._config = HubSourceConfig(source_cfg or config.get("market_data", {}), symbols)
+        self._config = HubSourceConfig(
+            source_cfg or config.get("market_data", {}), symbols
+        )
         self._event_map = {
             "trade": TradeEvent,
             "l1": L1Event,
@@ -98,7 +110,9 @@ class HubMarketDataSource:
         self._queue: asyncio.Queue[Dict[str, Any]] = asyncio.Queue()
         self._seq_tracker: Dict[Tuple[str, str], int] = {}
         self._snapshot_client = HubSnapshotClient(
-            self._config.snapshot_endpoint, self._config.snapshot_timeout_ms, connect_snapshot
+            self._config.snapshot_endpoint,
+            self._config.snapshot_timeout_ms,
+            connect_snapshot,
         )
         self._reader_task: Optional[asyncio.Task] = None
         self._stop_event = asyncio.Event()
@@ -143,12 +157,20 @@ class HubMarketDataSource:
             self._seq_tracker[(symbol, event_type)] = event.seq
             await self._queue.put(self._normalize_event(event))
 
-    async def _maybe_handle_gap(self, symbol: str, event_type: str, seq: int) -> Optional[MarketEvent]:
+    async def _maybe_handle_gap(
+        self, symbol: str, event_type: str, seq: int
+    ) -> Optional[MarketEvent]:
         key = (symbol, event_type)
         last_seq = self._seq_tracker.get(key)
         if last_seq is not None and seq != last_seq + 1:
             self.gaps_total += 1
-            logging.warning("Gap detected for %s:%s (got %s expected %s)", symbol, event_type, seq, last_seq + 1)
+            logging.warning(
+                "Gap detected for %s:%s (got %s expected %s)",
+                symbol,
+                event_type,
+                seq,
+                last_seq + 1,
+            )
             snapshot = await self._snapshot_client.request(symbol, event_type)
             if snapshot and snapshot.ok and snapshot.payload:
                 event_cls = self._event_map.get(snapshot.payload_type)
@@ -197,12 +219,16 @@ class HubMarketDataSource:
             best_bid_qty = None
             if event.bids:
                 best_bid_px = max(level.price for level in event.bids)
-                best_bid_qty = sum(level.qty for level in event.bids if level.price == best_bid_px)
+                best_bid_qty = sum(
+                    level.qty for level in event.bids if level.price == best_bid_px
+                )
             best_ask_px = None
             best_ask_qty = None
             if event.asks:
                 best_ask_px = min(level.price for level in event.asks)
-                best_ask_qty = sum(level.qty for level in event.asks if level.price == best_ask_px)
+                best_ask_qty = sum(
+                    level.qty for level in event.asks if level.price == best_ask_px
+                )
             mid = event.mid
             if mid is None and best_bid_px is not None and best_ask_px is not None:
                 mid = (best_bid_px + best_ask_px) / 2.0

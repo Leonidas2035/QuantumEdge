@@ -1,2 +1,1 @@
 """LockBotBTC control contract definitions."""
-

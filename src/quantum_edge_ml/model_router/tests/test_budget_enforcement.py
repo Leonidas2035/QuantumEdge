@@ -21,8 +21,12 @@ def test_budget_enforcement_skips_teacher(monkeypatch, tmp_path):
     monkeypatch.setenv("TEACHER_MAX_TOKENS_PER_DAY", "0")
 
     student = StaticBackend("not json")
-    teacher = StaticBackend('{"v":1,"s":"BUY","c":0.7,"sl":null,"tp":null,"r":"ok","rk":"LOW"}')
-    router = Router(student_backend=student, teacher_backend=teacher, runtime_dir=tmp_path)
+    teacher = StaticBackend(
+        '{"v":1,"s":"BUY","c":0.7,"sl":null,"tp":null,"r":"ok","rk":"LOW"}'
+    )
+    router = Router(
+        student_backend=student, teacher_backend=teacher, runtime_dir=tmp_path
+    )
 
     result = router.route("prompt", hints={"mode": "fallback"})
     assert result.backend in {"student", "fallback"}

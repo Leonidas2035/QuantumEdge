@@ -18,7 +18,17 @@ class FakeRouter:
     def route(self, prompt, timeout_s, hints=None):
         self.last_prompt = prompt
         decision = fallback_decision("ok")
-        return type("R", (), {"decision": decision, "backend": "student", "latency_ms": 1.0, "ok": True, "error": None})
+        return type(
+            "R",
+            (),
+            {
+                "decision": decision,
+                "backend": "student",
+                "latency_ms": 1.0,
+                "ok": True,
+                "error": None,
+            },
+        )
 
 
 class FakeFetcher:
@@ -55,7 +65,12 @@ def test_api_with_context(monkeypatch):
     client = TestClient(app_module.app)
     resp = client.post(
         "/v1/supervisor/decision_routed",
-        json={"prompt": "check", "with_context": True, "symbol": "BTCUSDT", "lookback_m": 15},
+        json={
+            "prompt": "check",
+            "with_context": True,
+            "symbol": "BTCUSDT",
+            "lookback_m": 15,
+        },
     )
     assert resp.status_code == 200
     payload = json.loads(resp.text)

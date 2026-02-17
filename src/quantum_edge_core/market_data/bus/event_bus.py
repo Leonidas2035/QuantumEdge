@@ -9,7 +9,6 @@ from typing import Callable, Deque, Dict, Iterable, Tuple
 
 from quantum_edge_core.market_data.models import MarketEvent, Priority
 
-
 # Type for spool hook (called when L2 queue is full).
 SpoolHook = Callable[[MarketEvent], None]
 
@@ -67,7 +66,12 @@ class EventBus:
                 else:
                     self._spool_hook(event)
             queue.append(event)
-            logging.debug("Published event %s seq=%s to queue %s", event.event_type, event.seq, event.priority)
+            logging.debug(
+                "Published event %s seq=%s to queue %s",
+                event.event_type,
+                event.seq,
+                event.priority,
+            )
             self._condition.notify_all()
 
     async def get_event(

@@ -59,7 +59,9 @@ def _apply_calibrator(calibrator, probs: np.ndarray) -> np.ndarray:
 def _merge(frames: List[pd.DataFrame]) -> pd.DataFrame:
     merged = frames[0]
     for other in frames[1:]:
-        merged = merged.merge(other, on=["ts_ms", "scenario_id", "episode_id"], how="inner")
+        merged = merged.merge(
+            other, on=["ts_ms", "scenario_id", "episode_id"], how="inner"
+        )
     return merged
 
 
@@ -75,9 +77,17 @@ def simulate(
     symbol = symbol.upper()
     policy = json.loads(policy_path.read_text(encoding="utf-8"))
     horizons = [int(h) for h in policy.get("horizons", [])]
-    thresholds = {int(str(k).replace("h", "")): float(v) for k, v in (policy.get("thresholds") or {}).items()}
+    thresholds = {
+        int(str(k).replace("h", "")): float(v)
+        for k, v in (policy.get("thresholds") or {}).items()
+    }
     costs = policy.get("costs_bps") or {}
-    total_cost = (float(costs.get("fee_bps", 0)) + float(costs.get("slippage_bps", 0)) + float(costs.get("spread_bps", 0)) + float(costs.get("latency_bps", 0))) / 10_000.0
+    total_cost = (
+        float(costs.get("fee_bps", 0))
+        + float(costs.get("slippage_bps", 0))
+        + float(costs.get("spread_bps", 0))
+        + float(costs.get("latency_bps", 0))
+    ) / 10_000.0
 
     frames = []
     for horizon in horizons:
@@ -91,7 +101,15 @@ def simulate(
         probs = model.predict_proba(X)[:, 1]
         calibrator = _load_calibrator(calib_root, symbol, horizon)
         probs = _apply_calibrator(calibrator, probs)
-        frame = df[["ts_ms", "scenario_id", "episode_id", f"fut_ret_h{horizon}", f"y_up_h{horizon}"]].copy()
+        frame = df[
+            [
+                "ts_ms",
+                "scenario_id",
+                "episode_id",
+                f"fut_ret_h{horizon}",
+                f"y_up_h{horizon}",
+            ]
+        ].copy()
         frame[f"p_up_h{horizon}"] = probs
         frames.append(frame)
 
@@ -127,7 +145,9 @@ def simulate(
     }
 
     out_root.mkdir(parents=True, exist_ok=True)
-    (out_root / "sim_summary.json").write_text(json.dumps(summary, indent=2), encoding="utf-8")
+    (out_root / "sim_summary.json").write_text(
+        json.dumps(summary, indent=2), encoding="utf-8"
+    )
     (out_root / "sim_report.md").write_text(_render_report(summary), encoding="utf-8")
     return 0
 
@@ -141,7 +161,9 @@ def _render_report(summary: Dict[str, object]) -> str:
 
 
 def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Simulate policy performance on ML datasets.")
+    parser = argparse.ArgumentParser(
+        description="Simulate policy performance on ML datasets."
+    )
     parser.add_argument("--symbol", required=True)
     parser.add_argument("--data_root", required=True)
     parser.add_argument("--models_root", required=True)

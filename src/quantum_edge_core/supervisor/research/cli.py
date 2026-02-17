@@ -19,7 +19,9 @@ def _default_run_id() -> str:
     return datetime.utcnow().strftime("%Y%m%d_%H%M%S")
 
 
-def _resolve_data_file(data_dir: Optional[Path], data_file: Optional[Path], symbol: str, timeframe: str) -> Path:
+def _resolve_data_file(
+    data_dir: Optional[Path], data_file: Optional[Path], symbol: str, timeframe: str
+) -> Path:
     if data_file:
         return data_file
     if data_dir is None:
@@ -41,7 +43,9 @@ def _resolve_data_file(data_dir: Optional[Path], data_file: Optional[Path], symb
 
 
 def parse_research_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(prog="supervisor.py research", description="Supervisor research suite")
+    parser = argparse.ArgumentParser(
+        prog="supervisor.py research", description="Supervisor research suite"
+    )
     sub = parser.add_subparsers(dest="research_cmd", required=True)
 
     common = argparse.ArgumentParser(add_help=False)
@@ -52,9 +56,16 @@ def parse_research_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     common.add_argument("--models_dir", type=Path, default=None)
     common.add_argument("--policy_mode", type=str, default="normal")
     common.add_argument("--disable_policy", action="store_true")
-    common.add_argument("--ml_mode", type=str, default="auto", choices=["auto", "runtime", "disabled", "simple"])
+    common.add_argument(
+        "--ml_mode",
+        type=str,
+        default="auto",
+        choices=["auto", "runtime", "disabled", "simple"],
+    )
 
-    backtest = sub.add_parser("backtest", parents=[common], help="Run deterministic backtest")
+    backtest = sub.add_parser(
+        "backtest", parents=[common], help="Run deterministic backtest"
+    )
     backtest.add_argument("--data_dir", type=Path, default=None)
     backtest.add_argument("--data_file", type=Path, default=None)
     backtest.add_argument("--timeframe", type=str, default="ticks")
@@ -62,7 +73,9 @@ def parse_research_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     backtest.add_argument("--no_equity_curve", action="store_true")
     backtest.add_argument("--no_trades", action="store_true")
 
-    replay = sub.add_parser("replay", parents=[common], help="Replay ticks/bars offline")
+    replay = sub.add_parser(
+        "replay", parents=[common], help="Replay ticks/bars offline"
+    )
     replay.add_argument("--data_dir", type=Path, default=None)
     replay.add_argument("--data_file", type=Path, default=None)
     replay.add_argument("--timeframe", type=str, default="ticks")
@@ -71,8 +84,15 @@ def parse_research_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     replay.add_argument("--no_equity_curve", action="store_true")
     replay.add_argument("--no_trades", action="store_true")
 
-    scenario = sub.add_parser("scenario", parents=[common], help="Run a scenario injection")
-    scenario.add_argument("--name", type=str, required=True, choices=["spread_spike", "latency_spike", "volatility_spike"])
+    scenario = sub.add_parser(
+        "scenario", parents=[common], help="Run a scenario injection"
+    )
+    scenario.add_argument(
+        "--name",
+        type=str,
+        required=True,
+        choices=["spread_spike", "latency_spike", "volatility_spike"],
+    )
     scenario.add_argument("--data_dir", type=Path, default=None)
     scenario.add_argument("--data_file", type=Path, default=None)
     scenario.add_argument("--timeframe", type=str, default="ticks")
@@ -97,7 +117,9 @@ def _print_metrics(metrics: dict) -> None:
 def run_research_command(args: argparse.Namespace) -> int:
     run_id = args.run_id or _default_run_id()
     out_dir = _resolve_out_dir(run_id, args.out_dir)
-    data_file = _resolve_data_file(args.data_dir, args.data_file, args.symbol, args.timeframe)
+    data_file = _resolve_data_file(
+        args.data_dir, args.data_file, args.symbol, args.timeframe
+    )
 
     if args.research_cmd == "backtest":
         events = load_events(data_file, limit_rows=args.limit_rows)

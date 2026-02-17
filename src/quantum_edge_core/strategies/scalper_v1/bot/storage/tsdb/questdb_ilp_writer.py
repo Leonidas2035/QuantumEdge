@@ -9,7 +9,6 @@ from typing import Any, Dict, List, Optional, Sequence, Callable
 from bot.storage.event_bus import EventBus
 from bot.storage.spooler import Spooler
 
-
 TABLE_SCHEMAS = {
     "market_trades_raw": {
         "tags": ["symbol", "side"],
@@ -37,7 +36,15 @@ TABLE_SCHEMAS = {
         "ts_field": "ts",
     },
     "orders": {
-        "tags": ["bot_id", "symbol", "side", "type", "status", "client_order_id", "exchange_order_id"],
+        "tags": [
+            "bot_id",
+            "symbol",
+            "side",
+            "type",
+            "status",
+            "client_order_id",
+            "exchange_order_id",
+        ],
         "fields": ["qty", "price"],
         "ts_field": "ts",
     },
@@ -65,11 +72,16 @@ TABLE_SCHEMAS = {
 
 
 def _escape_tag(value: str) -> str:
-    return value.replace("\\", "\\\\").replace(",", "\\,").replace("=", "\\=").replace(" ", "\\ ")
+    return (
+        value.replace("\\", "\\\\")
+        .replace(",", "\\,")
+        .replace("=", "\\=")
+        .replace(" ", "\\ ")
+    )
 
 
 def _escape_field_string(value: str) -> str:
-    return value.replace("\\", "\\\\").replace("\"", "\\\"")
+    return value.replace("\\", "\\\\").replace('"', '\\"')
 
 
 def _format_field(value: Any) -> Optional[str]:
@@ -82,8 +94,8 @@ def _format_field(value: Any) -> Optional[str]:
     if isinstance(value, float):
         return f"{value}"
     if isinstance(value, str):
-        return f"\"{_escape_field_string(value)}\""
-    return f"\"{_escape_field_string(str(value))}\""
+        return f'"{_escape_field_string(value)}"'
+    return f'"{_escape_field_string(str(value))}"'
 
 
 def event_to_ilp_line(event: Dict[str, Any]) -> Optional[str]:
@@ -156,7 +168,9 @@ class QuestDbIlpWriter:
 
     def _send_http_payload(self, payload: str) -> None:
         data = payload.encode("utf-8")
-        req = urllib.request.Request(self.ilp_http_url, data=data, headers={"Content-Type": "text/plain"})
+        req = urllib.request.Request(
+            self.ilp_http_url, data=data, headers={"Content-Type": "text/plain"}
+        )
         with urllib.request.urlopen(req, timeout=3) as _:
             return
 
@@ -205,7 +219,10 @@ class QuestDbIlpWriter:
             except asyncio.TimeoutError:
                 pass
             now = time.time()
-            should_flush = len(batch) >= self.batch_rows or (now - last_flush) * 1000 >= self.flush_interval_ms
+            should_flush = (
+                len(batch) >= self.batch_rows
+                or (now - last_flush) * 1000 >= self.flush_interval_ms
+            )
             if batch and should_flush:
                 await self.flush_events(batch)
                 batch = []

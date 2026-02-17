@@ -22,7 +22,12 @@ class CheckResult:
     details: Optional[Dict[str, Any]] = None
 
 
-def _add(results: List[CheckResult], status: str, message: str, details: Optional[Dict[str, Any]] = None) -> None:
+def _add(
+    results: List[CheckResult],
+    status: str,
+    message: str,
+    details: Optional[Dict[str, Any]] = None,
+) -> None:
     results.append(CheckResult(status=status, message=message, details=details))
 
 
@@ -79,7 +84,11 @@ def _get_supervisor_url(config: Dict[str, Any]) -> tuple[str, str, int]:
     env_host = os.getenv("SUPERVISOR_HOST") or os.getenv("QE_SUPERVISOR_HOST")
     env_port = os.getenv("SUPERVISOR_PORT") or os.getenv("QE_SUPERVISOR_PORT")
     env_url = os.getenv("SUPERVISOR_URL")
-    supervisor_cfg = config.get("supervisor", {}) if isinstance(config.get("supervisor"), dict) else {}
+    supervisor_cfg = (
+        config.get("supervisor", {})
+        if isinstance(config.get("supervisor"), dict)
+        else {}
+    )
     host = env_host or supervisor_cfg.get("host") or "127.0.0.1"
     port_raw = env_port or supervisor_cfg.get("port", 8765)
     try:
@@ -119,12 +128,22 @@ def _collect_symbols(bot_cfg: Dict[str, Any]) -> List[str]:
     exchange = str(app_cfg.get("exchange", "")).lower()
     if mode == "demo":
         if exchange == "bingx_swap":
-            return [str(s).replace("-", "").upper() for s in (bot_cfg.get("bingx_demo", {}) or {}).get("symbols", [])]
-        return [str(s).upper() for s in (bot_cfg.get("binance_demo", {}) or {}).get("symbols", [])]
-    return [str(s).upper() for s in (bot_cfg.get("binance", {}) or {}).get("symbols", [])]
+            return [
+                str(s).replace("-", "").upper()
+                for s in (bot_cfg.get("bingx_demo", {}) or {}).get("symbols", [])
+            ]
+        return [
+            str(s).upper()
+            for s in (bot_cfg.get("binance_demo", {}) or {}).get("symbols", [])
+        ]
+    return [
+        str(s).upper() for s in (bot_cfg.get("binance", {}) or {}).get("symbols", [])
+    ]
 
 
-def _required_envs(bot_cfg: Dict[str, Any], supervisor_cfg: Dict[str, Any]) -> List[str]:
+def _required_envs(
+    bot_cfg: Dict[str, Any], supervisor_cfg: Dict[str, Any]
+) -> List[str]:
     required: List[str] = []
     app_cfg = bot_cfg.get("app", {}) if isinstance(bot_cfg.get("app"), dict) else {}
     mode = str(app_cfg.get("mode", "paper")).lower()
@@ -136,18 +155,26 @@ def _required_envs(bot_cfg: Dict[str, Any], supervisor_cfg: Dict[str, Any]) -> L
             required.extend(["BINANCE_DEMO_API_KEY", "BINANCE_DEMO_API_SECRET"])
     if bool(app_cfg.get("llm_enabled", False)):
         required.append("OPENAI_API_KEY")
-    llm_cfg = supervisor_cfg.get("llm", {}) if isinstance(supervisor_cfg.get("llm"), dict) else {}
+    llm_cfg = (
+        supervisor_cfg.get("llm", {})
+        if isinstance(supervisor_cfg.get("llm"), dict)
+        else {}
+    )
     if bool(llm_cfg.get("enabled", False)):
         required.append(str(llm_cfg.get("api_key_env", "OPENAI_API_KEY_SUPERVISOR")))
     return sorted(set(required))
 
 
-def _check_models(runtime_models_dir: Path, symbols: List[str], horizons: List[int]) -> tuple[List[str], List[str]]:
+def _check_models(
+    runtime_models_dir: Path, symbols: List[str], horizons: List[int]
+) -> tuple[List[str], List[str]]:
     failures: List[str] = []
     warnings: List[str] = []
     for symbol in symbols:
         for horizon in horizons:
-            manifest = runtime_models_dir / symbol / str(horizon) / "current" / "manifest.json"
+            manifest = (
+                runtime_models_dir / symbol / str(horizon) / "current" / "manifest.json"
+            )
             if not manifest.exists():
                 failures.append(f"{symbol} h{horizon}: manifest_missing")
                 continue
@@ -174,12 +201,20 @@ def _check_models(runtime_models_dir: Path, symbols: List[str], horizons: List[i
                 if not isinstance(artifact, dict):
                     warnings.append(f"{symbol} h{horizon}: compat_metadata_missing")
                 else:
-                    missing = [key for key in ("python", "platform", "serializer") if not artifact.get(key)]
+                    missing = [
+                        key
+                        for key in ("python", "platform", "serializer")
+                        if not artifact.get(key)
+                    ]
                     if missing:
-                        warnings.append(f"{symbol} h{horizon}: compat_metadata_incomplete({','.join(missing)})")
+                        warnings.append(
+                            f"{symbol} h{horizon}: compat_metadata_incomplete({','.join(missing)})"
+                        )
                     lib_versions = artifact.get("lib_versions")
                     if lib_versions is None:
-                        warnings.append(f"{symbol} h{horizon}: compat_lib_versions_missing")
+                        warnings.append(
+                            f"{symbol} h{horizon}: compat_lib_versions_missing"
+                        )
                 if not data.get("model_format"):
                     warnings.append(f"{symbol} h{horizon}: model_format_missing")
                 if not data.get("model_api"):
@@ -270,13 +305,23 @@ def run_doctor(json_output: bool = False) -> int:
     if not symbols:
         _add(results, "WARN", "No symbols configured for model check")
     else:
-        model_failures, model_warnings = _check_models(paths["runtime_dir"] / "models", symbols, horizons_list)
+        model_failures, model_warnings = _check_models(
+            paths["runtime_dir"] / "models", symbols, horizons_list
+        )
         if model_failures:
-            _add(results, "FAIL", f"Model validation failures: {', '.join(model_failures)}")
+            _add(
+                results,
+                "FAIL",
+                f"Model validation failures: {', '.join(model_failures)}",
+            )
         else:
             _add(results, "PASS", "Runtime models present and valid")
         if model_warnings:
-            _add(results, "WARN", f"Model compatibility metadata warnings: {', '.join(model_warnings)}")
+            _add(
+                results,
+                "WARN",
+                f"Model compatibility metadata warnings: {', '.join(model_warnings)}",
+            )
 
     telemetry_url = f"{supervisor_url.rstrip('/')}/api/v1/telemetry/summary"
     telemetry_status = _probe_url(telemetry_url)
@@ -284,7 +329,11 @@ def run_doctor(json_output: bool = False) -> int:
         _add(results, "PASS", f"Telemetry summary reachable ({telemetry_status})")
     else:
         note = telemetry_status if telemetry_status is not None else "no response"
-        _add(results, "FAIL", f"Telemetry summary unreachable ({telemetry_url} -> {note})")
+        _add(
+            results,
+            "FAIL",
+            f"Telemetry summary unreachable ({telemetry_url} -> {note})",
+        )
 
     required_envs = _required_envs(bot_cfg, supervisor_cfg)
     missing_envs = [name for name in required_envs if not os.getenv(name)]

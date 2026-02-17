@@ -44,4 +44,3 @@ class PolicyStore:
             max_daily_loss=self.max_daily_loss,
             reason=self.reason or "OK",
         )
-

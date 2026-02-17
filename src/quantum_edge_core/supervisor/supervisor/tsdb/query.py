@@ -8,7 +8,6 @@ import urllib.parse
 import urllib.request
 from typing import Any, Dict, List
 
-
 ALLOWED_METRICS = {
     "tick_age_ms",
     "book_age_ms",
@@ -28,7 +27,9 @@ def sanitize_symbol(symbol: str) -> str:
     return symbol
 
 
-def build_timeseries_query(metric: str, symbol: str, start: str, end: str, bucket: str) -> str:
+def build_timeseries_query(
+    metric: str, symbol: str, start: str, end: str, bucket: str
+) -> str:
     if metric not in ALLOWED_METRICS:
         raise ValueError("metric_not_allowed")
     if bucket not in ALLOWED_BUCKETS:
@@ -51,7 +52,9 @@ def build_timeseries_query(metric: str, symbol: str, start: str, end: str, bucke
     )
 
 
-def questdb_query(query_url: str, sql: str, timeout: float = 3.0) -> List[Dict[str, Any]]:
+def questdb_query(
+    query_url: str, sql: str, timeout: float = 3.0
+) -> List[Dict[str, Any]]:
     encoded = urllib.parse.quote(sql, safe="")
     url = f"{query_url}?query={encoded}&fmt=json"
     req = urllib.request.Request(url, method="GET")
@@ -73,7 +76,9 @@ def _rows_from_questdb(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
     cols = [col.get("name") for col in payload.get("columns", [])]
     rows = []
     for row in payload.get("dataset", []) or []:
-        rows.append({cols[i]: row[i] if i < len(row) else None for i in range(len(cols))})
+        rows.append(
+            {cols[i]: row[i] if i < len(row) else None for i in range(len(cols))}
+        )
     return rows
 
 

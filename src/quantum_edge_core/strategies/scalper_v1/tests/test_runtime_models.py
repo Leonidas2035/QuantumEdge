@@ -97,8 +97,14 @@ def test_runtime_models_compat_strict_blocks(monkeypatch, tmp_path: Path):
         "files": {"model": {"path": "model.pkl", "sha256": _sha256(b"dummy")}},
         "model_format": "xgboost_json",
         "model_api": "predict_proba",
-        "artifact": {"python": "0.0.1", "platform": "linux", "serializer": "xgboost_json"},
+        "artifact": {
+            "python": "0.0.1",
+            "platform": "linux",
+            "serializer": "xgboost_json",
+        },
     }
     (manifest_dir / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
-    _, errors = rm.load_runtime_models("BTCUSDT", [1], models_root=models_root, compat_strict=True)
+    _, errors = rm.load_runtime_models(
+        "BTCUSDT", [1], models_root=models_root, compat_strict=True
+    )
     assert errors.get(1, "").startswith("compat_mismatch")

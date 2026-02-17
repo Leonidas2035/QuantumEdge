@@ -23,7 +23,9 @@ def _load_tsdb_config() -> Dict[str, Any]:
         return {}
 
 
-def _query_questdb(query_url: str, sql: str, timeout: float = 5.0) -> List[Dict[str, Any]]:
+def _query_questdb(
+    query_url: str, sql: str, timeout: float = 5.0
+) -> List[Dict[str, Any]]:
     encoded = urllib.parse.quote(sql, safe="")
     url = f"{query_url}?query={encoded}&fmt=json"
     req = urllib.request.Request(url, method="GET")
@@ -36,7 +38,9 @@ def _rows_from_questdb(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
     cols = [col.get("name") for col in payload.get("columns", [])]
     rows = []
     for row in payload.get("dataset", []) or []:
-        rows.append({cols[i]: row[i] if i < len(row) else None for i in range(len(cols))})
+        rows.append(
+            {cols[i]: row[i] if i < len(row) else None for i in range(len(cols))}
+        )
     return rows
 
 
@@ -48,7 +52,9 @@ def _parse_dt(value: str) -> datetime:
     return dt.replace(tzinfo=timezone.utc)
 
 
-def _iter_ranges(start: datetime, end: datetime, granularity: str) -> Iterable[tuple[datetime, datetime]]:
+def _iter_ranges(
+    start: datetime, end: datetime, granularity: str
+) -> Iterable[tuple[datetime, datetime]]:
     cursor = start
     while cursor < end:
         if granularity == "hour":
@@ -64,7 +70,9 @@ def _ensure_parquet_writer() -> Any:
         import pyarrow as pa
         import pyarrow.parquet as pq
     except Exception as exc:
-        raise SystemExit("pyarrow is required for Parquet export. Install with: pip install pyarrow") from exc
+        raise SystemExit(
+            "pyarrow is required for Parquet export. Install with: pip install pyarrow"
+        ) from exc
     return pa, pq
 
 
@@ -75,7 +83,13 @@ def _write_parquet(rows: List[Dict[str, Any]], out_path: Path) -> None:
     pq.write_table(table, out_path)
 
 
-def _build_output_path(base: Path, table: str, symbol: Optional[str], window_start: datetime, granularity: str) -> Path:
+def _build_output_path(
+    base: Path,
+    table: str,
+    symbol: Optional[str],
+    window_start: datetime,
+    granularity: str,
+) -> Path:
     date_part = window_start.strftime("%Y-%m-%d")
     if granularity == "hour":
         date_part = f"{date_part}/{window_start.strftime('%H')}"
@@ -83,7 +97,13 @@ def _build_output_path(base: Path, table: str, symbol: Optional[str], window_sta
     return base / table / symbol_part / date_part / "export.parquet"
 
 
-def _build_sql(table: str, start: datetime, end: datetime, symbol: Optional[str], bot_id: Optional[str]) -> str:
+def _build_sql(
+    table: str,
+    start: datetime,
+    end: datetime,
+    symbol: Optional[str],
+    bot_id: Optional[str],
+) -> str:
     start_iso = start.isoformat().replace("+00:00", "Z")
     end_iso = end.isoformat().replace("+00:00", "Z")
     where = [f"ts >= '{start_iso}'", f"ts < '{end_iso}'"]
@@ -100,15 +120,35 @@ def main() -> None:
     default_query_url = questdb_cfg.get("query_url", "http://127.0.0.1:9000/exec")
 
     parser = argparse.ArgumentParser(description="Export QuestDB tables to Parquet.")
-    parser.add_argument("--table", action="append", required=True, help="Table name (repeatable).")
+    parser.add_argument(
+        "--table", action="append", required=True, help="Table name (repeatable)."
+    )
     parser.add_argument("--symbol", help="Optional symbol filter.")
     parser.add_argument("--bot-id", help="Optional bot_id filter.")
-    parser.add_argument("--from", dest="from_ts", required=True, help="Start date or ISO timestamp.")
-    parser.add_argument("--to", dest="to_ts", required=True, help="End date or ISO timestamp (exclusive).")
-    parser.add_argument("--granularity", choices=["day", "hour"], default="day", help="Partition granularity.")
-    parser.add_argument("--query-url", default=default_query_url, help="QuestDB /exec URL.")
-    parser.add_argument("--out-dir", default="archive/parquet", help="Output base directory.")
-    parser.add_argument("--overwrite", action="store_true", help="Overwrite existing exports.")
+    parser.add_argument(
+        "--from", dest="from_ts", required=True, help="Start date or ISO timestamp."
+    )
+    parser.add_argument(
+        "--to",
+        dest="to_ts",
+        required=True,
+        help="End date or ISO timestamp (exclusive).",
+    )
+    parser.add_argument(
+        "--granularity",
+        choices=["day", "hour"],
+        default="day",
+        help="Partition granularity.",
+    )
+    parser.add_argument(
+        "--query-url", default=default_query_url, help="QuestDB /exec URL."
+    )
+    parser.add_argument(
+        "--out-dir", default="archive/parquet", help="Output base directory."
+    )
+    parser.add_argument(
+        "--overwrite", action="store_true", help="Overwrite existing exports."
+    )
     args = parser.parse_args()
 
     start = _parse_dt(args.from_ts)
@@ -116,14 +156,18 @@ def main() -> None:
     out_base = Path(args.out_dir)
     for table in args.table:
         for window_start, window_end in _iter_ranges(start, end, args.granularity):
-            out_path = _build_output_path(out_base, table, args.symbol, window_start, args.granularity)
+            out_path = _build_output_path(
+                out_base, table, args.symbol, window_start, args.granularity
+            )
             if out_path.exists() and not args.overwrite:
                 print(f"[export] Skip existing {out_path}")
                 continue
             sql = _build_sql(table, window_start, window_end, args.symbol, args.bot_id)
             rows = _query_questdb(args.query_url, sql)
             if not rows:
-                print(f"[export] No rows for {table} {window_start.isoformat()} -> {window_end.isoformat()}")
+                print(
+                    f"[export] No rows for {table} {window_start.isoformat()} -> {window_end.isoformat()}"
+                )
                 continue
             _write_parquet(rows, out_path)
             print(f"[export] Wrote {len(rows)} rows to {out_path}")

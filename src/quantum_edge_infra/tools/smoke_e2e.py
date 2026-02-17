@@ -17,7 +17,9 @@ def _repo_root() -> Path:
     return Path(__file__).resolve().parents[3]
 
 
-def _run(cmd: list[str], env: dict, label: str, ok_codes: Optional[set[int]] = None) -> None:
+def _run(
+    cmd: list[str], env: dict, label: str, ok_codes: Optional[set[int]] = None
+) -> None:
     proc = subprocess.run(cmd, env=env, capture_output=True, text=True)
     ok_codes = ok_codes or {0}
     if proc.returncode not in ok_codes:
@@ -65,11 +67,20 @@ def _write_schedule(path: Path) -> None:
             "objective": "Smoke dry run",
             "instructions": "Do not change code.",
             "execution": {"dry_run": True},
-            "constraints": {"patch_only": True, "max_files": 1, "max_file_bytes": 65536},
+            "constraints": {
+                "patch_only": True,
+                "max_files": 1,
+                "max_file_bytes": 65536,
+            },
             "mode": "task",
         },
         "policy": {"max_concurrent": 1, "max_runs_per_window": 1, "max_attempts": 1},
-        "retries": {"enabled": True, "backoff_base_seconds": 1, "backoff_max_seconds": 2, "jitter": False},
+        "retries": {
+            "enabled": True,
+            "backoff_base_seconds": 1,
+            "backoff_max_seconds": 2,
+            "jitter": False,
+        },
     }
     path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
 
@@ -136,7 +147,17 @@ def main() -> int:
         port = _free_port()
         token = "smoke-token"
         ui_proc = subprocess.Popen(
-            [sys.executable, "meta_agent.py", "ui", "--port", str(port), "--bind", "127.0.0.1", "--token", token],
+            [
+                sys.executable,
+                "meta_agent.py",
+                "ui",
+                "--port",
+                str(port),
+                "--bind",
+                "127.0.0.1",
+                "--token",
+                token,
+            ],
             env=env,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,

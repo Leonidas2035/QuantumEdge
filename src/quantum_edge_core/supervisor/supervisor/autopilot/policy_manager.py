@@ -22,7 +22,13 @@ class PolicyRecord:
 
 
 class PolicyManager:
-    def __init__(self, artifacts_dir: Path, runtime_dir: Path, history_dir: Path, history_keep: int = 5) -> None:
+    def __init__(
+        self,
+        artifacts_dir: Path,
+        runtime_dir: Path,
+        history_dir: Path,
+        history_keep: int = 5,
+    ) -> None:
         self.artifacts_dir = artifacts_dir
         self.runtime_dir = runtime_dir
         self.history_dir = history_dir
@@ -183,7 +189,9 @@ def _iso_utc() -> str:
 
 def _atomic_write_json(path: Path, payload: Dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp_fd, tmp_path = tempfile.mkstemp(prefix=path.name + ".tmp.", dir=str(path.parent))
+    tmp_fd, tmp_path = tempfile.mkstemp(
+        prefix=path.name + ".tmp.", dir=str(path.parent)
+    )
     try:
         with os.fdopen(tmp_fd, "w", encoding="utf-8") as handle:
             json.dump(payload, handle, indent=2)

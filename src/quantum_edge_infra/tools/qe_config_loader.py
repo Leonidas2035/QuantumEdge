@@ -16,7 +16,9 @@ def load_yaml(path: Path) -> Dict[str, Any]:
     return data
 
 
-def merge_defaults(base: Mapping[str, Any], overrides: Mapping[str, Any]) -> Dict[str, Any]:
+def merge_defaults(
+    base: Mapping[str, Any], overrides: Mapping[str, Any]
+) -> Dict[str, Any]:
     merged: Dict[str, Any] = dict(base)
     for key, value in overrides.items():
         if isinstance(value, dict) and isinstance(merged.get(key), dict):

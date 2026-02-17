@@ -41,7 +41,11 @@ class SnapshotReport:
     @classmethod
     def from_dict(cls, data: Dict[str, object]) -> "SnapshotReport":
         timestamp_raw = data.get("timestamp")
-        timestamp = datetime.fromisoformat(str(timestamp_raw)) if timestamp_raw else datetime.utcnow()
+        timestamp = (
+            datetime.fromisoformat(str(timestamp_raw))
+            if timestamp_raw
+            else datetime.utcnow()
+        )
         return cls(
             timestamp=timestamp,
             trend=str(data.get("trend", "UNKNOWN")),

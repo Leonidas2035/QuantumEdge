@@ -32,7 +32,9 @@ class HeuristicDecision:
     evidence: str
 
 
-def apply_heuristics(signals: Signals, thresholds: HeuristicThresholds) -> HeuristicDecision:
+def apply_heuristics(
+    signals: Signals, thresholds: HeuristicThresholds
+) -> HeuristicDecision:
     evidence_parts: list[str] = []
 
     if not signals.bot_running:
@@ -104,9 +106,15 @@ def apply_heuristics(signals: Signals, thresholds: HeuristicThresholds) -> Heuri
     if thresholds.loss_streak and signals.loss_streak is not None:
         evidence_parts.append(f"loss_streak={signals.loss_streak}")
         if signals.loss_streak >= thresholds.loss_streak:
-            mode = "risk_off" if thresholds.loss_streak_mode == "risk_off" else "conservative"
+            mode = (
+                "risk_off"
+                if thresholds.loss_streak_mode == "risk_off"
+                else "conservative"
+            )
             allow_trading = mode != "risk_off"
-            size_multiplier = 0.0 if mode == "risk_off" else thresholds.conservative_size_multiplier
+            size_multiplier = (
+                0.0 if mode == "risk_off" else thresholds.conservative_size_multiplier
+            )
             return HeuristicDecision(
                 mode=mode,
                 allow_trading=allow_trading,

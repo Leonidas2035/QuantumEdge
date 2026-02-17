@@ -27,7 +27,9 @@ async def _produce(writer: QuestILPWriter) -> None:
 
 
 def main() -> None:
-    tsdb_config = TsdbConfig(host="127.0.0.1", ilp_port=9999, batch_rows=1, flush_interval_ms=100)
+    tsdb_config = TsdbConfig(
+        host="127.0.0.1", ilp_port=9999, batch_rows=1, flush_interval_ms=100
+    )
     l2_config = L2Config()
     writer = QuestILPWriter(tsdb_config, l2_config)
     asyncio.run(_produce(writer))

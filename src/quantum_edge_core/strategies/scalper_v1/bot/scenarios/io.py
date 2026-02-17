@@ -32,7 +32,9 @@ class DepthSnapshot:
     depth_usd: Optional[float]
 
 
-def load_ticks(path: Path, symbol: Optional[str] = None, limit: Optional[int] = None) -> List[Tick]:
+def load_ticks(
+    path: Path, symbol: Optional[str] = None, limit: Optional[int] = None
+) -> List[Tick]:
     files = _resolve_files(path, symbol, extensions={".csv", ".jsonl"})
     ticks: List[Tick] = []
     for file_path in files:
@@ -50,7 +52,9 @@ def iter_ticks(path: Path) -> Iterator[Tick]:
         yield from _iter_ticks_jsonl(path)
 
 
-def load_depth_snapshots(path: Path, symbol: Optional[str] = None, limit: Optional[int] = None) -> List[DepthSnapshot]:
+def load_depth_snapshots(
+    path: Path, symbol: Optional[str] = None, limit: Optional[int] = None
+) -> List[DepthSnapshot]:
     files = _resolve_files(path, symbol, extensions={".json", ".jsonl"})
     snapshots: List[DepthSnapshot] = []
     for file_path in files:
@@ -121,7 +125,12 @@ def _iter_ticks_jsonl(path: Path) -> Iterator[Tick]:
 
 
 def _parse_tick_payload(payload: Dict[str, object]) -> Optional[Tick]:
-    ts_raw = payload.get("timestamp") or payload.get("ts") or payload.get("T") or payload.get("E")
+    ts_raw = (
+        payload.get("timestamp")
+        or payload.get("ts")
+        or payload.get("T")
+        or payload.get("E")
+    )
     price_raw = payload.get("price") or payload.get("p")
     qty_raw = payload.get("qty") or payload.get("q")
     if ts_raw is None or price_raw is None or qty_raw is None:
@@ -168,7 +177,9 @@ def _parse_depth_payload(payload: Dict[str, object]) -> Optional[DepthSnapshot]:
     bid = _best_price(bids, want_max=True)
     ask = _best_price(asks, want_max=False)
     depth_usd = _sum_depth(bids) + _sum_depth(asks)
-    return DepthSnapshot(ts_ms=ts_ms, bid=bid, ask=ask, depth_usd=depth_usd if depth_usd > 0 else None)
+    return DepthSnapshot(
+        ts_ms=ts_ms, bid=bid, ask=ask, depth_usd=depth_usd if depth_usd > 0 else None
+    )
 
 
 def _best_price(levels: Optional[object], want_max: bool) -> Optional[float]:
@@ -199,12 +210,16 @@ def _sum_depth(levels: Optional[object]) -> float:
     return total
 
 
-def _resolve_files(path: Path, symbol: Optional[str], extensions: set[str]) -> List[Path]:
+def _resolve_files(
+    path: Path, symbol: Optional[str], extensions: set[str]
+) -> List[Path]:
     if path.is_file():
         return [path]
     if not path.exists():
         raise FileNotFoundError(f"Data path not found: {path}")
-    files = [p for p in path.iterdir() if p.is_file() and p.suffix.lower() in extensions]
+    files = [
+        p for p in path.iterdir() if p.is_file() and p.suffix.lower() in extensions
+    ]
     if symbol:
         sym = symbol.replace("-", "").lower()
         files = [p for p in files if sym in p.name.replace("-", "").lower()]

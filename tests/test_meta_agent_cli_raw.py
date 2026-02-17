@@ -1,4 +1,5 @@
 import pytest
+
 pytest.skip("Legacy test broken by src-layout migration", allow_module_level=True)
 import sys
 import os
@@ -22,6 +23,7 @@ except ImportError:
     print(f"Failed to import meta_core from {META_AGENT_DIR}")
     raise
 
+
 class FakeLLMClient:
     def __init__(self, response: str):
         self._response = response
@@ -29,7 +31,10 @@ class FakeLLMClient:
     def send(self, prompt: str, **kwargs) -> str:
         return self._response
 
-def test_run_task_with_raw_string(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+
+def test_run_task_with_raw_string(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     # Setup environment
     base_dir = tmp_path / "repo"
     base_dir.mkdir()

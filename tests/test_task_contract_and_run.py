@@ -1,4 +1,5 @@
 import pytest
+
 pytest.skip("Legacy test broken by src-layout migration", allow_module_level=True)
 import sys
 from pathlib import Path
@@ -29,7 +30,9 @@ def _write_task(path: Path, payload: dict) -> None:
     )
 
 
-def test_task_contract_validation(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_task_contract_validation(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     base_dir = tmp_path / "repo"
     project_root = base_dir / "project"
     project_root.mkdir(parents=True)
@@ -53,7 +56,9 @@ def test_task_contract_validation(tmp_path: Path, monkeypatch: pytest.MonkeyPatc
     assert report.verdict == "error"
 
 
-def test_run_task_warn_no_apply(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_run_task_warn_no_apply(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     base_dir = tmp_path / "repo"
     project_root = base_dir / "project"
     target_file = project_root / "config" / "settings.yaml"
@@ -119,7 +124,9 @@ def test_run_task_allow_apply(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -
     assert patch_path.exists()
 
 
-def test_run_task_allow_gate_fail_no_apply(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_run_task_allow_gate_fail_no_apply(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     base_dir = tmp_path / "repo"
     project_root = base_dir / "project"
     target_file = project_root / "bot" / "helper.py"
@@ -139,7 +146,10 @@ def test_run_task_allow_gate_fail_no_apply(tmp_path: Path, monkeypatch: pytest.M
         "gates": {
             "enabled": True,
             "steps": [
-                {"name": "fail", "cmd": [sys.executable, "-c", "import sys; sys.exit(2)"]},
+                {
+                    "name": "fail",
+                    "cmd": [sys.executable, "-c", "import sys; sys.exit(2)"],
+                },
             ],
         },
     }
@@ -159,7 +169,9 @@ def test_run_task_allow_gate_fail_no_apply(tmp_path: Path, monkeypatch: pytest.M
     assert report.changes.patches
 
 
-def test_run_task_dry_run_never_apply(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_run_task_dry_run_never_apply(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     base_dir = tmp_path / "repo"
     project_root = base_dir / "project"
     target_file = project_root / "bot" / "helper.py"

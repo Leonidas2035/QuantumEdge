@@ -86,7 +86,9 @@ class LLMRiskModerator:
         exposure = market_context.get("exposure", 0.0)
         shock = market_context.get("shock", 0.0)
 
-        risk_score = max(0.0, min(1.0, 0.5 + edge * 5 - drawdown * 5 - shock * 2 - vol * 2))
+        risk_score = max(
+            0.0, min(1.0, 0.5 + edge * 5 - drawdown * 5 - shock * 2 - vol * 2)
+        )
         approve = (
             edge >= self.require_edge
             and drawdown <= self.max_dd

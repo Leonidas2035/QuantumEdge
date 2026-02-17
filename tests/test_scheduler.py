@@ -1,4 +1,5 @@
 import pytest
+
 pytest.skip("Legacy test broken by src-layout migration", allow_module_level=True)
 import json
 import sys
@@ -57,7 +58,9 @@ def test_enqueue_task_creates_file(tmp_path: Path) -> None:
         "instructions": "Touch docs/README.md",
         "mode": "task",
     }
-    name = enqueue_task(schedule, payload, str(inbox), datetime(2026, 1, 5, 3, 0, tzinfo=timezone.utc))
+    name = enqueue_task(
+        schedule, payload, str(inbox), datetime(2026, 1, 5, 3, 0, tzinfo=timezone.utc)
+    )
     task_path = inbox / name
     assert task_path.exists()
     data = yaml.safe_load(task_path.read_text(encoding="utf-8"))
@@ -70,7 +73,9 @@ def test_backoff_calc_no_jitter() -> None:
     assert _calc_backoff(3, 10, 100, False) == 40
 
 
-def test_crash_recovery_no_duplicate(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_crash_recovery_no_duplicate(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     runtime_dir = tmp_path / "runtime"
     schedules_dir = tmp_path / "schedules"
     inbox = runtime_dir / "inbox"
@@ -84,7 +89,11 @@ def test_crash_recovery_no_duplicate(tmp_path: Path, monkeypatch: pytest.MonkeyP
         "timezone": "UTC",
         "windows": [{"days": ["*"], "start": "00:00", "end": "23:59"}],
         "trigger": {"type": "interval", "every_seconds": 60},
-        "task_template": {"objective": "Doc pass", "instructions": "Update docs", "mode": "task"},
+        "task_template": {
+            "objective": "Doc pass",
+            "instructions": "Update docs",
+            "mode": "task",
+        },
     }
     schedule_path = schedules_dir / "sched.yaml"
     _write_schedule(schedule_path, schedule_payload)
@@ -94,10 +103,16 @@ def test_crash_recovery_no_duplicate(tmp_path: Path, monkeypatch: pytest.MonkeyP
 
     state_path = runtime_dir / "scheduler" / "state.json"
     state_path.parent.mkdir(parents=True)
-    state = {"last_tick": None, "schedules": {"nightly": {"last_task_file": pending_name}}}
+    state = {
+        "last_tick": None,
+        "schedules": {"nightly": {"last_task_file": pending_name}},
+    }
     state_path.write_text(json.dumps(state), encoding="utf-8")
 
-    monkeypatch.setattr("offmarket_scheduler.process_inbox_once", lambda **kwargs: {"processed": 0, "reports": []})
+    monkeypatch.setattr(
+        "offmarket_scheduler.process_inbox_once",
+        lambda **kwargs: {"processed": 0, "reports": []},
+    )
     result = tick(str(schedules_dir), str(runtime_dir), logger=DummyLogger())
     assert result["enqueued"] == 0
     assert len(list(inbox.iterdir())) == 1
@@ -116,12 +131,19 @@ def test_tick_updates_state(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> 
         "timezone": "UTC",
         "windows": [{"days": ["*"], "start": "00:00", "end": "23:59"}],
         "trigger": {"type": "once"},
-        "task_template": {"objective": "Doc pass", "instructions": "Update docs", "mode": "task"},
+        "task_template": {
+            "objective": "Doc pass",
+            "instructions": "Update docs",
+            "mode": "task",
+        },
     }
     schedule_path = schedules_dir / "sched.yaml"
     _write_schedule(schedule_path, schedule_payload)
 
-    monkeypatch.setattr("offmarket_scheduler.process_inbox_once", lambda **kwargs: {"processed": 0, "reports": []})
+    monkeypatch.setattr(
+        "offmarket_scheduler.process_inbox_once",
+        lambda **kwargs: {"processed": 0, "reports": []},
+    )
     tick(str(schedules_dir), str(runtime_dir), logger=DummyLogger())
     state_path = runtime_dir / "scheduler" / "state.json"
     assert state_path.exists()

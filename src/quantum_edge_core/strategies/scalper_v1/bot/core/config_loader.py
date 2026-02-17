@@ -53,7 +53,9 @@ class Config:
             self.data.setdefault("app", {})["data_path"] = env_data_dir
         env_runtime_dir = os.getenv("QE_RUNTIME_DIR")
         if env_runtime_dir:
-            self.data.setdefault("ops", {})["status_file"] = str(Path(env_runtime_dir) / "bot_status.json")
+            self.data.setdefault("ops", {})["status_file"] = str(
+                Path(env_runtime_dir) / "bot_status.json"
+            )
 
         print(f"[INFO] Config loaded from: {self.config_path}")
 
@@ -63,7 +65,9 @@ class Config:
         if self._secrets_required:
             self._maybe_load_secrets(required=True)
         else:
-            print("[INFO] Secrets not required in this mode (paper/mock with llm_disabled).")
+            print(
+                "[INFO] Secrets not required in this mode (paper/mock with llm_disabled)."
+            )
 
     def _prompt_password(self) -> str:
         return get_runtime_password(is_supervisor_mode())

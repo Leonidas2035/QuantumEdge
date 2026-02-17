@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from typing import Any, Awaitable, Callable, Dict, Optional
 
-from quantum_edge_core.market_data.account.binance_userstream_base import BinanceUserStreamBase
+from quantum_edge_core.market_data.account.binance_userstream_base import (
+    BinanceUserStreamBase,
+)
 from quantum_edge_core.market_data.config import AccountConfig
 
 

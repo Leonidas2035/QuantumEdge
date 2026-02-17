@@ -31,7 +31,9 @@ class SupervisorClient:
         self.logger = logger
         self._last_heartbeat_ts: float = 0.0
 
-    def _post_json(self, path: str, payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    def _post_json(
+        self, path: str, payload: Dict[str, Any]
+    ) -> Optional[Dict[str, Any]]:
         url = self.cfg.base_url.rstrip("/") + path
         headers = {
             "Content-Type": "application/json",
@@ -52,7 +54,9 @@ class SupervisorClient:
             self.logger.warning("Supervisor API request failed (%s): %s", path, exc)
             return None
 
-    async def send_heartbeat_if_due(self, payload_builder: Callable[[], Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    async def send_heartbeat_if_due(
+        self, payload_builder: Callable[[], Dict[str, Any]]
+    ) -> Optional[Dict[str, Any]]:
         now = time.monotonic()
         if now - self._last_heartbeat_ts < self.cfg.heartbeat_interval_s:
             return None
@@ -67,7 +71,9 @@ class SupervisorClient:
             payload,
         )
 
-    async def evaluate_order(self, order_payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    async def evaluate_order(
+        self, order_payload: Dict[str, Any]
+    ) -> Optional[Dict[str, Any]]:
         """Evaluate an order via Supervisor risk gateway."""
 
         if not self.cfg.risk_enabled:
@@ -101,7 +107,9 @@ class SupervisorClient:
 
         return response
 
-    async def send_trade_result(self, payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    async def send_trade_result(
+        self, payload: Dict[str, Any]
+    ) -> Optional[Dict[str, Any]]:
         """Send trade result payload to Supervisor telemetry endpoint."""
 
         loop = asyncio.get_running_loop()

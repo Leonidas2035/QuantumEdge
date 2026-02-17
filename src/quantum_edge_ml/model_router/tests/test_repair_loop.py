@@ -16,7 +16,10 @@ class SequenceBackend:
 
 
 def test_repair_loop_succeeds():
-    outputs = ["not json", '{"v":1,"s":"HOLD","c":0.1,"sl":null,"tp":null,"r":"ok","rk":"LOW"}']
+    outputs = [
+        "not json",
+        '{"v":1,"s":"HOLD","c":0.1,"sl":null,"tp":null,"r":"ok","rk":"LOW"}',
+    ]
     backend = SequenceBackend(outputs)
     result = enforce_decision("prompt", backend, timeout_s=1.0, max_attempts=2)
     assert result.ok is True

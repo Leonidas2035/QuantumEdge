@@ -6,7 +6,6 @@ from typing import Iterable, Optional
 
 from task_contract import DEFAULT_DENY_GLOBS
 
-
 DEFAULT_IGNORE = DEFAULT_DENY_GLOBS + [
     ".git",
     "**/.git/**",
@@ -76,13 +75,24 @@ def _create_git_worktree(project_root: str, shadow_dir: str, logger) -> bool:
         if os.path.exists(shadow_dir):
             shutil.rmtree(shadow_dir, ignore_errors=True)
         proc = subprocess.run(
-            ["git", "-C", project_root, "worktree", "add", "--detach", shadow_dir, "HEAD"],
+            [
+                "git",
+                "-C",
+                project_root,
+                "worktree",
+                "add",
+                "--detach",
+                shadow_dir,
+                "HEAD",
+            ],
             check=False,
             capture_output=True,
             text=True,
         )
         if proc.returncode != 0:
-            logger.info("git worktree failed: %s", proc.stderr.strip() or proc.stdout.strip())
+            logger.info(
+                "git worktree failed: %s", proc.stderr.strip() or proc.stdout.strip()
+            )
             return False
         return True
     except Exception as exc:
@@ -115,7 +125,9 @@ def create_shadow(
             shutil.rmtree(shadow_dir, ignore_errors=True)
         _safe_mkdir(shadow_dir)
         files, total_bytes = _copy_tree(project_root, shadow_dir, ignore)
-        logger.info("Shadow copy created: %s files=%s bytes=%s", shadow_dir, files, total_bytes)
+        logger.info(
+            "Shadow copy created: %s files=%s bytes=%s", shadow_dir, files, total_bytes
+        )
     else:
         logger.info("Shadow worktree created: %s", shadow_dir)
 
@@ -132,13 +144,27 @@ def create_shadow(
     return shadow_dir
 
 
-def cleanup_shadow(shadow_dir: str, keep: bool, strategy: Optional[str], project_root: Optional[str], logger) -> None:
+def cleanup_shadow(
+    shadow_dir: str,
+    keep: bool,
+    strategy: Optional[str],
+    project_root: Optional[str],
+    logger,
+) -> None:
     if keep or not shadow_dir:
         return
     if strategy == "git_worktree" and project_root:
         try:
             subprocess.run(
-                ["git", "-C", project_root, "worktree", "remove", "--force", shadow_dir],
+                [
+                    "git",
+                    "-C",
+                    project_root,
+                    "worktree",
+                    "remove",
+                    "--force",
+                    shadow_dir,
+                ],
                 check=False,
                 capture_output=True,
                 text=True,

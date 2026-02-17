@@ -1,4 +1,5 @@
 import pytest
+
 pytest.skip("Legacy test broken by src-layout migration", allow_module_level=True)
 import asyncio
 import socket
@@ -117,21 +118,35 @@ async def test_policy_runner_smoke_range_and_chaos():
             source="hub_derived",
             payload=payload,
         )
-        await pub.send_multipart([f"BTCUSDT:{event_type}".encode("utf-8"), msgspec.msgpack.encode(event)])
+        await pub.send_multipart(
+            [f"BTCUSDT:{event_type}".encode("utf-8"), msgspec.msgpack.encode(event)]
+        )
 
     async def publish_account(payload: dict) -> None:
-        await pub.send_multipart([b"account.snapshot.v1", msgspec.msgpack.encode(payload)])
+        await pub.send_multipart(
+            [b"account.snapshot.v1", msgspec.msgpack.encode(payload)]
+        )
 
     await publish_account(
         {
             "ts_event": now_ms,
             "positions": {"long_qty": 0.1, "short_qty": 0.1},
-            "risk": {"margin_usage": 0.1, "distance_to_liq_bps": 1000.0, "equity": 10000.0},
+            "risk": {
+                "margin_usage": 0.1,
+                "distance_to_liq_bps": 1000.0,
+                "equity": 10000.0,
+            },
         }
     )
     await publish(
         "vwap_bands_d",
-        {"vwap": 100.0, "band_1u": 101.0, "band_1l": 99.0, "band_2u": 102.0, "band_2l": 98.0},
+        {
+            "vwap": 100.0,
+            "band_1u": 101.0,
+            "band_1l": 99.0,
+            "band_2u": 102.0,
+            "band_2l": 98.0,
+        },
         1,
     )
     await publish("mark_price_1s", {"mark_price": 103.0}, 2)
@@ -140,7 +155,11 @@ async def test_policy_runner_smoke_range_and_chaos():
     for _ in range(30):
         await asyncio.sleep(0.1)
         status = client.status()
-        last_cmd = status.get("payload", {}).get("policy", {}).get("last_cmd_type") if status else None
+        last_cmd = (
+            status.get("payload", {}).get("policy", {}).get("last_cmd_type")
+            if status
+            else None
+        )
         if last_cmd in {"EXEC_STEP", "SET_DELTA_TARGET", "SET_REGIME", "PAUSE"}:
             break
     assert status is not None
@@ -149,14 +168,27 @@ async def test_policy_runner_smoke_range_and_chaos():
         for _ in range(30):
             await asyncio.sleep(0.1)
             status = client.status()
-            last_cmd = status.get("payload", {}).get("policy", {}).get("last_cmd_type") if status else None
+            last_cmd = (
+                status.get("payload", {}).get("policy", {}).get("last_cmd_type")
+                if status
+                else None
+            )
             if last_cmd in {"EXEC_STEP", "SET_DELTA_TARGET", "SET_REGIME"}:
                 break
     assert last_cmd in {"EXEC_STEP", "SET_DELTA_TARGET", "SET_REGIME", "PAUSE"}
 
     await publish(
         "liq_heatmap",
-        {"intensity_above": 10.0, "intensity_below": 10.0, "levels": [], "window_s": 3600, "bin_type": "bps", "bin_size": 10, "decay": {"type": "exp", "half_life_s": 600}, "last_force_order_ts": now_ms},
+        {
+            "intensity_above": 10.0,
+            "intensity_below": 10.0,
+            "levels": [],
+            "window_s": 3600,
+            "bin_type": "bps",
+            "bin_size": 10,
+            "decay": {"type": "exp", "half_life_s": 600},
+            "last_force_order_ts": now_ms,
+        },
         3,
     )
     await publish("mark_price_1s", {"mark_price": 103.1}, 5)
@@ -164,10 +196,16 @@ async def test_policy_runner_smoke_range_and_chaos():
     for _ in range(30):
         await asyncio.sleep(0.1)
         decisions = policy_runner.decisions(limit=1)
-        if decisions and (decisions[-1].get("reason") == "chaos" or decisions[-1].get("candidate") == "CHAOS"):
+        if decisions and (
+            decisions[-1].get("reason") == "chaos"
+            or decisions[-1].get("candidate") == "CHAOS"
+        ):
             break
     assert decisions
-    assert decisions[-1].get("reason") == "chaos" or decisions[-1].get("candidate") == "CHAOS"
+    assert (
+        decisions[-1].get("reason") == "chaos"
+        or decisions[-1].get("candidate") == "CHAOS"
+    )
 
     pub.close()
     policy_runner.stop()

@@ -1,4 +1,5 @@
 import pytest
+
 pytest.skip("Legacy test broken by src-layout migration", allow_module_level=True)
 from pathlib import Path
 
@@ -22,7 +23,12 @@ def test_manifest_roundtrip(tmp_path: Path):
         thresholds={"p_up": 0.55},
         model_format="xgboost_json",
         model_api="predict_proba",
-        artifact={"python": "3.11.0", "platform": "win32", "serializer": "xgboost_json", "lib_versions": {"xgboost": "2.0.0"}},
+        artifact={
+            "python": "3.11.0",
+            "platform": "win32",
+            "serializer": "xgboost_json",
+            "lib_versions": {"xgboost": "2.0.0"},
+        },
     )
     manifest_path = tmp_path / "manifest.json"
     manifest.write(manifest_path)
@@ -69,6 +75,10 @@ def test_manifest_validation():
         "files": {"model": {"path": "model.pkl", "sha256": "abc"}},
         "model_format": "xgboost_json",
         "model_api": "predict_proba",
-        "artifact": {"python": "3.11.0", "platform": "win32", "serializer": "xgboost_json"},
+        "artifact": {
+            "python": "3.11.0",
+            "platform": "win32",
+            "serializer": "xgboost_json",
+        },
     }
     assert validate_manifest(good)["symbol"] == "BTCUSDT"

@@ -11,6 +11,7 @@ from dataclasses import replace
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
+
 ROOT = Path(__file__).resolve().parents[2]
 SUPERVISOR_DIR = ROOT / "SupervisorAgent"
 CONFIG_DIR = SUPERVISOR_DIR / "config"
@@ -31,11 +32,21 @@ def _load_supervisor_app_class():
 
 def _git_info() -> Tuple[str, str]:
     try:
-        sha = subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT).decode().strip()
+        sha = (
+            subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=ROOT)
+            .decode()
+            .strip()
+        )
     except Exception:
         sha = "unknown"
     try:
-        branch = subprocess.check_output(["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=ROOT).decode().strip()
+        branch = (
+            subprocess.check_output(
+                ["git", "rev-parse", "--abbrev-ref", "HEAD"], cwd=ROOT
+            )
+            .decode()
+            .strip()
+        )
     except Exception:
         branch = "unknown"
     return sha, branch
@@ -63,6 +74,7 @@ def _build_test_app(tmp_root: Path):
     from supervisor.guards import load_guard_config
     from supervisor.policy_store import resolve_active_policy_path
     from supervisor.regime_sm import load_directives_config, load_regime_config
+
     paths = load_paths_config(ROOT / "config" / "paths.yaml")
     runtime_dir = tmp_root / "runtime"
     logs_dir = tmp_root / "logs"
@@ -99,16 +111,22 @@ def _build_test_app(tmp_root: Path):
     llm_config = load_llm_supervisor_config(CONFIG_DIR / "llm_supervisor.yaml")
     trend_config = load_trend_evaluator_config(CONFIG_DIR / "llm_trend_evaluator.yaml")
     market_risk_config = load_market_risk_config(CONFIG_DIR / "llm_market_risk.yaml")
-    behavior_config = load_trading_behavior_config(CONFIG_DIR / "llm_trading_behavior.yaml")
+    behavior_config = load_trading_behavior_config(
+        CONFIG_DIR / "llm_trading_behavior.yaml"
+    )
     snapshot_config = load_snapshot_scheduler_config(CONFIG_DIR / "supervisor.yaml")
-    meta_config = load_meta_supervisor_config(CONFIG_DIR / "meta_supervisor.yaml", paths)
+    meta_config = load_meta_supervisor_config(
+        CONFIG_DIR / "meta_supervisor.yaml", paths
+    )
     dashboard_config = load_dashboard_config(CONFIG_DIR / "dashboard.yaml")
     lockbot_cfg = load_lockbot_config(CONFIG_DIR / "lockbot.yaml")
     lockbot_cfg = replace(lockbot_cfg, enabled=False)
     tsdb_config = load_tsdb_config(CONFIG_DIR / "tsdb.yaml")
     tsdb_retention = load_tsdb_retention_config(CONFIG_DIR / "tsdb_retention.yaml")
     autopilot_cfg = load_autopilot_config(CONFIG_DIR / "autopilot.yaml")
-    control_policy_path = resolve_active_policy_path(paths.runtime_dir, CONFIG_DIR / "policy.yaml")
+    control_policy_path = resolve_active_policy_path(
+        paths.runtime_dir, CONFIG_DIR / "policy.yaml"
+    )
     regime_cfg = load_regime_config(control_policy_path)
     guard_cfg = load_guard_config(control_policy_path)
     directives_cfg = load_directives_config(control_policy_path)
@@ -164,7 +182,11 @@ def _static_checks() -> List[Dict[str, Any]]:
             "/api/v1/dashboard/reset-counters",
         ]
         missing = [ep for ep in endpoints if ep not in text]
-        checks.append(_check(not missing, "docs:endpoints", f"missing={missing}" if missing else ""))
+        checks.append(
+            _check(
+                not missing, "docs:endpoints", f"missing={missing}" if missing else ""
+            )
+        )
     else:
         checks.append(_check(False, "docs:readme_missing"))
     run_bot = ROOT / "ai_scalper_bot" / "bot" / "run_bot.py"
@@ -186,7 +208,9 @@ def _api_checks(app: Any) -> List[Dict[str, Any]]:
     overview = app.dashboard_overview()
     results.append(_check("strategies_total" in overview, "api:overview"))
     strategies = app.dashboard_strategies()
-    results.append(_check(isinstance(strategies.get("strategies"), list), "api:strategies"))
+    results.append(
+        _check(isinstance(strategies.get("strategies"), list), "api:strategies")
+    )
     performance = app.dashboard_performance()
     results.append(_check("session" in performance, "api:performance"))
     alerts = app.dashboard_alerts()
@@ -204,8 +228,20 @@ def _alert_checks(app: Any) -> List[Dict[str, Any]]:
 
     rules = load_alert_rules(CONFIG_DIR / "alerts.yaml")
     names = {rule.name for rule in rules}
-    expected = {"telemetry_stale", "api_errors", "cancel_storm", "stuck_sells_dca", "limit_breaches"}
-    results.append(_check(expected.issubset(names), "alerts:rules_present", f"missing={sorted(expected - names)}"))
+    expected = {
+        "telemetry_stale",
+        "api_errors",
+        "cancel_storm",
+        "stuck_sells_dca",
+        "limit_breaches",
+    }
+    results.append(
+        _check(
+            expected.issubset(names),
+            "alerts:rules_present",
+            f"missing={sorted(expected - names)}",
+        )
+    )
 
     now_ms = int(time.time() * 1000)
     app.dashboard_store.ingest_event(
@@ -224,21 +260,32 @@ def _alert_checks(app: Any) -> List[Dict[str, Any]]:
     app.dashboard_store.ingest_event(
         {
             "type": "strategy_limits.v1",
-            "data": {"strategy_id": "SCALP", "symbol": "BTCUSDT", "max_position_notional": 10},
+            "data": {
+                "strategy_id": "SCALP",
+                "symbol": "BTCUSDT",
+                "max_position_notional": 10,
+            },
             "ts_ms": now_ms,
         }
     )
     app.dashboard_store.ingest_event(
         {
             "type": "dca_lot_status.v1",
-            "data": {"strategy_id": "DCA_ETH", "symbol": "ETHUSDT", "lot_id": "lot-1", "status": "SELL_PENDING"},
+            "data": {
+                "strategy_id": "DCA_ETH",
+                "symbol": "ETHUSDT",
+                "lot_id": "lot-1",
+                "status": "SELL_PENDING",
+            },
             "ts_ms": now_ms - 70000,
         }
     )
     start = time.time()
     app.dashboard_store.evaluate_alerts(now_ts=start)
     alert_result = app.dashboard_store.evaluate_alerts(now_ts=start + 25)
-    active_rules = {item.get("rule") for item in alert_result.active if isinstance(item, dict)}
+    active_rules = {
+        item.get("rule") for item in alert_result.active if isinstance(item, dict)
+    }
     results.append(_check("telemetry_stale" in active_rules, "alerts:stale_telemetry"))
     results.append(_check("api_errors" in active_rules, "alerts:api_errors"))
     results.append(_check("cancel_storm" in active_rules, "alerts:cancel_storm"))
@@ -251,14 +298,25 @@ def _alert_checks(app: Any) -> List[Dict[str, Any]]:
     app.dashboard_store.ingest_event(
         {
             "type": "strategy_telemetry.v1",
-            "data": {"strategy_id": "SCALP", "symbol": "BTCUSDT", "position_notional": 5, "api_errors_1m": 0, "cancel_count_1m": 0},
+            "data": {
+                "strategy_id": "SCALP",
+                "symbol": "BTCUSDT",
+                "position_notional": 5,
+                "api_errors_1m": 0,
+                "cancel_count_1m": 0,
+            },
             "ts_ms": clear_ms,
         }
     )
     app.dashboard_store.ingest_event(
         {
             "type": "dca_lot_status.v1",
-            "data": {"strategy_id": "DCA_ETH", "symbol": "ETHUSDT", "lot_id": "lot-1", "status": "CLOSED"},
+            "data": {
+                "strategy_id": "DCA_ETH",
+                "symbol": "ETHUSDT",
+                "lot_id": "lot-1",
+                "status": "CLOSED",
+            },
             "ts_ms": clear_ms,
         }
     )
@@ -267,17 +325,28 @@ def _alert_checks(app: Any) -> List[Dict[str, Any]]:
     app.dashboard_store.ingest_event(
         {
             "type": "strategy_telemetry.v1",
-            "data": {"strategy_id": "SCALP", "symbol": "BTCUSDT", "position_notional": 5, "api_errors_1m": 0, "cancel_count_1m": 0},
+            "data": {
+                "strategy_id": "SCALP",
+                "symbol": "BTCUSDT",
+                "position_notional": 5,
+                "api_errors_1m": 0,
+                "cancel_count_1m": 0,
+            },
             "ts_ms": refresh_ms,
         }
     )
     app.dashboard_store.evaluate_alerts(now_ts=clear_start + 35)
-    resolved_rules = {item.get("rule") for item in app.dashboard_store.alerts_snapshot().get("active", [])}
+    resolved_rules = {
+        item.get("rule")
+        for item in app.dashboard_store.alerts_snapshot().get("active", [])
+    }
     results.append(_check("telemetry_stale" not in resolved_rules, "alerts:resolve"))
 
     audit_items = app.dashboard_audit(limit=200).get("items", [])
     has_active = any(item.get("event_type") == "alert_active" for item in audit_items)
-    has_resolved = any(item.get("event_type") == "alert_resolved" for item in audit_items)
+    has_resolved = any(
+        item.get("event_type") == "alert_resolved" for item in audit_items
+    )
     results.append(_check(has_active and has_resolved, "alerts:audit_records"))
     return results
 
@@ -287,26 +356,56 @@ def _performance_checks(app: Any) -> List[Dict[str, Any]]:
     app.dashboard_store.ingest_event(
         {
             "type": "dca_deal_closed.v1",
-            "data": {"strategy_id": "DCA_ETH", "symbol": "ETHUSDT", "deal_id": "d1", "net_pnl": 5, "fees": 1, "volume_quote": 100},
+            "data": {
+                "strategy_id": "DCA_ETH",
+                "symbol": "ETHUSDT",
+                "deal_id": "d1",
+                "net_pnl": 5,
+                "fees": 1,
+                "volume_quote": 100,
+            },
         }
     )
     app.dashboard_store.ingest_event(
         {
             "type": "scalp_deal_closed.v1",
-            "data": {"strategy_id": "SCALP", "symbol": "BTCUSDT", "deal_id": "s1", "net_pnl": -2, "fees": 0.5, "volume_quote": 50},
+            "data": {
+                "strategy_id": "SCALP",
+                "symbol": "BTCUSDT",
+                "deal_id": "s1",
+                "net_pnl": -2,
+                "fees": 0.5,
+                "volume_quote": 50,
+            },
         }
     )
     perf = app.dashboard_performance()
     session = perf.get("session", {})
     results.append(_check(session.get("closed_deals") == 2, "perf:closed_deals"))
-    results.append(_check(session.get("wins") == 1 and session.get("losses") == 1, "perf:wins_losses"))
+    results.append(
+        _check(
+            session.get("wins") == 1 and session.get("losses") == 1, "perf:wins_losses"
+        )
+    )
     app.dashboard_reset_counters()
     perf_after = app.dashboard_performance()
-    results.append(_check(perf_after.get("session", {}).get("closed_deals") == 0, "perf:reset"))
+    results.append(
+        _check(perf_after.get("session", {}).get("closed_deals") == 0, "perf:reset")
+    )
 
     audit_items = app.dashboard_audit(limit=200).get("items", [])
-    results.append(_check(any(item.get("event_type") == "deal_closed" for item in audit_items), "perf:audit_deal_closed"))
-    results.append(_check(any(item.get("event_type") == "counters_reset" for item in audit_items), "perf:audit_reset"))
+    results.append(
+        _check(
+            any(item.get("event_type") == "deal_closed" for item in audit_items),
+            "perf:audit_deal_closed",
+        )
+    )
+    results.append(
+        _check(
+            any(item.get("event_type") == "counters_reset" for item in audit_items),
+            "perf:audit_reset",
+        )
+    )
     return results
 
 
@@ -314,7 +413,13 @@ def _ui_checks() -> List[Dict[str, Any]]:
     results = []
     html = (SUPERVISOR_DIR / "static" / "index.html").read_text(encoding="utf-8")
     js = (SUPERVISOR_DIR / "static" / "app.js").read_text(encoding="utf-8")
-    for token in ("overview-strategies", "strategies-list", "performance-session", "audit-recent", "reset-counters"):
+    for token in (
+        "overview-strategies",
+        "strategies-list",
+        "performance-session",
+        "audit-recent",
+        "reset-counters",
+    ):
         results.append(_check(token in html, f"ui:html:{token}"))
     for endpoint in (
         "/api/v1/dashboard/overview",
@@ -347,10 +452,20 @@ def main() -> int:
     checks.extend(_ui_checks())
 
     report_lines.append("Stage status:")
-    stage1 = all(item["ok"] for item in checks if item["label"].startswith("api:") or item["label"].startswith("docs:") or item["label"].startswith("exists:"))
+    stage1 = all(
+        item["ok"]
+        for item in checks
+        if item["label"].startswith("api:")
+        or item["label"].startswith("docs:")
+        or item["label"].startswith("exists:")
+    )
     stage2 = all(item["ok"] for item in checks if item["label"].startswith("alerts:"))
     stage3 = all(item["ok"] for item in checks if item["label"].startswith("ui:"))
-    stage4 = all(item["ok"] for item in checks if item["label"].startswith("perf:") or item["label"].startswith("stage9.4:"))
+    stage4 = all(
+        item["ok"]
+        for item in checks
+        if item["label"].startswith("perf:") or item["label"].startswith("stage9.4:")
+    )
     report_lines.append(f"- 9.1 Dashboard backend: {'PASS' if stage1 else 'FAIL'}")
     report_lines.append(f"- 9.2 Alerts engine: {'PASS' if stage2 else 'FAIL'}")
     report_lines.append(f"- 9.3 Dashboard UI: {'PASS' if stage3 else 'FAIL'}")

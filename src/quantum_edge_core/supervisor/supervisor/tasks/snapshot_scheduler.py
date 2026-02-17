@@ -126,7 +126,11 @@ class SnapshotScheduler:
                 wins += 1
             elif result == "LOSS":
                 losses += 1
-        volatility_metric = statistics.pstdev(pnl_series) if len(pnl_series) > 1 else (abs(pnl_series[0]) if pnl_series else 0.0)
+        volatility_metric = (
+            statistics.pstdev(pnl_series)
+            if len(pnl_series) > 1
+            else (abs(pnl_series[0]) if pnl_series else 0.0)
+        )
         total_decisions = len(decisions) or 1
         recent_winrate = wins / max(1, wins + losses)
         return {
@@ -139,7 +143,9 @@ class SnapshotScheduler:
             "pnl_series": pnl_series,
         }
 
-    def _build_risk_context(self, events: List[BaseEvent], market_slice: Dict[str, Any]) -> Dict[str, Any]:
+    def _build_risk_context(
+        self, events: List[BaseEvent], market_slice: Dict[str, Any]
+    ) -> Dict[str, Any]:
         breach_count = sum(1 for e in events if e.type == EventType.RISK_LIMIT_BREACH)
         anomaly_count = sum(1 for e in events if e.type == EventType.ANOMALY)
         notes: List[str] = []

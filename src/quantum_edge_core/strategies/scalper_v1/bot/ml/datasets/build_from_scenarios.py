@@ -11,7 +11,12 @@ from typing import Dict, List, Optional
 
 import pandas as pd
 
-from bot.ml.features.builder import build_feature_frame, feature_names, schema_hash, schema_version
+from bot.ml.features.builder import (
+    build_feature_frame,
+    feature_names,
+    schema_hash,
+    schema_version,
+)
 from bot.ml.labels.builder import LabelConfig, build_labels, parse_horizons
 from bot.ml.datasets.io import normalize_ticks, read_episode, write_frame
 
@@ -77,14 +82,18 @@ def build_from_scenarios(
     (out_root / "config_snapshot.json").write_text(
         json.dumps(config_snapshot, indent=2), encoding="utf-8"
     )
-    (out_root / "schema.json").write_text(json.dumps(_schema_payload(), indent=2), encoding="utf-8")
+    (out_root / "schema.json").write_text(
+        json.dumps(_schema_payload(), indent=2), encoding="utf-8"
+    )
 
     data_by_horizon: Dict[int, Dict[str, List[pd.DataFrame]]] = {
         int(h): {"train": [], "val": [], "test": []} for h in horizons
     }
     stats: Dict[int, Dict[str, object]] = {int(h): {} for h in horizons}
     scenario_counts: Dict[int, Dict[str, int]] = {int(h): {} for h in horizons}
-    dropped: Dict[int, Dict[str, int]] = {int(h): {"features": 0, "labels": 0} for h in horizons}
+    dropped: Dict[int, Dict[str, int]] = {
+        int(h): {"features": 0, "labels": 0} for h in horizons
+    }
 
     for split_name, episodes in splits.items():
         for ep in episodes:
@@ -111,7 +120,9 @@ def build_from_scenarios(
                 mask = valid_features & valid_labels
 
                 dropped[int(horizon)]["features"] += int((~valid_features).sum())
-                dropped[int(horizon)]["labels"] += int((valid_features & ~valid_labels).sum())
+                dropped[int(horizon)]["labels"] += int(
+                    (valid_features & ~valid_labels).sum()
+                )
 
                 if not mask.any():
                     continue
@@ -128,7 +139,9 @@ def build_from_scenarios(
                 combined = pd.concat([meta, features, label_slice], axis=1).loc[mask]
 
                 data_by_horizon[int(horizon)][split_name].append(combined)
-                scenario_counts[int(horizon)][scenario_id] = scenario_counts[int(horizon)].get(scenario_id, 0) + len(combined)
+                scenario_counts[int(horizon)][scenario_id] = scenario_counts[
+                    int(horizon)
+                ].get(scenario_id, 0) + len(combined)
 
     for horizon in horizons:
         horizon_dir = out_root / f"horizon_h{horizon}"
@@ -147,7 +160,9 @@ def build_from_scenarios(
                 df = pd.concat(frames, ignore_index=True)
             else:
                 df = pd.DataFrame(
-                    columns=["ts_ms", "scenario_id", "episode_id"] + feature_names() + [f"fut_ret_h{horizon}", f"y_up_h{horizon}"]
+                    columns=["ts_ms", "scenario_id", "episode_id"]
+                    + feature_names()
+                    + [f"fut_ret_h{horizon}", f"y_up_h{horizon}"]
                 )
             out_path = horizon_dir / f"{split_name}.{output_format}"
             write_frame(out_path, df, output_format)
@@ -156,41 +171,60 @@ def build_from_scenarios(
             y_col = f"y_up_h{horizon}"
             if y_col in df.columns and len(df):
                 counts = df[y_col].value_counts(dropna=True).to_dict()
-                horizon_stats["class_balance"][split_name] = {str(k): int(v) for k, v in counts.items()}
+                horizon_stats["class_balance"][split_name] = {
+                    str(k): int(v) for k, v in counts.items()
+                }
             else:
                 horizon_stats["class_balance"][split_name] = {}
 
         stats[int(horizon)] = horizon_stats
-        (horizon_dir / "stats.json").write_text(json.dumps(horizon_stats, indent=2), encoding="utf-8")
+        (horizon_dir / "stats.json").write_text(
+            json.dumps(horizon_stats, indent=2), encoding="utf-8"
+        )
 
     report_path = reports_dir / "dataset_report.md"
-    report_path.write_text(_render_report(symbol, horizons, stats, label_config), encoding="utf-8")
+    report_path.write_text(
+        _render_report(symbol, horizons, stats, label_config), encoding="utf-8"
+    )
     return 0
 
 
-def _render_report(symbol: str, horizons: List[int], stats: Dict[int, Dict[str, object]], label_config: LabelConfig) -> str:
+def _render_report(
+    symbol: str,
+    horizons: List[int],
+    stats: Dict[int, Dict[str, object]],
+    label_config: LabelConfig,
+) -> str:
     lines = [f"# ML Dataset Report ({symbol})", ""]
     lines.append(f"Horizons: {', '.join(str(h) for h in horizons)}")
-    lines.append(f"Label thresholds (bps): base={label_config.label_thr_bps}, ignore={label_config.ignore_thr_bps}")
+    lines.append(
+        f"Label thresholds (bps): base={label_config.label_thr_bps}, ignore={label_config.ignore_thr_bps}"
+    )
     lines.append("")
     for horizon in horizons:
         horizon_stats = stats.get(int(horizon), {})
         lines.append(f"## Horizon h{horizon}")
         lines.append("")
         rows = horizon_stats.get("rows", {})
-        lines.append(f"Rows: train={rows.get('train', 0)} val={rows.get('val', 0)} test={rows.get('test', 0)}")
+        lines.append(
+            f"Rows: train={rows.get('train', 0)} val={rows.get('val', 0)} test={rows.get('test', 0)}"
+        )
         balance = horizon_stats.get("class_balance", {})
         if balance:
             lines.append(f"Class balance: {balance}")
         dropped = horizon_stats.get("dropped", {})
         if dropped:
-            lines.append(f"Dropped: features={dropped.get('features', 0)} labels={dropped.get('labels', 0)}")
+            lines.append(
+                f"Dropped: features={dropped.get('features', 0)} labels={dropped.get('labels', 0)}"
+            )
         lines.append("")
     return "\n".join(lines) + "\n"
 
 
 def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Build ML datasets from scenario episodes.")
+    parser = argparse.ArgumentParser(
+        description="Build ML datasets from scenario episodes."
+    )
     parser.add_argument("--symbol", required=True)
     parser.add_argument("--scenarios-root", required=True)
     parser.add_argument("--out", required=True)

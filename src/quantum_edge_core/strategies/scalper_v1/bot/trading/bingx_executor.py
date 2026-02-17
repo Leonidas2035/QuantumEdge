@@ -12,7 +12,11 @@ from bot.core.config_loader import config
 from bot.engine.decision_engine import Decision
 from bot.exchanges.bingx_swap import BingXClient, BingXSwapExchange, OrderRequest
 from bot.exchanges.bingx_swap.client import BingXAPIError
-from bot.exchanges.bingx_swap.mapper import normalize_symbol, round_price_to_tick, round_qty_to_step
+from bot.exchanges.bingx_swap.mapper import (
+    normalize_symbol,
+    round_price_to_tick,
+    round_qty_to_step,
+)
 
 
 @dataclass
@@ -30,27 +34,33 @@ class BingXDemoExecutor:
 
     def __init__(self, symbol: Optional[str] = None):
         self.config = config
-        self.demo_cfg: Dict = config.get("bingx_demo", {}) or config.get("binance_demo", {}) or {}
+        self.demo_cfg: Dict = (
+            config.get("bingx_demo", {}) or config.get("binance_demo", {}) or {}
+        )
         self._validate_config()
 
         self.allowed_symbols = self._load_allowed_symbols()
-        default_symbol = symbol or self.demo_cfg.get("default_symbol") or self._fallback_symbol()
+        default_symbol = (
+            symbol or self.demo_cfg.get("default_symbol") or self._fallback_symbol()
+        )
         self.symbol = normalize_symbol(default_symbol or "BTCUSDT")
         if self.allowed_symbols and self.symbol not in self.allowed_symbols:
             self.allowed_symbols.add(self.symbol)
 
         self.max_notional = float(self.demo_cfg.get("max_notional_per_trade", 50))
         self.max_open_positions = int(self.demo_cfg.get("max_open_positions", 1))
-        self.recv_window = int(os.getenv("BINGX_RECV_WINDOW", self.demo_cfg.get("recv_window", 5000)))
+        self.recv_window = int(
+            os.getenv("BINGX_RECV_WINDOW", self.demo_cfg.get("recv_window", 5000))
+        )
         self.taker_fee_rate = float(self.demo_cfg.get("taker_fee_bps", 5.0)) / 10_000
         self.fee_rate = float(self.demo_cfg.get("fee_rate", self.taker_fee_rate))
         self.position_pct = float(self.demo_cfg.get("position_pct", 0.02))
         self.equity_override = float(self.demo_cfg.get("equity_override", 0))
         self.healthcheck_only = bool(self.demo_cfg.get("healthcheck_only", False))
         self.allow_trading_demo = bool(self.demo_cfg.get("allow_trading_demo", False))
-        self.allow_place_test_order = bool(self.demo_cfg.get("allow_place_test_order", False)) or self._env_truthy(
-            os.getenv("QE_DEMO_PLACE_TEST_ORDER")
-        )
+        self.allow_place_test_order = bool(
+            self.demo_cfg.get("allow_place_test_order", False)
+        ) or self._env_truthy(os.getenv("QE_DEMO_PLACE_TEST_ORDER"))
         self._test_order_done = False
 
         self.client: Optional[BingXClient] = None
@@ -125,7 +135,10 @@ class BingXDemoExecutor:
             return 0.0
         qty = round_qty_to_step(raw_qty, meta.step_size)
         if meta.min_qty and qty < meta.min_qty:
-            self._log(f"[WARN] Qty below minQty for {symbol}, skipping order (qty={raw_qty}, minQty={meta.min_qty}).", "WARN")
+            self._log(
+                f"[WARN] Qty below minQty for {symbol}, skipping order (qty={raw_qty}, minQty={meta.min_qty}).",
+                "WARN",
+            )
             return 0.0
         return qty
 
@@ -156,12 +169,20 @@ class BingXDemoExecutor:
         api_key = self.config.secret("BINGX_DEMO_API_KEY")
         api_secret = self.config.secret("BINGX_DEMO_API_SECRET")
         if not api_key or not api_secret:
-            self._log("Missing BINGX_DEMO_API_KEY/SECRET in secrets store.", level="ERROR")
+            self._log(
+                "Missing BINGX_DEMO_API_KEY/SECRET in secrets store.", level="ERROR"
+            )
             return False
 
         try:
             base_url = os.getenv("BINGX_BASE_URL", "https://open-api.bingx.com")
-            self.client = BingXClient(base_url, api_key, api_secret, recv_window=self.recv_window, timeout=10.0)
+            self.client = BingXClient(
+                base_url,
+                api_key,
+                api_secret,
+                recv_window=self.recv_window,
+                timeout=10.0,
+            )
             self.exchange = BingXSwapExchange(self.client)
             self._log("[DEMO] BingX client initialized.")
             return True
@@ -175,12 +196,17 @@ class BingXDemoExecutor:
         if not await self.initialize():
             return False
         try:
-            await self._to_thread(self.client.request, "GET", "/openApi/swap/v2/server/time", None, False)
+            await self._to_thread(
+                self.client.request, "GET", "/openApi/swap/v2/server/time", None, False
+            )
             self._log("[DEMO] BingX ping OK.")
             if self.allow_place_test_order and not self._test_order_done:
                 self._test_order_done = True
                 if not await self._place_test_order():
-                    self._log("[WARN] Demo test order failed; continuing without crash.", level="WARN")
+                    self._log(
+                        "[WARN] Demo test order failed; continuing without crash.",
+                        level="WARN",
+                    )
             return True
         except Exception as exc:
             self._log(f"[DEMO] Healthcheck failed: {exc}", level="ERROR")
@@ -198,7 +224,10 @@ class BingXDemoExecutor:
     async def _compute_entry_qty(self, symbol: str, price: float) -> float:
         equity = await self._get_demo_equity_usdt()
         if equity <= 0:
-            self._log("[WARN] Unable to determine demo equity; skipping order sizing.", level="WARN")
+            self._log(
+                "[WARN] Unable to determine demo equity; skipping order sizing.",
+                level="WARN",
+            )
             return 0.0
         meta = await self._get_symbol_meta(symbol)
         target_notional = equity * max(self.position_pct, 0)
@@ -211,7 +240,9 @@ class BingXDemoExecutor:
         raw_qty = target_notional / price
         return await self._normalize_qty(symbol, raw_qty)
 
-    def adjust_tp_for_fees(self, entry_price: float, raw_tp: float, side: str, fee_rate: float) -> float:
+    def adjust_tp_for_fees(
+        self, entry_price: float, raw_tp: float, side: str, fee_rate: float
+    ) -> float:
         if fee_rate <= 0 or entry_price <= 0:
             return raw_tp
         side_up = side.upper()
@@ -285,9 +316,13 @@ class BingXDemoExecutor:
         if result:
             executed = float(result.filled_qty or qty)
             pnl_price = float(result.avg_price or 0.0)
-            pnl = (pnl_price - (self.entry_price or pnl_price)) * (self.position if executed >= abs(self.position) else executed) - self._fee(
-                pnl_price * executed
-            ) if self.entry_price else 0.0
+            pnl = (
+                (pnl_price - (self.entry_price or pnl_price))
+                * (self.position if executed >= abs(self.position) else executed)
+                - self._fee(pnl_price * executed)
+                if self.entry_price
+                else 0.0
+            )
             self._record_trade(pnl, side)
             self.position = 0.0
             self.entry_price = None
@@ -299,8 +334,12 @@ class BingXDemoExecutor:
             return {}
         try:
             positions = await self._to_thread(self.exchange.get_positions, self.symbol)
-            long_pos = next((p for p in positions if p.position_side == "LONG" and p.qty), None)
-            short_pos = next((p for p in positions if p.position_side == "SHORT" and p.qty), None)
+            long_pos = next(
+                (p for p in positions if p.position_side == "LONG" and p.qty), None
+            )
+            short_pos = next(
+                (p for p in positions if p.position_side == "SHORT" and p.qty), None
+            )
             if long_pos and long_pos.qty:
                 self.position = float(long_pos.qty)
                 self.entry_price = float(long_pos.entry_price or 0.0) or None
@@ -315,7 +354,13 @@ class BingXDemoExecutor:
             self._log(f"[DEMO] Failed to sync positions: {exc}", level="WARN")
             return {}
 
-    async def process(self, decision: Decision, price: float, timestamp: int, symbol: Optional[str] = None):
+    async def process(
+        self,
+        decision: Decision,
+        price: float,
+        timestamp: int,
+        symbol: Optional[str] = None,
+    ):
         sym = normalize_symbol(symbol or self.symbol)
         self.last_price = price
         if self.allowed_symbols and sym not in self.allowed_symbols:
@@ -332,24 +377,37 @@ class BingXDemoExecutor:
 
         if decision.action in ("buy", "sell"):
             if not self.allow_trading_demo:
-                self._log("[DEMO] Trading disabled (allow_trading_demo=false).", level="WARN")
+                self._log(
+                    "[DEMO] Trading disabled (allow_trading_demo=false).", level="WARN"
+                )
                 return
             if self._open_positions() >= self.max_open_positions:
-                self._log("[DEMO] Max open positions reached; not opening new trade.", level="WARN")
+                self._log(
+                    "[DEMO] Max open positions reached; not opening new trade.",
+                    level="WARN",
+                )
                 return
             if self.position != 0:
-                self._log("[DEMO] Position already open; waiting for close signal.", level="WARN")
+                self._log(
+                    "[DEMO] Position already open; waiting for close signal.",
+                    level="WARN",
+                )
                 return
 
             qty = await self._compute_entry_qty(sym, price)
             if qty <= 0:
-                self._log("[DEMO] Computed quantity <= 0 after normalization, skipping order.", level="WARN")
+                self._log(
+                    "[DEMO] Computed quantity <= 0 after normalization, skipping order.",
+                    level="WARN",
+                )
                 return
 
             side = "BUY" if decision.action == "buy" else "SELL"
             self._log(f"[DEMO] Placing MARKET {side} {sym} qty={qty} (BingX demo).")
             client_id = self._client_order_id(sym, decision.action)
-            result = await self.submit_order(sym, side, qty, reduce_only=False, client_order_id=client_id)
+            result = await self.submit_order(
+                sym, side, qty, reduce_only=False, client_order_id=client_id
+            )
             if result:
                 filled_qty = float(result.filled_qty or qty)
                 self._apply_fill(side, filled_qty, price, result)
@@ -364,7 +422,9 @@ class BingXDemoExecutor:
 
         if decision.action == "close":
             if not self.allow_trading_demo:
-                self._log("[DEMO] Trading disabled (allow_trading_demo=false).", level="WARN")
+                self._log(
+                    "[DEMO] Trading disabled (allow_trading_demo=false).", level="WARN"
+                )
                 return
             if self.position == 0:
                 self._log("[DEMO] No open position to close.")
@@ -373,7 +433,10 @@ class BingXDemoExecutor:
             side = "SELL" if self.position > 0 else "BUY"
             qty = await self._normalize_qty(sym, abs(self.position))
             if qty <= 0:
-                self._log(f"[WARN] Normalized close qty <= 0 for {sym}, skipping close.", level="WARN")
+                self._log(
+                    f"[WARN] Normalized close qty <= 0 for {sym}, skipping close.",
+                    level="WARN",
+                )
                 return
             effective_price = price
             if self.entry_price is not None:
@@ -382,18 +445,41 @@ class BingXDemoExecutor:
                 )
                 if is_profitable:
                     effective_price = await self._normalize_price(
-                        sym, self.adjust_tp_for_fees(self.entry_price, price, side, self.fee_rate)
+                        sym,
+                        self.adjust_tp_for_fees(
+                            self.entry_price, price, side, self.fee_rate
+                        ),
                     )
-            self._log(f"[DEMO] Closing position via MARKET {side} {sym} qty={qty} (reduce-only).")
+            self._log(
+                f"[DEMO] Closing position via MARKET {side} {sym} qty={qty} (reduce-only)."
+            )
             client_id = self._client_order_id(sym, "close")
-            result = await self.submit_order(sym, side, qty, reduce_only=True, price=effective_price, client_order_id=client_id)
+            result = await self.submit_order(
+                sym,
+                side,
+                qty,
+                reduce_only=True,
+                price=effective_price,
+                client_order_id=client_id,
+            )
             if result:
                 executed = float(result.filled_qty or qty)
-                pnl_price = effective_price if self.entry_price and effective_price else price
+                pnl_price = (
+                    effective_price if self.entry_price and effective_price else price
+                )
                 pnl = (
-                    (pnl_price - self.entry_price) * (self.position if executed >= abs(self.position) else executed)
-                    - self._fee(pnl_price * executed)
-                ) if self.entry_price else 0.0
+                    (
+                        (pnl_price - self.entry_price)
+                        * (
+                            self.position
+                            if executed >= abs(self.position)
+                            else executed
+                        )
+                        - self._fee(pnl_price * executed)
+                    )
+                    if self.entry_price
+                    else 0.0
+                )
                 self.realized_pnl += pnl
                 self._record_trade(pnl, side)
                 self._reduce_position(executed)
@@ -419,7 +505,9 @@ class BingXDemoExecutor:
             "trades": self.trades,
         }
 
-    def _apply_fill(self, side: str, executed: float, price: float, result: Optional[Any] = None) -> None:
+    def _apply_fill(
+        self, side: str, executed: float, price: float, result: Optional[Any] = None
+    ) -> None:
         status = ""
         if result is not None:
             status = getattr(result, "status", "") or ""
@@ -435,7 +523,10 @@ class BingXDemoExecutor:
         else:
             self.entry_price = None
         if status == "PARTIALLY_FILLED":
-            self._log(f"[DEMO] Partial fill detected status={status} executed={executed}", level="WARN")
+            self._log(
+                f"[DEMO] Partial fill detected status={status} executed={executed}",
+                level="WARN",
+            )
 
     def _reduce_position(self, executed: float) -> None:
         remaining = abs(self.position) - executed
@@ -444,9 +535,15 @@ class BingXDemoExecutor:
             self.entry_price = None
             self._bracket = None
         else:
-            self.position = self.position - executed if self.position > 0 else self.position + executed
+            self.position = (
+                self.position - executed
+                if self.position > 0
+                else self.position + executed
+            )
 
-    def set_bracket(self, side: str, tp_price: Optional[float], sl_price: Optional[float]) -> bool:
+    def set_bracket(
+        self, side: str, tp_price: Optional[float], sl_price: Optional[float]
+    ) -> bool:
         if not tp_price and not sl_price:
             return False
         self._bracket = {
@@ -454,7 +551,9 @@ class BingXDemoExecutor:
             "tp": float(tp_price) if tp_price else None,
             "sl": float(sl_price) if sl_price else None,
         }
-        self._log(f"[DEMO] Bracket set tp={self._bracket['tp']} sl={self._bracket['sl']}")
+        self._log(
+            f"[DEMO] Bracket set tp={self._bracket['tp']} sl={self._bracket['sl']}"
+        )
         return True
 
     async def check_brackets(self, price: float, timestamp: int) -> bool:
@@ -464,23 +563,35 @@ class BingXDemoExecutor:
         tp = self._bracket.get("tp")
         sl = self._bracket.get("sl")
         hit = None
-        if tp and ((self.position > 0 and price >= tp) or (self.position < 0 and price <= tp)):
+        if tp and (
+            (self.position > 0 and price >= tp) or (self.position < 0 and price <= tp)
+        ):
             hit = "tp"
-        if sl and ((self.position > 0 and price <= sl) or (self.position < 0 and price >= sl)):
+        if sl and (
+            (self.position > 0 and price <= sl) or (self.position < 0 and price >= sl)
+        ):
             hit = hit or "sl"
         if not hit:
             return False
         close_side = "SELL" if self.position > 0 else "BUY"
         qty = abs(self.position)
         client_id = self._client_order_id(self.symbol, f"bracket-{hit}")
-        self._log(f"[DEMO] {hit.upper()} hit -> closing {qty} via reduce-only.", level="WARN")
-        result = await self.submit_order(self.symbol, close_side, qty, reduce_only=True, client_order_id=client_id)
+        self._log(
+            f"[DEMO] {hit.upper()} hit -> closing {qty} via reduce-only.", level="WARN"
+        )
+        result = await self.submit_order(
+            self.symbol, close_side, qty, reduce_only=True, client_order_id=client_id
+        )
         if result:
             executed = float(result.filled_qty or qty)
             pnl_price = float(result.avg_price or price)
-            pnl = (pnl_price - self.entry_price) * (self.position if executed >= abs(self.position) else executed) - self._fee(
-                pnl_price * executed
-            ) if self.entry_price else 0.0
+            pnl = (
+                (pnl_price - self.entry_price)
+                * (self.position if executed >= abs(self.position) else executed)
+                - self._fee(pnl_price * executed)
+                if self.entry_price
+                else 0.0
+            )
             self.realized_pnl += pnl
             self._reduce_position(executed)
             return True
@@ -504,15 +615,21 @@ class BingXDemoExecutor:
             if filters.tick_size and price > 0:
                 price = round_price_to_tick(price, filters.tick_size)
             if price <= 0:
-                self._log("[DEMO] Unable to compute valid test order price.", level="WARN")
+                self._log(
+                    "[DEMO] Unable to compute valid test order price.", level="WARN"
+                )
                 return False
 
             qty = max(filters.min_qty, filters.step_size)
             if filters.min_notional:
                 qty = max(qty, filters.min_notional / price)
-            qty = round_qty_to_step(qty, filters.step_size) if filters.step_size else qty
+            qty = (
+                round_qty_to_step(qty, filters.step_size) if filters.step_size else qty
+            )
             if qty <= 0:
-                self._log("[DEMO] Unable to compute valid test order quantity.", level="WARN")
+                self._log(
+                    "[DEMO] Unable to compute valid test order quantity.", level="WARN"
+                )
                 return False
 
             client_id = self._client_order_id(symbol, "test")
@@ -529,11 +646,18 @@ class BingXDemoExecutor:
             )
             result = await self._to_thread(self.exchange.place_order, req)
             if not result:
-                self._log("[DEMO] Test order placement returned no result.", level="WARN")
+                self._log(
+                    "[DEMO] Test order placement returned no result.", level="WARN"
+                )
                 return False
             order_id = result.order_id or ""
             self._log(f"[DEMO] Test order placed id={order_id}.")
-            await self._to_thread(self.exchange.cancel_order, symbol, order_id=order_id, client_order_id=result.client_order_id)
+            await self._to_thread(
+                self.exchange.cancel_order,
+                symbol,
+                order_id=order_id,
+                client_order_id=result.client_order_id,
+            )
             self._log(f"[DEMO] Test order cancel requested id={order_id}.")
             return True
         except BingXAPIError as exc:

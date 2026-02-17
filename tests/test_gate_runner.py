@@ -1,4 +1,5 @@
 import pytest
+
 pytest.skip("Legacy test broken by src-layout migration", allow_module_level=True)
 import logging
 import sys
@@ -42,7 +43,9 @@ def test_gate_runner_fail(tmp_path: Path) -> None:
     gates = TaskGates(
         enabled=True,
         steps=[
-            GateStep(name="fail", cmd=[sys.executable, "-c", "import sys; sys.exit(2)"]),
+            GateStep(
+                name="fail", cmd=[sys.executable, "-c", "import sys; sys.exit(2)"]
+            ),
         ],
     )
     logger = logging.getLogger("test_gate_runner_fail")

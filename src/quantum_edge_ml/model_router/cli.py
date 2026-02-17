@@ -24,9 +24,15 @@ def _build_router() -> Router:
     return Router(student_backend=student, teacher_backend=teacher)
 
 
-def _route_decision(prompt: str, timeout_s: float, mode: str, teacher_ratio: float, force_teacher: bool):
+def _route_decision(
+    prompt: str, timeout_s: float, mode: str, teacher_ratio: float, force_teacher: bool
+):
     router = _build_router()
-    hints = {"mode": mode, "teacher_ratio": teacher_ratio, "force_teacher": force_teacher}
+    hints = {
+        "mode": mode,
+        "teacher_ratio": teacher_ratio,
+        "force_teacher": force_teacher,
+    }
     return router.route(prompt, timeout_s=timeout_s, hints=hints)
 
 

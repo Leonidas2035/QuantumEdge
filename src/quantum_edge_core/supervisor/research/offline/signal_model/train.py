@@ -66,7 +66,9 @@ def train_model(
     limit_files: Optional[int] = None,
 ) -> Tuple[bool, dict]:
     print(f"[INFO] Building dataset for {symbol}, horizon={horizon} ...")
-    builder = DatasetBuilder(symbol=symbol, horizon=horizon, data_dir=data_dir, limit_files=limit_files)
+    builder = DatasetBuilder(
+        symbol=symbol, horizon=horizon, data_dir=data_dir, limit_files=limit_files
+    )
     X, y, df = builder.build()
 
     if X.empty or len(X) < min_rows:
@@ -106,7 +108,9 @@ def train_model(
     except Exception as exc:
         fallback_path = dataset_dir / f"{symbol}_h{horizon}.csv"
         df.to_csv(fallback_path, index=False)
-        print(f"[WARN] Could not save parquet ({exc}). Saved CSV instead: {fallback_path}")
+        print(
+            f"[WARN] Could not save parquet ({exc}). Saved CSV instead: {fallback_path}"
+        )
     probs = model.predict_proba(X)[:, 1]
     metrics = _metrics(y.to_numpy(), probs)
     calibrator = _fit_calibrator(y.to_numpy(), probs)
@@ -130,9 +134,21 @@ def train_model(
 
 def parse_args():
     parser = argparse.ArgumentParser(description="Train signal model offline.")
-    parser.add_argument("--symbol", type=str, default="BTCUSDT", help="Symbol to train on (e.g., BTCUSDT)")
-    parser.add_argument("--horizons", type=str, default="1,5,15", help="Comma-separated horizons to train")
-    parser.add_argument("--min-rows", type=int, default=1000, help="Minimum rows required to train")
+    parser.add_argument(
+        "--symbol",
+        type=str,
+        default="BTCUSDT",
+        help="Symbol to train on (e.g., BTCUSDT)",
+    )
+    parser.add_argument(
+        "--horizons",
+        type=str,
+        default="1,5,15",
+        help="Comma-separated horizons to train",
+    )
+    parser.add_argument(
+        "--min-rows", type=int, default=1000, help="Minimum rows required to train"
+    )
     parser.add_argument(
         "--data",
         type=str,
@@ -157,7 +173,9 @@ def main():
     dataset_dir.mkdir(parents=True, exist_ok=True)
     data_path = Path(args.data) if args.data else None
 
-    horizons: List[int] = [int(h.strip()) for h in args.horizons.split(",") if h.strip()]
+    horizons: List[int] = [
+        int(h.strip()) for h in args.horizons.split(",") if h.strip()
+    ]
     for h in horizons:
         train_model(
             symbol=args.symbol,

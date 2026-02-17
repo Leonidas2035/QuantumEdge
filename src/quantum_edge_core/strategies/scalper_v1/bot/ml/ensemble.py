@@ -40,9 +40,13 @@ class EnsembleSignalModel:
         else:
             for h in self.horizons:
                 try:
-                    self.models[h] = SignalModel(symbol=symbol, horizon=h, backend=backend)
+                    self.models[h] = SignalModel(
+                        symbol=symbol, horizon=h, backend=backend
+                    )
                 except FileNotFoundError:
-                    print(f"[WARN] Model for horizon {h} missing. Skipping in ensemble.")
+                    print(
+                        f"[WARN] Model for horizon {h} missing. Skipping in ensemble."
+                    )
 
     def _combine(self, outputs: Dict[int, SignalOutput]) -> EnsembleOutput:
         if not outputs:
@@ -58,7 +62,9 @@ class EnsembleSignalModel:
             meta_edge += out.edge * w
 
         direction = 1 if meta_edge > 0 else (-1 if meta_edge < 0 else 0)
-        return EnsembleOutput(meta_edge=meta_edge, direction=direction, components=outputs)
+        return EnsembleOutput(
+            meta_edge=meta_edge, direction=direction, components=outputs
+        )
 
     def predict(self, features: np.ndarray) -> EnsembleOutput:
         outputs: Dict[int, SignalOutput] = {}
@@ -81,7 +87,9 @@ class EnsembleSignalModel:
     def thresholds_met(self, outputs: Dict[int, SignalOutput]) -> bool:
         return self.entry_gate(outputs, direction=None)
 
-    def entry_gate(self, outputs: Dict[int, SignalOutput], direction: Optional[str]) -> bool:
+    def entry_gate(
+        self, outputs: Dict[int, SignalOutput], direction: Optional[str]
+    ) -> bool:
         if not self.thresholds:
             return True
         for horizon, threshold in self.thresholds.items():

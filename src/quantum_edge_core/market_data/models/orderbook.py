@@ -8,7 +8,6 @@ import msgspec
 
 from quantum_edge_core.market_data.models.events import MarketEvent
 
-
 DEPTH_EVENT_TYPE = "depth_l2"
 WALLS_EVENT_TYPE = "walls"
 

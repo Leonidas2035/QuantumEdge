@@ -9,11 +9,18 @@ from typing import List, Union
 import msgspec
 
 
-class BaseEvent(msgspec.Struct, tag=True, omit_defaults=True, forbid_unknown_fields=True, kw_only=True):
+class BaseEvent(
+    msgspec.Struct,
+    tag=True,
+    omit_defaults=True,
+    forbid_unknown_fields=True,
+    kw_only=True,
+):
     """
     Base class for all system events.
     Polymorphic tagging allows automatic type discrimination during decoding.
     """
+
     pass
     priority: str = "L1"
     event_type: str = "unknown"
@@ -24,6 +31,7 @@ class Heartbeat(BaseEvent):
     """
     System heartbeat signal.
     """
+
     component: str
     timestamp: float
 
@@ -32,6 +40,7 @@ class MarketTrade(BaseEvent):
     """
     A public market trade (aggreagted or individual).
     """
+
     symbol: str
     price: float
     quantity: float
@@ -45,6 +54,7 @@ class OrderBookUpdate(BaseEvent):
     bids/asks are list of [price, qty] or similar structure.
     For simplicity here, we assert they are lists of lists of floats.
     """
+
     symbol: str
     bids: List[List[float]]
     asks: List[List[float]]
@@ -55,6 +65,7 @@ class LargeBlockEvent(BaseEvent):
     """
     Significant market trade (Whale Alert).
     """
+
     symbol: str
     price: float
     quantity: float
@@ -66,6 +77,7 @@ class MicrostructureMetrics(BaseEvent):
     """
     Computed Order Book metrics.
     """
+
     symbol: str
     imbalance: float
     spread_bps: float
@@ -76,8 +88,9 @@ class MarketMetrics(BaseEvent):
     """
     Comprehensive Alpha Engine metrics for Regime Switching.
     """
+
     symbol: str
-    regime: str # RANGE, TREND_UP, TREND_DOWN, VOLATILE
+    regime: str  # RANGE, TREND_UP, TREND_DOWN, VOLATILE
     ofi_1s: float
     vwap: float
     imbalance: float
@@ -86,13 +99,21 @@ class MarketMetrics(BaseEvent):
 
 
 # Define the Union of all event types for the Decoder
-Event = Union[Heartbeat, MarketTrade, OrderBookUpdate, LargeBlockEvent, MicrostructureMetrics, MarketMetrics]
+Event = Union[
+    Heartbeat,
+    MarketTrade,
+    OrderBookUpdate,
+    LargeBlockEvent,
+    MicrostructureMetrics,
+    MarketMetrics,
+]
 
 
 class EventCodec:
     """
     Standardized Encoder/Decoder for all BaseEvent types.
     """
+
     _encoder = msgspec.json.Encoder()
     _decoder = msgspec.json.Decoder(Event)
 

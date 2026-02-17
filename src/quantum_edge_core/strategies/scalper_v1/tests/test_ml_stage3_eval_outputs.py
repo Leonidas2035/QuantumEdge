@@ -32,7 +32,9 @@ def test_eval_outputs(tmp_path: Path) -> None:
     model_dir.mkdir(parents=True, exist_ok=True)
 
     train = pd.read_csv(data_root / "train.csv")
-    model = xgboost_model = xgb.XGBClassifier(n_estimators=5, max_depth=2, eval_metric="logloss")
+    model = xgboost_model = xgb.XGBClassifier(
+        n_estimators=5, max_depth=2, eval_metric="logloss"
+    )
     xgboost_model.fit(train[feature_names()], train["y_up_h1"])
     xgboost_model.save_model(str(model_dir / "model.json"))
 

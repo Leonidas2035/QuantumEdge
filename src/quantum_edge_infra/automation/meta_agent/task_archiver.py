@@ -71,7 +71,9 @@ def archive_task_file(
     if not resolved:
         raise FileNotFoundError(f"Task file not found for archiving: {task_path}")
 
-    job_name = extract_job_name_from_path(resolved) or _job_name_from_target_project(target_project)
+    job_name = extract_job_name_from_path(resolved) or _job_name_from_target_project(
+        target_project
+    )
     archive_dir = os.path.abspath(os.path.join(archive_root, job_name))
     os.makedirs(archive_dir, exist_ok=True)
 
@@ -108,7 +110,9 @@ def archive_stage_prompts(
 
         resolved = _resolve_task_path(prompt_path, prompts_root)
         if not resolved:
-            raise FileNotFoundError(f"Prompt file not found for stage '{stage.get('name', 'unnamed')}': {prompt_path}")
+            raise FileNotFoundError(
+                f"Prompt file not found for stage '{stage.get('name', 'unnamed')}': {prompt_path}"
+            )
 
         resolved_prompts.append(resolved)
 
@@ -125,7 +129,9 @@ def archive_stage_prompts(
     for prompt_path in resolved_prompts:
         destination = _unique_destination(archive_dir, os.path.basename(prompt_path))
         shutil.move(prompt_path, destination)
-        print(f"[INFO] Archived prompt {_relpath(prompt_path)} -> {_relpath(destination)}")
+        print(
+            f"[INFO] Archived prompt {_relpath(prompt_path)} -> {_relpath(destination)}"
+        )
 
     try:
         with open(stages_path, "w", encoding="utf-8") as handle:

@@ -4,6 +4,7 @@ from prompt_builder import PromptBuilder
 from file_manager import FileManager
 from project_scanner import ProjectScanner
 
+
 class MetaAgent:
     def __init__(self):
         self.client = CodexClient()
@@ -42,6 +43,7 @@ class MetaAgent:
             print(f"✅ Stage {name} completed\n")
 
         print("🎉 All stages completed!")
+
 
 if __name__ == "__main__":
     agent = MetaAgent()

@@ -1,4 +1,5 @@
 import pytest
+
 pytest.skip("Legacy test broken by src-layout migration", allow_module_level=True)
 import pytest
 
@@ -32,7 +33,9 @@ def test_volume_imbalance_edges() -> None:
 
 
 def test_regime_classification() -> None:
-    detector = RegimeDetector(max_spread_bps=5.0, max_short_vol_bps=20.0, trend_threshold=0.001)
+    detector = RegimeDetector(
+        max_spread_bps=5.0, max_short_vol_bps=20.0, trend_threshold=0.001
+    )
     wide = TopFeatures(10.0, 0.0, 0.0, 0.0, 0.0)
     assert detector.classify(wide) == "NO_TRADE"
     high_vol = TopFeatures(1.0, 0.0, 25.0, 0.0, 0.0)
@@ -67,7 +70,9 @@ def test_execution_edge_ok_and_order() -> None:
     assert engine.edge_ok(features) is False
     book = BookTop(bid_px=100.0, bid_qty=5.0, ask_px=100.02, ask_qty=5.0, ts_ms=0)
     features = TopFeatures(1.0, 0.3, 1.0, 0.0, 10.0)
-    intent = engine.build_intent(book, Signal(side=1, confidence=0.5), features, 0, target_qty=0.002)
+    intent = engine.build_intent(
+        book, Signal(side=1, confidence=0.5), features, 0, target_qty=0.002
+    )
     assert isinstance(intent, OrderIntent)
     assert intent.action == "place"
     assert intent.price == pytest.approx(book.bid_px)
@@ -85,7 +90,9 @@ def test_execution_partial_fill() -> None:
     )
     book = BookTop(bid_px=100.0, bid_qty=5.0, ask_px=100.02, ask_qty=5.0, ts_ms=0)
     features = TopFeatures(1.0, 0.3, 1.0, 0.0, 10.0)
-    intent = engine.build_intent(book, Signal(side=1, confidence=0.5), features, 0, target_qty=0.01)
+    intent = engine.build_intent(
+        book, Signal(side=1, confidence=0.5), features, 0, target_qty=0.01
+    )
     engine.apply_intent(intent, 0)
     engine.record_fill(0.005)
     assert engine._open is not None
@@ -108,7 +115,9 @@ def test_risk_manager_blocks() -> None:
 
 def test_spot_scalper_simulation_flow() -> None:
     features = FeatureComputer(vol_window=3, ema_fast=2, ema_slow=4)
-    regime = RegimeDetector(max_spread_bps=10.0, max_short_vol_bps=1_000.0, trend_threshold=0.001)
+    regime = RegimeDetector(
+        max_spread_bps=10.0, max_short_vol_bps=1_000.0, trend_threshold=0.001
+    )
     signal_engine = SignalEngine(imbalance_threshold=0.2)
     execution = ExecutionEngine(
         fee_bps=0.0,
@@ -134,7 +143,9 @@ def test_spot_scalper_simulation_flow() -> None:
     )
 
     def step(bid, ask, bid_qty, ask_qty, ts):
-        book = BookTop(bid_px=bid, bid_qty=bid_qty, ask_px=ask, ask_qty=ask_qty, ts_ms=ts)
+        book = BookTop(
+            bid_px=bid, bid_qty=bid_qty, ask_px=ask, ask_qty=ask_qty, ts_ms=ts
+        )
         payload = engine.on_book(book, ts)
         intent = payload.get("intent")
         if isinstance(intent, OrderIntent):

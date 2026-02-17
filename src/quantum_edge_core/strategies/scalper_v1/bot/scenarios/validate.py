@@ -32,7 +32,11 @@ def validate_scenarios(symbol: str, root: Path) -> int:
         manifest_path = scenario_dir / "manifest.json"
         stats_path = scenario_dir / "stats.json"
         schema_path = scenario_dir / "schema.json"
-        if not manifest_path.exists() or not stats_path.exists() or not schema_path.exists():
+        if (
+            not manifest_path.exists()
+            or not stats_path.exists()
+            or not schema_path.exists()
+        ):
             print(f"[FAIL] Missing manifest/stats/schema for {spec.scenario_id}")
             failures += 1
             continue
@@ -54,7 +58,9 @@ def validate_scenarios(symbol: str, root: Path) -> int:
             failures += 1
 
         if manifest.get("skipped"):
-            print(f"[WARN] Scenario {spec.scenario_id} skipped: {manifest.get('skip_reason')}")
+            print(
+                f"[WARN] Scenario {spec.scenario_id} skipped: {manifest.get('skip_reason')}"
+            )
             warnings += 1
             continue
 
@@ -64,7 +70,9 @@ def validate_scenarios(symbol: str, root: Path) -> int:
             print(f"[FAIL] No episodes listed for {spec.scenario_id}")
             failures += 1
             continue
-        missing_files = [ep for ep in episodes if not (scenario_dir / ep.get("file", "")).exists()]
+        missing_files = [
+            ep for ep in episodes if not (scenario_dir / ep.get("file", "")).exists()
+        ]
         if missing_files:
             print(f"[FAIL] Missing episode files for {spec.scenario_id}")
             failures += 1
@@ -76,9 +84,13 @@ def validate_scenarios(symbol: str, root: Path) -> int:
 
 
 def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Validate scenario datasets (S00-S24).")
+    parser = argparse.ArgumentParser(
+        description="Validate scenario datasets (S00-S24)."
+    )
     parser.add_argument("--symbol", required=True)
-    parser.add_argument("--root", required=True, help="Scenario root (data/scenarios/<SYMBOL>).")
+    parser.add_argument(
+        "--root", required=True, help="Scenario root (data/scenarios/<SYMBOL>)."
+    )
     return parser.parse_args(argv)
 
 

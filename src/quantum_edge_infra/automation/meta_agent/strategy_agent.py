@@ -49,7 +49,9 @@ def _llm_client() -> LLMClient:
     return LLMClient()
 
 
-def generate_strategic_backlog(project: str, horizon: str = "short_term") -> Dict[str, Any]:
+def generate_strategic_backlog(
+    project: str, horizon: str = "short_term"
+) -> Dict[str, Any]:
     """
     Uses LLM to create a strategic backlog based on recent supervisor summaries and project goals.
 
@@ -106,7 +108,11 @@ def generate_strategic_backlog(project: str, horizon: str = "short_term") -> Dic
             title = item.get("title") or f"{task_type} for {project}"
             priority = item.get("priority") or "normal"
             description = item.get("description") or ""
-            metadata = {k: v for k, v in item.items() if k not in {"task_type", "title", "priority", "description"}}
+            metadata = {
+                k: v
+                for k, v in item.items()
+                if k not in {"task_type", "title", "priority", "description"}
+            }
             backlog_items.append(
                 BacklogItem(
                     task_type=task_type,
@@ -120,12 +126,18 @@ def generate_strategic_backlog(project: str, horizon: str = "short_term") -> Dic
     return {
         "backlog": [item.__dict__ for item in backlog_items],
         "summary": parsed.get("summary") if isinstance(parsed, dict) else "",
-        "risks": parsed.get("risks") if isinstance(parsed, dict) and isinstance(parsed.get("risks"), list) else [],
+        "risks": (
+            parsed.get("risks")
+            if isinstance(parsed, dict) and isinstance(parsed.get("risks"), list)
+            else []
+        ),
         "raw_response": content,
     }
 
 
-def create_tasks_from_backlog(backlog: List[Dict[str, Any]], project: str, source: str = "strategy_agent") -> List[str]:
+def create_tasks_from_backlog(
+    backlog: List[Dict[str, Any]], project: str, source: str = "strategy_agent"
+) -> List[str]:
     """
     Materializes backlog items into Task files via task_manager.create_task.
     Returns list of created task_ids.

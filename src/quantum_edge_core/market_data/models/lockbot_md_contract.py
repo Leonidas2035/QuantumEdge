@@ -4,7 +4,6 @@ from __future__ import annotations
 
 from typing import Any, Mapping, Sequence
 
-
 SCHEMA_VERSION = "lockbot_md.v1"
 
 TOPIC_MARK_PRICE_1S = "mark_price_1s"
@@ -61,15 +60,57 @@ REQUIRED_ENVELOPE_FIELDS: Sequence[str] = (
 PAYLOAD_REQUIRED_FIELDS: Mapping[str, Sequence[str]] = {
     TOPIC_MARK_PRICE_1S: ("mark_price",),
     TOPIC_TRADES_AGG: ("price", "qty", "is_buyer_maker"),
-    TOPIC_OHLCV_1M: ("open", "high", "low", "close", "volume", "interval", "bar_start_ts"),
-    TOPIC_OHLCV_5M: ("open", "high", "low", "close", "volume", "interval", "bar_start_ts"),
-    TOPIC_OHLCV_15M: ("open", "high", "low", "close", "volume", "interval", "bar_start_ts"),
+    TOPIC_OHLCV_1M: (
+        "open",
+        "high",
+        "low",
+        "close",
+        "volume",
+        "interval",
+        "bar_start_ts",
+    ),
+    TOPIC_OHLCV_5M: (
+        "open",
+        "high",
+        "low",
+        "close",
+        "volume",
+        "interval",
+        "bar_start_ts",
+    ),
+    TOPIC_OHLCV_15M: (
+        "open",
+        "high",
+        "low",
+        "close",
+        "volume",
+        "interval",
+        "bar_start_ts",
+    ),
     TOPIC_FUNDING_RATE: ("funding_rate", "funding_time"),
     TOPIC_FORCE_ORDER: ("side", "price", "qty", "ts_liq"),
     TOPIC_VWAP_D: ("session", "vwap", "pv_sum", "v_sum", "n_trades"),
-    TOPIC_VWAP_BANDS_D: ("session", "vwap", "pv_sum", "v_sum", "n_trades", "std", "band_1u", "band_1l", "band_2u", "band_2l"),
+    TOPIC_VWAP_BANDS_D: (
+        "session",
+        "vwap",
+        "pv_sum",
+        "v_sum",
+        "n_trades",
+        "std",
+        "band_1u",
+        "band_1l",
+        "band_2u",
+        "band_2l",
+    ),
     TOPIC_AVWAP: ("anchors",),
-    TOPIC_LIQ_HEATMAP: ("window_s", "bin_type", "bin_size", "decay", "levels", "last_force_order_ts"),
+    TOPIC_LIQ_HEATMAP: (
+        "window_s",
+        "bin_type",
+        "bin_size",
+        "decay",
+        "levels",
+        "last_force_order_ts",
+    ),
 }
 
 
@@ -104,4 +145,3 @@ def validate_payload(topic: str, payload: Mapping[str, Any]) -> list[str]:
         if field not in payload:
             errors.append(f"missing_payload:{field}")
     return errors
-

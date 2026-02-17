@@ -25,7 +25,9 @@ class ScalpGuardState:
 class ScalpGuard:
     """Minimal guardrail tracker for scalp entries."""
 
-    def __init__(self, max_positions: int, max_trades: int, max_loss_pct: float) -> None:
+    def __init__(
+        self, max_positions: int, max_trades: int, max_loss_pct: float
+    ) -> None:
         self.max_positions = max_positions
         self.max_trades = max_trades
         self.max_loss_pct = max_loss_pct
@@ -42,7 +44,9 @@ class ScalpGuard:
             return False, "max_open_scalp_positions"
         if self.state.trades_today >= self.max_trades:
             return False, "max_daily_scalp_trades"
-        if self.max_loss_pct > 0 and self.state.loss_pct_today <= -abs(self.max_loss_pct):
+        if self.max_loss_pct > 0 and self.state.loss_pct_today <= -abs(
+            self.max_loss_pct
+        ):
             return False, "max_daily_scalp_loss_pct"
         return True, "ok"
 

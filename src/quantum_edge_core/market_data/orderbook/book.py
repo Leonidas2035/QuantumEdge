@@ -34,7 +34,9 @@ class OrderBookSide:
     def best(self) -> Tuple[float, float] | None:
         if not self._levels:
             return None
-        price = max(self._levels.keys()) if self._descending else min(self._levels.keys())
+        price = (
+            max(self._levels.keys()) if self._descending else min(self._levels.keys())
+        )
         return price, self._levels[price]
 
     def prune(self, max_levels: int) -> None:

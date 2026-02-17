@@ -38,9 +38,18 @@ class DDNConfig:
     @staticmethod
     def default() -> "DDNConfig":
         profiles = {
-            "neutral": DDNProfile(name="neutral", target=0.0, band_low=-0.10, band_high=0.10),
-            "trend": DDNProfile(name="trend", target=0.0, band_low=-0.60, band_high=0.60),
-            "panic": DDNProfile(name="panic", target=0.0, band_low=-0.05, band_high=0.05, force_hedge=True),
+            "neutral": DDNProfile(
+                name="neutral", target=0.0, band_low=-0.10, band_high=0.10
+            ),
+            "trend": DDNProfile(
+                name="trend", target=0.0, band_low=-0.60, band_high=0.60
+            ),
+            "panic": DDNProfile(
+                name="panic",
+                target=0.0,
+                band_low=-0.05,
+                band_high=0.05,
+                force_hedge=True,
+            ),
         }
         return DDNConfig(profiles=profiles)
-

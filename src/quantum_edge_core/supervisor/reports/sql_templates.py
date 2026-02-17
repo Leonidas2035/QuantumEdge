@@ -17,9 +17,7 @@ def pnl_per_symbol_sql(start_iso: str) -> str:
         "SELECT o.symbol, "
         "sum(case when o.side='SELL' then f.price * f.qty else -f.price * f.qty end) as pnl_gross "
         "FROM fills f JOIN orders o ON f.client_order_id = o.client_order_id AND f.symbol = o.symbol "
-        "WHERE f.ts >= '"
-        + start_iso
-        + "' GROUP BY o.symbol"
+        "WHERE f.ts >= '" + start_iso + "' GROUP BY o.symbol"
     )
 
 
@@ -72,7 +70,5 @@ def asof_fill_l1_sql(start_iso: str) -> str:
         "SELECT f.symbol, f.ts, f.price, l1.bid, l1.ask "
         "FROM fills f ASOF JOIN market_l1 l1 "
         "ON f.symbol = l1.symbol "
-        "WHERE f.ts >= '"
-        + start_iso
-        + "'"
+        "WHERE f.ts >= '" + start_iso + "'"
     )

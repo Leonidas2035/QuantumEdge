@@ -39,7 +39,9 @@ def build_report(symbol: str, root: Path, fmt: str = "md") -> Path:
     if fmt == "md":
         report_path.write_text(_render_md(symbol, rows), encoding="utf-8")
     else:
-        report_path.write_text(json.dumps({"symbol": symbol, "rows": rows}, indent=2), encoding="utf-8")
+        report_path.write_text(
+            json.dumps({"symbol": symbol, "rows": rows}, indent=2), encoding="utf-8"
+        )
     return report_path
 
 

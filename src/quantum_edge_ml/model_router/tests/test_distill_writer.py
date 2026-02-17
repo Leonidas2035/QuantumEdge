@@ -13,8 +13,18 @@ def test_distill_writer_redaction(tmp_path):
 
     student = {"ok": True, "decision": {"v": 1}, "raw_hash": "x"}
     teacher = {"ok": True, "decision": {"v": 1}, "raw_hash": "y"}
-    diff = {"same_action": True, "confidence_delta": 0.0, "risk_delta": "LOW->LOW", "notes": "shadow"}
-    meta = {"student_model": "s", "teacher_model": "t", "lat_ms_student": 1.0, "lat_ms_teacher": 2.0}
+    diff = {
+        "same_action": True,
+        "confidence_delta": 0.0,
+        "risk_delta": "LOW->LOW",
+        "notes": "shadow",
+    }
+    meta = {
+        "student_model": "s",
+        "teacher_model": "t",
+        "lat_ms_student": 1.0,
+        "lat_ms_teacher": 2.0,
+    }
 
     writer.write(prompt_info, student, teacher, diff, meta)
 

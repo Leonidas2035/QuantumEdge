@@ -16,11 +16,15 @@ from quantum_edge_core.supervisor.domain.models import PolicyContract
 
 logger = logging.getLogger(__name__)
 
+
 class PolicyPublisher:
     """
     Publishes Supervisor policies to the trading bot(s).
     """
-    def __init__(self, zmq_context: Optional[zmq.asyncio.Context] = None, pub_port: int = 5556):
+
+    def __init__(
+        self, zmq_context: Optional[zmq.asyncio.Context] = None, pub_port: int = 5556
+    ):
         self.ctx = zmq_context or zmq.asyncio.Context()
         self.pub_port = pub_port
         self.socket: Optional[zmq.asyncio.Socket] = None
@@ -40,7 +44,7 @@ class PolicyPublisher:
         """Legacy method alias."""
         # Check if it looks like the new contract, if so use new method but we need PolicyContract obj
         # This is for backward compat if any line uses it with dict
-        pass 
+        pass
 
     async def publish_policy(self, policy: PolicyContract):
         """
@@ -60,15 +64,16 @@ class PolicyPublisher:
 
             payload = asdict(policy)
             json_str = json.dumps(payload, default=default)
-            
+
             # Send: [Topic] [JSON]
             # msg = [topic, json_str]
-            await self.socket.send_multipart([
-                self.topic.encode("utf-8"),
-                json_str.encode("utf-8")
-            ])
-            logger.debug(f"Broadcasting Policy: {policy.mode} (Mult: {policy.risk_multiplier})")
-            
+            await self.socket.send_multipart(
+                [self.topic.encode("utf-8"), json_str.encode("utf-8")]
+            )
+            logger.debug(
+                f"Broadcasting Policy: {policy.mode} (Mult: {policy.risk_multiplier})"
+            )
+
         except Exception as e:
             logger.error(f"Failed to publish policy: {e}")
 

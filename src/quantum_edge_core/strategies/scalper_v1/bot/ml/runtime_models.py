@@ -12,7 +12,10 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Optional, Tuple
 
-from bot.ml.features.builder import feature_names as _feature_names, schema_version as _schema_version
+from bot.ml.features.builder import (
+    feature_names as _feature_names,
+    schema_version as _schema_version,
+)
 from bot.ml.signal_model.model import SignalModel
 
 MANIFEST_VERSION = "model.v1"
@@ -84,7 +87,9 @@ def _compat_check(manifest: Dict[str, object], strict: bool) -> Optional[str]:
             want = _version_tuple(str(py_version))
             have = (sys.version_info.major, sys.version_info.minor)
             if want and want != have:
-                msg = f"python_mismatch artifact={py_version} runtime={have[0]}.{have[1]}"
+                msg = (
+                    f"python_mismatch artifact={py_version} runtime={have[0]}.{have[1]}"
+                )
                 if strict:
                     errors.append(msg)
                 else:
@@ -174,13 +179,17 @@ def load_runtime_models(
     errors: Dict[int, str] = {}
 
     for horizon in horizons:
-        manifest_path = models_root / symbol / str(horizon) / "current" / "manifest.json"
+        manifest_path = (
+            models_root / symbol / str(horizon) / "current" / "manifest.json"
+        )
         if not manifest_path.exists():
             errors[horizon] = "manifest_missing"
             continue
         try:
             manifest = _load_manifest(manifest_path)
-            if manifest.get("symbol") != symbol or int(manifest.get("horizon")) != int(horizon):
+            if manifest.get("symbol") != symbol or int(manifest.get("horizon")) != int(
+                horizon
+            ):
                 errors[horizon] = "symbol_or_horizon_mismatch"
                 continue
             compat_error = _compat_check(manifest, compat_strict)
@@ -201,7 +210,9 @@ def load_runtime_models(
             if sha_actual != sha_expected:
                 errors[horizon] = "sha_mismatch"
                 continue
-            threshold = float((manifest.get("thresholds") or {}).get("p_up", threshold_default))
+            threshold = float(
+                (manifest.get("thresholds") or {}).get("p_up", threshold_default)
+            )
             calibration = manifest.get("calibration") or {}
             feature_stats = manifest.get("feature_stats") or {}
             model = SignalModel(
@@ -218,7 +229,11 @@ def load_runtime_models(
                 manifest_path=manifest_path,
                 manifest_hash=manifest_hash,
                 feature_schema_version=manifest.get("feature_schema_version"),
-                feature_names=list(manifest.get("feature_names") or []) if manifest.get("feature_names") else None,
+                feature_names=(
+                    list(manifest.get("feature_names") or [])
+                    if manifest.get("feature_names")
+                    else None
+                ),
                 feature_stats=feature_stats if isinstance(feature_stats, dict) else {},
                 calibration=calibration if isinstance(calibration, dict) else {},
             )

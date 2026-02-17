@@ -2,6 +2,7 @@
 Supervisor Reporter.
 Publishes bot health and status metrics to the Supervisor system via ZMQ.
 """
+
 import zmq
 import ujson
 import time
@@ -12,22 +13,34 @@ from quantum_edge_core.ai_scalper_bot.bot.execution.strategy_core import BotStat
 
 logger = logging.getLogger(__name__)
 
+
 class SupervisorReporter:
     """
     Publishes heartbeat and metrics to a ZMQ PUB socket.
     """
-    def __init__(self, pub_endpoint: str = "tcp://*:5557", service_id: str = "ai_scalper_bot"):
+
+    def __init__(
+        self, pub_endpoint: str = "tcp://*:5557", service_id: str = "ai_scalper_bot"
+    ):
         self.service_id = service_id
         self.context = AsyncContext()
         self.socket = self.context.socket(zmq.PUB)
         try:
             self.socket.bind(pub_endpoint)
-            logger.info(f"SupervisorReporter bound to {pub_endpoint} with ID {service_id}")
+            logger.info(
+                f"SupervisorReporter bound to {pub_endpoint} with ID {service_id}"
+            )
         except zmq.ZMQError as e:
             logger.error(f"Failed to bind SupervisorReporter: {e}")
             raise
 
-    async def send_heartbeat(self, state: BotState, pnl: float, open_positions_qty: float, drawdown_pct: float = 0.0):
+    async def send_heartbeat(
+        self,
+        state: BotState,
+        pnl: float,
+        open_positions_qty: float,
+        drawdown_pct: float = 0.0,
+    ):
         """
         Sends a JSON heartbeat packet.
         Schema:
@@ -52,11 +65,11 @@ class SupervisorReporter:
             "drawdown_pct": float(drawdown_pct),
             "metrics": {
                 "active_positions_count": int(open_positions_qty),
-                "cpu_usage": 0.0
+                "cpu_usage": 0.0,
             },
-            "errors": []
+            "errors": [],
         }
-        
+
         try:
             # Create JSON string
             payload = ujson.dumps(msg)

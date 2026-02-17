@@ -25,10 +25,18 @@ def _load_checkpoint(path: Path) -> date | None:
 
 def _save_checkpoint(path: Path, last_date: date) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(json.dumps({"last_date": last_date.isoformat()}, indent=2), encoding="utf-8")
+    path.write_text(
+        json.dumps({"last_date": last_date.isoformat()}, indent=2), encoding="utf-8"
+    )
 
 
-def run_backfill(events_dir: Path, store: TimeseriesStore, days: int, checkpoint_path: Path, logger: logging.Logger) -> None:
+def run_backfill(
+    events_dir: Path,
+    store: TimeseriesStore,
+    days: int,
+    checkpoint_path: Path,
+    logger: logging.Logger,
+) -> None:
     """Backfill last N days of events into TSDB."""
 
     start_day = date.today() - timedelta(days=days - 1)

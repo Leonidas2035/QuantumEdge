@@ -16,4 +16,10 @@ ALLOWED_ENTITIES: Sequence[str] = tuple(ENTITY_TABLE_MAP.keys())
 SCHEMA_VERSION: int = 1
 STREAM_NAME = "l2"
 
-REQUIRED_TOP_LEVEL_FIELDS: Sequence[str] = ("ts_ns", "stream", "entity", "schema_ver", "payload")
+REQUIRED_TOP_LEVEL_FIELDS: Sequence[str] = (
+    "ts_ns",
+    "stream",
+    "entity",
+    "schema_ver",
+    "payload",
+)

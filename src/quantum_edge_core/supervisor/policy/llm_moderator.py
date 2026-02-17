@@ -7,7 +7,6 @@ from typing import Dict, Any
 
 from supervisor.llm.chat_client import ChatCompletionsClient
 
-
 ALLOWED_KEYS = {
     "allow_trading",
     "mode",
@@ -33,7 +32,9 @@ class LlmModerator:
         self.timeout_sec = timeout_sec
         self.temperature = temperature
 
-    def suggest(self, signals: Dict[str, Any], base_policy: Dict[str, Any]) -> Dict[str, Any]:
+    def suggest(
+        self, signals: Dict[str, Any], base_policy: Dict[str, Any]
+    ) -> Dict[str, Any]:
         prompt = (
             "Return JSON only. Allowed keys: allow_trading, mode, size_multiplier, cooldown_sec, "
             "spread_max_bps, max_daily_loss, reason. Do not include extra keys. "
@@ -43,7 +44,9 @@ class LlmModerator:
             {"role": "system", "content": prompt},
             {
                 "role": "user",
-                "content": json.dumps({"signals": signals, "base_policy": base_policy}, ensure_ascii=False),
+                "content": json.dumps(
+                    {"signals": signals, "base_policy": base_policy}, ensure_ascii=False
+                ),
             },
         ]
         response = self.client.complete(

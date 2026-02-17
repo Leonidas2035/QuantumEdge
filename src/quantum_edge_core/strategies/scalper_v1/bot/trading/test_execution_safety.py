@@ -9,7 +9,17 @@ from bot.engine.decision_types import DecisionAction
 
 def test_paper_trader_bracket_close():
     trader = PaperTrader()
-    decision = type("D", (), {"action": "buy", "size": 1.0, "order_type": "market", "tp_price": 110.0, "sl_price": 90.0})
+    decision = type(
+        "D",
+        (),
+        {
+            "action": "buy",
+            "size": 1.0,
+            "order_type": "market",
+            "tp_price": 110.0,
+            "sl_price": 90.0,
+        },
+    )
     asyncio.run(trader.process(decision, 100.0, 1))
     assert trader.position == 1.0
     trader.check_brackets(111.0, 2)
@@ -38,7 +48,16 @@ def test_trade_stats_loss_streak_blocks_entry():
         stats.record(-1.0)
     dec = eng.decide(
         symbol="BTCUSDT",
-        ensemble=type("E", (), {"components": {1: type("S", (), {"p_up": 0.6, "p_down": 0.4, "edge": 0.1})()}, "meta_edge": 0.1}),
+        ensemble=type(
+            "E",
+            (),
+            {
+                "components": {
+                    1: type("S", (), {"p_up": 0.6, "p_down": 0.4, "edge": 0.1})()
+                },
+                "meta_edge": 0.1,
+            },
+        ),
         features=[0.0] * 10,
         position=0,
         approved=True,

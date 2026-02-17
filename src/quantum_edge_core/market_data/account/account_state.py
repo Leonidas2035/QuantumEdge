@@ -5,7 +5,9 @@ from __future__ import annotations
 import time
 from typing import Any, Dict, List, Optional, Tuple
 
-from quantum_edge_core.market_data.account.rest_snapshot import BinanceAccountRestSnapshotBuilder
+from quantum_edge_core.market_data.account.rest_snapshot import (
+    BinanceAccountRestSnapshotBuilder,
+)
 from quantum_edge_core.market_data.config import AccountConfig
 from quantum_edge_core.market_data.models.account_delta import (
     AccountDelta,
@@ -18,8 +20,10 @@ from quantum_edge_core.market_data.models.account_delta import (
     SpotPatch,
     UsdmPatch,
 )
-from quantum_edge_core.market_data.models.account_snapshot import AccountSnapshot, OpenOrderEntry
-
+from quantum_edge_core.market_data.models.account_snapshot import (
+    AccountSnapshot,
+    OpenOrderEntry,
+)
 
 FINAL_ORDER_STATUSES = {"CANCELED", "FILLED", "EXPIRED", "REJECTED"}
 
@@ -47,7 +51,9 @@ class AccountState:
     ) -> None:
         self._config = config
         self._rest_builder = rest_builder or BinanceAccountRestSnapshotBuilder(config)
-        self._account_ref = account_ref or _mask_key(config.spot_api_key or config.usdm_api_key)
+        self._account_ref = account_ref or _mask_key(
+            config.spot_api_key or config.usdm_api_key
+        )
         self._seq: Dict[str, int] = {}
         self.spot_balances: Dict[str, Dict[str, str]] = {}
         self.spot_open_orders: Dict[str, OrderPatch] = {}
@@ -57,13 +63,22 @@ class AccountState:
         self.usdm_open_orders: Dict[str, OrderPatch] = {}
         self.last_snapshot: Optional[AccountSnapshot] = None
 
-    def build_snapshot(self, symbols: List[str], include_market: bool = True, account_ref: Optional[str] = None) -> AccountSnapshot:
+    def build_snapshot(
+        self,
+        symbols: List[str],
+        include_market: bool = True,
+        account_ref: Optional[str] = None,
+    ) -> AccountSnapshot:
         snapshot_ref = account_ref or self._account_ref
-        snapshot = self._rest_builder.build_full_account_snapshot(symbols, include_market, snapshot_ref)
+        snapshot = self._rest_builder.build_full_account_snapshot(
+            symbols, include_market, snapshot_ref
+        )
         self.apply_snapshot(snapshot)
         return snapshot
 
-    def apply_snapshot(self, snapshot: AccountSnapshot, src: str = "rest_repair") -> AccountSnapshot:
+    def apply_snapshot(
+        self, snapshot: AccountSnapshot, src: str = "rest_repair"
+    ) -> AccountSnapshot:
         self.spot_balances = {
             entry.asset: {"free": entry.free, "locked": entry.locked}
             for entry in snapshot.spot.balances
@@ -81,7 +96,11 @@ class AccountState:
             maxWithdrawAmount=totals.maxWithdrawAmount,
         )
         self.usdm_assets = {
-            asset.asset: AssetPatch(asset=asset.asset, walletBalance=asset.walletBalance, availableBalance=asset.availableBalance)
+            asset.asset: AssetPatch(
+                asset=asset.asset,
+                walletBalance=asset.walletBalance,
+                availableBalance=asset.availableBalance,
+            )
             for asset in snapshot.usdm.assets
         }
         self.usdm_positions = {
@@ -106,7 +125,9 @@ class AccountState:
         self.last_snapshot = snapshot
         return snapshot
 
-    def apply_spot_outboundAccountPosition(self, event: Dict[str, Any]) -> Optional[AccountDelta]:
+    def apply_spot_outboundAccountPosition(
+        self, event: Dict[str, Any]
+    ) -> Optional[AccountDelta]:
         patches: List[BalancePatch] = []
         for entry in event.get("B", []):
             patch = BalancePatch(
@@ -114,13 +135,22 @@ class AccountState:
                 free=_ensure_str(entry.get("f")),
                 locked=_ensure_str(entry.get("l")),
             )
-            self.spot_balances[patch.asset] = {"free": patch.free, "locked": patch.locked}
+            self.spot_balances[patch.asset] = {
+                "free": patch.free,
+                "locked": patch.locked,
+            }
             patches.append(patch)
         if not patches:
             return None
-        return self._build_delta(src="spot_ws", spot_patch=SpotPatch(balances_update=patches), ts_ms=event.get("E"))
+        return self._build_delta(
+            src="spot_ws",
+            spot_patch=SpotPatch(balances_update=patches),
+            ts_ms=event.get("E"),
+        )
 
-    def apply_spot_execution_report(self, event: Dict[str, Any]) -> Optional[AccountDelta]:
+    def apply_spot_execution_report(
+        self, event: Dict[str, Any]
+    ) -> Optional[AccountDelta]:
         raw_order = event.get("o") or event
         patch = self._build_order_patch(raw_order)
         if not patch.orderId:
@@ -137,7 +167,9 @@ class AccountState:
             ts_ms=event.get("E"),
         )
 
-    def apply_usdm_ACCOUNT_UPDATE(self, event: Dict[str, Any]) -> Optional[AccountDelta]:
+    def apply_usdm_ACCOUNT_UPDATE(
+        self, event: Dict[str, Any]
+    ) -> Optional[AccountDelta]:
         account = event.get("a", {})
         account_patch = AccountTotalsPatch(
             totalWalletBalance=_ensure_str(account.get("totalWalletBalance", "")),
@@ -181,9 +213,13 @@ class AccountState:
                 positions_update=positions or None,
             )
         )
-        return self._build_delta(src="usdm_ws", usdm_patch=patch.usdm, ts_ms=event.get("E"))
+        return self._build_delta(
+            src="usdm_ws", usdm_patch=patch.usdm, ts_ms=event.get("E")
+        )
 
-    def apply_usdm_ORDER_TRADE_UPDATE(self, event: Dict[str, Any]) -> Optional[AccountDelta]:
+    def apply_usdm_ORDER_TRADE_UPDATE(
+        self, event: Dict[str, Any]
+    ) -> Optional[AccountDelta]:
         raw_order = event.get("o") or event
         patch = self._build_order_patch(raw_order)
         if not patch.orderId:

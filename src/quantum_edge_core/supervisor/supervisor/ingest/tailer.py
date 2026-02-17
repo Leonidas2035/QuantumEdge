@@ -55,6 +55,10 @@ class FileTailer:
                         lines.append(line)
                 offset = handle.tell()
         except OSError:
-            return TailResult(lines=[], offset=offset, reset=reset, dropped_lines=dropped)
+            return TailResult(
+                lines=[], offset=offset, reset=reset, dropped_lines=dropped
+            )
 
-        return TailResult(lines=lines, offset=offset, reset=reset, dropped_lines=dropped)
+        return TailResult(
+            lines=lines, offset=offset, reset=reset, dropped_lines=dropped
+        )

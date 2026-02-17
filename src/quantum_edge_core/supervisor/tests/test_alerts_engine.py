@@ -29,7 +29,9 @@ def test_alert_cooldown(tmp_path):
     time.sleep(0.01)
     engine.evaluate(summary)
     history_after = storage.recent_history(limit=10)
-    assert len([item for item in history_after if item.get("type") == "ALERT_RAISED"]) == 1
+    assert (
+        len([item for item in history_after if item.get("type") == "ALERT_RAISED"]) == 1
+    )
 
 
 def test_alert_resolve_after(tmp_path):

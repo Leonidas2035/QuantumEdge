@@ -12,7 +12,13 @@ from typing import Dict, Optional
 from policy.policy_contract import POLICY_VERSION
 from supervisor.action_ledger import ActionLedger
 from supervisor.guards import GuardEvaluator, GuardConfig, load_guard_config
-from supervisor.regime_sm import RegimeStateMachine, RegimeConfig, DirectivesConfig, load_regime_config, load_directives_config
+from supervisor.regime_sm import (
+    RegimeStateMachine,
+    RegimeConfig,
+    DirectivesConfig,
+    load_regime_config,
+    load_directives_config,
+)
 from supervisor.run_context import RunContext
 from supervisor.stats import StatsAggregator
 
@@ -36,17 +42,23 @@ class EpisodeRunConfig:
 
 def run_episode_set(cfg: EpisodeRunConfig) -> int:
     manifest = json.loads(cfg.manifest_path.read_text(encoding="utf-8"))
-    scenarios_path = cfg.scenarios_path or (Path(__file__).resolve().parents[2] / "episodes" / "scenarios_v1.yaml")
+    scenarios_path = cfg.scenarios_path or (
+        Path(__file__).resolve().parents[2] / "episodes" / "scenarios_v1.yaml"
+    )
     scenarios = {s.scenario_id: s for s in load_scenarios(scenarios_path)}
 
-    policy_path = cfg.policy_path or (Path(__file__).resolve().parents[2] / "config" / "policy.yaml")
+    policy_path = cfg.policy_path or (
+        Path(__file__).resolve().parents[2] / "config" / "policy.yaml"
+    )
     regime_cfg = load_regime_config(policy_path)
     guard_cfg = load_guard_config(policy_path)
     directives_cfg = load_directives_config(policy_path)
 
     episodes = manifest.get("episodes", [])
     if cfg.scenario_filter:
-        episodes = [ep for ep in episodes if ep.get("scenario_id") == cfg.scenario_filter]
+        episodes = [
+            ep for ep in episodes if ep.get("scenario_id") == cfg.scenario_filter
+        ]
 
     if not episodes:
         print("[WARN] No episodes to run.")
@@ -104,14 +116,18 @@ def _run_single_episode(
     run_context.log_event("RUN_START", {"episode": episode})
 
     stats = StatsAggregator(start_ts=_episode_start_ts(episode))
-    action_ledger = ActionLedger(run_context.run_dir / "action_ledger.jsonl", run_context)
+    action_ledger = ActionLedger(
+        run_context.run_dir / "action_ledger.jsonl", run_context
+    )
     regime_sm = RegimeStateMachine(regime_cfg)
     guard_eval = GuardEvaluator(guard_cfg)
     signals_window = RollingWindow(cfg.signal_window_s)
     directives_last_hash: Optional[str] = None
     wall_start = time.time()
 
-    episode_file = _episode_path(supervisor_root, cfg.episode_set, episode, episodes_root)
+    episode_file = _episode_path(
+        supervisor_root, cfg.episode_set, episode, episodes_root
+    )
     start_ts = None
     end_ts = None
     next_stats_ts = None
@@ -191,11 +207,15 @@ def _run_single_episode(
                 supervisor_root / "runtime",
             )
             if changed:
-                run_context.log_event("DIRECTIVES_UPDATED", {"regime": decision.current_state})
+                run_context.log_event(
+                    "DIRECTIVES_UPDATED", {"regime": decision.current_state}
+                )
             next_directives_ts = tick.ts + cfg.directives_interval_s
 
     duration_s = int((end_ts or start_ts or time.time()) - (start_ts or time.time()))
-    run_context.log_event("RUN_END", {"duration_s": duration_s, "stop_reason": "episode_complete"})
+    run_context.log_event(
+        "RUN_END", {"duration_s": duration_s, "stop_reason": "episode_complete"}
+    )
     summary = _build_summary(start_ts, end_ts)
     summary.update(stats.finalize(now_ts=end_ts or time.time()))
     run_context.write_summary(summary)
@@ -221,7 +241,14 @@ def _episode_path(
         return episodes_root / str(rel_path)
     scenario_id = str(episode.get("scenario_id"))
     episode_id = str(episode.get("episode_id"))
-    return supervisor_root / "runtime" / "episodes" / episode_set / scenario_id / f"{episode_id}.jsonl"
+    return (
+        supervisor_root
+        / "runtime"
+        / "episodes"
+        / episode_set
+        / scenario_id
+        / f"{episode_id}.jsonl"
+    )
 
 
 def _guard_context_from_tick(tick) -> Dict[str, Optional[float]]:
@@ -313,7 +340,12 @@ def _update_directives(
     return True, new_hash
 
 
-def _record_block(run_context: RunContext, stats: StatsAggregator, reason: str, details: Dict[str, object]) -> None:
+def _record_block(
+    run_context: RunContext,
+    stats: StatsAggregator,
+    reason: str,
+    details: Dict[str, object],
+) -> None:
     stats.on_block(reason, details)
     payload = {"reason_code": reason}
     if details:
@@ -321,7 +353,9 @@ def _record_block(run_context: RunContext, stats: StatsAggregator, reason: str, 
     run_context.log_event("BLOCK_REASON", payload)
 
 
-def _build_summary(start_ts: Optional[float], end_ts: Optional[float]) -> Dict[str, object]:
+def _build_summary(
+    start_ts: Optional[float], end_ts: Optional[float]
+) -> Dict[str, object]:
     start = start_ts or time.time()
     end = end_ts or time.time()
     return {

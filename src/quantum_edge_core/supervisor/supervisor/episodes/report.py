@@ -16,7 +16,9 @@ def generate_report(
 ) -> Path:
     runs = _find_episode_runs(episode_set, runs_path)
     if not runs:
-        raise FileNotFoundError(f"No runs found for episode_set={episode_set} under {runs_path}")
+        raise FileNotFoundError(
+            f"No runs found for episode_set={episode_set} under {runs_path}"
+        )
 
     report = _aggregate_runs(episode_set, runs)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -61,10 +63,18 @@ def _aggregate_runs(episode_set: str, run_dirs: Iterable[Path]) -> Dict[str, obj
         duration = float(summary.get("duration_s") or 0.0)
         total_duration += duration
         total_runs += 1
-        totals["blocked_actions_count"] += float(summary.get("blocked_actions_count") or 0.0)
-        totals["actions_proposed_count"] += float(summary.get("actions_proposed_count") or 0.0)
-        totals["actions_applied_count"] += float(summary.get("actions_applied_count") or 0.0)
-        totals["actions_rejected_count"] += float(summary.get("actions_rejected_count") or 0.0)
+        totals["blocked_actions_count"] += float(
+            summary.get("blocked_actions_count") or 0.0
+        )
+        totals["actions_proposed_count"] += float(
+            summary.get("actions_proposed_count") or 0.0
+        )
+        totals["actions_applied_count"] += float(
+            summary.get("actions_applied_count") or 0.0
+        )
+        totals["actions_rejected_count"] += float(
+            summary.get("actions_rejected_count") or 0.0
+        )
         totals["errors_count"] += float(summary.get("errors_count") or 0.0)
 
         regime_share = summary.get("regime_time_share") or {}
@@ -94,10 +104,18 @@ def _aggregate_runs(episode_set: str, run_dirs: Iterable[Path]) -> Dict[str, obj
         )
         scenario_bucket["runs"] += 1
         scenario_bucket["duration_s"] += duration
-        scenario_bucket["blocked_actions_count"] += int(summary.get("blocked_actions_count") or 0)
-        scenario_bucket["actions_proposed_count"] += int(summary.get("actions_proposed_count") or 0)
-        scenario_bucket["actions_applied_count"] += int(summary.get("actions_applied_count") or 0)
-        scenario_bucket["actions_rejected_count"] += int(summary.get("actions_rejected_count") or 0)
+        scenario_bucket["blocked_actions_count"] += int(
+            summary.get("blocked_actions_count") or 0
+        )
+        scenario_bucket["actions_proposed_count"] += int(
+            summary.get("actions_proposed_count") or 0
+        )
+        scenario_bucket["actions_applied_count"] += int(
+            summary.get("actions_applied_count") or 0
+        )
+        scenario_bucket["actions_rejected_count"] += int(
+            summary.get("actions_rejected_count") or 0
+        )
         scenario_bucket["errors_count"] += int(summary.get("errors_count") or 0)
         scenario_bucket["regime_flaps"] += flaps
         for reason, count in block_reason_map.items():
@@ -109,7 +127,9 @@ def _aggregate_runs(episode_set: str, run_dirs: Iterable[Path]) -> Dict[str, obj
         "runs": total_runs,
         "total_duration_s": total_duration,
         "regime_time_share_s": {
-            key.replace("regime_", ""): value for key, value in totals.items() if key.startswith("regime_")
+            key.replace("regime_", ""): value
+            for key, value in totals.items()
+            if key.startswith("regime_")
         },
         "blocked_actions_count": int(totals["blocked_actions_count"]),
         "actions_proposed_count": int(totals["actions_proposed_count"]),

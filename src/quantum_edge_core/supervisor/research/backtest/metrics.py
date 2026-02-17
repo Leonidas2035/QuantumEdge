@@ -46,7 +46,9 @@ def _sharpe(equity_curve: List[EquityPointLike]) -> float:
     return mean / std * math.sqrt(len(returns))
 
 
-def compute_metrics(trades: List[TradeFillLike], equity_curve: List[EquityPointLike]) -> dict:
+def compute_metrics(
+    trades: List[TradeFillLike], equity_curve: List[EquityPointLike]
+) -> dict:
     realized = sum(t.pnl for t in trades if t.action.startswith("close"))
     total = equity_curve[-1].equity if equity_curve else realized
     closes = [t for t in trades if t.action.startswith("close")]

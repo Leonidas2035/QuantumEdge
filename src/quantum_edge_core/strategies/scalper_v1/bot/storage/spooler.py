@@ -87,7 +87,9 @@ class Spooler:
         self._prune_retention()
         if self.max_bytes <= 0:
             return
-        files = sorted(self.base_dir.rglob("*.jsonl.gz"), key=lambda p: p.stat().st_mtime)
+        files = sorted(
+            self.base_dir.rglob("*.jsonl.gz"), key=lambda p: p.stat().st_mtime
+        )
         total = 0
         sizes = {}
         for f in files:

@@ -8,7 +8,6 @@ import msgspec
 
 from quantum_edge_core.market_data.models.events import MarketEvent
 
-
 MICROSTRUCTURE_EVENT_TYPE = "microstructure.v1"
 
 

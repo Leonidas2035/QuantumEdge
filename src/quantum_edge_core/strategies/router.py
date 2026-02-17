@@ -14,26 +14,29 @@ from quantum_edge_core.events import MarketMetrics
 
 logger = structlog.get_logger()
 
+
 class StrategyRouter:
     def __init__(self):
         self.logger = logger.bind(component="StrategyRouter")
-        
+
         # Strategies
         self.mean_reversion = MeanReversionStrategy()
         self.whale_follower = WhaleFollowerStrategy()
-        
+
         # State
-        self.current_regime = "RANGE" # Default
+        self.current_regime = "RANGE"  # Default
         self.active_strategy: BaseStrategy = self.mean_reversion
-        
+
     def on_metrics(self, metrics: MarketMetrics):
         """
         Update Regime and switch active strategy.
         """
         if metrics.regime != self.current_regime:
-            self.logger.info("Regime Change Detected", old=self.current_regime, new=metrics.regime)
+            self.logger.info(
+                "Regime Change Detected", old=self.current_regime, new=metrics.regime
+            )
             self.current_regime = metrics.regime
-            
+
             # Logic
             if "TREND" in self.current_regime or "VOLATILE" in self.current_regime:
                 self.logger.info("Switching to WhaleFollower (Trend/Volatile)")

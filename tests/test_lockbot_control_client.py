@@ -1,4 +1,5 @@
 import pytest
+
 pytest.skip("Legacy test broken by src-layout migration", allow_module_level=True)
 import socket
 import sys
@@ -14,7 +15,11 @@ if str(SUPERVISOR_DIR) not in sys.path:
     sys.path.insert(0, str(SUPERVISOR_DIR))
 
 from supervisor.config import LockbotControlConfig
-from supervisor.contracts.lockbot_control_v1 import AckEnvelope, CommandEnvelope, StatusEnvelope
+from supervisor.contracts.lockbot_control_v1 import (
+    AckEnvelope,
+    CommandEnvelope,
+    StatusEnvelope,
+)
 from supervisor.lockbot.control_client import LockbotControlClient
 
 
@@ -89,7 +94,9 @@ def test_control_client_send_and_cache() -> None:
             seq=1,
             payload={"mode": "IDLE", "regime": "RANGE"},
         )
-        pub.send_multipart([cfg.status_topic.encode("utf-8"), msgspec.msgpack.encode(status)])
+        pub.send_multipart(
+            [cfg.status_topic.encode("utf-8"), msgspec.msgpack.encode(status)]
+        )
         time.sleep(0.1)
         if client.ack(cmd_id) and client.status():
             break

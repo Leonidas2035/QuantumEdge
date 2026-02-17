@@ -28,7 +28,9 @@ def _safe_ident(name: str) -> str:
     return name
 
 
-def build_ohlcv_query(cfg: QuestDBConfig, lookback_m: int, candle_count: int, symbol: str) -> QuerySpec:
+def build_ohlcv_query(
+    cfg: QuestDBConfig, lookback_m: int, candle_count: int, symbol: str
+) -> QuerySpec:
     table = _safe_ident(cfg.trades_table)
     ts = _safe_ident(cfg.ts_col)
     sym = _safe_ident(cfg.symbol_col)
@@ -48,4 +50,6 @@ def build_ohlcv_query(cfg: QuestDBConfig, lookback_m: int, candle_count: int, sy
         "ORDER BY t DESC "
         "LIMIT %(limit)s"
     )
-    return QuerySpec(sql=sql, params={"sym": symbol, "lbm": lookback_m, "limit": candle_count})
+    return QuerySpec(
+        sql=sql, params={"sym": symbol, "lbm": lookback_m, "limit": candle_count}
+    )

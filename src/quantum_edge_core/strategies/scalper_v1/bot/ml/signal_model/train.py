@@ -69,7 +69,9 @@ def _find_split_file(horizon_dir: Path, split: str) -> Path:
     return matches[0]
 
 
-def _load_splits(horizon_dir: Path, horizon: int) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+def _load_splits(
+    horizon_dir: Path, horizon: int
+) -> Tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
     train_path = _find_split_file(horizon_dir, "train")
     val_path = _find_split_file(horizon_dir, "val")
     test_path = _find_split_file(horizon_dir, "test")
@@ -155,13 +157,19 @@ def _evaluate_thresholds(y_true: np.ndarray, y_prob: np.ndarray) -> Dict[str, fl
 def _metrics(y_true: np.ndarray, y_prob: np.ndarray) -> Dict[str, object]:
     metrics: Dict[str, object] = {}
     try:
-        from sklearn.metrics import roc_auc_score, confusion_matrix, precision_recall_fscore_support
+        from sklearn.metrics import (
+            roc_auc_score,
+            confusion_matrix,
+            precision_recall_fscore_support,
+        )
 
         if len(np.unique(y_true)) > 1:
             metrics["auc"] = float(roc_auc_score(y_true, y_prob))
         for thr in (0.50, 0.55, 0.60):
             preds = (y_prob >= thr).astype(int)
-            precision, recall, fscore, _ = precision_recall_fscore_support(y_true, preds, average="binary", zero_division=0)
+            precision, recall, fscore, _ = precision_recall_fscore_support(
+                y_true, preds, average="binary", zero_division=0
+            )
             metrics[f"precision@{thr}"] = float(precision)
             metrics[f"recall@{thr}"] = float(recall)
             metrics[f"f1@{thr}"] = float(fscore)
@@ -184,7 +192,9 @@ def _train_horizon(
     y_col = f"y_up_h{horizon}"
 
     if train_df.empty or val_df.empty or test_df.empty:
-        raise ValueError(f"Empty split detected for h{horizon}: train={len(train_df)} val={len(val_df)} test={len(test_df)}")
+        raise ValueError(
+            f"Empty split detected for h{horizon}: train={len(train_df)} val={len(val_df)} test={len(test_df)}"
+        )
     missing = [name for name in features + [y_col] if name not in train_df.columns]
     if missing:
         raise KeyError(f"Missing columns in training data for h{horizon}: {missing}")
@@ -223,12 +233,20 @@ def _train_horizon(
         "test": _sha256_file(_find_split_file(horizon_dir, "test")),
     }
     train_stats = _training_stats(train_df, horizon)
-    manifest = _build_manifest(symbol, horizon, model_path, metrics, thresholds, dataset_hashes, train_stats)
+    manifest = _build_manifest(
+        symbol, horizon, model_path, metrics, thresholds, dataset_hashes, train_stats
+    )
 
-    (out_dir / "metrics.json").write_text(json.dumps(metrics, indent=2), encoding="utf-8")
-    (out_dir / "thresholds.json").write_text(json.dumps(thresholds, indent=2), encoding="utf-8")
+    (out_dir / "metrics.json").write_text(
+        json.dumps(metrics, indent=2), encoding="utf-8"
+    )
+    (out_dir / "thresholds.json").write_text(
+        json.dumps(thresholds, indent=2), encoding="utf-8"
+    )
     (out_dir / "schema_hash.txt").write_text(schema_hash() + "\n", encoding="utf-8")
-    (out_dir / "manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
+    (out_dir / "manifest.json").write_text(
+        json.dumps(manifest, indent=2), encoding="utf-8"
+    )
     return out_dir
 
 
@@ -240,7 +258,9 @@ def _find_qe_root() -> Optional[Path]:
     return None
 
 
-def _publish_runtime(model_dir: Path, symbol: str, horizon: int, runtime_root: Path) -> Path:
+def _publish_runtime(
+    model_dir: Path, symbol: str, horizon: int, runtime_root: Path
+) -> Path:
     models_root = runtime_root / "models" / symbol / str(horizon)
     tmp_dir = models_root / f"current.tmp.{os.getpid()}"
     dest_dir = models_root / "current"
@@ -282,7 +302,11 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     parser.add_argument("--data-root", required=True, help="data/ml/<SYMBOL>")
     parser.add_argument("--horizons", nargs="+", default=["1", "5", "30"])
     parser.add_argument("--artifacts-root", default="artifacts/models")
-    parser.add_argument("--publish-runtime", action="store_true", help="Publish to runtime/models if QE_ROOT is found.")
+    parser.add_argument(
+        "--publish-runtime",
+        action="store_true",
+        help="Publish to runtime/models if QE_ROOT is found.",
+    )
     parser.add_argument("--n-estimators", type=int, default=200)
     parser.add_argument("--max-depth", type=int, default=5)
     parser.add_argument("--learning-rate", type=float, default=0.05)

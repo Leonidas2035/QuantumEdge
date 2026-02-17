@@ -29,7 +29,9 @@ class ProcessManager:
             try:
                 self.services_config = self._load_yaml(self.services_config_path)
             except Exception as e:
-                print(f"Warning: Failed to load services config from {self.services_config_path}: {e}")
+                print(
+                    f"Warning: Failed to load services config from {self.services_config_path}: {e}"
+                )
 
         # Merge secrets if available
         secrets_path = self.config_path.parent / "secrets.yaml"

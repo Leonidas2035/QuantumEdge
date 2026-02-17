@@ -13,6 +13,7 @@ from typing import List, Optional
 def _try_import_trt() -> bool:
     try:
         import tensorrt_llm  # noqa: F401
+
         return True
     except Exception:
         return False
@@ -58,7 +59,9 @@ def _run_once(
     samples: List[int] = []
     sampler = None
     if track_vram:
-        sampler = threading.Thread(target=_vram_sampler, args=(stop_event, samples), daemon=True)
+        sampler = threading.Thread(
+            target=_vram_sampler, args=(stop_event, samples), daemon=True
+        )
         sampler.start()
 
     input_ids = tokenizer(prompt, return_tensors="pt").input_ids
@@ -96,7 +99,11 @@ def _run_once(
         sampler.join(timeout=1.0)
 
     input_len = int(input_ids.shape[-1])
-    output_len = int(getattr(generated, "shape", [0])[-1]) if hasattr(generated, "shape") else len(generated)
+    output_len = (
+        int(getattr(generated, "shape", [0])[-1])
+        if hasattr(generated, "shape")
+        else len(generated)
+    )
     gen_tokens = max(0, output_len - input_len)
     tokens_per_s = (gen_tokens / (total / 1000.0)) if total > 0 else 0.0
 
@@ -104,7 +111,12 @@ def _run_once(
     if samples:
         peak_vram_mb = max(samples) / (1024 * 1024)
 
-    return RunResult(ttft_ms=ttft, latency_ms=total, tokens_per_s=tokens_per_s, peak_vram_mb=peak_vram_mb)
+    return RunResult(
+        ttft_ms=ttft,
+        latency_ms=total,
+        tokens_per_s=tokens_per_s,
+        peak_vram_mb=peak_vram_mb,
+    )
 
 
 def build_long_prompt(tokenizer, target_tokens: int) -> str:
@@ -121,8 +133,16 @@ def main() -> int:
     parser = argparse.ArgumentParser(description="Smoke test TensorRT-LLM engine")
     parser.add_argument("--engine-dir", default=os.environ.get("ENGINE_DIR", ""))
     parser.add_argument("--model-dir", default=os.environ.get("MODEL_DIR", ""))
-    parser.add_argument("--max-input-len", type=int, default=int(os.environ.get("MAX_INPUT_LEN", "2048")))
-    parser.add_argument("--max-output-len", type=int, default=int(os.environ.get("MAX_OUTPUT_LEN", "512")))
+    parser.add_argument(
+        "--max-input-len",
+        type=int,
+        default=int(os.environ.get("MAX_INPUT_LEN", "2048")),
+    )
+    parser.add_argument(
+        "--max-output-len",
+        type=int,
+        default=int(os.environ.get("MAX_OUTPUT_LEN", "512")),
+    )
     parser.add_argument("--iterations", type=int, default=1)
     parser.add_argument("--bench-json", default="")
     args = parser.parse_args()
@@ -154,7 +174,9 @@ def main() -> int:
     for i in range(args.iterations):
         label = "near-limit" if i % 2 == 1 else "short"
         use_prompt = near_limit if label == "near-limit" else prompt
-        result = _run_once(runner, tokenizer, use_prompt, args.max_output_len, track_vram=True)
+        result = _run_once(
+            runner, tokenizer, use_prompt, args.max_output_len, track_vram=True
+        )
         results.append(result)
         print(
             f"[{label}] ttft_ms={result.ttft_ms:.2f} "
@@ -179,9 +201,17 @@ def main() -> int:
                 "tokens_per_s": statistics.median(tps),
             },
             "p95": {
-                "ttft_ms": statistics.quantiles(ttft, n=20)[-1] if len(ttft) >= 20 else max(ttft),
-                "latency_ms": statistics.quantiles(lat, n=20)[-1] if len(lat) >= 20 else max(lat),
-                "tokens_per_s": statistics.quantiles(tps, n=20)[-1] if len(tps) >= 20 else max(tps),
+                "ttft_ms": (
+                    statistics.quantiles(ttft, n=20)[-1]
+                    if len(ttft) >= 20
+                    else max(ttft)
+                ),
+                "latency_ms": (
+                    statistics.quantiles(lat, n=20)[-1] if len(lat) >= 20 else max(lat)
+                ),
+                "tokens_per_s": (
+                    statistics.quantiles(tps, n=20)[-1] if len(tps) >= 20 else max(tps)
+                ),
             },
         }
         with open(args.bench_json, "w", encoding="utf-8") as handle:

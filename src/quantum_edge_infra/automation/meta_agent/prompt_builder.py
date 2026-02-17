@@ -11,17 +11,26 @@ class PromptBuilder:
         "Only include files that should be written.\n"
     )
 
-    def build_prompt(self, stage_instructions: str, project_context: str = "", metadata: dict | None = None) -> str:
+    def build_prompt(
+        self,
+        stage_instructions: str,
+        project_context: str = "",
+        metadata: dict | None = None,
+    ) -> str:
         sections = [self.HEADER]
 
         if metadata:
             meta_lines = "\n".join(f"{key}: {value}" for key, value in metadata.items())
             sections.append("# Task Metadata\n" + mask_secrets(meta_lines))
 
-        sections.append("# Task Instructions\n" + mask_secrets(stage_instructions.strip()))
+        sections.append(
+            "# Task Instructions\n" + mask_secrets(stage_instructions.strip())
+        )
 
         if project_context:
-            sections.append("# Project Context\n" + mask_secrets(project_context.strip()))
+            sections.append(
+                "# Project Context\n" + mask_secrets(project_context.strip())
+            )
 
         sections.append(
             "# Output Guidance\n"

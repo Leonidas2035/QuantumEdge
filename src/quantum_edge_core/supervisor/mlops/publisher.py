@@ -10,7 +10,9 @@ from pathlib import Path
 from supervisor.mlops.manifest import ModelManifest
 
 
-def publish_model(artifact_dir: Path, runtime_root: Path, keep_previous: bool = False) -> Path:
+def publish_model(
+    artifact_dir: Path, runtime_root: Path, keep_previous: bool = False
+) -> Path:
     artifact_dir = artifact_dir.resolve()
     manifest_path = artifact_dir / "manifest.json"
     if not manifest_path.exists():
@@ -38,4 +40,3 @@ def publish_model(artifact_dir: Path, runtime_root: Path, keep_previous: bool = 
 
     os.replace(tmp_dir, current_dir)
     return current_dir
-

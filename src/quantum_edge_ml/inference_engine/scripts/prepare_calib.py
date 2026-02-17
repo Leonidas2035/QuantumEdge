@@ -70,9 +70,13 @@ def write_jsonl(path: str, prompts: Iterable[str]) -> None:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Prepare AWQ calibration prompts JSONL")
+    parser = argparse.ArgumentParser(
+        description="Prepare AWQ calibration prompts JSONL"
+    )
     parser.add_argument("--out", default=os.environ.get("CALIB_JSONL", ""))
-    parser.add_argument("--size", type=int, default=int(os.environ.get("CALIB_SIZE", "64")))
+    parser.add_argument(
+        "--size", type=int, default=int(os.environ.get("CALIB_SIZE", "64"))
+    )
     parser.add_argument("--seed", type=int, default=123)
     args = parser.parse_args()
 

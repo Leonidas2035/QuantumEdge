@@ -42,7 +42,9 @@ def _regime_tag(vol_30s: float, ema_slope_30s: float) -> int:
     return REGIME_ENUM["flat"]
 
 
-def build_feature_frame(ticks: pd.DataFrame, microstructure: Optional[Dict[str, float]] = None) -> pd.DataFrame:
+def build_feature_frame(
+    ticks: pd.DataFrame, microstructure: Optional[Dict[str, float]] = None
+) -> pd.DataFrame:
     """
     Build 1s bars + features from raw tick data.
 
@@ -53,7 +55,9 @@ def build_feature_frame(ticks: pd.DataFrame, microstructure: Optional[Dict[str, 
     if "side_sign" not in df.columns:
         side = df.get("side")
         if side is not None:
-            df["side_sign"] = np.where(df["side"].astype(str).str.contains("sell"), -1.0, 1.0)
+            df["side_sign"] = np.where(
+                df["side"].astype(str).str.contains("sell"), -1.0, 1.0
+            )
         else:
             df["side_sign"] = 1.0
 
@@ -106,7 +110,9 @@ def build_feature_frame(ticks: pd.DataFrame, microstructure: Optional[Dict[str, 
     bars["vol_spike_5s"] = bars["qty"].rolling(5).mean() / bars["vol_mean_30s"]
     bars["vol_spike_30s"] = bars["qty"].rolling(30).mean() / bars["vol_mean_30s"]
 
-    bars["regime_tag"] = bars.apply(lambda row: _regime_tag(row["vol_30s"], row["ema_slope_30s"]), axis=1)
+    bars["regime_tag"] = bars.apply(
+        lambda row: _regime_tag(row["vol_30s"], row["ema_slope_30s"]), axis=1
+    )
 
     micro = microstructure or {}
     for name in MICROSTRUCTURE_FEATURES:
@@ -144,7 +150,9 @@ class FeatureBuilder:
         self.ts = deque(maxlen=self.max_ticks)
         self._microstructure: Dict[str, float] = {}
 
-    def add_tick(self, timestamp: int, price: float, qty: float, side: str = "buy") -> Optional[np.ndarray]:
+    def add_tick(
+        self, timestamp: int, price: float, qty: float, side: str = "buy"
+    ) -> Optional[np.ndarray]:
         self.ts.append(int(timestamp))
         self.prices.append(float(price))
         self.qty.append(float(qty))

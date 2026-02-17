@@ -12,7 +12,9 @@ try:
 except Exception:  # pragma: no cover - fallback for legacy runs
     get_qe_paths = None
 
-DEFAULT_PROJECTS_PATH = os.path.join("src", "quantum_edge_core", "config", "projects.yaml")
+DEFAULT_PROJECTS_PATH = os.path.join(
+    "src", "quantum_edge_core", "config", "projects.yaml"
+)
 
 
 @dataclass
@@ -133,7 +135,9 @@ def _resolve_config_path(path: str) -> str:
 
 def _load_meta_agent_defaults() -> Dict[str, str]:
     base = _resolve_base_dir()
-    cfg_path = Path(os.getenv("META_AGENT_CONFIG") or (base / "config" / "meta_agent.yaml"))
+    cfg_path = Path(
+        os.getenv("META_AGENT_CONFIG") or (base / "config" / "meta_agent.yaml")
+    )
     if not cfg_path.exists():
         return {}
     try:
@@ -195,13 +199,17 @@ def load_project_registry(config_path: str = DEFAULT_PROJECTS_PATH) -> ProjectRe
     return ProjectRegistry(default_project_id=default_project_id, projects=projects)
 
 
-def resolve_project_root(project_id: Optional[str], registry: ProjectRegistry) -> ProjectInfo:
+def resolve_project_root(
+    project_id: Optional[str], registry: ProjectRegistry
+) -> ProjectInfo:
     """
     Resolves a project_id to ProjectInfo, using default when None. Raises on unknown id.
     """
     info = registry.get(project_id)
     if not info:
-        raise KeyError(f"Unknown project id '{project_id}'. Available: {', '.join(registry.projects.keys())}")
+        raise KeyError(
+            f"Unknown project id '{project_id}'. Available: {', '.join(registry.projects.keys())}"
+        )
     return info
 
 

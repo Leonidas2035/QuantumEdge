@@ -12,7 +12,6 @@ from supervisor.episodes.report import generate_report
 from supervisor.episodes.cutter import load_scenarios
 from supervisor.ops.config import load_ops_config, get_nested
 
-
 CRITICAL_REASONS = {
     "MAX_MARGIN_USED_PCT",
     "MIN_LIQ_DISTANCE_PCT",
@@ -73,7 +72,9 @@ def run_regression_gates(
     }
 
 
-def _load_baseline_report(runtime_dir: Path, episode_set: str) -> Optional[Dict[str, Any]]:
+def _load_baseline_report(
+    runtime_dir: Path, episode_set: str
+) -> Optional[Dict[str, Any]]:
     report_path = runtime_dir / "reports" / episode_set / "report.json"
     if not report_path.exists():
         return None
@@ -93,7 +94,9 @@ def _run_and_report(
     scenarios_path: Optional[Path],
     gate_cfg: Dict[str, Any],
 ) -> Dict[str, Any]:
-    effective_manifest = _prepare_manifest(manifest_path, gate_suite, scenarios_path, gate_cfg)
+    effective_manifest = _prepare_manifest(
+        manifest_path, gate_suite, scenarios_path, gate_cfg
+    )
     cfg = EpisodeRunConfig(
         episode_set=episode_set,
         manifest_path=effective_manifest,
@@ -119,8 +122,14 @@ def _prepare_manifest(
     episodes = payload.get("episodes", [])
     if gate_suite == "panic":
         if scenarios_path is None:
-            scenarios_path = Path(__file__).resolve().parents[2] / "episodes" / "scenarios_v1.yaml"
-        panic_ids = {s.scenario_id for s in load_scenarios(scenarios_path) if "PANIC" in s.tags or "FREEZE" in s.tags}
+            scenarios_path = (
+                Path(__file__).resolve().parents[2] / "episodes" / "scenarios_v1.yaml"
+            )
+        panic_ids = {
+            s.scenario_id
+            for s in load_scenarios(scenarios_path)
+            if "PANIC" in s.tags or "FREEZE" in s.tags
+        }
         episodes = [ep for ep in episodes if ep.get("scenario_id") in panic_ids]
     elif gate_suite == "smoke":
         max_episodes = int(gate_cfg.get("smoke_max_episodes", 5))
@@ -135,39 +144,78 @@ def _prepare_manifest(
     return tmp_path
 
 
-def _compare_reports(candidate: Dict[str, Any], baseline: Dict[str, Any], gate_cfg: Dict[str, Any]) -> list[Dict[str, Any]]:
+def _compare_reports(
+    candidate: Dict[str, Any], baseline: Dict[str, Any], gate_cfg: Dict[str, Any]
+) -> list[Dict[str, Any]]:
     checks: list[Dict[str, Any]] = []
     max_flaps_abs = float(gate_cfg.get("max_regime_flaps_per_min", 2.0))
     flap_increase_pct = float(gate_cfg.get("max_flap_increase_pct", 0.2))
     blocked_increase_pct = float(gate_cfg.get("max_blocked_increase_pct", 0.3))
-    rejected_increase_pct = float(gate_cfg.get("max_actions_rejected_increase_pct", 0.3))
+    rejected_increase_pct = float(
+        gate_cfg.get("max_actions_rejected_increase_pct", 0.3)
+    )
     errors_increase = int(gate_cfg.get("max_errors_increase", 1))
     critical_increase_pct = float(gate_cfg.get("max_critical_blocks_increase_pct", 0.2))
 
     candidate_flaps = float(candidate.get("regime_flaps_per_min") or 0.0)
     baseline_flaps = float(baseline.get("regime_flaps_per_min") or 0.0)
     flaps_limit = max(max_flaps_abs, baseline_flaps * (1 + flap_increase_pct))
-    checks.append(_check("regime_flaps_per_min", candidate_flaps, flaps_limit, candidate_flaps <= flaps_limit))
+    checks.append(
+        _check(
+            "regime_flaps_per_min",
+            candidate_flaps,
+            flaps_limit,
+            candidate_flaps <= flaps_limit,
+        )
+    )
 
     candidate_blocked = int(candidate.get("blocked_actions_count") or 0)
     baseline_blocked = int(baseline.get("blocked_actions_count") or 0)
     blocked_limit = int(round(baseline_blocked * (1 + blocked_increase_pct))) + 1
-    checks.append(_check("blocked_actions_count", candidate_blocked, blocked_limit, candidate_blocked <= blocked_limit))
+    checks.append(
+        _check(
+            "blocked_actions_count",
+            candidate_blocked,
+            blocked_limit,
+            candidate_blocked <= blocked_limit,
+        )
+    )
 
     candidate_rejected = int(candidate.get("actions_rejected_count") or 0)
     baseline_rejected = int(baseline.get("actions_rejected_count") or 0)
     rejected_limit = int(round(baseline_rejected * (1 + rejected_increase_pct))) + 1
-    checks.append(_check("actions_rejected_count", candidate_rejected, rejected_limit, candidate_rejected <= rejected_limit))
+    checks.append(
+        _check(
+            "actions_rejected_count",
+            candidate_rejected,
+            rejected_limit,
+            candidate_rejected <= rejected_limit,
+        )
+    )
 
     candidate_errors = int(candidate.get("errors_count") or 0)
     baseline_errors = int(baseline.get("errors_count") or 0)
     error_limit = baseline_errors + errors_increase
-    checks.append(_check("errors_count", candidate_errors, error_limit, candidate_errors <= error_limit))
+    checks.append(
+        _check(
+            "errors_count",
+            candidate_errors,
+            error_limit,
+            candidate_errors <= error_limit,
+        )
+    )
 
     candidate_critical = _count_critical(candidate.get("top_block_reasons") or {})
     baseline_critical = _count_critical(baseline.get("top_block_reasons") or {})
     critical_limit = int(round(baseline_critical * (1 + critical_increase_pct))) + 1
-    checks.append(_check("critical_block_reasons", candidate_critical, critical_limit, candidate_critical <= critical_limit))
+    checks.append(
+        _check(
+            "critical_block_reasons",
+            candidate_critical,
+            critical_limit,
+            candidate_critical <= critical_limit,
+        )
+    )
     return checks
 
 

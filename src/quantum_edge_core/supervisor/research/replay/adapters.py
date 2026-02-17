@@ -34,7 +34,9 @@ def _coerce_int(value: Optional[str], default: int) -> int:
         return default
 
 
-def _ensure_spread(price: float, bid: Optional[float], ask: Optional[float], spread_bps: float) -> tuple[float, float]:
+def _ensure_spread(
+    price: float, bid: Optional[float], ask: Optional[float], spread_bps: float
+) -> tuple[float, float]:
     if bid is not None and ask is not None and bid > 0 and ask > 0:
         return bid, ask
     spread = price * (spread_bps / 10_000)
@@ -64,7 +66,9 @@ def _event_from_row(row: dict, spread_bps: float) -> Optional[MarketEvent]:
     )
 
 
-def load_events_from_csv(path: Path, spread_bps: float = 2.0, limit_rows: Optional[int] = None) -> List[MarketEvent]:
+def load_events_from_csv(
+    path: Path, spread_bps: float = 2.0, limit_rows: Optional[int] = None
+) -> List[MarketEvent]:
     events: List[MarketEvent] = []
     with path.open("r", encoding="utf-8") as handle:
         reader = csv.DictReader(handle)
@@ -77,7 +81,9 @@ def load_events_from_csv(path: Path, spread_bps: float = 2.0, limit_rows: Option
     return sorted(events, key=lambda e: e.ts)
 
 
-def load_events_from_jsonl(path: Path, spread_bps: float = 2.0, limit_rows: Optional[int] = None) -> List[MarketEvent]:
+def load_events_from_jsonl(
+    path: Path, spread_bps: float = 2.0, limit_rows: Optional[int] = None
+) -> List[MarketEvent]:
     events: List[MarketEvent] = []
     with path.open("r", encoding="utf-8") as handle:
         for idx, line in enumerate(handle):
@@ -98,9 +104,13 @@ def load_events_from_jsonl(path: Path, spread_bps: float = 2.0, limit_rows: Opti
     return sorted(events, key=lambda e: e.ts)
 
 
-def load_events(path: Path, spread_bps: float = 2.0, limit_rows: Optional[int] = None) -> List[MarketEvent]:
+def load_events(
+    path: Path, spread_bps: float = 2.0, limit_rows: Optional[int] = None
+) -> List[MarketEvent]:
     if path.suffix.lower() in {".jsonl", ".ndjson"}:
-        return load_events_from_jsonl(path, spread_bps=spread_bps, limit_rows=limit_rows)
+        return load_events_from_jsonl(
+            path, spread_bps=spread_bps, limit_rows=limit_rows
+        )
     return load_events_from_csv(path, spread_bps=spread_bps, limit_rows=limit_rows)
 
 

@@ -55,7 +55,9 @@ def _resolve_base_dir() -> str:
         except Exception:
             pass
     parent = os.path.abspath(os.path.join(BASE_DIR, os.pardir))
-    if os.path.isdir(os.path.join(parent, "config")) and os.path.isdir(os.path.join(parent, "ai_scalper_bot")):
+    if os.path.isdir(os.path.join(parent, "config")) and os.path.isdir(
+        os.path.join(parent, "ai_scalper_bot")
+    ):
         return parent
     return BASE_DIR
 
@@ -151,7 +153,9 @@ def _build_summary(verdict: str, applied: bool, files_changed: int) -> str:
         if files_changed == 0:
             return "No file changes detected."
         return (
-            f"Applied changes to {files_changed} files." if applied else f"Patches generated for {files_changed} files."
+            f"Applied changes to {files_changed} files."
+            if applied
+            else f"Patches generated for {files_changed} files."
         )
     if verdict == "warn":
         return "Safety warnings: patches generated only."
@@ -204,7 +208,9 @@ def _resolve_target_project(spec: TaskSpec) -> str:
     return str(info.root_path)
 
 
-def run_basic_quality_checks(project_root: str, affected_files: List[str]) -> Dict[str, any]:
+def run_basic_quality_checks(
+    project_root: str, affected_files: List[str]
+) -> Dict[str, any]:
     """
     Simple quality checks: py_compile on affected python files, optional pytest if available.
     """
@@ -270,8 +276,16 @@ def _report_gates_from_results(
 ) -> ReportGates:
     steps: List[ReportGateStep] = []
     for step in results.steps:
-        stdout_rel = _relpath_under_base(step.stdout_path, base_abs) if step.stdout_path else None
-        stderr_rel = _relpath_under_base(step.stderr_path, base_abs) if step.stderr_path else None
+        stdout_rel = (
+            _relpath_under_base(step.stdout_path, base_abs)
+            if step.stdout_path
+            else None
+        )
+        stderr_rel = (
+            _relpath_under_base(step.stderr_path, base_abs)
+            if step.stderr_path
+            else None
+        )
         steps.append(
             ReportGateStep(
                 name=step.name,
@@ -284,7 +298,9 @@ def _report_gates_from_results(
             )
         )
 
-    artifacts_rel = _relpath_under_base(artifacts_dir, base_abs) if artifacts_dir else None
+    artifacts_rel = (
+        _relpath_under_base(artifacts_dir, base_abs) if artifacts_dir else None
+    )
     return ReportGates(
         enabled=True,
         passed=results.passed,
@@ -336,7 +352,9 @@ def run_task(
     runtime_dir = _resolve_runtime_dir()
     run_id = _make_run_id()
     log_level = (os.getenv("META_AGENT_LOG_LEVEL") or "INFO").upper()
-    logger = configure_logger("meta_agent.run_task", runtime_dir, log_level, run_id=run_id)
+    logger = configure_logger(
+        "meta_agent.run_task", runtime_dir, log_level, run_id=run_id
+    )
     run_dir = os.path.join(runtime_dir, "runs", run_id)
     patches_dir = os.path.join(run_dir, "patches")
     gates_dir = os.path.join(run_dir, "gates")
@@ -409,7 +427,11 @@ def run_task(
             )
             spec.validate()
 
-        _log_event(events_path, "task_loaded", {"task_id": spec.task_id, "project_id": spec.project_id})
+        _log_event(
+            events_path,
+            "task_loaded",
+            {"task_id": spec.task_id, "project_id": spec.project_id},
+        )
         _check_timeout(timeout_seconds, overall_start)
         target_project = _resolve_target_project(spec)
         target_project = os.path.abspath(target_project)
@@ -454,7 +476,9 @@ def run_task(
 
         _check_timeout(timeout_seconds, overall_start)
 
-        instructions = f"Objective: {spec.objective}\n\nInstructions:\n{spec.instructions}"
+        instructions = (
+            f"Objective: {spec.objective}\n\nInstructions:\n{spec.instructions}"
+        )
         prompt_metadata = {
             "task_id": spec.task_id,
             "project_id": spec.project_id,
@@ -462,7 +486,9 @@ def run_task(
             "run_id": run_id,
             "mode": "task",
         }
-        full_prompt = PromptBuilder().build_prompt(instructions, context, prompt_metadata)
+        full_prompt = PromptBuilder().build_prompt(
+            instructions, context, prompt_metadata
+        )
 
         llm_start = time.perf_counter()
         client = llm_client or LLMClient(
@@ -479,18 +505,27 @@ def run_task(
         )
         response = client.send(full_prompt, system_prompt=system_prompt)
         llm_ms = _elapsed_ms(llm_start)
-        _log_event(events_path, "llm_called", {"duration_ms": llm_ms, "model": spec.llm.model or "default"})
+        _log_event(
+            events_path,
+            "llm_called",
+            {"duration_ms": llm_ms, "model": spec.llm.model or "default"},
+        )
         if isinstance(response, str) and response.lstrip().startswith("[ERROR]"):
             raise RuntimeError(response)
 
         change_set = build_change_set_from_response(target_project, response)
-        _log_event(events_path, "changeset_built", {"files_changed": len(change_set.changes)})
+        _log_event(
+            events_path, "changeset_built", {"files_changed": len(change_set.changes)}
+        )
         try:
             os.makedirs(run_dir, exist_ok=True)
             payload = {
                 "project_root": change_set.project_root,
                 "changes": {
-                    rel: {"old_content": change.old_content, "new_content": change.new_content}
+                    rel: {
+                        "old_content": change.old_content,
+                        "new_content": change.new_content,
+                    }
                     for rel, change in change_set.changes.items()
                 },
             }
@@ -516,7 +551,9 @@ def run_task(
         if oversized:
             override_verdict = "block"
             constraint_checks.append("constraint:max_file_bytes_exceeded")
-            errors.append(f"Files exceed constraints.max_file_bytes: {', '.join(oversized)}")
+            errors.append(
+                f"Files exceed constraints.max_file_bytes: {', '.join(oversized)}"
+            )
 
         if spec.constraints.patch_only and override_verdict != "block":
             override_verdict = "warn"
@@ -574,7 +611,9 @@ def run_task(
                     )
                     shadow_used = True
                     shadow_info = _read_shadow_info(run_dir)
-                    shadow_strategy = shadow_info.get("strategy") or spec.execution.shadow_strategy
+                    shadow_strategy = (
+                        shadow_info.get("strategy") or spec.execution.shadow_strategy
+                    )
                     shadow_change_set = _clone_change_set(change_set, shadow_dir)
                     shadow_apply_start = time.perf_counter()
                     apply_change_set_with_policy(
@@ -587,7 +626,9 @@ def run_task(
                         always_write_patches=False,
                     )
                     apply_ms += _elapsed_ms(shadow_apply_start)
-                    gate_results = run_gates(shadow_dir, spec.gates, logger, artifacts_dir=gates_dir)
+                    gate_results = run_gates(
+                        shadow_dir, spec.gates, logger, artifacts_dir=gates_dir
+                    )
                     _log_event(
                         events_path,
                         "gates_result",
@@ -634,7 +675,9 @@ def run_task(
         for file_status in patch_outcome.safety_eval.files:
             if file_status.reasons:
                 reasons = ", ".join(file_status.reasons)
-                safety_checks.append(f"{file_status.path}: {reasons} (verdict={file_status.verdict})")
+                safety_checks.append(
+                    f"{file_status.path}: {reasons} (verdict={file_status.verdict})"
+                )
         safety_checks.extend(constraint_checks)
 
         patch_info: List[PatchInfo] = []
@@ -666,9 +709,15 @@ def run_task(
 
         if gates_enabled:
             if gate_results:
-                gates_report = _report_gates_from_results(gate_results, base_abs, gates_dir)
+                gates_report = _report_gates_from_results(
+                    gate_results, base_abs, gates_dir
+                )
             else:
-                artifacts_rel = _relpath_under_base(gates_dir, base_abs) if os.path.isdir(gates_dir) else None
+                artifacts_rel = (
+                    _relpath_under_base(gates_dir, base_abs)
+                    if os.path.isdir(gates_dir)
+                    else None
+                )
                 gates_report = ReportGates(
                     enabled=True,
                     passed=False,
@@ -687,7 +736,11 @@ def run_task(
                 finished_at=started_at,
             )
 
-        shadow_dir_rel = _relpath_under_base(shadow_dir, base_abs) if shadow_used and shadow_dir else None
+        shadow_dir_rel = (
+            _relpath_under_base(shadow_dir, base_abs)
+            if shadow_used and shadow_dir
+            else None
+        )
         shadow_report = ReportShadow(
             used=shadow_used,
             strategy=shadow_strategy,
@@ -771,7 +824,9 @@ def run_task(
                 apply_ms=0,
             ),
         )
-        _log_event(events_path, "run_finished", {"exit_code": exit_code, "verdict": verdict})
+        _log_event(
+            events_path, "run_finished", {"exit_code": exit_code, "verdict": verdict}
+        )
     except Exception as exc:
         finished_at = datetime.now(timezone.utc).isoformat()
         verdict = "error"
@@ -806,7 +861,9 @@ def run_task(
                 apply_ms=0,
             ),
         )
-        _log_event(events_path, "run_finished", {"exit_code": exit_code, "verdict": verdict})
+        _log_event(
+            events_path, "run_finished", {"exit_code": exit_code, "verdict": verdict}
+        )
     finally:
         if shadow_dir:
             cleanup_shadow(

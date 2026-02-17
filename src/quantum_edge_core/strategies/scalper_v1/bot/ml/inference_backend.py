@@ -122,9 +122,14 @@ def _probe_backend(backend: InferenceBackend) -> None:
     backend.predict_proba(probe)
 
 
-def _create_onnx_backend(model_path: Path, prefer_gpu: bool, logger: logging.Logger) -> Optional[InferenceBackend]:
+def _create_onnx_backend(
+    model_path: Path, prefer_gpu: bool, logger: logging.Logger
+) -> Optional[InferenceBackend]:
     if model_path.suffix.lower() != ".onnx":
-        logger.warning("ONNX backend requested but model is %s; falling back to CPU.", model_path.suffix)
+        logger.warning(
+            "ONNX backend requested but model is %s; falling back to CPU.",
+            model_path.suffix,
+        )
         return None
     try:
         backend = OnnxRuntimeBackend(model_path, prefer_gpu=prefer_gpu)
@@ -135,9 +140,14 @@ def _create_onnx_backend(model_path: Path, prefer_gpu: bool, logger: logging.Log
         return None
 
 
-def _create_torch_backend(model_path: Path, prefer_gpu: bool, logger: logging.Logger) -> Optional[InferenceBackend]:
+def _create_torch_backend(
+    model_path: Path, prefer_gpu: bool, logger: logging.Logger
+) -> Optional[InferenceBackend]:
     if model_path.suffix.lower() not in {".pt", ".pth", ".torchscript"}:
-        logger.warning("Torch backend requested but model is %s; falling back to CPU.", model_path.suffix)
+        logger.warning(
+            "Torch backend requested but model is %s; falling back to CPU.",
+            model_path.suffix,
+        )
         return None
     try:
         backend = TorchScriptBackend(model_path, prefer_gpu=prefer_gpu)

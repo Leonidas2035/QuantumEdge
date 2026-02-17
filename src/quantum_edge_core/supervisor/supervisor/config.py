@@ -47,7 +47,9 @@ class SupervisorConfig:
     bot_auto_start: bool = True
     bot_restart_enabled: bool = True
     bot_restart_max_retries: int = 5
-    bot_restart_backoff_seconds: List[int] = field(default_factory=lambda: [1, 2, 5, 10, 30])
+    bot_restart_backoff_seconds: List[int] = field(
+        default_factory=lambda: [1, 2, 5, 10, 30]
+    )
     policy_publish_interval_s: float = 5.0
     policy_ttl_sec: int = 30
     policy_file_path: str = "runtime/policy.json"
@@ -120,6 +122,7 @@ class CircuitBreakerConfig:
     failures: int
     window_sec: int
     open_sec: int
+
 
 @dataclass
 class LlmSupervisorConfig:
@@ -344,7 +347,9 @@ def _coerce_optional_float(value: Optional[object]) -> Optional[float]:
         return None
 
 
-def _resolve_path(value: Optional[str | Path], base: Path, default: Optional[Path] = None) -> Path:
+def _resolve_path(
+    value: Optional[str | Path], base: Path, default: Optional[Path] = None
+) -> Path:
     if value is None or value == "":
         return default.resolve() if default is not None else base.resolve()
     path = Path(value).expanduser()
@@ -361,7 +366,9 @@ def load_paths_config(path: Path) -> PathsConfig:
         raw = raw["paths"]
     project_root = path.parent.parent.resolve()
 
-    qe_root = _resolve_path(raw.get("qe_root") or os.getenv("QE_ROOT") or project_root, project_root)
+    qe_root = _resolve_path(
+        raw.get("qe_root") or os.getenv("QE_ROOT") or project_root, project_root
+    )
 
     quantumedge_root = _resolve_path(
         raw.get("quantumedge_root"),
@@ -372,14 +379,18 @@ def load_paths_config(path: Path) -> PathsConfig:
     python_executable_value = raw.get("python_executable") or sys.executable
     python_executable = Path(str(python_executable_value)).expanduser()
 
-    meta_agent_root = _resolve_path(raw.get("meta_agent_root"), qe_root, qe_root / "meta_agent")
+    meta_agent_root = _resolve_path(
+        raw.get("meta_agent_root"), qe_root, qe_root / "meta_agent"
+    )
 
     logs_dir = _resolve_path(raw.get("logs_dir"), qe_root, qe_root / "logs")
     runtime_dir = _resolve_path(raw.get("runtime_dir"), qe_root, qe_root / "runtime")
 
     events_dir = _resolve_path(raw.get("events_dir"), qe_root, logs_dir / "events")
 
-    reports_dir = _resolve_path(raw.get("reports_dir"), qe_root, project_root / "reports")
+    reports_dir = _resolve_path(
+        raw.get("reports_dir"), qe_root, project_root / "reports"
+    )
 
     return PathsConfig(
         qe_root=qe_root.resolve(),
@@ -400,7 +411,9 @@ def load_supervisor_config(path: Path) -> SupervisorConfig:
     mode = raw.get("mode", "paper")
     allowed_modes = {"paper", "demo", "off"}
     if mode not in allowed_modes:
-        raise ValueError(f"Invalid mode '{mode}'. Allowed: {', '.join(sorted(allowed_modes))}")
+        raise ValueError(
+            f"Invalid mode '{mode}'. Allowed: {', '.join(sorted(allowed_modes))}"
+        )
 
     env_port = os.getenv("SUPERVISOR_PORT") or os.getenv("QE_SUPERVISOR_PORT")
     heartbeat_port = int(env_port or raw.get("heartbeat_port", 8765))
@@ -420,18 +433,24 @@ def load_supervisor_config(path: Path) -> SupervisorConfig:
     bot_workdir = str(raw.get("bot_workdir", "ai_scalper_bot"))
     bot_config = str(raw.get("bot_config", "config/bot.yaml"))
     bot_section = raw.get("bot", {}) or {}
-    bot_env_file = str(bot_section.get("env_file", "")) if isinstance(bot_section, dict) else ""
+    bot_env_file = (
+        str(bot_section.get("env_file", "")) if isinstance(bot_section, dict) else ""
+    )
     bot_auto_start = bool(bot_section.get("auto_start", True))
     restart_section = bot_section.get("restart", {}) or {}
     bot_restart_enabled = bool(restart_section.get("enabled", True))
-    bot_restart_max_retries = int(restart_section.get("max_retries", restart_max_attempts))
+    bot_restart_max_retries = int(
+        restart_section.get("max_retries", restart_max_attempts)
+    )
     if bot_restart_max_retries < 0:
         bot_restart_max_retries = 0
     backoff_raw = restart_section.get("backoff_seconds")
     if isinstance(backoff_raw, list) and backoff_raw:
         bot_restart_backoff_seconds = [int(val) for val in backoff_raw if int(val) > 0]
     elif backoff_raw is None:
-        bot_restart_backoff_seconds = [int(restart_backoff_s)] if restart_backoff_s > 0 else [1, 2, 5, 10, 30]
+        bot_restart_backoff_seconds = (
+            [int(restart_backoff_s)] if restart_backoff_s > 0 else [1, 2, 5, 10, 30]
+        )
     else:
         try:
             val = float(backoff_raw)
@@ -442,7 +461,9 @@ def load_supervisor_config(path: Path) -> SupervisorConfig:
         bot_restart_backoff_seconds = [1, 2, 5, 10, 30]
 
     policy_section = raw.get("policy", {}) or {}
-    update_interval = policy_section.get("update_interval_sec", policy_section.get("publish_interval_s", 5))
+    update_interval = policy_section.get(
+        "update_interval_sec", policy_section.get("publish_interval_s", 5)
+    )
     policy_publish_interval_s = float(update_interval)
     if policy_publish_interval_s <= 0:
         policy_publish_interval_s = 5.0
@@ -471,22 +492,34 @@ def load_supervisor_config(path: Path) -> SupervisorConfig:
 
     thresholds = policy_section.get("thresholds", {}) or {}
     policy_restart_rate = thresholds.get("restart_rate", 3.0)
-    policy_restart_rate = float(policy_restart_rate) if policy_restart_rate is not None else None
+    policy_restart_rate = (
+        float(policy_restart_rate) if policy_restart_rate is not None else None
+    )
     policy_max_drawdown_abs = thresholds.get("max_drawdown_abs")
-    policy_max_drawdown_abs = float(policy_max_drawdown_abs) if policy_max_drawdown_abs is not None else None
+    policy_max_drawdown_abs = (
+        float(policy_max_drawdown_abs) if policy_max_drawdown_abs is not None else None
+    )
     policy_loss_streak = int(thresholds.get("loss_streak", 3))
-    policy_conservative_size_multiplier = float(thresholds.get("conservative_size_multiplier", 0.5))
+    policy_conservative_size_multiplier = float(
+        thresholds.get("conservative_size_multiplier", 0.5)
+    )
     if policy_conservative_size_multiplier < 0:
         policy_conservative_size_multiplier = 0.0
     policy_loss_streak_mode = str(thresholds.get("loss_streak_mode", "conservative"))
     policy_volatility_hi = thresholds.get("volatility_hi")
-    policy_volatility_hi = float(policy_volatility_hi) if policy_volatility_hi is not None else None
+    policy_volatility_hi = (
+        float(policy_volatility_hi) if policy_volatility_hi is not None else None
+    )
 
     llm_section = raw.get("llm", {}) or {}
     policy_llm_enabled = bool(llm_section.get("enabled", False))
     policy_llm_model = str(llm_section.get("model", "gpt-4.1-mini"))
-    policy_llm_api_url = str(llm_section.get("api_url", "https://api.openai.com/v1/chat/completions"))
-    policy_llm_api_key_env = str(llm_section.get("api_key_env", "OPENAI_API_KEY_SUPERVISOR"))
+    policy_llm_api_url = str(
+        llm_section.get("api_url", "https://api.openai.com/v1/chat/completions")
+    )
+    policy_llm_api_key_env = str(
+        llm_section.get("api_key_env", "OPENAI_API_KEY_SUPERVISOR")
+    )
     policy_llm_timeout_sec = float(llm_section.get("timeout_sec", 4.0))
     policy_llm_temperature = float(llm_section.get("temperature", 0.1))
     cb = llm_section.get("circuit_breaker", {}) or {}
@@ -501,16 +534,26 @@ def load_supervisor_config(path: Path) -> SupervisorConfig:
     alerts_section = telemetry_section.get("alerts", {}) or {}
     thresholds_raw = alerts_section.get("thresholds", {}) or {}
     telemetry_max_event_size_kb = int(ingest_section.get("max_event_size_kb", 32))
-    telemetry_max_events_in_memory = int(store_section.get("max_events_in_memory", 5000))
-    telemetry_persist_path = str(store_section.get("persist_path", "runtime/telemetry_store.jsonl"))
-    telemetry_stats_snapshot_interval_s = int(stats_section.get("snapshot_interval_s", 30))
+    telemetry_max_events_in_memory = int(
+        store_section.get("max_events_in_memory", 5000)
+    )
+    telemetry_persist_path = str(
+        store_section.get("persist_path", "runtime/telemetry_store.jsonl")
+    )
+    telemetry_stats_snapshot_interval_s = int(
+        stats_section.get("snapshot_interval_s", 30)
+    )
     telemetry_alerts_cooldown_sec = int(alerts_section.get("cooldown_sec", 120))
     telemetry_alerts_thresholds = {
-        "error_rate_1m": _coerce_optional_float(thresholds_raw.get("error_rate_1m", 5.0)),
+        "error_rate_1m": _coerce_optional_float(
+            thresholds_raw.get("error_rate_1m", 5.0)
+        ),
         "latency_ms": _coerce_optional_float(thresholds_raw.get("latency_ms", 500.0)),
         "drawdown_abs": _coerce_optional_float(thresholds_raw.get("drawdown_abs")),
         "max_daily_loss": _coerce_optional_float(thresholds_raw.get("max_daily_loss")),
-        "restart_rate_per_hour": _coerce_optional_float(thresholds_raw.get("restart_rate_per_hour", 3.0)),
+        "restart_rate_per_hour": _coerce_optional_float(
+            thresholds_raw.get("restart_rate_per_hour", 3.0)
+        ),
     }
 
     return SupervisorConfig(
@@ -581,7 +624,9 @@ def load_risk_config(path: Path) -> RiskConfig:
     max_notional_per_symbol = float(raw.get("max_notional_per_symbol", 0.0))
     max_leverage = float(raw.get("max_leverage", 0.0))
 
-    def _validate_positive(val: Optional[float], name: str, allow_zero: bool = False) -> Optional[float]:
+    def _validate_positive(
+        val: Optional[float], name: str, allow_zero: bool = False
+    ) -> Optional[float]:
         if val is None:
             return None
         val_f = float(val)
@@ -590,10 +635,18 @@ def load_risk_config(path: Path) -> RiskConfig:
         return val_f
 
     max_daily_loss_abs = _validate_positive(max_daily_loss_abs, "max_daily_loss_abs")
-    max_daily_loss_pct = _validate_positive(max_daily_loss_pct, "max_daily_loss_pct", allow_zero=True)
-    max_drawdown_abs = _validate_positive(max_drawdown_abs, "max_drawdown_abs", allow_zero=True)
-    max_drawdown_pct = _validate_positive(max_drawdown_pct, "max_drawdown_pct", allow_zero=True)
-    max_notional_per_symbol = _validate_positive(max_notional_per_symbol, "max_notional_per_symbol")
+    max_daily_loss_pct = _validate_positive(
+        max_daily_loss_pct, "max_daily_loss_pct", allow_zero=True
+    )
+    max_drawdown_abs = _validate_positive(
+        max_drawdown_abs, "max_drawdown_abs", allow_zero=True
+    )
+    max_drawdown_pct = _validate_positive(
+        max_drawdown_pct, "max_drawdown_pct", allow_zero=True
+    )
+    max_notional_per_symbol = _validate_positive(
+        max_notional_per_symbol, "max_notional_per_symbol"
+    )
     max_leverage = _validate_positive(max_leverage, "max_leverage")
 
     return RiskConfig(
@@ -633,19 +686,35 @@ def load_meta_supervisor_config(path: Path, paths: PathsConfig) -> MetaSuperviso
     base = _defaults()
 
     meta_agent_root_raw = raw.get("meta_agent_root")
-    meta_agent_root = Path(meta_agent_root_raw).expanduser() if meta_agent_root_raw else paths.meta_agent_root
+    meta_agent_root = (
+        Path(meta_agent_root_raw).expanduser()
+        if meta_agent_root_raw
+        else paths.meta_agent_root
+    )
 
     python_executable_raw = raw.get("python_executable")
-    python_executable = Path(python_executable_raw).expanduser() if python_executable_raw else Path(sys.executable)
+    python_executable = (
+        Path(python_executable_raw).expanduser()
+        if python_executable_raw
+        else Path(sys.executable)
+    )
 
     frequency_days = int(raw.get("frequency_days", base.frequency_days))
-    min_hours_between_runs = int(raw.get("min_hours_between_runs", base.min_hours_between_runs))
+    min_hours_between_runs = int(
+        raw.get("min_hours_between_runs", base.min_hours_between_runs)
+    )
     max_audit_days = int(raw.get("max_audit_days", base.max_audit_days))
     if frequency_days < 1 or min_hours_between_runs < 1 or max_audit_days < 1:
-        raise ValueError("frequency_days, min_hours_between_runs, and max_audit_days must be >= 1")
+        raise ValueError(
+            "frequency_days, min_hours_between_runs, and max_audit_days must be >= 1"
+        )
 
     extra_tags_raw = raw.get("extra_tags") or base.extra_tags
-    extra_tags = [str(tag) for tag in extra_tags_raw] if isinstance(extra_tags_raw, list) else base.extra_tags
+    extra_tags = (
+        [str(tag) for tag in extra_tags_raw]
+        if isinstance(extra_tags_raw, list)
+        else base.extra_tags
+    )
 
     return MetaSupervisorConfig(
         enabled=bool(raw.get("enabled", base.enabled)),
@@ -656,7 +725,9 @@ def load_meta_supervisor_config(path: Path, paths: PathsConfig) -> MetaSuperviso
         min_hours_between_runs=min_hours_between_runs,
         require_bot_idle=bool(raw.get("require_bot_idle", base.require_bot_idle)),
         dry_run=bool(raw.get("dry_run", base.dry_run)),
-        use_supervisor_runner=bool(raw.get("use_supervisor_runner", base.use_supervisor_runner)),
+        use_supervisor_runner=bool(
+            raw.get("use_supervisor_runner", base.use_supervisor_runner)
+        ),
         task_title_prefix=str(raw.get("task_title_prefix", base.task_title_prefix)),
         extra_tags=extra_tags,
         max_audit_days=max_audit_days,
@@ -758,11 +829,20 @@ def load_trend_evaluator_config(path: Path) -> TrendEvaluatorConfig:
         enabled=bool(raw.get("enabled", base.enabled)),
         model=str(raw.get("model", base.model)),
         temperature=float(raw.get("temperature", base.temperature)),
-        timeout_seconds=float(raw.get("timeout_ms", int(base.timeout_seconds * 1000))) / 1000.0,
-        history_window_minutes=int(inputs.get("history_window_minutes", base.history_window_minutes)),
-        include_volatility=bool(inputs.get("include_volatility", base.include_volatility)),
-        include_signal_stats=bool(inputs.get("include_signal_stats", base.include_signal_stats)),
-        max_calls_per_minute=int(rate_raw.get("max_calls_per_minute", base.max_calls_per_minute)),
+        timeout_seconds=float(raw.get("timeout_ms", int(base.timeout_seconds * 1000)))
+        / 1000.0,
+        history_window_minutes=int(
+            inputs.get("history_window_minutes", base.history_window_minutes)
+        ),
+        include_volatility=bool(
+            inputs.get("include_volatility", base.include_volatility)
+        ),
+        include_signal_stats=bool(
+            inputs.get("include_signal_stats", base.include_signal_stats)
+        ),
+        max_calls_per_minute=int(
+            rate_raw.get("max_calls_per_minute", base.max_calls_per_minute)
+        ),
         cache_enabled=bool(cache_raw.get("enabled", base.cache_enabled)),
         cache_ttl_seconds=int(cache_raw.get("ttl_seconds", base.cache_ttl_seconds)),
     )
@@ -797,12 +877,21 @@ def load_market_risk_config(path: Path) -> MarketRiskMonitorConfig:
         enabled=bool(raw.get("enabled", base.enabled)),
         model=str(raw.get("model", base.model)),
         temperature=float(raw.get("temperature", base.temperature)),
-        timeout_seconds=float(raw.get("timeout_ms", int(base.timeout_seconds * 1000))) / 1000.0,
-        history_window_minutes=int(inputs.get("history_window_minutes", base.history_window_minutes)),
-        include_liquidations=bool(inputs.get("include_liquidations", base.include_liquidations)),
-        include_orderbook_imbalance=bool(inputs.get("include_orderbook_imbalance", base.include_orderbook_imbalance)),
+        timeout_seconds=float(raw.get("timeout_ms", int(base.timeout_seconds * 1000)))
+        / 1000.0,
+        history_window_minutes=int(
+            inputs.get("history_window_minutes", base.history_window_minutes)
+        ),
+        include_liquidations=bool(
+            inputs.get("include_liquidations", base.include_liquidations)
+        ),
+        include_orderbook_imbalance=bool(
+            inputs.get("include_orderbook_imbalance", base.include_orderbook_imbalance)
+        ),
         risk_scale=risk_scale,
-        max_calls_per_minute=int(rate_raw.get("max_calls_per_minute", base.max_calls_per_minute)),
+        max_calls_per_minute=int(
+            rate_raw.get("max_calls_per_minute", base.max_calls_per_minute)
+        ),
     )
 
 
@@ -830,10 +919,13 @@ def load_trading_behavior_config(path: Path) -> TradingBehaviorConfig:
         enabled=bool(raw.get("enabled", base.enabled)),
         model=str(raw.get("model", base.model)),
         temperature=float(raw.get("temperature", base.temperature)),
-        timeout_seconds=float(raw.get("timeout_ms", int(base.timeout_seconds * 1000))) / 1000.0,
+        timeout_seconds=float(raw.get("timeout_ms", int(base.timeout_seconds * 1000)))
+        / 1000.0,
         history_trades=int(history.get("trades", base.history_trades)),
         history_signals=int(history.get("signals", base.history_signals)),
-        max_calls_per_minute=int(rate_raw.get("max_calls_per_minute", base.max_calls_per_minute)),
+        max_calls_per_minute=int(
+            rate_raw.get("max_calls_per_minute", base.max_calls_per_minute)
+        ),
     )
 
 
@@ -847,7 +939,9 @@ def load_snapshot_scheduler_config(path: Path) -> SnapshotSchedulerConfig:
     history = int(snap.get("history_window_minutes", 15))
     if interval <= 0 or history <= 0:
         raise ValueError("snapshot interval and history window must be positive")
-    return SnapshotSchedulerConfig(enabled=enabled, interval_minutes=interval, history_window_minutes=history)
+    return SnapshotSchedulerConfig(
+        enabled=enabled, interval_minutes=interval, history_window_minutes=history
+    )
 
 
 def load_dashboard_config(path: Path) -> DashboardConfig:
@@ -857,7 +951,13 @@ def load_dashboard_config(path: Path) -> DashboardConfig:
         return DashboardConfig(
             enabled=True,
             max_events=200,
-            events_types=["ORDER_DECISION", "ORDER_RESULT", "RISK_LIMIT_BREACH", "SUPERVISOR_SNAPSHOT", "STRATEGY_UPDATE"],
+            events_types=[
+                "ORDER_DECISION",
+                "ORDER_RESULT",
+                "RISK_LIMIT_BREACH",
+                "SUPERVISOR_SNAPSHOT",
+                "STRATEGY_UPDATE",
+            ],
             pnl_window_minutes=60,
             max_snapshots=12,
             require_snapshot_recent_minutes=10,
@@ -877,11 +977,19 @@ def load_dashboard_config(path: Path) -> DashboardConfig:
     return DashboardConfig(
         enabled=bool(raw.get("enabled", True)),
         max_events=int(raw.get("max_events", 200)),
-        events_types=[str(t) for t in raw.get("events_types", [])] if raw.get("events_types") is not None else [],
+        events_types=(
+            [str(t) for t in raw.get("events_types", [])]
+            if raw.get("events_types") is not None
+            else []
+        ),
         pnl_window_minutes=int(overview.get("pnl_window_minutes", 60)),
         max_snapshots=int(overview.get("max_snapshots", 12)),
-        require_snapshot_recent_minutes=int(health.get("require_snapshot_recent_minutes", 10)),
-        require_heartbeat_recent_seconds=int(health.get("require_heartbeat_recent_seconds", 60)),
+        require_snapshot_recent_minutes=int(
+            health.get("require_snapshot_recent_minutes", 10)
+        ),
+        require_heartbeat_recent_seconds=int(
+            health.get("require_heartbeat_recent_seconds", 60)
+        ),
         telemetry_stale_ms=int(stage9.get("telemetry_stale_ms", 5000)),
         cancel_window_sec=int(stage9.get("cancel_window_sec", 60)),
         cancel_storm_threshold=int(stage9.get("cancel_storm_threshold", 20)),
@@ -913,7 +1021,9 @@ def load_lockbot_config(path: Path) -> LockbotControlConfig:
         bot_id=str(cfg.get("bot_id", "LockBotBTC")),
         symbol=str(cfg.get("symbol", "BTCUSDT")),
         cmd_endpoint=str(cfg.get("cmd_endpoint", "ipc:///tmp/lockbot_cmd.ipc")),
-        status_endpoint=str(cfg.get("status_endpoint", "ipc:///tmp/lockbot_status.ipc")),
+        status_endpoint=str(
+            cfg.get("status_endpoint", "ipc:///tmp/lockbot_status.ipc")
+        ),
         cmd_topic=str(cfg.get("cmd_topic", "LOCKBOT:BTCUSDT:cmd")),
         ack_topic=str(cfg.get("ack_topic", "LOCKBOT:BTCUSDT:ack")),
         status_topic=str(cfg.get("status_topic", "LOCKBOT:BTCUSDT:status")),
@@ -975,18 +1085,30 @@ def load_tsdb_config(path: Path) -> TsdbConfig:
         clickhouse_database=str(ch.get("database", "quantumedge")),
         clickhouse_user=str(ch.get("user", "default")),
         clickhouse_password=str(ch.get("password", "")),
-        questdb_ilp_http_url=str((raw.get("questdb") or {}).get("ilp_http_url", "http://localhost:9000/imp")),
-        questdb_query_url=str((raw.get("questdb") or {}).get("query_url", "http://localhost:9000/exec")),
+        questdb_ilp_http_url=str(
+            (raw.get("questdb") or {}).get("ilp_http_url", "http://localhost:9000/imp")
+        ),
+        questdb_query_url=str(
+            (raw.get("questdb") or {}).get("query_url", "http://localhost:9000/exec")
+        ),
         retry_max_retries=int(retry.get("max_retries", 3)),
         retry_base_backoff_ms=int(retry.get("base_backoff_ms", 200)),
         retry_max_backoff_ms=int(retry.get("max_backoff_ms", 5000)),
         backfill_enabled=bool(backfill.get("enabled", False)),
         backfill_from_days=int(backfill.get("from_days", 1)),
         ingest_enabled=bool(ingest.get("enabled", False)),
-        ingest_events_path=str(ingest.get("events_path", "ai_scalper_bot/runtime/events/events.jsonl")),
-        ingest_metrics_path=str(ingest.get("metrics_path", "ai_scalper_bot/runtime/status/metrics.json")),
-        ingest_exec_path=str(ingest.get("exec_path", "ai_scalper_bot/runtime/state/ledger.jsonl")),
-        ingest_state_path=str(ingest.get("state_path", "SupervisorAgent/runtime/ingest_state.json")),
+        ingest_events_path=str(
+            ingest.get("events_path", "ai_scalper_bot/runtime/events/events.jsonl")
+        ),
+        ingest_metrics_path=str(
+            ingest.get("metrics_path", "ai_scalper_bot/runtime/status/metrics.json")
+        ),
+        ingest_exec_path=str(
+            ingest.get("exec_path", "ai_scalper_bot/runtime/state/ledger.jsonl")
+        ),
+        ingest_state_path=str(
+            ingest.get("state_path", "SupervisorAgent/runtime/ingest_state.json")
+        ),
         ingest_max_line_kb=int(ingest.get("max_line_kb", 256)),
         ingest_interval_sec=float(ingest.get("interval_sec", 2.0)),
         ingest_dedupe_cache_size=int(ingest.get("dedupe_cache_size", 5000)),
@@ -1025,40 +1147,92 @@ def load_autopilot_config(path: Path) -> AutopilotConfig:
     if not isinstance(autopilot, dict):
         autopilot = {}
 
-    metrics_cfg = autopilot.get("metrics", {}) if isinstance(autopilot.get("metrics"), dict) else {}
-    quality_cfg = autopilot.get("quality", {}) if isinstance(autopilot.get("quality"), dict) else {}
-    remediation_cfg = autopilot.get("remediation", {}) if isinstance(autopilot.get("remediation"), dict) else {}
-    policy_cfg = autopilot.get("policy", {}) if isinstance(autopilot.get("policy"), dict) else {}
+    metrics_cfg = (
+        autopilot.get("metrics", {})
+        if isinstance(autopilot.get("metrics"), dict)
+        else {}
+    )
+    quality_cfg = (
+        autopilot.get("quality", {})
+        if isinstance(autopilot.get("quality"), dict)
+        else {}
+    )
+    remediation_cfg = (
+        autopilot.get("remediation", {})
+        if isinstance(autopilot.get("remediation"), dict)
+        else {}
+    )
+    policy_cfg = (
+        autopilot.get("policy", {}) if isinstance(autopilot.get("policy"), dict) else {}
+    )
 
     return AutopilotConfig(
         enabled=bool(autopilot.get("enabled", False)),
         target_state=str(autopilot.get("target_state", "SHADOW")).upper(),
-        allowed_states=[str(s).upper() for s in autopilot.get("allowed_states", ["OFF", "SHADOW", "LIVE_DEMO", "LIVE", "DEGRADED", "HALTED"])],
+        allowed_states=[
+            str(s).upper()
+            for s in autopilot.get(
+                "allowed_states",
+                ["OFF", "SHADOW", "LIVE_DEMO", "LIVE", "DEGRADED", "HALTED"],
+            )
+        ],
         min_dwell_sec=int(autopilot.get("min_dwell_sec", 300) or 300),
         max_transitions_per_hour=int(autopilot.get("max_transitions_per_hour", 6) or 6),
         max_actions_per_hour=int(autopilot.get("max_actions_per_hour", 12) or 12),
         check_interval_sec=int(autopilot.get("check_interval_sec", 10) or 10),
         safe_hours=[str(s) for s in autopilot.get("safe_hours", [])],
         metrics_url=str(metrics_cfg.get("url", "")),
-        metrics_path=str(metrics_cfg.get("path", "ai_scalper_bot/runtime/status/metrics.json")),
-        events_path=str(metrics_cfg.get("events_path", "ai_scalper_bot/runtime/events/events.jsonl")),
-        quality_breaker_storm_threshold=int(quality_cfg.get("breaker_storm_threshold", 3) or 3),
-        quality_breaker_storm_window_sec=int(quality_cfg.get("breaker_storm_window_sec", 300) or 300),
+        metrics_path=str(
+            metrics_cfg.get("path", "ai_scalper_bot/runtime/status/metrics.json")
+        ),
+        events_path=str(
+            metrics_cfg.get("events_path", "ai_scalper_bot/runtime/events/events.jsonl")
+        ),
+        quality_breaker_storm_threshold=int(
+            quality_cfg.get("breaker_storm_threshold", 3) or 3
+        ),
+        quality_breaker_storm_window_sec=int(
+            quality_cfg.get("breaker_storm_window_sec", 300) or 300
+        ),
         quality_coverage_min=float(quality_cfg.get("coverage_min", 0.2) or 0.2),
-        quality_coverage_window_sec=int(quality_cfg.get("coverage_window_sec", 300) or 300),
+        quality_coverage_window_sec=int(
+            quality_cfg.get("coverage_window_sec", 300) or 300
+        ),
         quality_latency_p95_ms=int(quality_cfg.get("latency_p95_ms", 1500) or 1500),
         quality_data_stale_ms=int(quality_cfg.get("data_stale_ms", 5000) or 5000),
-        quality_data_stale_window_sec=int(quality_cfg.get("data_stale_window_sec", 300) or 300),
-        quality_policy_mismatch_reject_ratio=float(quality_cfg.get("policy_mismatch_reject_ratio", 0.3) or 0.3),
-        remediation_restart_max_per_hour=int(remediation_cfg.get("restart_max_per_hour", 2) or 2),
-        remediation_restart_cooldown_sec=int(remediation_cfg.get("restart_cooldown_sec", 300) or 300),
-        remediation_disable_entries_on_degrade=bool(remediation_cfg.get("disable_entries_on_degrade", True)),
+        quality_data_stale_window_sec=int(
+            quality_cfg.get("data_stale_window_sec", 300) or 300
+        ),
+        quality_policy_mismatch_reject_ratio=float(
+            quality_cfg.get("policy_mismatch_reject_ratio", 0.3) or 0.3
+        ),
+        remediation_restart_max_per_hour=int(
+            remediation_cfg.get("restart_max_per_hour", 2) or 2
+        ),
+        remediation_restart_cooldown_sec=int(
+            remediation_cfg.get("restart_cooldown_sec", 300) or 300
+        ),
+        remediation_disable_entries_on_degrade=bool(
+            remediation_cfg.get("disable_entries_on_degrade", True)
+        ),
         policy_symbol=str(policy_cfg.get("symbol", "BTCUSDT")),
-        policy_artifacts_dir=str(policy_cfg.get("artifacts_dir", "ai_scalper_bot/artifacts/policy")),
-        policy_runtime_dir=str(policy_cfg.get("runtime_dir", "ai_scalper_bot/runtime/policy")),
+        policy_artifacts_dir=str(
+            policy_cfg.get("artifacts_dir", "ai_scalper_bot/artifacts/policy")
+        ),
+        policy_runtime_dir=str(
+            policy_cfg.get("runtime_dir", "ai_scalper_bot/runtime/policy")
+        ),
         policy_history_keep=int(policy_cfg.get("history_keep", 5) or 5),
-        policy_shadow_burnin_min_sec=int(policy_cfg.get("shadow_burnin_min_sec", 1800) or 1800),
-        policy_accept_max_breaker_storms=int(policy_cfg.get("accept_max_breaker_storms", 0) or 0),
-        policy_accept_max_data_stale_sec=int(policy_cfg.get("accept_max_data_stale_sec", 0) or 0),
-        policy_accept_min_coverage=float(policy_cfg.get("accept_min_coverage", 0.2) or 0.2),
+        policy_shadow_burnin_min_sec=int(
+            policy_cfg.get("shadow_burnin_min_sec", 1800) or 1800
+        ),
+        policy_accept_max_breaker_storms=int(
+            policy_cfg.get("accept_max_breaker_storms", 0) or 0
+        ),
+        policy_accept_max_data_stale_sec=int(
+            policy_cfg.get("accept_max_data_stale_sec", 0) or 0
+        ),
+        policy_accept_min_coverage=float(
+            policy_cfg.get("accept_min_coverage", 0.2) or 0.2
+        ),
     )

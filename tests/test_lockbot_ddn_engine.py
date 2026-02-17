@@ -1,4 +1,5 @@
 import pytest
+
 pytest.skip("Legacy test broken by src-layout migration", allow_module_level=True)
 import random
 
@@ -43,8 +44,16 @@ def _context(
         distance_to_liq_bps=distance_to_liq_bps,
         account_lag_ms=account_lag_ms,
     )
-    profile = cfg.profiles.get("neutral") or DDNProfile(name="neutral", target=0.0, band_low=-0.1, band_high=0.1)
-    return DDNContext(intent=intent, market=market, position=position, profile=profile, max_band_abs=cfg.max_band_abs)
+    profile = cfg.profiles.get("neutral") or DDNProfile(
+        name="neutral", target=0.0, band_low=-0.1, band_high=0.1
+    )
+    return DDNContext(
+        intent=intent,
+        market=market,
+        position=position,
+        profile=profile,
+        max_band_abs=cfg.max_band_abs,
+    )
 
 
 def test_ddn_stale_rejects_exec() -> None:
@@ -147,6 +156,12 @@ def test_ddn_property_band_invariant() -> None:
         decision = engine.evaluate(ctx, now_ms=now_ms)
         now_ms += 1000
         if decision.verdict in {"ALLOW", "MODIFY"} and decision.recommended_step_qty:
-            next_delta = _apply_delta(delta, intent.action, decision.recommended_step_qty)
+            next_delta = _apply_delta(
+                delta, intent.action, decision.recommended_step_qty
+            )
             assert next_delta is not None
-            assert cfg.profiles["neutral"].band_low - 1e-9 <= next_delta <= cfg.profiles["neutral"].band_high + 1e-9
+            assert (
+                cfg.profiles["neutral"].band_low - 1e-9
+                <= next_delta
+                <= cfg.profiles["neutral"].band_high + 1e-9
+            )

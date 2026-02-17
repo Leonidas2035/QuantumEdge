@@ -12,7 +12,12 @@ import msgspec
 from LockBotBTC.lockbot.contracts.lockbot_exec_v1 import EVENT_TYPES, ExecEnvelope
 from LockBotBTC.lockbot_btc.ddn.config import DDNConfig
 from LockBotBTC.lockbot_btc.ddn.engine import OrderPlan
-from LockBotBTC.lockbot_btc.execution.base import ExecutionConfig, ExecutionGate, ExecutionMode, SubmitResult
+from LockBotBTC.lockbot_btc.execution.base import (
+    ExecutionConfig,
+    ExecutionGate,
+    ExecutionMode,
+    SubmitResult,
+)
 from LockBotBTC.lockbot_btc.execution.binance_futures import BinanceFuturesExecutor
 from LockBotBTC.lockbot_btc.execution.ledger import ExecutionLedger
 from LockBotBTC.lockbot_btc.state.order_tracker import OrderTracker
@@ -61,20 +66,34 @@ class ExecutionManager:
             "open_orders": len(self._tracker.open_orders()),
         }
 
-    def arm(self, mode: str, ttl_s: int, now_ms: int, cmd_id: Optional[str] = None) -> None:
+    def arm(
+        self, mode: str, ttl_s: int, now_ms: int, cmd_id: Optional[str] = None
+    ) -> None:
         exec_mode = ExecutionMode(mode)
         if exec_mode == ExecutionMode.LIVE_MAINNET and not self._cfg.allow_live_mainnet:
             self._gate.disarm("live_disabled")
-            self._emit_event("EXECUTION_DISABLED", now_ms, {"reason": "live_disabled", "cmd_id": cmd_id})
+            self._emit_event(
+                "EXECUTION_DISABLED",
+                now_ms,
+                {"reason": "live_disabled", "cmd_id": cmd_id},
+            )
             return
         self._gate.arm(exec_mode, ttl_s, now_ms)
-        self._emit_event("ORDER_ACKED", now_ms, {"reason": "armed", "mode": exec_mode.value, "cmd_id": cmd_id})
+        self._emit_event(
+            "ORDER_ACKED",
+            now_ms,
+            {"reason": "armed", "mode": exec_mode.value, "cmd_id": cmd_id},
+        )
 
     def disarm(self, reason: str, now_ms: int, cmd_id: Optional[str] = None) -> None:
         self._gate.disarm(reason)
-        self._emit_event("EXECUTION_DISABLED", now_ms, {"reason": reason, "cmd_id": cmd_id})
+        self._emit_event(
+            "EXECUTION_DISABLED", now_ms, {"reason": reason, "cmd_id": cmd_id}
+        )
 
-    def cancel_all(self, reason: str, scope: str, now_ms: int, cmd_id: Optional[str] = None) -> None:
+    def cancel_all(
+        self, reason: str, scope: str, now_ms: int, cmd_id: Optional[str] = None
+    ) -> None:
         if not self._gate.is_armed(now_ms) or self._gate.mode == ExecutionMode.DRY_RUN:
             self._emit_event(
                 "EXECUTION_DISABLED",
@@ -84,10 +103,19 @@ class ExecutionManager:
             return
         executor = self._get_executor()
         if not executor:
-            self._emit_event("ORDER_REJECTED", now_ms, {"reason": "missing_executor", "scope": scope, "cmd_id": cmd_id})
+            self._emit_event(
+                "ORDER_REJECTED",
+                now_ms,
+                {"reason": "missing_executor", "scope": scope, "cmd_id": cmd_id},
+            )
             return
         result = executor.cancel_all(symbol=self._symbol)
-        payload = {"reason": reason, "scope": scope, "status": result.status, "cmd_id": cmd_id}
+        payload = {
+            "reason": reason,
+            "scope": scope,
+            "status": result.status,
+            "cmd_id": cmd_id,
+        }
         if result.ok:
             self._emit_event("ORDER_CANCELED", now_ms, payload)
         else:
@@ -95,8 +123,14 @@ class ExecutionManager:
             payload["error_detail"] = result.error_detail
             self._emit_event("ORDER_REJECTED", now_ms, payload)
 
-    def on_tick(self, now_ms: int, account_lag_ms: Optional[int], bot_mode: str) -> None:
-        if self._gate.armed and self._gate.arm_until_ms and now_ms > self._gate.arm_until_ms:
+    def on_tick(
+        self, now_ms: int, account_lag_ms: Optional[int], bot_mode: str
+    ) -> None:
+        if (
+            self._gate.armed
+            and self._gate.arm_until_ms
+            and now_ms > self._gate.arm_until_ms
+        ):
             self.disarm("ttl_expired", now_ms)
         if account_lag_ms is not None and account_lag_ms > self._cfg.stale_account_ms:
             self.disarm("account_stale", now_ms)
@@ -106,10 +140,15 @@ class ExecutionManager:
             if self._gate.is_armed(now_ms) and self._gate.mode != ExecutionMode.DRY_RUN:
                 executor = self._get_executor()
             for record in missing:
-                payload = {"reason": "missing_ack", "client_order_id": record.client_order_id}
+                payload = {
+                    "reason": "missing_ack",
+                    "client_order_id": record.client_order_id,
+                }
                 self._emit_event("RECONCILIATION_MISMATCH", now_ms, payload)
                 if executor:
-                    executor.cancel_order(symbol=self._symbol, client_order_id=record.client_order_id)
+                    executor.cancel_order(
+                        symbol=self._symbol, client_order_id=record.client_order_id
+                    )
             self.disarm("missing_ack", now_ms)
         if bot_mode == "PANIC" and not self._cfg.allow_reduce_only_in_panic:
             self.disarm("panic_block", now_ms)
@@ -117,7 +156,11 @@ class ExecutionManager:
     def handle_order_update(self, update: dict, ts_ms: int, source: str) -> None:
         record = self._tracker.update_from_exchange(update, ts_ms, source)
         if record is None:
-            payload = {"reason": "unknown_order", "client_order_id": update.get("clientOrderId"), "order_id": update.get("orderId")}
+            payload = {
+                "reason": "unknown_order",
+                "client_order_id": update.get("clientOrderId"),
+                "order_id": update.get("orderId"),
+            }
             self._emit_event("RECONCILIATION_MISMATCH", ts_ms, payload)
             return
         status = str(update.get("status") or record.status)
@@ -158,7 +201,9 @@ class ExecutionManager:
     ) -> None:
         if not self._cfg.auto_submit_on_allow:
             for index, plan in enumerate(plans):
-                payload = self._plan_payload(cmd_id, plan, index, now_ms, "auto_submit_disabled")
+                payload = self._plan_payload(
+                    cmd_id, plan, index, now_ms, "auto_submit_disabled"
+                )
                 self._emit_event("EXECUTION_DISABLED", now_ms, payload)
             return
         if not self._gate.is_armed(now_ms):
@@ -171,7 +216,10 @@ class ExecutionManager:
                 payload = self._plan_payload(cmd_id, plan, index, now_ms, "dry_run")
                 self._emit_event("EXECUTION_DISABLED", now_ms, payload)
             return
-        if self._gate.mode == ExecutionMode.LIVE_MAINNET and not self._cfg.allow_live_mainnet:
+        if (
+            self._gate.mode == ExecutionMode.LIVE_MAINNET
+            and not self._cfg.allow_live_mainnet
+        ):
             self.disarm("live_disabled", now_ms)
             return
         if account_lag_ms is not None and account_lag_ms > self._cfg.stale_account_ms:
@@ -184,22 +232,33 @@ class ExecutionManager:
             return
         if bot_mode == "PANIC" and plan_requires_add(intent_action):
             for index, plan in enumerate(plans):
-                payload = self._plan_payload(cmd_id, plan, index, now_ms, "panic_add_blocked")
+                payload = self._plan_payload(
+                    cmd_id, plan, index, now_ms, "panic_add_blocked"
+                )
                 self._emit_event("EXECUTION_DISABLED", now_ms, payload)
             return
-        if self._tracker.open_orders() and len(self._tracker.open_orders()) >= self._cfg.max_open_orders:
+        if (
+            self._tracker.open_orders()
+            and len(self._tracker.open_orders()) >= self._cfg.max_open_orders
+        ):
             for index, plan in enumerate(plans):
-                payload = self._plan_payload(cmd_id, plan, index, now_ms, "open_orders_cap")
+                payload = self._plan_payload(
+                    cmd_id, plan, index, now_ms, "open_orders_cap"
+                )
                 self._emit_event("EXECUTION_DISABLED", now_ms, payload)
             return
 
         for index, plan in enumerate(plans):
             if self._symbol not in self._cfg.symbol_whitelist:
-                payload = self._plan_payload(cmd_id, plan, index, now_ms, "symbol_blocked")
+                payload = self._plan_payload(
+                    cmd_id, plan, index, now_ms, "symbol_blocked"
+                )
                 self._emit_event("ORDER_REJECTED", now_ms, payload)
                 continue
             if not self._valid_reduce_only(intent_action, plan.reduce_only):
-                payload = self._plan_payload(cmd_id, plan, index, now_ms, "reduce_only_mismatch")
+                payload = self._plan_payload(
+                    cmd_id, plan, index, now_ms, "reduce_only_mismatch"
+                )
                 self._emit_event("ORDER_REJECTED", now_ms, payload)
                 continue
             if not self._within_limits(plan, mark_price):
@@ -209,7 +268,9 @@ class ExecutionManager:
             plan_id = make_plan_id(cmd_id, index, plan)
             client_order_id = make_client_order_id(cmd_id, index)
             if client_order_id in self._submitted:
-                payload = self._plan_payload(cmd_id, plan, index, now_ms, "ignored_duplicate")
+                payload = self._plan_payload(
+                    cmd_id, plan, index, now_ms, "ignored_duplicate"
+                )
                 self._emit_event("ORDER_SUBMITTED", now_ms, payload)
                 continue
             record = self._tracker.record_submit(
@@ -224,19 +285,28 @@ class ExecutionManager:
                 ts_ms=now_ms,
             )
             submit_payload = self._plan_payload(cmd_id, plan, index, now_ms, None)
-            submit_payload.update({"plan_id": plan_id, "client_order_id": client_order_id})
+            submit_payload.update(
+                {"plan_id": plan_id, "client_order_id": client_order_id}
+            )
             self._emit_event("ORDER_SUBMITTED", now_ms, submit_payload)
             result = self._submit_plan(plan, client_order_id)
             self._submitted[client_order_id] = cmd_id
             if result.ok:
                 record.exchange_order_id = result.order_id
                 ack_payload = dict(submit_payload)
-                ack_payload.update({"order_id": result.order_id, "status": result.status})
+                ack_payload.update(
+                    {"order_id": result.order_id, "status": result.status}
+                )
                 self._emit_event("ORDER_ACKED", now_ms, ack_payload)
             else:
                 self._gate.note_error(result.error_detail or "submit_failed")
                 reject_payload = dict(submit_payload)
-                reject_payload.update({"error_code": result.error_code, "error_detail": result.error_detail})
+                reject_payload.update(
+                    {
+                        "error_code": result.error_code,
+                        "error_detail": result.error_detail,
+                    }
+                )
                 self._emit_event("ORDER_REJECTED", now_ms, reject_payload)
                 if self._gate.error_count >= self._cfg.error_threshold:
                     self.disarm("error_threshold", now_ms)
@@ -244,7 +314,9 @@ class ExecutionManager:
     def _submit_plan(self, plan: OrderPlan, client_order_id: str):
         executor = self._get_executor()
         if not executor:
-            return SubmitResult(ok=False, client_order_id=client_order_id, error_code="missing_executor")
+            return SubmitResult(
+                ok=False, client_order_id=client_order_id, error_code="missing_executor"
+            )
         return executor.submit_order(
             symbol=self._symbol,
             side=plan.side,
@@ -264,7 +336,9 @@ class ExecutionManager:
         self._executor = BinanceFuturesExecutor(self._cfg)
         return self._executor
 
-    def _emit_event(self, event_type: str, ts_ms: int, payload: Dict[str, object]) -> None:
+    def _emit_event(
+        self, event_type: str, ts_ms: int, payload: Dict[str, object]
+    ) -> None:
         if event_type not in EVENT_TYPES:
             return
         base_payload: Dict[str, object] = {
@@ -300,7 +374,14 @@ class ExecutionManager:
         self._ledger.append(record)
         self._emit(envelope)
 
-    def _plan_payload(self, cmd_id: str, plan: OrderPlan, index: int, ts_ms: int, reason: Optional[str]) -> Dict[str, object]:
+    def _plan_payload(
+        self,
+        cmd_id: str,
+        plan: OrderPlan,
+        index: int,
+        ts_ms: int,
+        reason: Optional[str],
+    ) -> Dict[str, object]:
         payload: Dict[str, object] = {
             "cmd_id": cmd_id,
             "plan_id": make_plan_id(cmd_id, index, plan),

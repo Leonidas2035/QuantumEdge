@@ -1,5 +1,3 @@
-
-
 def calc_delta(trades: list):
     """
     trades: list of trade events from Binance
@@ -11,7 +9,7 @@ def calc_delta(trades: list):
         "delta": buy - sell,
         "buy_volume": buy,
         "sell_volume": sell,
-        "taker_ratio": buy / (buy + sell + 1e-9)
+        "taker_ratio": buy / (buy + sell + 1e-9),
     }
 
 

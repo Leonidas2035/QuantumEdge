@@ -128,7 +128,9 @@ class LockbotDerivedEngine:
             payload={
                 "price": float(price),
                 "qty": float(qty),
-                "is_buyer_maker": bool(is_buyer_maker) if is_buyer_maker is not None else False,
+                "is_buyer_maker": (
+                    bool(is_buyer_maker) if is_buyer_maker is not None else False
+                ),
                 "agg_trade_id": agg_trade_id,
             },
             ts_event_ms=ts_event_ms,
@@ -153,7 +155,9 @@ class LockbotDerivedEngine:
             "mark_price": float(mark_price),
             "index_price": float(index_price) if index_price is not None else None,
             "funding_rate": float(funding_rate) if funding_rate is not None else None,
-            "next_funding_time": int(next_funding_time) if next_funding_time is not None else None,
+            "next_funding_time": (
+                int(next_funding_time) if next_funding_time is not None else None
+            ),
         }
         self._publisher.publish(
             symbol=symbol,
@@ -221,12 +225,16 @@ class LockbotDerivedEngine:
         state.n_trades = 0
         anchors[anchor_id] = state
 
-    def _update_vwap(self, symbol: str, price: float, qty: float, ts_event_ms: int) -> None:
+    def _update_vwap(
+        self, symbol: str, price: float, qty: float, ts_event_ms: int
+    ) -> None:
         state = self._vwap.get(symbol)
         session_start_ms, session_end_ms = _session_bounds(ts_event_ms)
         session_reset = False
         if state is None or state.session_start_ms != session_start_ms:
-            state = VwapState(session_start_ms=session_start_ms, session_end_ms=session_end_ms)
+            state = VwapState(
+                session_start_ms=session_start_ms, session_end_ms=session_end_ms
+            )
             self._vwap[symbol] = state
             session_reset = True
             self.set_anchor(symbol, "lock_entry", session_start_ms)
@@ -275,7 +283,9 @@ class LockbotDerivedEngine:
             source="hub_derived",
         )
 
-    def _update_ohlcv(self, symbol: str, price: float, qty: float, ts_event_ms: int) -> None:
+    def _update_ohlcv(
+        self, symbol: str, price: float, qty: float, ts_event_ms: int
+    ) -> None:
         intervals = {
             TOPIC_OHLCV_1M: (60_000, "1m"),
             TOPIC_OHLCV_5M: (300_000, "5m"),
@@ -318,8 +328,12 @@ class LockbotDerivedEngine:
             source="hub_derived",
         )
 
-    def _update_avwap(self, symbol: str, price: float, qty: float, ts_event_ms: int) -> None:
-        anchors = self._anchors.setdefault(symbol, {aid: AnchorState(anchor_id=aid) for aid in self._anchor_ids})
+    def _update_avwap(
+        self, symbol: str, price: float, qty: float, ts_event_ms: int
+    ) -> None:
+        anchors = self._anchors.setdefault(
+            symbol, {aid: AnchorState(anchor_id=aid) for aid in self._anchor_ids}
+        )
         active = []
         for anchor in anchors.values():
             if anchor.anchor_ts_ms is None or ts_event_ms < anchor.anchor_ts_ms:
@@ -339,7 +353,9 @@ class LockbotDerivedEngine:
                     "n_trades": anchor.n_trades,
                 }
             )
-        if not _should_emit(ts_event_ms, self._avwap_last_emit(symbol), self._avwap_interval_ms):
+        if not _should_emit(
+            ts_event_ms, self._avwap_last_emit(symbol), self._avwap_interval_ms
+        ):
             return
         self._avwap_last_emit(symbol, ts_event_ms)
         payload = {"anchors": active}
@@ -356,7 +372,9 @@ class LockbotDerivedEngine:
             self._avwap_emit[symbol] = int(set_ms)
         return self._avwap_emit.get(symbol, 0)
 
-    def _update_heatmap(self, symbol: str, side: str, price: float, qty: float, ts_event_ms: int) -> None:
+    def _update_heatmap(
+        self, symbol: str, side: str, price: float, qty: float, ts_event_ms: int
+    ) -> None:
         state = self._heatmap.get(symbol)
         if state is None:
             state = HeatmapState(**self._heatmap_cfg)
@@ -478,8 +496,12 @@ def _heatmap_payload(state: HeatmapState) -> Dict[str, object]:
     intensity_above = None
     intensity_below = None
     if state.last_price is not None:
-        above = sum(item["intensity"] for item in levels if item["price"] > state.last_price)
-        below = sum(item["intensity"] for item in levels if item["price"] < state.last_price)
+        above = sum(
+            item["intensity"] for item in levels if item["price"] > state.last_price
+        )
+        below = sum(
+            item["intensity"] for item in levels if item["price"] < state.last_price
+        )
         intensity_above = above
         intensity_below = below
     return {

@@ -25,15 +25,26 @@ def load_registry(model_dir: Path) -> List[Dict]:
 
 def find_entry(registry: List[Dict], symbol: str, horizon: int) -> Optional[Dict]:
     for entry in registry:
-        if str(entry.get("symbol")).upper() == symbol.upper() and int(entry.get("horizon", -1)) == int(horizon):
+        if str(entry.get("symbol")).upper() == symbol.upper() and int(
+            entry.get("horizon", -1)
+        ) == int(horizon):
             return entry
     return None
 
 
-def update_registry(model_dir: Path, symbol: str, horizon: int, model_path: Path) -> None:
+def update_registry(
+    model_dir: Path, symbol: str, horizon: int, model_path: Path
+) -> None:
     registry_path = model_dir / "registry.json"
     registry = load_registry(model_dir)
-    registry = [r for r in registry if not (str(r.get("symbol")).upper() == symbol.upper() and int(r.get("horizon", -1)) == int(horizon))]
+    registry = [
+        r
+        for r in registry
+        if not (
+            str(r.get("symbol")).upper() == symbol.upper()
+            and int(r.get("horizon", -1)) == int(horizon)
+        )
+    ]
     entry = {
         "symbol": symbol.upper(),
         "horizon": int(horizon),

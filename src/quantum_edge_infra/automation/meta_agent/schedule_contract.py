@@ -39,7 +39,9 @@ def _validate_days(days: List[str]) -> None:
         return
     for day in days:
         if day not in DAY_NAMES:
-            raise ScheduleValidationError(f"Invalid day '{day}' (expected mon..sun or '*').")
+            raise ScheduleValidationError(
+                f"Invalid day '{day}' (expected mon..sun or '*')."
+            )
 
 
 def _parse_hhmm(value: str) -> int:
@@ -93,7 +95,9 @@ class ScheduleTrigger:
     def validate(self) -> None:
         if self.type == "interval":
             if self.every_seconds is None or int(self.every_seconds) <= 0:
-                raise ScheduleValidationError("Trigger interval requires every_seconds > 0.")
+                raise ScheduleValidationError(
+                    "Trigger interval requires every_seconds > 0."
+                )
         elif self.type == "cron":
             _validate_cron_field(self.minute or "*", "minute", 59)
             _validate_cron_field(self.hour or "*", "hour", 23)
@@ -128,7 +132,9 @@ class ScheduleSpec:
     archive_dir: str = "runtime/inbox_done"
     failed_dir: str = "runtime/inbox_failed"
     windows: List[ScheduleWindow] = field(default_factory=list)
-    trigger: ScheduleTrigger = field(default_factory=lambda: ScheduleTrigger(type="interval", every_seconds=3600))
+    trigger: ScheduleTrigger = field(
+        default_factory=lambda: ScheduleTrigger(type="interval", every_seconds=3600)
+    )
     task_template: Dict[str, Any] | str = field(default_factory=dict)
     policy: SchedulePolicy = field(default_factory=SchedulePolicy)
     retries: ScheduleRetries = field(default_factory=ScheduleRetries)
@@ -247,6 +253,9 @@ def load_schedule_file(path: str) -> List[ScheduleSpec]:
         return [_schedule_from_dict(item or {}, path) for item in raw]
     if isinstance(raw, dict):
         if "schedules" in raw and isinstance(raw.get("schedules"), list):
-            return [_schedule_from_dict(item or {}, path) for item in raw.get("schedules") or []]
+            return [
+                _schedule_from_dict(item or {}, path)
+                for item in raw.get("schedules") or []
+            ]
         return [_schedule_from_dict(raw, path)]
     raise ScheduleValidationError("Schedule file must contain a mapping or list.")
