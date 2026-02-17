@@ -21,6 +21,17 @@ class ProcessManager:
         self.logs_dir.mkdir(exist_ok=True)
 
         self.config = self._load_yaml(self.config_path)
+
+        # Merge secrets if available
+        secrets_path = self.config_path.parent / "secrets.yaml"
+        if secrets_path.exists():
+            try:
+                secrets = self._load_yaml(secrets_path)
+                if secrets and "env_vars" in secrets:
+                    self.config.setdefault("env_vars", {}).update(secrets["env_vars"])
+            except Exception as e:
+                print(f"Warning: Failed to load secrets from {secrets_path}: {e}")
+
         self._setup_logging(self.logging_config_path)
         self.logger = logging.getLogger("QuantumEdge")
 

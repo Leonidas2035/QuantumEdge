@@ -31,3 +31,5 @@ scripts/secrets.enc
 # Temporary output
 output/
 patches/
+config/config.yaml
+tools/update_config.py
