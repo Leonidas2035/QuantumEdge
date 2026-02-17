@@ -1,15 +1,17 @@
 
+import os
+
 class Config:
     def __init__(self):
-        # --- BINGX CREDENTIALS (TEMPORARY) ---
-        self.bingx_api_key = "rB6jgu6mI3c89GYc2IanT2C06BDvcWSxqwYXXrtFxS60SGMUTsGsH4gf1JaZIMlqMKk9trlZJh3ir83omKieQ"
-        self.bingx_secret = "J1iuiF8j5AaXbBVTNaVXloaPUbpA7MyssfdLKgjvzrc8fvO91f2XcQk6ASY7uviXUxNtUSW5jKIv9bpWRvXFQ"
-        self.use_sandbox = True  # BingX VST
+        # --- BINANCE CREDENTIALS ---
+        self.binance_api_key = os.getenv("BINANCE_API_KEY", "")
+        self.binance_secret = os.getenv("BINANCE_API_SECRET", "")
+        self.use_testnet = os.getenv("BINANCE_TESTNET", "1") in {"1", "true", "True"}
         
         # --- SYSTEM PORTS ---
-        self.market_data_port = 5555
+        self.market_data_port = int(os.getenv("MARKET_DATA_ZMQ_PORT", "5555"))
         self.supervisor_port = 5557
-        self.symbol = "BTC-USDT" # BingX Swap format
+        self.symbol = os.getenv("MARKET_DATA_SYMBOLS", "BTCUSDT").split(",")[0]
         
         # --- STRATEGY CONFIG ---
         # Moving strategy config here for centralization during UAT

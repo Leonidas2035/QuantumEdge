@@ -25,6 +25,7 @@ from quantum_edge_core.market_data.account.publisher import AccountPublisher
 from quantum_edge_core.market_data.bus.event_bus import EventBus
 from quantum_edge_core.market_data.config import HubConfig
 from quantum_edge_core.market_data.feeds.mock_feed import MockLiveFeed
+from quantum_edge_core.market_data.feeds.binance_futures import BinanceFuturesFeed
 from quantum_edge_core.market_data.feeds.liquidations import LiquidationFeed
 from quantum_edge_core.market_data.analytics.alpha_engine import AlphaEngine
 from quantum_edge_core.market_data.ipc.publisher import ZmqPublisher
@@ -117,9 +118,8 @@ class MarketDataHubService(BaseService):
                 # LiquidationFeed(self.config, self.bus) # Disabled to prevent Binance connections
             ]
         else:
-            # Forcing mock for this specific task delivery as safety measure
             self.feeds = [
-                MockLiveFeed(self.config, self.bus)
+                BinanceFuturesFeed(self.config, self.bus)
             ]
         
         self.alpha_engine = AlphaEngine(symbol="BTCUSDT") # Default symbol
