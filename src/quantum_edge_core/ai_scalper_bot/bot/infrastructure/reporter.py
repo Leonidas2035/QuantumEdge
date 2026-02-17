@@ -29,22 +29,23 @@ class SupervisorReporter:
     async def send_heartbeat(self, state: BotState, pnl: float, open_positions_qty: float):
         """
         Sends a JSON heartbeat packet.
-        Format: {"type": "heartbeat", "ts": ..., "state": "HEDGED", ...}
+        Format: {"type": "heartbeat", "last_tick_ts": ..., "mode": "HEDGED", ...}
         """
         msg = {
             "type": "heartbeat",
-            "ts": time.time(),
+            "last_tick_ts": time.time(),
             "service": "ai_scalper_bot",
-            "state": state.name,
+            "mode": state.name,
             "pnl": pnl,
-            "position": open_positions_qty
+            "active_positions": open_positions_qty,
+            "details": {"state": state.name}
         }
         
         try:
             # Create JSON string
             payload = ujson.dumps(msg)
-            # Send
-            await self.socket.send_string(payload)
+            # Send Multipart [topic, payload]
+            await self.socket.send_multipart([b"heartbeat", payload.encode("utf-8")])
         except Exception as e:
             logger.warning(f"Failed to send heartbeat: {e}")
 

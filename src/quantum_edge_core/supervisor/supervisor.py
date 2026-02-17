@@ -15,6 +15,7 @@ from datetime import datetime, date, timezone
 from pathlib import Path
 from typing import Optional, Mapping, Any, Dict, List
 import threading
+import zmq
 
 from supervisor.config import (
     load_paths_config,
@@ -105,6 +106,36 @@ try:
     from tools.qe_config import get_qe_paths
 except Exception:  # pragma: no cover - fallback for legacy runs
     get_qe_paths = None
+
+
+class ZmqHeartbeatSubscriber:
+    """Synchronous ZMQ Subscriber for Heartbeats."""
+
+    def __init__(self, endpoint: str = "tcp://127.0.0.1:5557"):
+        self.ctx = zmq.Context()
+        self.socket = self.ctx.socket(zmq.SUB)
+        self.socket.setsockopt(zmq.LINGER, 0)
+        # Prevent blocking on close
+        self.socket.setsockopt(zmq.RCVTIMEO, 0)
+        try:
+            self.socket.connect(endpoint)
+            self.socket.subscribe(b"heartbeat")
+        except zmq.ZMQError:
+            pass  # Log or handle?
+
+    def check_messages(self) -> Optional[Dict[str, Any]]:
+        try:
+            # Non-blocking poll
+            if self.socket.poll(0):
+                topic, msg = self.socket.recv_multipart()
+                return json.loads(msg.decode("utf-8"))
+        except (zmq.ZMQError, ValueError, json.JSONDecodeError):
+            pass
+        return None
+
+    def close(self):
+        self.socket.close()
+        self.ctx.term()
 
 
 class SupervisorApp:
@@ -319,6 +350,9 @@ class SupervisorApp:
                 self.logger.warning("Lockbot policy enabled but lockbot control client is disabled.")
             else:
                 self.lockbot_policy_runner = LockbotPolicyRunner(self.lockbot_policy_cfg, self.lockbot_client, self.logger)
+
+        # Initialize ZMQ Heartbeat Subscriber
+        self.heartbeat_subscriber = ZmqHeartbeatSubscriber()
 
     def _build_tsdb_writer(self, tsdb_config: TsdbConfig) -> Optional[TsdbWriter]:
         self.tsdb_backend = "none"
@@ -674,6 +708,14 @@ class SupervisorApp:
             self.lockbot_policy_runner.start()
         try:
             while not self._stop_requested:
+                # Check ZMQ Heartbeats
+                if hasattr(self, "heartbeat_subscriber"):
+                    hb_payload = self.heartbeat_subscriber.check_messages()
+                    if hb_payload:
+                        valid_keys = HeartbeatPayload.__dataclass_fields__.keys()
+                        filtered = {k: v for k, v in hb_payload.items() if k in valid_keys}
+                        self.update_heartbeat(HeartbeatPayload(**filtered))
+
                 self.process_manager.tick()
                 self.telemetry.update_process_state(self.process_manager.get_status_payload())
                 if time.time() >= next_policy_publish_at:
@@ -796,6 +838,8 @@ class SupervisorApp:
                 self.api_server.stop()
             if self.lockbot_policy_runner:
                 self.lockbot_policy_runner.stop()
+            if hasattr(self, "heartbeat_subscriber"):
+                self.heartbeat_subscriber.close()
             self.process_manager.stop_all()
 
     def risk_status(self) -> None:
