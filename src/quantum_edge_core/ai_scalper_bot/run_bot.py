@@ -77,8 +77,10 @@ class BotEngine:
                     ts_raw = tick.get('T') or tick.get('ts_ns') or tick.get('timestamp') or 0
                     timestamp = float(ts_raw)
                     # Heuristic for ns/ms/s
-                    if timestamp > 1e18: timestamp /= 1e9 # ns to s
-                    elif timestamp > 1e12: timestamp /= 1e3 # ms to s
+                    if timestamp > 1e18:
+                        timestamp /= 1e9  # ns to s
+                    elif timestamp > 1e12:
+                        timestamp /= 1e3  # ms to s
 
                     # m/is_buyer_maker handling
                     is_buyer_maker = bool(tick.get('m', False))
