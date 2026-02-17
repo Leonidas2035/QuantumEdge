@@ -10,22 +10,27 @@ import logging
 
 # Circular import prevention if needed, but RiskStateSnapshot is in supervisor.state
 from typing import TYPE_CHECKING
+
 if TYPE_CHECKING:
     from supervisor.state import RiskStateSnapshot
+
 
 class RiskAction(str, Enum):
     ALLOW = "ALLOW"
     REDUCE_ONLY = "REDUCE_ONLY"
     KILL_BOT = "KILL_BOT"  # Hard stop
 
+
 class OrderSide(str, Enum):
     BUY = "BUY"
     SELL = "SELL"
+
 
 class OrderType(str, Enum):
     MARKET = "MARKET"
     LIMIT = "LIMIT"
     LIMIT_MAKER = "LIMIT_MAKER"
+
 
 @dataclass
 class OrderRequest:
@@ -38,6 +43,7 @@ class OrderRequest:
     leverage: Optional[float] = None
     is_reduce_only: bool = False
 
+
 @dataclass
 class RiskDecision:
     allowed: bool
@@ -45,8 +51,11 @@ class RiskDecision:
     reason: str
     action: RiskAction
 
+
 class HardRiskEngine:
-    def __init__(self, risk_config, risk_state, logger, event_logger, trust_policy: bool):
+    def __init__(
+        self, risk_config, risk_state, logger, event_logger, trust_policy: bool
+    ):
         self.config = risk_config
         self.state = risk_state
         self.logger = logger
@@ -57,29 +66,35 @@ class HardRiskEngine:
         """Update internal state from heartbeat payload."""
         if not payload:
             return
-        
+
         equity = None
         realized_pnl = None
 
-        if hasattr(payload, 'equity'):
+        if hasattr(payload, "equity"):
             equity = payload.equity
         elif isinstance(payload, dict):
-             equity = payload.get('equity')
-        
-        if hasattr(payload, 'realized_pnl_today'):
+            equity = payload.get("equity")
+
+        if hasattr(payload, "realized_pnl_today"):
             realized_pnl = payload.realized_pnl_today
         elif isinstance(payload, dict):
-            realized_pnl = payload.get('realized_pnl_today')
+            realized_pnl = payload.get("realized_pnl_today")
 
         if equity is not None:
             self.state.equity_now = float(equity)
             if self.state.equity_start is None:
                 self.state.equity_start = self.state.equity_now
 
-            if self.state.max_equity_intraday is None or self.state.equity_now > self.state.max_equity_intraday:
+            if (
+                self.state.max_equity_intraday is None
+                or self.state.equity_now > self.state.max_equity_intraday
+            ):
                 self.state.max_equity_intraday = self.state.equity_now
 
-            if self.state.min_equity_intraday is None or self.state.equity_now < self.state.min_equity_intraday:
+            if (
+                self.state.min_equity_intraday is None
+                or self.state.equity_now < self.state.min_equity_intraday
+            ):
                 self.state.min_equity_intraday = self.state.equity_now
 
         if realized_pnl is not None:
@@ -95,28 +110,52 @@ class HardRiskEngine:
         if self.state.equity_start and self.state.equity_now is not None:
             # Daily Loss
             daily_loss = self.state.equity_start - self.state.equity_now
-            if hasattr(self.config, 'max_daily_loss_abs') and self.config.max_daily_loss_abs is not None and daily_loss > self.config.max_daily_loss_abs:
-                self.halt(f"Max Daily Loss Abs exceeded: {daily_loss} > {self.config.max_daily_loss_abs}")
+            if (
+                hasattr(self.config, "max_daily_loss_abs")
+                and self.config.max_daily_loss_abs is not None
+                and daily_loss > self.config.max_daily_loss_abs
+            ):
+                self.halt(
+                    f"Max Daily Loss Abs exceeded: {daily_loss} > {self.config.max_daily_loss_abs}"
+                )
                 return
 
-            if hasattr(self.config, 'max_daily_loss_pct') and self.config.max_daily_loss_pct is not None and self.state.equity_start > 0:
-                 loss_pct = daily_loss / self.state.equity_start
-                 if loss_pct > self.config.max_daily_loss_pct:
-                     self.halt(f"Max Daily Loss Pct exceeded: {loss_pct:.2%} > {self.config.max_daily_loss_pct:.2%}")
-                     return
+            if (
+                hasattr(self.config, "max_daily_loss_pct")
+                and self.config.max_daily_loss_pct is not None
+                and self.state.equity_start > 0
+            ):
+                loss_pct = daily_loss / self.state.equity_start
+                if loss_pct > self.config.max_daily_loss_pct:
+                    self.halt(
+                        f"Max Daily Loss Pct exceeded: {loss_pct:.2%} > {self.config.max_daily_loss_pct:.2%}"
+                    )
+                    return
 
         if self.state.max_equity_intraday and self.state.equity_now is not None:
             # Drawdown
             drawdown = self.state.max_equity_intraday - self.state.equity_now
-            if hasattr(self.config, 'max_drawdown_abs') and self.config.max_drawdown_abs is not None and drawdown > self.config.max_drawdown_abs:
-                self.halt(f"Max Drawdown Abs exceeded: {drawdown} > {self.config.max_drawdown_abs}")
+            if (
+                hasattr(self.config, "max_drawdown_abs")
+                and self.config.max_drawdown_abs is not None
+                and drawdown > self.config.max_drawdown_abs
+            ):
+                self.halt(
+                    f"Max Drawdown Abs exceeded: {drawdown} > {self.config.max_drawdown_abs}"
+                )
                 return
 
-            if hasattr(self.config, 'max_drawdown_pct') and self.config.max_drawdown_pct is not None and self.state.max_equity_intraday > 0:
+            if (
+                hasattr(self.config, "max_drawdown_pct")
+                and self.config.max_drawdown_pct is not None
+                and self.state.max_equity_intraday > 0
+            ):
                 dd_pct = drawdown / self.state.max_equity_intraday
                 if dd_pct > self.config.max_drawdown_pct:
-                     self.halt(f"Max Drawdown Pct exceeded: {dd_pct:.2%} > {self.config.max_drawdown_pct:.2%}")
-                     return
+                    self.halt(
+                        f"Max Drawdown Pct exceeded: {dd_pct:.2%} > {self.config.max_drawdown_pct:.2%}"
+                    )
+                    return
 
     def halt(self, reason: str):
         self.state.halted = True
@@ -126,20 +165,26 @@ class HardRiskEngine:
 
     def evaluate_order(self, order: OrderRequest) -> RiskDecision:
         if self.state.halted:
-            return RiskDecision(False, "HALTED", f"System Halted: {self.state.halt_reason}", RiskAction.KILL_BOT)
+            return RiskDecision(
+                False,
+                "HALTED",
+                f"System Halted: {self.state.halt_reason}",
+                RiskAction.KILL_BOT,
+            )
 
         # Simple check for now
         return RiskDecision(True, "ALLOWED", "OK", RiskAction.ALLOW)
 
     def persist(self, state_dir):
         from supervisor.state import save_risk_state
+
         save_risk_state(state_dir, self.state)
 
     def get_state(self):
         return self.state
 
     def apply_llm_advice(self, advice):
-        if hasattr(advice, 'risk_multiplier'):
+        if hasattr(advice, "risk_multiplier"):
             self.state.llm_risk_multiplier = advice.risk_multiplier
-        if hasattr(advice, 'action'):
+        if hasattr(advice, "action"):
             self.state.llm_last_action = str(advice.action)
