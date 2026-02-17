@@ -63,7 +63,9 @@ def on_add():
             f.write(task_body + "\n")
 
         rel_prompt_path = f"prompts/{filename}"
-        stages.append({"name": task_name, "prompt": rel_prompt_path, "project": project_id})
+        stages.append(
+            {"name": task_name, "prompt": rel_prompt_path, "project": project_id}
+        )
         save_stages(stages)
     except Exception as e:
         messagebox.showerror("Error", f"Failed to save task: {e}")
@@ -86,7 +88,9 @@ def on_run_meta_agent():
         if result.returncode == 0:
             messagebox.showinfo("Meta-Agent", "Meta-Agent finished successfully.")
         else:
-            messagebox.showerror("Meta-Agent", f"Meta-Agent failed.\n\n{result.stdout}\n{result.stderr}")
+            messagebox.showerror(
+                "Meta-Agent", f"Meta-Agent failed.\n\n{result.stdout}\n{result.stderr}"
+            )
     except Exception as exc:
         messagebox.showerror("Meta-Agent", f"Failed to run Meta-Agent: {exc}")
 
@@ -111,7 +115,6 @@ def main():
     entry_name = tk.Entry(frame_top)
     entry_name.pack(side=tk.LEFT, fill=tk.X, expand=True, padx=(5, 0))
 
-
     lbl_prompt = tk.Label(root, text="Task prompt / instructions (.md):")
     lbl_prompt.pack(anchor="w", padx=10)
 
@@ -124,7 +127,9 @@ def main():
     btn_add = tk.Button(frame_buttons, text="Add", command=on_add, width=12)
     btn_add.pack(side=tk.LEFT, padx=5)
 
-    btn_run = tk.Button(frame_buttons, text="Start", command=on_run_meta_agent, width=12)
+    btn_run = tk.Button(
+        frame_buttons, text="Start", command=on_run_meta_agent, width=12
+    )
     btn_run.pack(side=tk.LEFT, padx=5)
 
     root.mainloop()

@@ -7,7 +7,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Iterable, Optional, Set
 
-from supervisor.ingest.parsers import event_hash, event_to_point, exec_to_point, parse_event_line, parse_exec_line
+from supervisor.ingest.parsers import (
+    event_hash,
+    event_to_point,
+    exec_to_point,
+    parse_event_line,
+    parse_exec_line,
+)
 from supervisor.tsdb.writer import TsdbWriter
 
 
@@ -23,10 +29,14 @@ def run_backfill(
     seen: Set[str] = set()
     counts = {"events": 0, "exec": 0}
     for path in _event_files(events_path):
-        counts["events"] += _backfill_file(path, start_ts, end_ts, writer, seen, is_exec=False, symbol=symbol)
+        counts["events"] += _backfill_file(
+            path, start_ts, end_ts, writer, seen, is_exec=False, symbol=symbol
+        )
     if exec_path:
         for path in _event_files(exec_path):
-            counts["exec"] += _backfill_file(path, start_ts, end_ts, writer, seen, is_exec=True, symbol=symbol)
+            counts["exec"] += _backfill_file(
+                path, start_ts, end_ts, writer, seen, is_exec=True, symbol=symbol
+            )
     logger.info("TSDB backfill complete: %s", counts)
     return counts
 
@@ -62,9 +72,16 @@ def _backfill_file(
                 payload = parse_exec_line(line) if is_exec else parse_event_line(line)
                 if not payload:
                     continue
-                if symbol and str(payload.get("symbol") or "").upper() != symbol.upper():
+                if (
+                    symbol
+                    and str(payload.get("symbol") or "").upper() != symbol.upper()
+                ):
                     continue
-                point = exec_to_point(payload) if is_exec else event_to_point(payload, digest)
+                point = (
+                    exec_to_point(payload)
+                    if is_exec
+                    else event_to_point(payload, digest)
+                )
                 if not point:
                     continue
                 if point.ts < start_ts or point.ts > end_ts:

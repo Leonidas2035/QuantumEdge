@@ -66,9 +66,13 @@ class LlmSupervisor:
         self._events_dir = events_dir
         self._logger = logger
         self._event_logger = event_logger
-        self._chat_client = chat_client or ChatCompletionsClient(config.api_url, config.api_key_env, logger)
+        self._chat_client = chat_client or ChatCompletionsClient(
+            config.api_url, config.api_key_env, logger
+        )
 
-    def run_check(self, today: date, snapshot: RiskStateSnapshot, mode: str = "unknown") -> Optional[LlmSupervisorAdvice]:
+    def run_check(
+        self, today: date, snapshot: RiskStateSnapshot, mode: str = "unknown"
+    ) -> Optional[LlmSupervisorAdvice]:
         if not self._config.enabled:
             self._logger.info("LLM supervisor disabled; skipping.")
             return None
@@ -76,11 +80,17 @@ class LlmSupervisor:
         events = load_events_for_date(self._events_dir, today)
         order_decisions = [e for e in events if e.type == EventType.ORDER_DECISION]
         if len(order_decisions) < self._config.min_order_decisions:
-            self._logger.info("Not enough order decisions for LLM check (%s/%s)", len(order_decisions), self._config.min_order_decisions)
+            self._logger.info(
+                "Not enough order decisions for LLM check (%s/%s)",
+                len(order_decisions),
+                self._config.min_order_decisions,
+            )
             return None
 
         summary = build_summary(snapshot, self._risk_config, events, self._config, mode)
-        system_prompt, user_prompt = build_prompts(summary, self._risk_config, self._config)
+        system_prompt, user_prompt = build_prompts(
+            summary, self._risk_config, self._config
+        )
 
         try:
             raw = self.call_llm(system_prompt, user_prompt)
@@ -90,7 +100,12 @@ class LlmSupervisor:
 
         advice = self.parse_advice(raw)
         if self._event_logger:
-            self._event_logger.log_llm_advice(advice.action.value, advice.risk_multiplier, advice.comment, self._config.dry_run)
+            self._event_logger.log_llm_advice(
+                advice.action.value,
+                advice.risk_multiplier,
+                advice.comment,
+                self._config.dry_run,
+            )
         return advice
 
     def call_llm(self, system_prompt: str, user_prompt: str) -> str:
@@ -108,12 +123,21 @@ class LlmSupervisor:
         try:
             payload = json.loads(raw_response.strip())
             action_raw = str(payload.get("action", "UNSPECIFIED")).upper()
-            action = LlmAction(action_raw) if action_raw in LlmAction.__members__ else LlmAction.UNSPECIFIED
+            action = (
+                LlmAction(action_raw)
+                if action_raw in LlmAction.__members__
+                else LlmAction.UNSPECIFIED
+            )
             risk_multiplier = payload.get("risk_multiplier")
             if risk_multiplier is not None:
                 risk_multiplier = float(risk_multiplier)
             comment = str(payload.get("comment") or "")
-            return LlmSupervisorAdvice(action=action, risk_multiplier=risk_multiplier, comment=comment, raw_response=raw_response)
+            return LlmSupervisorAdvice(
+                action=action,
+                risk_multiplier=risk_multiplier,
+                comment=comment,
+                raw_response=raw_response,
+            )
         except Exception as exc:
             return LlmSupervisorAdvice(
                 action=LlmAction.UNSPECIFIED,
@@ -135,7 +159,16 @@ def build_summary(
     denied_codes: Dict[str, int] = {}
     trades: List[Dict[str, Any]] = []
 
-    ordered_events = [e for e in events if e.type in {EventType.ORDER_DECISION, EventType.ORDER_RESULT, EventType.RISK_LIMIT_BREACH}]
+    ordered_events = [
+        e
+        for e in events
+        if e.type
+        in {
+            EventType.ORDER_DECISION,
+            EventType.ORDER_RESULT,
+            EventType.RISK_LIMIT_BREACH,
+        }
+    ]
     ordered_events = ordered_events[-config.max_events_in_summary :]
 
     for event in ordered_events:
@@ -168,7 +201,13 @@ def build_summary(
                 }
             )
         elif event.type == EventType.RISK_LIMIT_BREACH:
-            trades.append({"type": "breach", "code": event.data.get("code"), "ts": event.ts.isoformat()})
+            trades.append(
+                {
+                    "type": "breach",
+                    "code": event.data.get("code"),
+                    "ts": event.ts.isoformat(),
+                }
+            )
 
     trades = trades[-config.max_trades_in_table :]
 
@@ -197,7 +236,9 @@ def build_summary(
     )
 
 
-def build_prompts(summary: LlmSupervisorSummary, limits: RiskConfig, config: LlmSupervisorConfig) -> Tuple[str, str]:
+def build_prompts(
+    summary: LlmSupervisorSummary, limits: RiskConfig, config: LlmSupervisorConfig
+) -> Tuple[str, str]:
     system_prompt = (
         "You are a risk moderator for a crypto futures scalping bot. "
         "Return ONLY a JSON object with keys action, risk_multiplier, comment. "
@@ -205,10 +246,14 @@ def build_prompts(summary: LlmSupervisorSummary, limits: RiskConfig, config: Llm
         "Lower risk means reducing size/leverage, not increasing risk."
     )
 
-    deny_breakdown = ", ".join(f"{k}: {v}" for k, v in summary.denied_by_code.items()) or "none"
+    deny_breakdown = (
+        ", ".join(f"{k}: {v}" for k, v in summary.denied_by_code.items()) or "none"
+    )
     trades_lines = []
     for t in summary.recent_trades:
-        trades_lines.append(f"{t.get('ts')} | {t.get('type')} | {t.get('symbol','?')} | {t.get('code', t.get('result',''))} | allowed={t.get('allowed')}")
+        trades_lines.append(
+            f"{t.get('ts')} | {t.get('type')} | {t.get('symbol','?')} | {t.get('code', t.get('result',''))} | allowed={t.get('allowed')}"
+        )
     trades_block = "\n".join(trades_lines) if trades_lines else "no trades"
 
     user_prompt = (

@@ -37,7 +37,9 @@ def build_dataset(
     if source not in {"ticks", "bars"}:
         raise ValueError("source must be 'ticks' or 'bars'")
 
-    builder = DatasetBuilder(symbol=symbol, horizon=horizon, data_dir=input_dir, limit_files=None)
+    builder = DatasetBuilder(
+        symbol=symbol, horizon=horizon, data_dir=input_dir, limit_files=None
+    )
     X, y, featured = builder.build()
     if featured.empty:
         raise ValueError("No data available to build dataset.")
@@ -59,4 +61,3 @@ def build_dataset(
         "version": version,
         "source": source,
     }
-

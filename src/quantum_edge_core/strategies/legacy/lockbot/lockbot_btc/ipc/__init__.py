@@ -1,2 +1,1 @@
 """IPC utilities for LockBotBTC."""
-

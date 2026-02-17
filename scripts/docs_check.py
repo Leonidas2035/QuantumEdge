@@ -2,7 +2,6 @@ import os
 import subprocess
 import sys
 
-
 DOC_PATHS = [
     "README.md",
     "docs/architecture.md",

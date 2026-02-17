@@ -1,7 +1,7 @@
 SYSTEM_PROMPT = (
     "Return ONLY a single-line JSON object with keys exactly: v,s,c,sl,tp,r,rk. "
-    "No extra keys. No prose. Example: {\"v\":1,\"s\":\"HOLD\",\"c\":0.0,"
-    "\"sl\":null,\"tp\":null,\"r\":\"ok\",\"rk\":\"LOW\"}"
+    'No extra keys. No prose. Example: {"v":1,"s":"HOLD","c":0.0,'
+    '"sl":null,"tp":null,"r":"ok","rk":"LOW"}'
 )
 
 SCHEMA_NOTE = (

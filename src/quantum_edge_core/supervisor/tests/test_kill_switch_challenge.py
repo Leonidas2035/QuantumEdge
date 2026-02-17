@@ -6,5 +6,10 @@ def test_kill_switch_challenge_validation():
     challenge = {"challenge_id": "abc", "expires_at": now + 10}
 
     assert validate_kill_switch_challenge(challenge, "abc", now) is None
-    assert validate_kill_switch_challenge(challenge, "wrong", now) == "challenge_mismatch"
-    assert validate_kill_switch_challenge(challenge, "abc", now + 20) == "challenge_expired"
+    assert (
+        validate_kill_switch_challenge(challenge, "wrong", now) == "challenge_mismatch"
+    )
+    assert (
+        validate_kill_switch_challenge(challenge, "abc", now + 20)
+        == "challenge_expired"
+    )

@@ -110,7 +110,11 @@ async def decision_routed(req: RoutedDecisionRequest) -> Response:
                 prompt = f"{ctx_line}\n{req.prompt}"
             except Exception:
                 prompt = req.prompt
-        hints = {"mode": req.mode, "teacher_ratio": req.teacher_ratio, "force_teacher": req.force_teacher}
+        hints = {
+            "mode": req.mode,
+            "teacher_ratio": req.teacher_ratio,
+            "force_teacher": req.force_teacher,
+        }
         result = await router.route(prompt, timeout_s=req.timeout_s, hints=hints)
         payload = result.decision.to_compact_json()
         try:

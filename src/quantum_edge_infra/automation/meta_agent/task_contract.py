@@ -43,7 +43,9 @@ SENSITIVE_ENV_KEYWORDS = ("KEY", "SECRET", "TOKEN", "PASSWORD")
 def _generate_task_id(project_id: str) -> str:
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     short = uuid.uuid4().hex[:6]
-    safe_project = "".join(ch if ch.isalnum() else "_" for ch in project_id).strip("_") or "task"
+    safe_project = (
+        "".join(ch if ch.isalnum() else "_" for ch in project_id).strip("_") or "task"
+    )
     return f"T{stamp}_{safe_project}_{short}"
 
 
@@ -242,7 +244,7 @@ def _parse_frontmatter(text: str) -> tuple[Optional[dict], str]:
     if end is None:
         return None, text
     meta_text = "\n".join(lines[1:end])
-    body = "\n".join(lines[end + 1:]).lstrip()
+    body = "\n".join(lines[end + 1 :]).lstrip()
     data = yaml.safe_load(meta_text) or {}
     return data, body
 
@@ -275,7 +277,9 @@ def _normalize_llm(raw: dict) -> TaskLLM:
     return TaskLLM(
         model=llm.get("model"),
         temperature=float(temperature) if temperature is not None else None,
-        max_context_chars=int(max_context_chars) if max_context_chars is not None else None,
+        max_context_chars=(
+            int(max_context_chars) if max_context_chars is not None else None
+        ),
     )
 
 
@@ -344,7 +348,9 @@ def _normalize_gates(raw: dict) -> TaskGates:
 def _task_from_dict(raw: dict) -> TaskSpec:
     if not isinstance(raw, dict):
         raise TaskValidationError("TaskSpec must be a mapping")
-    task_id = raw.get("task_id") or _generate_task_id(str(raw.get("project_id") or "task"))
+    task_id = raw.get("task_id") or _generate_task_id(
+        str(raw.get("project_id") or "task")
+    )
     created_at = raw.get("created_at") or _now_iso()
     if isinstance(created_at, datetime):
         created_at = created_at.astimezone(timezone.utc).isoformat()
@@ -361,7 +367,9 @@ def _task_from_dict(raw: dict) -> TaskSpec:
         constraints=_normalize_constraints(raw.get("constraints") or {}),
         context=_normalize_context(raw.get("context") or {}),
         llm=_normalize_llm(raw.get("llm") or {}),
-        execution=_normalize_execution(raw.get("execution") or {}, gates.enabled, dry_run_hint),
+        execution=_normalize_execution(
+            raw.get("execution") or {}, gates.enabled, dry_run_hint
+        ),
         gates=gates,
         mode=str(raw.get("mode") or "task"),
         metadata=dict(raw.get("metadata") or {}),

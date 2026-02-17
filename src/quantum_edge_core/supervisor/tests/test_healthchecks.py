@@ -33,5 +33,7 @@ def test_tcp_healthcheck_ok(monkeypatch):
     def _fake_conn(addr, timeout=1):
         return DummySocket()
 
-    monkeypatch.setattr("supervisor.process_manager.socket.create_connection", _fake_conn)
+    monkeypatch.setattr(
+        "supervisor.process_manager.socket.create_connection", _fake_conn
+    )
     assert _tcp_health("127.0.0.1", 1234, 1)

@@ -44,7 +44,9 @@ def load_process_info(state_dir: Path) -> Optional["ProcessInfo"]:
     start_time_str = raw.get("start_time")
     last_exit_time_str = raw.get("last_exit_time")
     start_time = datetime.fromisoformat(start_time_str) if start_time_str else None
-    last_exit_time = datetime.fromisoformat(last_exit_time_str) if last_exit_time_str else None
+    last_exit_time = (
+        datetime.fromisoformat(last_exit_time_str) if last_exit_time_str else None
+    )
 
     try:
         return ProcessInfo(
@@ -67,7 +69,9 @@ def save_process_info(state_dir: Path, info: "ProcessInfo") -> None:
         "pid": info.pid,
         "start_time": info.start_time.isoformat() if info.start_time else None,
         "last_exit_code": info.last_exit_code,
-        "last_exit_time": info.last_exit_time.isoformat() if info.last_exit_time else None,
+        "last_exit_time": (
+            info.last_exit_time.isoformat() if info.last_exit_time else None
+        ),
     }
     with path.open("w", encoding="utf-8") as handle:
         json.dump(payload, handle, indent=2)
@@ -81,7 +85,9 @@ def clear_process_info(state_dir: Path) -> None:
         try:
             path.unlink()
         except OSError as exc:
-            logging.getLogger(__name__).warning("Failed to remove process state: %s", exc)
+            logging.getLogger(__name__).warning(
+                "Failed to remove process state: %s", exc
+            )
 
 
 @dataclass
@@ -99,18 +105,34 @@ def load_meta_supervisor_state(state_path: Path) -> MetaSupervisorState:
     """Load meta supervisor state from disk."""
 
     if not state_path.exists():
-        return MetaSupervisorState(last_run_at=None, last_status=None, last_reason=None, last_reports=[], last_run_mode=None)
+        return MetaSupervisorState(
+            last_run_at=None,
+            last_status=None,
+            last_reason=None,
+            last_reports=[],
+            last_run_mode=None,
+        )
 
     try:
         with state_path.open("r", encoding="utf-8") as handle:
             raw = json.load(handle)
     except (json.JSONDecodeError, OSError) as exc:
-        logging.getLogger(__name__).warning("Failed to read meta supervisor state: %s", exc)
-        return MetaSupervisorState(last_run_at=None, last_status=None, last_reason=None, last_reports=[], last_run_mode=None)
+        logging.getLogger(__name__).warning(
+            "Failed to read meta supervisor state: %s", exc
+        )
+        return MetaSupervisorState(
+            last_run_at=None,
+            last_status=None,
+            last_reason=None,
+            last_reports=[],
+            last_run_mode=None,
+        )
 
     last_run_at_str = raw.get("last_run_at")
     try:
-        last_run_at = datetime.fromisoformat(last_run_at_str) if last_run_at_str else None
+        last_run_at = (
+            datetime.fromisoformat(last_run_at_str) if last_run_at_str else None
+        )
     except ValueError:
         last_run_at = None
 
@@ -123,12 +145,16 @@ def load_meta_supervisor_state(state_path: Path) -> MetaSupervisorState:
     )
 
 
-def save_meta_supervisor_state(state_path: Path, meta_state: MetaSupervisorState) -> None:
+def save_meta_supervisor_state(
+    state_path: Path, meta_state: MetaSupervisorState
+) -> None:
     """Persist meta supervisor state."""
 
     state_path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
-        "last_run_at": meta_state.last_run_at.isoformat() if meta_state.last_run_at else None,
+        "last_run_at": (
+            meta_state.last_run_at.isoformat() if meta_state.last_run_at else None
+        ),
         "last_status": meta_state.last_status,
         "last_reason": meta_state.last_reason,
         "last_reports": meta_state.last_reports or [],

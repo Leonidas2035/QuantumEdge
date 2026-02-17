@@ -94,13 +94,19 @@ class SnapshotServer:
                 break
             except Exception as exc:
                 logging.exception("Snapshot server error: %s", exc)
-                await self._socket.send(msgspec.msgpack.encode(SnapshotResponse(False, time.time_ns(), "", b"", note=str(exc))))
+                await self._socket.send(
+                    msgspec.msgpack.encode(
+                        SnapshotResponse(False, time.time_ns(), "", b"", note=str(exc))
+                    )
+                )
 
     def _handle_request(self, request: SnapshotRequest) -> SnapshotResponse:
         now = time.time_ns()
         snapshot = self._cache.snapshot_for(request.symbol, request.event_type)
         if snapshot is None:
-            return SnapshotResponse(False, now, request.event_type, b"", note="no snapshot")
+            return SnapshotResponse(
+                False, now, request.event_type, b"", note="no snapshot"
+            )
         if isinstance(snapshot, list):
             payload = b""
             note = "trade tail not implemented"

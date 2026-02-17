@@ -106,7 +106,7 @@ class HeartbeatServer:
         # Map new schema to legacy fields for compatibility
         pnl = data.get("pnl")
         if pnl is None:
-             pnl = metrics.get("pnl_session")
+            pnl = metrics.get("pnl_session")
 
         active_positions = data.get("active_positions")
         if active_positions is None:
@@ -126,7 +126,6 @@ class HeartbeatServer:
             state=data.get("state"),
             metrics=metrics,
             errors=data.get("errors"),
-
             uptime_s=data.get("uptime_s"),
             pnl=pnl,
             active_positions=active_positions,

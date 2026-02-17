@@ -14,7 +14,9 @@ class CircuitConfig:
 
 
 class CircuitBreaker:
-    def __init__(self, name: str, config: CircuitConfig, state_path: Path | None = None) -> None:
+    def __init__(
+        self, name: str, config: CircuitConfig, state_path: Path | None = None
+    ) -> None:
         self.name = name
         self.config = config
         self.state_path = state_path

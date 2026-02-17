@@ -18,9 +18,16 @@ from quantum_edge_core.logging_setup import setup_logging
 from quantum_edge_core.utils.async_runner import run_service
 from quantum_edge_core.events import MarketTrade
 
-from quantum_edge_core.market_data.account.account_state import AccountState, FINAL_ORDER_STATUSES
-from quantum_edge_core.market_data.account.binance_spot_userstream import BinanceSpotUserStream
-from quantum_edge_core.market_data.account.binance_usdm_userstream import BinanceUsdmUserStream
+from quantum_edge_core.market_data.account.account_state import (
+    AccountState,
+    FINAL_ORDER_STATUSES,
+)
+from quantum_edge_core.market_data.account.binance_spot_userstream import (
+    BinanceSpotUserStream,
+)
+from quantum_edge_core.market_data.account.binance_usdm_userstream import (
+    BinanceUsdmUserStream,
+)
 from quantum_edge_core.market_data.account.publisher import AccountPublisher
 from quantum_edge_core.market_data.bus.event_bus import EventBus
 from quantum_edge_core.market_data.config import HubConfig
@@ -29,12 +36,17 @@ from quantum_edge_core.market_data.feeds.binance_futures import BinanceFuturesFe
 from quantum_edge_core.market_data.feeds.liquidations import LiquidationFeed
 from quantum_edge_core.market_data.analytics.alpha_engine import AlphaEngine
 from quantum_edge_core.market_data.ipc.publisher import ZmqPublisher
-from quantum_edge_core.market_data.ipc.snapshot_server import SnapshotCache, SnapshotServer
+from quantum_edge_core.market_data.ipc.snapshot_server import (
+    SnapshotCache,
+    SnapshotServer,
+)
 from quantum_edge_core.market_data.models import HeartbeatEvent, Priority, TradeEvent
 from quantum_edge_core.market_data.models.account_snapshot import AccountSnapshot
 from quantum_edge_core.market_data.models.account_delta import AccountDelta
 from quantum_edge_core.market_data.orderbook.aggregator import OrderBookAggregator
-from quantum_edge_core.market_data.microstructure.publisher import MicrostructurePublisher
+from quantum_edge_core.market_data.microstructure.publisher import (
+    MicrostructurePublisher,
+)
 from quantum_edge_core.market_data.lockbot.engine import LockbotDerivedEngine
 from quantum_edge_core.market_data.lockbot.publisher import LockbotPublisher
 from quantum_edge_core.market_data.spool.status import summarize_spool
@@ -91,7 +103,6 @@ class StatusReporter:
             json.dump(payload, fh, indent=2)
 
 
-
 class MarketDataHubService(BaseService):
     """Service orchestrating the data-plane components."""
 
@@ -100,9 +111,11 @@ class MarketDataHubService(BaseService):
         self.config = config or HubConfig.load()
         self.bus = EventBus(l0_hwm=self.config.l0_hwm, l1_hwm=self.config.l1_hwm)
         # Use new ZmqPublisher (port 5555 default, or config if we had it)
-        self.publisher = ZmqPublisher(port=5555) 
+        self.publisher = ZmqPublisher(port=5555)
         self.writer: Optional[QuestILPWriter] = (
-            QuestILPWriter(host="127.0.0.1", port=9009) if self.config.tsdb.enabled else None
+            QuestILPWriter(host="127.0.0.1", port=9009)
+            if self.config.tsdb.enabled
+            else None
         )
         self.snapshot_cache = SnapshotCache(trade_tail=self.config.snapshot.trade_tail)
         self.snapshot_server = SnapshotServer(self.config, self.snapshot_cache)
@@ -110,7 +123,7 @@ class MarketDataHubService(BaseService):
         #     BinanceSpotFeed(self.config, self.bus),
         #     BinanceFuturesFeed(self.config, self.bus),
         # ]
-     
+
         # Force Mock mode if requested to bypass Binance bans
         if self.config.mode == "mock":
             self.feeds = [
@@ -118,13 +131,11 @@ class MarketDataHubService(BaseService):
                 # LiquidationFeed(self.config, self.bus) # Disabled to prevent Binance connections
             ]
         else:
-            self.feeds = [
-                BinanceFuturesFeed(self.config, self.bus)
-            ]
-        
-        self.alpha_engine = AlphaEngine(symbol="BTCUSDT") # Default symbol
+            self.feeds = [BinanceFuturesFeed(self.config, self.bus)]
+
+        self.alpha_engine = AlphaEngine(symbol="BTCUSDT")  # Default symbol
         self.last_metrics_pub = 0.0
-        
+
         # Legacy components commented out
         self.microstructure_analyzer: Optional[MicrostructureAnalyzer] = None
         self.microstructure_publisher: Optional[MicrostructurePublisher] = None
@@ -229,7 +240,7 @@ class MarketDataHubService(BaseService):
 
     async def cleanup(self) -> None:
         """Clean up resources on shutdown."""
-        self._stop_event.set() # Ensure internal stop event is set
+        self._stop_event.set()  # Ensure internal stop event is set
         for feed in self.feeds:
             await feed.stop()
         await self.publisher.stop()
@@ -261,19 +272,23 @@ class MarketDataHubService(BaseService):
             key = (getattr(event, "symbol", None), getattr(event, "event_type", ""))
             self._last_event_ts[key] = getattr(event, "ts_ns", time.time_ns())
             self.snapshot_cache.update(event)
-            
+
             # Derive topic
-            symbol = getattr(event, "symbol", "global") or "global" # Handle None
+            symbol = getattr(event, "symbol", "global") or "global"  # Handle None
             ev_type = getattr(event, "event_type", "unknown")
             topic = f"{ev_type}.{symbol}".lower()
-            
+
             await self.publisher.publish(topic, event)
             if self.microstructure_analyzer and isinstance(event, TradeEvent):
                 self.microstructure_analyzer.update_trade(event.ts_ns, event.size)
             if self.lockbot_engine and isinstance(event, TradeEvent):
                 ts_event_ms = int(event.ts_ns / 1_000_000)
                 taker_side = str(event.taker_side or "").lower()
-                is_buyer_maker = True if taker_side == "sell" else False if taker_side == "buy" else None
+                is_buyer_maker = (
+                    True
+                    if taker_side == "sell"
+                    else False if taker_side == "buy" else None
+                )
                 self.lockbot_engine.on_trade(
                     symbol=event.symbol,
                     price=event.price,
@@ -283,12 +298,14 @@ class MarketDataHubService(BaseService):
                     agg_trade_id=event.seq,
                     source="binance_ws",
                 )
-            if self.writer and (isinstance(event, TradeEvent) or isinstance(event, MarketTrade)):
-                 # 4. Analytics
+            if self.writer and (
+                isinstance(event, TradeEvent) or isinstance(event, MarketTrade)
+            ):
+                # 4. Analytics
                 whale_event = self.alpha_engine.update_trade(event)
                 if whale_event:
                     await self.publisher.publish("market.alpha.whale", whale_event)
-                    
+
                 # Publish Metrics (Throttled 100ms)
                 now = time.time()
                 if now - self.last_metrics_pub > 0.1:
@@ -303,11 +320,10 @@ class MarketDataHubService(BaseService):
             if ev_type == "liquidation":
                 # Publish to ZMQ
                 await self.publisher.publish(topic, event)
-                
+
                 # Persist to QuestDB
                 if self.writer:
                     self._persist_liquidation(event)
-
 
     def _persist_trade(self, event: Any) -> None:
         # Map event to ILP structure
@@ -317,11 +333,11 @@ class MarketDataHubService(BaseService):
         side = getattr(event, "side", getattr(event, "taker_side", "unknown"))
         price = getattr(event, "price", 0.0)
         qty = getattr(event, "quantity", getattr(event, "size", 0.0))
-        
+
         self.writer.enqueue(
-            table="trades", 
-            symbols={"symbol": symbol, "side": side}, 
-            columns={"price": price, "qty": qty}
+            table="trades",
+            symbols={"symbol": symbol, "side": side},
+            columns={"price": price, "qty": qty},
         )
 
     def _persist_liquidation(self, event: Dict[str, Any]) -> None:
@@ -332,8 +348,8 @@ class MarketDataHubService(BaseService):
         price = event.get("price", 0.0)
         qty = event.get("qty", 0.0)
         usd_size = event.get("usd_size", 0.0)
-        timestamp_ms = event.get("timestamp", 0) # ms
-        
+        timestamp_ms = event.get("timestamp", 0)  # ms
+
         # Convert ms to ns for ILP
         # We need to pass this timestamp to enqueue
         ts_ns = timestamp_ms * 1_000_000 if timestamp_ms else None
@@ -342,7 +358,7 @@ class MarketDataHubService(BaseService):
             table="liquidations",
             symbols={"symbol": symbol, "side": side},
             columns={"price": price, "qty": qty, "usd_size": usd_size},
-            timestamp_ns=ts_ns
+            timestamp_ns=ts_ns,
         )
 
     async def _status_loop(self) -> None:
@@ -400,7 +416,11 @@ class MarketDataHubService(BaseService):
                 "dropped_rows": metrics.dropped_rows,
                 "last_flush_ts": metrics.last_flush_ts,
                 "errors": metrics.errors,
-                "queue_depth": self.writer.queue_depth() if hasattr(self.writer, "queue_depth") else 0,
+                "queue_depth": (
+                    self.writer.queue_depth()
+                    if hasattr(self.writer, "queue_depth")
+                    else 0
+                ),
             }
             l2_info = {
                 "enabled": self.config.l2.enabled,
@@ -459,7 +479,9 @@ class MarketDataHubService(BaseService):
 
     def _start_account_streams(self) -> None:
         if self.config.mode == "mock":
-            self.logger.info("Mock mode: Skipping account stream connections to Binance")
+            self.logger.info(
+                "Mock mode: Skipping account stream connections to Binance"
+            )
             return
 
         if self.config.account_runtime.enable_spot:
@@ -493,9 +515,16 @@ class MarketDataHubService(BaseService):
             elif event_type == "executionReport":
                 raw_order = payload.get("o") or payload
                 order_id = str(raw_order.get("orderId", "")) if raw_order else ""
-                existed = bool(order_id and order_id in self.account_state.spot_open_orders)
+                existed = bool(
+                    order_id and order_id in self.account_state.spot_open_orders
+                )
                 delta = self.account_state.apply_spot_execution_report(payload)
-                if delta and order_id and delta.patch.spot and delta.patch.spot.orders_update:
+                if (
+                    delta
+                    and order_id
+                    and delta.patch.spot
+                    and delta.patch.spot.orders_update
+                ):
                     status = delta.patch.spot.orders_update[0].status
                     repair_needed = status in FINAL_ORDER_STATUSES and not existed
         if delta:
@@ -513,9 +542,16 @@ class MarketDataHubService(BaseService):
             elif event_type == "ORDER_TRADE_UPDATE":
                 raw_order = payload.get("o") or payload
                 order_id = str(raw_order.get("orderId", "")) if raw_order else ""
-                existed = bool(order_id and order_id in self.account_state.usdm_open_orders)
+                existed = bool(
+                    order_id and order_id in self.account_state.usdm_open_orders
+                )
                 delta = self.account_state.apply_usdm_ORDER_TRADE_UPDATE(payload)
-                if delta and order_id and delta.patch.usdm and delta.patch.usdm.orders_update:
+                if (
+                    delta
+                    and order_id
+                    and delta.patch.usdm
+                    and delta.patch.usdm.orders_update
+                ):
                     status = delta.patch.usdm.orders_update[0].status
                     repair_needed = status in FINAL_ORDER_STATUSES and not existed
         if delta:
@@ -624,7 +660,9 @@ class AccountRepairManager:
                     self._repair_task = None
 
     async def _execute_snapshot(self) -> AccountSnapshot:
-        snapshot = await asyncio.to_thread(self._state.build_snapshot, self._symbols, self._include_market)
+        snapshot = await asyncio.to_thread(
+            self._state.build_snapshot, self._symbols, self._include_market
+        )
         self._publisher.publish_snapshot(snapshot)
         return snapshot
 

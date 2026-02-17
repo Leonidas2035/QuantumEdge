@@ -1,4 +1,5 @@
 import pytest
+
 pytest.skip("Legacy test broken by src-layout migration", allow_module_level=True)
 import sys
 import time
@@ -23,7 +24,9 @@ class FakeSnapshotClient:
         self.response = response
         self.called = False
 
-    async def request(self, symbol: str, event_type: str, limit: int = 0) -> Optional[SnapshotResponse]:
+    async def request(
+        self, symbol: str, event_type: str, limit: int = 0
+    ) -> Optional[SnapshotResponse]:
         self.called = True
         return self.response
 

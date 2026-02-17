@@ -15,7 +15,15 @@ from approval_engine import approve_apply
 from projects_registry import ProjectEntry, load_projects_registry
 from schedule_contract import ScheduleValidationError, load_schedule_file
 from offmarket_scheduler import evaluate_windows
-from task_contract import TaskConstraints, TaskContext, TaskExecution, TaskGates, TaskLLM, TaskSpec, GateStep
+from task_contract import (
+    TaskConstraints,
+    TaskContext,
+    TaskExecution,
+    TaskGates,
+    TaskLLM,
+    TaskSpec,
+    GateStep,
+)
 
 
 def _resolve_base_dir() -> str:
@@ -24,7 +32,9 @@ def _resolve_base_dir() -> str:
     if env_root:
         return env_root
     parent = os.path.abspath(os.path.join(base, os.pardir))
-    if os.path.isdir(os.path.join(parent, "config")) and os.path.isdir(os.path.join(parent, "ai_scalper_bot")):
+    if os.path.isdir(os.path.join(parent, "config")) and os.path.isdir(
+        os.path.join(parent, "ai_scalper_bot")
+    ):
         return parent
     return base
 
@@ -72,7 +82,9 @@ def load_control_state(runtime_dir: Optional[str] = None) -> dict:
     return {}
 
 
-def ensure_active_project(projects: List[ProjectEntry], runtime_dir: Optional[str] = None) -> str:
+def ensure_active_project(
+    projects: List[ProjectEntry], runtime_dir: Optional[str] = None
+) -> str:
     runtime_root = runtime_dir or _resolve_runtime_dir()
     state = load_control_state(runtime_root)
     active = state.get("active_project")
@@ -92,7 +104,9 @@ def set_active_project(project_id: str, runtime_dir: Optional[str] = None) -> No
     _save_state_atomic(_control_state_path(runtime_root), state)
 
 
-def _resolve_project(projects: List[ProjectEntry], project_id: str) -> Optional[ProjectEntry]:
+def _resolve_project(
+    projects: List[ProjectEntry], project_id: str
+) -> Optional[ProjectEntry]:
     for entry in projects:
         if entry.project_id == project_id:
             return entry
@@ -102,7 +116,9 @@ def _resolve_project(projects: List[ProjectEntry], project_id: str) -> Optional[
 def _generate_task_id(project_id: str) -> str:
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     short = uuid.uuid4().hex[:6]
-    safe_project = "".join(ch if ch.isalnum() else "_" for ch in project_id).strip("_") or "task"
+    safe_project = (
+        "".join(ch if ch.isalnum() else "_" for ch in project_id).strip("_") or "task"
+    )
     return f"T{stamp}_{safe_project}_{short}"
 
 
@@ -121,12 +137,18 @@ def create_task_inbox(payload: dict, runtime_dir: Optional[str] = None) -> dict:
     execution = payload.get("execution") or {}
     gates_payload = payload.get("gates") or {}
 
-    deny_globs = constraints.get("deny_globs") or (project.deny_globs if project else [])
-    include_globs = context.get("include_globs") or (project.default_include_globs if project else [])
+    deny_globs = constraints.get("deny_globs") or (
+        project.deny_globs if project else []
+    )
+    include_globs = context.get("include_globs") or (
+        project.default_include_globs if project else []
+    )
 
     gates_steps = gates_payload.get("steps") or []
     if payload.get("gates_preset"):
-        gates_steps = [{"name": "smoke", "cmd": ["python", "-c", "import sys; sys.exit(0)"]}]
+        gates_steps = [
+            {"name": "smoke", "cmd": ["python", "-c", "import sys; sys.exit(0)"]}
+        ]
 
     spec = TaskSpec(
         task_id=task_id,
@@ -213,7 +235,9 @@ def list_inbox(runtime_dir: Optional[str] = None) -> List[dict]:
     return items
 
 
-def list_runs(runtime_dir: Optional[str] = None, limit: int = 50, verdict: str = "any") -> List[dict]:
+def list_runs(
+    runtime_dir: Optional[str] = None, limit: int = 50, verdict: str = "any"
+) -> List[dict]:
     runtime_root = runtime_dir or _resolve_runtime_dir()
     runs_dir = os.path.join(runtime_root, "runs")
     if not os.path.isdir(runs_dir):
@@ -297,7 +321,9 @@ def get_run_detail(run_id: str, runtime_dir: Optional[str] = None) -> dict:
     }
 
 
-def list_schedules_with_state(schedules_dir: str, runtime_dir: Optional[str] = None) -> List[dict]:
+def list_schedules_with_state(
+    schedules_dir: str, runtime_dir: Optional[str] = None
+) -> List[dict]:
     runtime_root = runtime_dir or _resolve_runtime_dir()
     state_path = os.path.join(runtime_root, "scheduler", "state.json")
     state = {"schedules": {}}
@@ -328,7 +354,10 @@ def list_schedules_with_state(schedules_dir: str, runtime_dir: Optional[str] = N
                     "enabled": spec.enabled,
                     "timezone": spec.timezone,
                     "source": path,
-                    "in_window": evaluate_windows(datetime.now(timezone.utc).astimezone(_tzinfo(spec.timezone)), spec.windows),
+                    "in_window": evaluate_windows(
+                        datetime.now(timezone.utc).astimezone(_tzinfo(spec.timezone)),
+                        spec.windows,
+                    ),
                     "next_eligible_at": status.get("next_eligible_at"),
                     "last_exit_code": status.get("last_exit_code"),
                     "attempts": status.get("attempts", 0),
@@ -355,7 +384,10 @@ def toggle_schedule(schedule_id: str, enabled: bool, schedules_dir: str) -> None
         elif isinstance(raw, dict):
             if "schedules" in raw and isinstance(raw.get("schedules"), list):
                 for item in raw.get("schedules") or []:
-                    if isinstance(item, dict) and item.get("schedule_id") == schedule_id:
+                    if (
+                        isinstance(item, dict)
+                        and item.get("schedule_id") == schedule_id
+                    ):
                         item["enabled"] = bool(enabled)
                         updated = True
             elif raw.get("schedule_id") == schedule_id:
@@ -370,6 +402,8 @@ def toggle_schedule(schedule_id: str, enabled: bool, schedules_dir: str) -> None
     raise FileNotFoundError("Schedule id not found")
 
 
-def approve_apply_run(run_id: str, runtime_dir: Optional[str] = None, actor: Optional[str] = None) -> dict:
+def approve_apply_run(
+    run_id: str, runtime_dir: Optional[str] = None, actor: Optional[str] = None
+) -> dict:
     runtime_root = runtime_dir or _resolve_runtime_dir()
     return approve_apply(run_id, runtime_root, method="control_center", actor=actor)

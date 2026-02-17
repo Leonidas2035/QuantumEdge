@@ -18,7 +18,10 @@ from urllib.request import urlopen
 
 from market_data.models import L1Event, L2Envelope, Priority
 from market_data.hub import MarketDataHubService
-from strategies.scalper_v1.bot.market_data.hub_source import HubMarketDataSource, HubSnapshotClient
+from strategies.scalper_v1.bot.market_data.hub_source import (
+    HubMarketDataSource,
+    HubSnapshotClient,
+)
 
 ROOT = Path(__file__).resolve().parent.parent
 QUESTDB_HOST = "127.0.0.1"
@@ -53,7 +56,9 @@ def questdb_count(table: str) -> int:
         raise RuntimeError(f"Failed to parse QuestDB response: {exc}")
 
 
-async def _publish_l1_events(service: MarketDataHubService, symbol: str, count: int = 3) -> None:
+async def _publish_l1_events(
+    service: MarketDataHubService, symbol: str, count: int = 3
+) -> None:
     for _ in range(count):
         seq = service.bus.assign_sequence(symbol, "l1")
         event = L1Event(
@@ -71,7 +76,9 @@ async def _publish_l1_events(service: MarketDataHubService, symbol: str, count: 
         await asyncio.sleep(0.2)
 
 
-async def _collect_sub_events(source: HubMarketDataSource, limit: int = 2) -> list[dict[str, Any]]:
+async def _collect_sub_events(
+    source: HubMarketDataSource, limit: int = 2
+) -> list[dict[str, Any]]:
     collected: list[dict[str, Any]] = []
     async for payload in source.stream():
         collected.append(payload)
@@ -130,7 +137,12 @@ async def run_smoke() -> None:
             seq=service.bus.assign_sequence("", "equity"),
             event_id=str(uuid.uuid4()),
             source="smoke_e2e",
-            payload={"equity": 400.0, "balance": 395.0, "available": 380.0, "currency": "USDT"},
+            payload={
+                "equity": 400.0,
+                "balance": 395.0,
+                "available": 380.0,
+                "currency": "USDT",
+            },
         )
         if not service.writer:
             raise RuntimeError("TSDB writer is not enabled.")
@@ -141,7 +153,16 @@ async def run_smoke() -> None:
             raise RuntimeError("No L2 spool files found after enqueuing event.")
 
         subprocess.run(
-            [sys.executable, str(SPAWL_SERVICE), "--spool-dir", str(SPOOL_DIR), "--quest-host", QUESTDB_HOST, "--ilp-port", str(QUESTDB_ILP_PORT)],
+            [
+                sys.executable,
+                str(SPAWL_SERVICE),
+                "--spool-dir",
+                str(SPOOL_DIR),
+                "--quest-host",
+                QUESTDB_HOST,
+                "--ilp-port",
+                str(QUESTDB_ILP_PORT),
+            ],
             check=True,
             cwd=ROOT,
         )
@@ -162,7 +183,9 @@ async def run_smoke() -> None:
 
 def start_questdb() -> subprocess.CompletedProcess:
     LOGGER.info("Starting QuestDB via docker compose ...")
-    return subprocess.run([str(ROOT / "deploy" / "questdb" / "up.sh")], check=True, cwd=ROOT)
+    return subprocess.run(
+        [str(ROOT / "deploy" / "questdb" / "up.sh")], check=True, cwd=ROOT
+    )
 
 
 def stop_questdb() -> None:
@@ -172,11 +195,15 @@ def stop_questdb() -> None:
 
 def apply_schema() -> None:
     LOGGER.info("Applying QuestDB schema")
-    subprocess.run([str(SCHEMA_SCRIPT), QUESTDB_HOST, str(QUESTDB_HTTP_PORT)], check=True, cwd=ROOT)
+    subprocess.run(
+        [str(SCHEMA_SCRIPT), QUESTDB_HOST, str(QUESTDB_HTTP_PORT)], check=True, cwd=ROOT
+    )
 
 
 def main() -> None:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s"
+    )
     start_questdb()
     try:
         wait_for_http(f"http://{QUESTDB_HOST}:{QUESTDB_HTTP_PORT}/health", timeout=30.0)

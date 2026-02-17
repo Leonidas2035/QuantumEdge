@@ -2,7 +2,9 @@ from supervisor.autopilot.state_machine import AutopilotState, AutopilotStateMac
 
 
 def test_state_machine_dwell_and_transition_limit():
-    sm = AutopilotStateMachine(["OFF", "SHADOW", "DEGRADED"], min_dwell_sec=10, max_transitions_per_hour=1)
+    sm = AutopilotStateMachine(
+        ["OFF", "SHADOW", "DEGRADED"], min_dwell_sec=10, max_transitions_per_hour=1
+    )
     state = AutopilotState(state="OFF", last_transition_ts=0.0, transitions=[])
     updated = sm.next_state(state, "SHADOW", now=5.0)
     assert updated.state == "OFF"

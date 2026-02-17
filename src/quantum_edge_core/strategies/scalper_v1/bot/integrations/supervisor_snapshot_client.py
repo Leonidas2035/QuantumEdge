@@ -28,7 +28,9 @@ class SupervisorSnapshot:
 class SupervisorSnapshotClient:
     """HTTP client for SupervisorAgent snapshot endpoint."""
 
-    def __init__(self, cfg: SupervisorSnapshotsSettings, logger: logging.Logger) -> None:
+    def __init__(
+        self, cfg: SupervisorSnapshotsSettings, logger: logging.Logger
+    ) -> None:
         self.cfg = cfg
         self.logger = logger
 

@@ -10,7 +10,6 @@ from .aggregator import TelemetryAggregator
 from .alerts import AlertManager
 from .event_store import TelemetryEventStore
 
-
 EVENT_VERSION = "telemetry.v1"
 
 
@@ -26,9 +25,13 @@ class TelemetryConfig:
 class TelemetryManager:
     def __init__(self, cfg: TelemetryConfig) -> None:
         persist_path = _safe_path(cfg.persist_path)
-        self.store = TelemetryEventStore(max_events=cfg.max_events_in_memory, persist_path=persist_path)
+        self.store = TelemetryEventStore(
+            max_events=cfg.max_events_in_memory, persist_path=persist_path
+        )
         self.aggregator = TelemetryAggregator()
-        self.alerts = AlertManager(cfg.alerts_thresholds or {}, cooldown_sec=cfg.alerts_cooldown_sec)
+        self.alerts = AlertManager(
+            cfg.alerts_thresholds or {}, cooldown_sec=cfg.alerts_cooldown_sec
+        )
 
     def ingest(self, payload: Dict[str, object]) -> Dict[str, object]:
         event = normalize_event(payload)

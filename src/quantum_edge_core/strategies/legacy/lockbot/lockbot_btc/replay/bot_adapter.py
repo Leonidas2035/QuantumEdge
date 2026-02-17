@@ -4,14 +4,20 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
-from LockBotBTC.lockbot.contracts.lockbot_control_v1 import ACK_TOPIC, CMD_TOPIC, STATUS_TOPIC
+from LockBotBTC.lockbot.contracts.lockbot_control_v1 import (
+    ACK_TOPIC,
+    CMD_TOPIC,
+    STATUS_TOPIC,
+)
 from LockBotBTC.lockbot_btc.main import LockBotService
 from LockBotBTC.lockbot_btc.replay.bus import ReplayBus
 from LockBotBTC.lockbot_btc.replay.clock import ReplayClock
 
 
 class ReplayBotAdapter:
-    def __init__(self, service: LockBotService, bus: ReplayBus, clock: ReplayClock) -> None:
+    def __init__(
+        self, service: LockBotService, bus: ReplayBus, clock: ReplayClock
+    ) -> None:
         self._service = service
         self._bus = bus
         self._clock = clock

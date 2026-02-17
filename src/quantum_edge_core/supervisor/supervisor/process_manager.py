@@ -99,8 +99,16 @@ class ProcessManager:
         runtime = self._default_runtime()
         if not runtime:
             return {"managed": False, "state": ProcessState.STOPPED}
-        pid = runtime.info.pid if runtime.info and self._pid_running(runtime.info.pid) else None
-        last_exit_time = runtime.info.last_exit_time.isoformat() if runtime.info and runtime.info.last_exit_time else None
+        pid = (
+            runtime.info.pid
+            if runtime.info and self._pid_running(runtime.info.pid)
+            else None
+        )
+        last_exit_time = (
+            runtime.info.last_exit_time.isoformat()
+            if runtime.info and runtime.info.last_exit_time
+            else None
+        )
         return {
             "managed": True,
             "state": runtime.state,
@@ -118,8 +126,14 @@ class ProcessManager:
         runtime = self._require_runtime(name)
         pid = runtime.info.pid if runtime.info else None
         is_running = pid is not None and self._pid_running(pid)
-        last_start_ts = runtime.info.start_time.isoformat() if runtime.info and runtime.info.start_time else None
-        last_health_ts = runtime.last_health_ts.isoformat() if runtime.last_health_ts else None
+        last_start_ts = (
+            runtime.info.start_time.isoformat()
+            if runtime.info and runtime.info.start_time
+            else None
+        )
+        last_health_ts = (
+            runtime.last_health_ts.isoformat() if runtime.last_health_ts else None
+        )
         return ProcessStatus(
             name=name,
             pid=pid,
@@ -149,9 +163,13 @@ class ProcessManager:
     def start(self, name: str) -> ProcessInfo:
         runtime = self._require_runtime(name)
         if runtime.spec.enabled is False:
-            self.logger.warning("Process '%s' is disabled in config; manual start requested.", name)
+            self.logger.warning(
+                "Process '%s' is disabled in config; manual start requested.", name
+            )
         if self._is_runtime_running(runtime):
-            self.logger.info("Process '%s' already running with PID %s", name, runtime.info.pid)
+            self.logger.info(
+                "Process '%s' already running with PID %s", name, runtime.info.pid
+            )
             return runtime.info  # type: ignore[return-value]
         runtime.state = ProcessState.STARTING
         runtime.last_error = None
@@ -167,11 +185,19 @@ class ProcessManager:
         runtime.next_restart_at = None
         self._write_state()
         if runtime.state != ProcessState.RUNNING:
-            self._log_process_event("PROCESS_EXIT", "WARN", {"name": name, "pid": info.pid, "reason": "immediate-exit"})
+            self._log_process_event(
+                "PROCESS_EXIT",
+                "WARN",
+                {"name": name, "pid": info.pid, "reason": "immediate-exit"},
+            )
             raise RuntimeError(f"Process '{name}' exited during startup")
-        self._log_process_event("PROCESS_START", "INFO", {"name": name, "pid": info.pid})
+        self._log_process_event(
+            "PROCESS_START", "INFO", {"name": name, "pid": info.pid}
+        )
         if name == self._default_name:
-            self._log_bot_event("BOT_START", {"mode": self.config.mode, "pid": info.pid})
+            self._log_bot_event(
+                "BOT_START", {"mode": self.config.mode, "pid": info.pid}
+            )
         return info
 
     def stop(self, name: str, graceful_timeout_s: float = 10.0) -> None:
@@ -189,12 +215,16 @@ class ProcessManager:
             try:
                 runtime.process.wait(timeout=graceful_timeout_s)
             except subprocess.TimeoutExpired:
-                self.logger.warning("Process '%s' graceful stop timed out; forcing termination.", name)
+                self.logger.warning(
+                    "Process '%s' graceful stop timed out; forcing termination.", name
+                )
                 self._force_kill(pid)
                 try:
                     runtime.process.wait(timeout=5)
                 except subprocess.TimeoutExpired:
-                    self.logger.error("Failed to confirm process termination for '%s'", name)
+                    self.logger.error(
+                        "Failed to confirm process termination for '%s'", name
+                    )
             runtime.info.last_exit_code = runtime.process.returncode
             runtime.info.last_exit_time = datetime.now(timezone.utc)
         else:
@@ -224,7 +254,9 @@ class ProcessManager:
         if delay > 0:
             time.sleep(delay)
         info = self.start(name)
-        self._log_process_event("PROCESS_RESTART", "INFO", {"name": name, "pid": info.pid})
+        self._log_process_event(
+            "PROCESS_RESTART", "INFO", {"name": name, "pid": info.pid}
+        )
         return info
 
     def ensure_all(self) -> None:
@@ -255,7 +287,9 @@ class ProcessManager:
                 continue
             if runtime.next_restart_at is None:
                 runtime.retries += 1
-                delay = max(policy.backoff_for_attempt(runtime.retries), policy.cooldown_s)
+                delay = max(
+                    policy.backoff_for_attempt(runtime.retries), policy.cooldown_s
+                )
                 runtime.next_restart_at = now + delay
                 self._write_state()
                 continue
@@ -265,7 +299,9 @@ class ProcessManager:
             self._write_state()
             try:
                 info = self.start(name)
-                self._log_process_event("PROCESS_RESTART", "INFO", {"name": name, "pid": info.pid})
+                self._log_process_event(
+                    "PROCESS_RESTART", "INFO", {"name": name, "pid": info.pid}
+                )
             except Exception as exc:
                 runtime.last_error = str(exc)
                 runtime.state = ProcessState.CRASHED
@@ -289,7 +325,9 @@ class ProcessManager:
             if prev_status != new_status:
                 event_type = "HEALTH_OK" if ok else "HEALTH_FAIL"
                 severity = "INFO" if ok else "WARN"
-                self._log_process_event(event_type, severity, {"name": name, "health": runtime.last_health})
+                self._log_process_event(
+                    event_type, severity, {"name": name, "health": runtime.last_health}
+                )
 
     def tick(self) -> None:
         self.ensure_all()
@@ -356,7 +394,9 @@ class ProcessManager:
         self._rotate_log(log_path)
         return log_path.open("a", encoding="utf-8")
 
-    def _rotate_log(self, path: Path, max_bytes: int = 10 * 1024 * 1024, backups: int = 3) -> None:
+    def _rotate_log(
+        self, path: Path, max_bytes: int = 10 * 1024 * 1024, backups: int = 3
+    ) -> None:
         if not path.exists():
             return
         try:
@@ -370,7 +410,11 @@ class ProcessManager:
             path.replace(rotated)
         except OSError:
             return
-        for extra in sorted(path.parent.glob(f"{path.stem}.*.log"), key=lambda p: p.stat().st_mtime, reverse=True):
+        for extra in sorted(
+            path.parent.glob(f"{path.stem}.*.log"),
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        ):
             backups -= 1
             if backups <= 0:
                 try:
@@ -390,9 +434,13 @@ class ProcessManager:
             runtime.last_error = f"exit_code={return_code}"
             self._cleanup_process(runtime)
             self._write_state()
-            self._log_process_event("PROCESS_EXIT", "WARN", {"name": name, "exit_code": return_code})
+            self._log_process_event(
+                "PROCESS_EXIT", "WARN", {"name": name, "exit_code": return_code}
+            )
             if name == self._default_name:
-                self._log_bot_event("BOT_STOP", {"reason": "unexpected-exit", "exit_code": return_code})
+                self._log_bot_event(
+                    "BOT_STOP", {"reason": "unexpected-exit", "exit_code": return_code}
+                )
             return
         if runtime.info and runtime.info.pid:
             alive = self._pid_running(runtime.info.pid)
@@ -477,7 +525,9 @@ class ProcessManager:
         if not pid:
             return
         if os.name == "nt":
-            subprocess.run(["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True)
+            subprocess.run(
+                ["taskkill", "/PID", str(pid), "/T", "/F"], capture_output=True
+            )
         else:
             try:
                 os.kill(pid, signal.SIGKILL)
@@ -489,12 +539,24 @@ class ProcessManager:
         for name, runtime in self._runtime.items():
             payload[name] = {
                 "pid": runtime.info.pid if runtime.info else None,
-                "start_ts": runtime.info.start_time.isoformat() if runtime.info and runtime.info.start_time else None,
+                "start_ts": (
+                    runtime.info.start_time.isoformat()
+                    if runtime.info and runtime.info.start_time
+                    else None
+                ),
                 "last_exit_code": runtime.info.last_exit_code if runtime.info else None,
-                "last_exit_time": runtime.info.last_exit_time.isoformat() if runtime.info and runtime.info.last_exit_time else None,
+                "last_exit_time": (
+                    runtime.info.last_exit_time.isoformat()
+                    if runtime.info and runtime.info.last_exit_time
+                    else None
+                ),
                 "retries": runtime.retries,
                 "last_health": runtime.last_health,
-                "last_health_ts": runtime.last_health_ts.isoformat() if runtime.last_health_ts else None,
+                "last_health_ts": (
+                    runtime.last_health_ts.isoformat()
+                    if runtime.last_health_ts
+                    else None
+                ),
                 "last_error": runtime.last_error,
                 "state": runtime.state,
             }
@@ -524,12 +586,16 @@ class ProcessManager:
             pid = data.get("pid")
             start_ts = _parse_iso(data.get("start_ts"))
             last_exit_time = _parse_iso(data.get("last_exit_time"))
-            runtime.info = ProcessInfo(
-                pid=int(pid) if pid else 0,
-                start_time=start_ts,
-                last_exit_code=data.get("last_exit_code"),
-                last_exit_time=last_exit_time,
-            ) if pid else None
+            runtime.info = (
+                ProcessInfo(
+                    pid=int(pid) if pid else 0,
+                    start_time=start_ts,
+                    last_exit_code=data.get("last_exit_code"),
+                    last_exit_time=last_exit_time,
+                )
+                if pid
+                else None
+            )
             runtime.retries = int(data.get("retries") or 0)
             runtime.last_health = data.get("last_health")
             runtime.last_health_ts = _parse_iso(data.get("last_health_ts"))

@@ -37,7 +37,9 @@ class TrendEvaluator:
         self._llm = llm_client
         self._logger = logger
         self._rate_limiter = PerMinuteRateLimiter(config.max_calls_per_minute)
-        self._cache = TtlCache(config.cache_ttl_seconds) if config.cache_enabled else None
+        self._cache = (
+            TtlCache(config.cache_ttl_seconds) if config.cache_enabled else None
+        )
 
     def evaluate(self, market_slice: Dict[str, Any]) -> TrendResult:
         timestamp = datetime.now(timezone.utc)
@@ -63,9 +65,11 @@ class TrendEvaluator:
         try:
             response = self._llm.complete(
                 model=self._config.model,
-                messages=
-                [
-                    {"role": "system", "content": "You are a trading trend analyst. Respond with JSON {\"trend\":...,\"confidence\":0..1,\"comment\":...}."},
+                messages=[
+                    {
+                        "role": "system",
+                        "content": 'You are a trading trend analyst. Respond with JSON {"trend":...,"confidence":0..1,"comment":...}.',
+                    },
                     {"role": "user", "content": prompt},
                 ],
                 temperature=self._config.temperature,
@@ -92,7 +96,9 @@ class TrendEvaluator:
             "Return JSON with keys trend (UP/DOWN/RANGE), confidence (0..1), comment."
         )
 
-    def _heuristic(self, market_slice: Dict[str, Any], timestamp: datetime, reason: str) -> TrendResult:
+    def _heuristic(
+        self, market_slice: Dict[str, Any], timestamp: datetime, reason: str
+    ) -> TrendResult:
         winrate = market_slice.get("recent_winrate") or 0.0
         pnl_series = market_slice.get("pnl_series") or []
         net_bias = market_slice.get("net_side_bias") or 0.0

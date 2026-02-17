@@ -12,12 +12,20 @@ from urllib import error, request
 class ChatCompletionsClient:
     """Thin wrapper around OpenAI chat completions API."""
 
-    def __init__(self, api_url: str, api_key_env: str, logger: logging.Logger | None = None) -> None:
+    def __init__(
+        self, api_url: str, api_key_env: str, logger: logging.Logger | None = None
+    ) -> None:
         self.api_url = api_url
         self.api_key_env = api_key_env
         self.logger = logger or logging.getLogger(__name__)
 
-    def complete(self, model: str, messages: List[Mapping[str, str]], temperature: float, timeout_seconds: float) -> str:
+    def complete(
+        self,
+        model: str,
+        messages: List[Mapping[str, str]],
+        temperature: float,
+        timeout_seconds: float,
+    ) -> str:
         api_key = os.environ.get(self.api_key_env)
         if not api_key:
             raise RuntimeError(f"API key env var {self.api_key_env} not set")

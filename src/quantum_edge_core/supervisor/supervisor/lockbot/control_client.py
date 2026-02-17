@@ -21,7 +21,9 @@ from supervisor.contracts.lockbot_exec_v1 import ExecEnvelope
 
 
 class LockbotControlClient:
-    def __init__(self, cfg: LockbotControlConfig, logger: Optional[logging.Logger] = None) -> None:
+    def __init__(
+        self, cfg: LockbotControlConfig, logger: Optional[logging.Logger] = None
+    ) -> None:
         self._cfg = cfg
         self._logger = logger or logging.getLogger(__name__)
         self._ctx = zmq.Context.instance()
@@ -59,7 +61,9 @@ class LockbotControlClient:
         self._pub.close()
         self._sub.close()
 
-    def send_command(self, cmd: str, payload: Dict[str, Any], ttl_ms: Optional[int] = None) -> str:
+    def send_command(
+        self, cmd: str, payload: Dict[str, Any], ttl_ms: Optional[int] = None
+    ) -> str:
         command = build_command(
             bot_id=self._cfg.bot_id,
             symbol=self._cfg.symbol,
@@ -71,7 +75,9 @@ class LockbotControlClient:
         ok, reason = validate_command(data)
         if not ok:
             raise ValueError(f"Invalid command: {reason}")
-        self._pub.send_multipart([self._cfg.cmd_topic.encode("utf-8"), msgspec.msgpack.encode(command)])
+        self._pub.send_multipart(
+            [self._cfg.cmd_topic.encode("utf-8"), msgspec.msgpack.encode(command)]
+        )
         self._logger.info("Lockbot cmd sent cmd_id=%s cmd=%s", command.cmd_id, cmd)
         return command.cmd_id
 
@@ -131,7 +137,11 @@ class LockbotControlClient:
             return
         with self._lock:
             self._acks[cmd_id] = ack
-        self._logger.info("Lockbot ack cmd_id=%s status=%s", cmd_id, ack.get("payload", {}).get("status"))
+        self._logger.info(
+            "Lockbot ack cmd_id=%s status=%s",
+            cmd_id,
+            ack.get("payload", {}).get("status"),
+        )
 
     def _store_exec(self, event: Dict[str, Any]) -> None:
         with self._lock:

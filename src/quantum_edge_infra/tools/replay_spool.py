@@ -84,7 +84,9 @@ class ILPClient:
             return
         while True:
             try:
-                self._sock = socket.create_connection((self._host, self._port), timeout=5.0)
+                self._sock = socket.create_connection(
+                    (self._host, self._port), timeout=5.0
+                )
                 self._sock.setsockopt(socket.SOL_SOCKET, socket.SO_KEEPALIVE, 1)
                 logging.info("QuestDB ILP connected to %s:%d", self._host, self._port)
                 return
@@ -100,7 +102,9 @@ class ILPClient:
         self._sock = None
 
 
-def _list_spool_files(spool_dir: Path, from_date: Optional[str], to_date: Optional[str]) -> List[Path]:
+def _list_spool_files(
+    spool_dir: Path, from_date: Optional[str], to_date: Optional[str]
+) -> List[Path]:
     files = []
     base = spool_dir
     if not base.exists():
@@ -140,10 +144,27 @@ def _format_l2_line(event: L2Envelope) -> Optional[str]:
     payload = event.payload or {}
     fields["payload_json"] = json.dumps(payload, separators=(",", ":"))
     if event.entity == "fills":
-        for key in ("order_id", "side", "qty", "price", "fee", "pnl", "exchange", "account"):
+        for key in (
+            "order_id",
+            "side",
+            "qty",
+            "price",
+            "fee",
+            "pnl",
+            "exchange",
+            "account",
+        ):
             fields[key] = payload.get(key)
     elif event.entity == "positions":
-        for key in ("side", "qty", "entry_price", "mark_price", "unrealized_pnl", "leverage", "margin"):
+        for key in (
+            "side",
+            "qty",
+            "entry_price",
+            "mark_price",
+            "unrealized_pnl",
+            "leverage",
+            "margin",
+        ):
             fields[key] = payload.get(key)
     elif event.entity == "equity":
         for key in ("equity", "balance", "available", "currency"):
@@ -217,7 +238,10 @@ def run_replay(
     if state.last_file:
         resume_path = spool_dir / state.last_file
         if not resume_path.exists():
-            logging.warning("Replay state refers to %s which is missing; replaying from start", state.last_file)
+            logging.warning(
+                "Replay state refers to %s which is missing; replaying from start",
+                state.last_file,
+            )
             state.last_file = None
             state.last_line = 0
     client = ILPClient(quest_host, ilp_port, dry_run=dry_run)
@@ -254,7 +278,10 @@ def run_replay(
                     pending.append((rel, idx))
                     total_lines += 1
                 now = time.time()
-                if len(batch) >= batch_rows or (now - last_flush) * 1000 >= flush_interval_ms:
+                if (
+                    len(batch) >= batch_rows
+                    or (now - last_flush) * 1000 >= flush_interval_ms
+                ):
                     if client.send(batch):
                         for file_checkpoint, file_line in pending:
                             state.update(file_checkpoint, file_line)
@@ -279,9 +306,17 @@ def run_replay(
 
 
 def build_parser() -> argparse.ArgumentParser:
-    parser = argparse.ArgumentParser(description="Replay spooled L2 events into QuestDB.")
-    parser.add_argument("--spool-dir", default="spool/l2", help="Spool directory root (default: %(default)s)")
-    parser.add_argument("--state-file", default="spool/l2/.replay_state.json", help="Replay cursor file")
+    parser = argparse.ArgumentParser(
+        description="Replay spooled L2 events into QuestDB."
+    )
+    parser.add_argument(
+        "--spool-dir",
+        default="spool/l2",
+        help="Spool directory root (default: %(default)s)",
+    )
+    parser.add_argument(
+        "--state-file", default="spool/l2/.replay_state.json", help="Replay cursor file"
+    )
     parser.add_argument("--quest-host", default="127.0.0.1")
     parser.add_argument("--ilp-port", type=int, default=9009)
     parser.add_argument("--batch-rows", type=int, default=5000)
@@ -290,13 +325,17 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--from-date", help="Start replay at date (YYYY-MM-DD)")
     parser.add_argument("--to-date", help="Stop replay after date (YYYY-MM-DD)")
     parser.add_argument("--dry-run", action="store_true", help="Do not send to QuestDB")
-    parser.add_argument("--verify-http", action="store_true", help="Hit QuestDB HTTP /exec after replay")
+    parser.add_argument(
+        "--verify-http", action="store_true", help="Hit QuestDB HTTP /exec after replay"
+    )
     parser.add_argument("--http-port", type=int, default=9000)
     return parser
 
 
 def main(argv: Optional[Sequence[str]] = None) -> None:
-    logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s")
+    logging.basicConfig(
+        level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s"
+    )
     parser = build_parser()
     args = parser.parse_args(argv)
     spool_dir = Path(args.spool_dir)

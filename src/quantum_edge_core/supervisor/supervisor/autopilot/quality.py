@@ -43,20 +43,32 @@ class QualityMonitor:
         now = snapshot.ts
         issues: List[QualityIssue] = []
 
-        breaker_count = self._delta_counter("breaker_trips", now, self.breaker_storm_window_sec)
+        breaker_count = self._delta_counter(
+            "breaker_trips", now, self.breaker_storm_window_sec
+        )
         if breaker_count >= self.breaker_storm_threshold > 0:
-            issues.append(QualityIssue("AP_BREAKER_STORM", "FAIL", {"count": breaker_count}))
+            issues.append(
+                QualityIssue("AP_BREAKER_STORM", "FAIL", {"count": breaker_count})
+            )
 
         coverage = self._coverage_ratio(now, self.coverage_window_sec)
         if coverage is not None and coverage < self.coverage_min:
-            issues.append(QualityIssue("AP_METRICS_DEGRADED", "WARN", {"coverage": coverage}))
+            issues.append(
+                QualityIssue("AP_METRICS_DEGRADED", "WARN", {"coverage": coverage})
+            )
 
         latency = snapshot.raw.get("latency_p95_ms")
         if latency is not None and self.latency_p95_ms > 0:
             try:
                 latency_val = float(latency)
                 if latency_val >= self.latency_p95_ms:
-                    issues.append(QualityIssue("AP_METRICS_DEGRADED", "WARN", {"latency_p95_ms": latency_val}))
+                    issues.append(
+                        QualityIssue(
+                            "AP_METRICS_DEGRADED",
+                            "WARN",
+                            {"latency_p95_ms": latency_val},
+                        )
+                    )
             except (TypeError, ValueError):
                 pass
 
@@ -64,9 +76,18 @@ class QualityMonitor:
         if stale_window and stale_window.get("stale"):
             issues.append(QualityIssue("AP_DATA_STALE", "FAIL", stale_window))
 
-        policy_mismatch_ratio = self._policy_mismatch_ratio(now, self.coverage_window_sec)
-        if policy_mismatch_ratio is not None and policy_mismatch_ratio >= self.policy_mismatch_reject_ratio:
-            issues.append(QualityIssue("AP_POLICY_MISMATCH", "FAIL", {"ratio": policy_mismatch_ratio}))
+        policy_mismatch_ratio = self._policy_mismatch_ratio(
+            now, self.coverage_window_sec
+        )
+        if (
+            policy_mismatch_ratio is not None
+            and policy_mismatch_ratio >= self.policy_mismatch_reject_ratio
+        ):
+            issues.append(
+                QualityIssue(
+                    "AP_POLICY_MISMATCH", "FAIL", {"ratio": policy_mismatch_ratio}
+                )
+            )
 
         return issues
 
@@ -94,8 +115,12 @@ class QualityMonitor:
         recent = [s for s in self.history if s.ts >= cutoff]
         if len(recent) < 2:
             return 0
-        start = recent[0].breaker_trips if key == "breaker_trips" else recent[0].counters
-        end = recent[-1].breaker_trips if key == "breaker_trips" else recent[-1].counters
+        start = (
+            recent[0].breaker_trips if key == "breaker_trips" else recent[0].counters
+        )
+        end = (
+            recent[-1].breaker_trips if key == "breaker_trips" else recent[-1].counters
+        )
         return _sum_dict(end) - _sum_dict(start)
 
     def _coverage_ratio(self, now: float, window: int) -> float | None:
@@ -137,7 +162,16 @@ class QualityMonitor:
         rejects = _delta_rejects(recent)
         if rejects <= 0:
             return None
-        mismatch = _delta_rejects(recent, keys=("SCHEMA_HASH_MISMATCH", "MODEL_MISSING", "MODEL_MISSING_H1", "MODEL_MISSING_H5", "MODEL_MISSING_H30"))
+        mismatch = _delta_rejects(
+            recent,
+            keys=(
+                "SCHEMA_HASH_MISMATCH",
+                "MODEL_MISSING",
+                "MODEL_MISSING_H1",
+                "MODEL_MISSING_H5",
+                "MODEL_MISSING_H30",
+            ),
+        )
         return mismatch / rejects if rejects else None
 
 
@@ -160,7 +194,9 @@ def _delta_counter(recent: List[MetricsSnapshot], key: str) -> int:
         return 0
 
 
-def _delta_rejects(recent: List[MetricsSnapshot], keys: Tuple[str, ...] | None = None) -> int:
+def _delta_rejects(
+    recent: List[MetricsSnapshot], keys: Tuple[str, ...] | None = None
+) -> int:
     def _count(snapshot: MetricsSnapshot) -> int:
         total = 0
         for k, v in snapshot.counters.items():

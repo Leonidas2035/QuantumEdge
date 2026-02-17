@@ -31,7 +31,9 @@ class MicrostructureSnapshot:
 class MicrostructureAnalyzer:
     """Computes OFI + companion microstructure features with rolling stats."""
 
-    def __init__(self, window_n: int = 50, eps: float = 1e-9, trade_window_sec: float = 1.0) -> None:
+    def __init__(
+        self, window_n: int = 50, eps: float = 1e-9, trade_window_sec: float = 1.0
+    ) -> None:
         self._window_n = max(int(window_n), 5)
         self._eps = float(eps)
         self._trade_window_ns = max(float(trade_window_sec), 0.1) * 1_000_000_000
@@ -81,8 +83,10 @@ class MicrostructureAnalyzer:
         ofi_raw = self._compute_ofi(bid_px, bid_qty, ask_px, ask_qty)
         self._ofi_window.append(ofi_raw)
         mean = sum(self._ofi_window) / max(len(self._ofi_window), 1)
-        var = sum((val - mean) ** 2 for val in self._ofi_window) / max(len(self._ofi_window), 1)
-        std = max(var ** 0.5, self._eps)
+        var = sum((val - mean) ** 2 for val in self._ofi_window) / max(
+            len(self._ofi_window), 1
+        )
+        std = max(var**0.5, self._eps)
         ofi_z = (ofi_raw - mean) / std
         self._ofi_z_window.append(ofi_z)
         window = list(self._ofi_z_window)[-5:]
@@ -114,7 +118,9 @@ class MicrostructureAnalyzer:
         )
         return snapshot
 
-    def _compute_ofi(self, bid_px: float, bid_qty: float, ask_px: float, ask_qty: float) -> float:
+    def _compute_ofi(
+        self, bid_px: float, bid_qty: float, ask_px: float, ask_qty: float
+    ) -> float:
         if self._prev_bid_px is None or self._prev_ask_px is None:
             self._prev_bid_px = bid_px
             self._prev_bid_qty = bid_qty

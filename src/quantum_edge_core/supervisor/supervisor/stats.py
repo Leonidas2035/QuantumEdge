@@ -29,12 +29,16 @@ class StatsAggregator:
         self._lock = threading.Lock()
         self._regime_last_ts = self.start_ts
 
-    def on_regime_change(self, new_regime: Optional[str], now_ts: Optional[float] = None) -> None:
+    def on_regime_change(
+        self, new_regime: Optional[str], now_ts: Optional[float] = None
+    ) -> None:
         now = now_ts or time.time()
         regime = new_regime or "unknown"
         with self._lock:
             elapsed = max(0.0, now - self._regime_last_ts)
-            self.regime_time_share[self.current_regime] = self.regime_time_share.get(self.current_regime, 0.0) + elapsed
+            self.regime_time_share[self.current_regime] = (
+                self.regime_time_share.get(self.current_regime, 0.0) + elapsed
+            )
             self.current_regime = regime
             self._regime_last_ts = now
 
@@ -61,7 +65,9 @@ class StatsAggregator:
                     self.losses += 1
             self.trades += 1
 
-    def on_block(self, reason_code: str, details: Optional[Dict[str, Any]] = None) -> None:
+    def on_block(
+        self, reason_code: str, details: Optional[Dict[str, Any]] = None
+    ) -> None:
         _ = details
         with self._lock:
             self.blocked_actions_count += 1
@@ -86,7 +92,9 @@ class StatsAggregator:
         now = now_ts or time.time()
         with self._lock:
             uptime = int(now - self.start_ts)
-            top_reasons = sorted(self.block_reasons.items(), key=lambda item: item[1], reverse=True)[:5]
+            top_reasons = sorted(
+                self.block_reasons.items(), key=lambda item: item[1], reverse=True
+            )[:5]
             pnl_total = self.pnl_realized_total
             return {
                 "uptime_s": uptime,

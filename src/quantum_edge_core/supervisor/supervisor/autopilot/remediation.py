@@ -59,7 +59,9 @@ class RemediationManager:
         self._last_restart_ts = 0.0
         self.disable_entries_on_degrade = bool(disable_entries_on_degrade)
 
-    def degrade_to_shadow(self, reason: str, evidence: Optional[dict] = None) -> ActionResult:
+    def degrade_to_shadow(
+        self, reason: str, evidence: Optional[dict] = None
+    ) -> ActionResult:
         if not self._allow_action("DEGRADE_TO_SHADOW"):
             return ActionResult("DEGRADE_TO_SHADOW", False, "AP_ACTION_RATE_LIMIT")
         if self.disable_entries_on_degrade:
@@ -67,21 +69,27 @@ class RemediationManager:
         self._log("DEGRADE_TO_SHADOW", True, reason, evidence=evidence)
         return ActionResult("DEGRADE_TO_SHADOW", True, reason)
 
-    def disable_entries(self, reason: str, evidence: Optional[dict] = None) -> ActionResult:
+    def disable_entries(
+        self, reason: str, evidence: Optional[dict] = None
+    ) -> ActionResult:
         if not self._allow_action("DISABLE_ENTRIES"):
             return ActionResult("DISABLE_ENTRIES", False, "AP_ACTION_RATE_LIMIT")
         self._write_kill_switch(True, reason)
         self._log("DISABLE_ENTRIES", True, reason, evidence=evidence)
         return ActionResult("DISABLE_ENTRIES", True, reason)
 
-    def halt_trading(self, reason: str, evidence: Optional[dict] = None) -> ActionResult:
+    def halt_trading(
+        self, reason: str, evidence: Optional[dict] = None
+    ) -> ActionResult:
         if not self._allow_action("HALT_TRADING"):
             return ActionResult("HALT_TRADING", False, "AP_ACTION_RATE_LIMIT")
         self._write_kill_switch(True, reason)
         self._log("HALT_TRADING", True, reason, evidence=evidence)
         return ActionResult("HALT_TRADING", True, reason)
 
-    def restart_quantumedge(self, reason: str, evidence: Optional[dict] = None) -> ActionResult:
+    def restart_quantumedge(
+        self, reason: str, evidence: Optional[dict] = None
+    ) -> ActionResult:
         if not self._allow_action("RESTART_QUANTEDGE"):
             return ActionResult("RESTART_QUANTEDGE", False, "AP_ACTION_RATE_LIMIT")
         now = time.time()
@@ -96,7 +104,9 @@ class RemediationManager:
         self._log("RESTART_QUANTEDGE", True, reason, evidence=evidence)
         return ActionResult("RESTART_QUANTEDGE", True, reason)
 
-    def rollback_policy(self, reason: str, evidence: Optional[dict] = None) -> ActionResult:
+    def rollback_policy(
+        self, reason: str, evidence: Optional[dict] = None
+    ) -> ActionResult:
         if not self._allow_action("ROLLBACK_POLICY"):
             return ActionResult("ROLLBACK_POLICY", False, "AP_ACTION_RATE_LIMIT")
         path = self.policy_manager.rollback(reason)
@@ -107,10 +117,19 @@ class RemediationManager:
     def _write_kill_switch(self, enabled: bool, reason: str) -> None:
         self.kill_switch_path.parent.mkdir(parents=True, exist_ok=True)
         payload = {"enabled": bool(enabled), "reason": reason, "ts": int(time.time())}
-        self.kill_switch_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+        self.kill_switch_path.write_text(
+            json.dumps(payload, indent=2), encoding="utf-8"
+        )
 
-    def _log(self, action: str, applied: bool, reason: str, evidence: Optional[dict] = None) -> None:
-        payload = {"action": action, "applied": applied, "reason": reason, "correlation_id": str(uuid.uuid4())}
+    def _log(
+        self, action: str, applied: bool, reason: str, evidence: Optional[dict] = None
+    ) -> None:
+        payload = {
+            "action": action,
+            "applied": applied,
+            "reason": reason,
+            "correlation_id": str(uuid.uuid4()),
+        }
         if evidence:
             payload["evidence"] = evidence
         self.audit.log(payload)

@@ -51,10 +51,26 @@ from supervisor.heartbeat import HeartbeatServer, HeartbeatPayload
 from supervisor.logging_setup import setup_logging
 from supervisor.config_loader import load_processes_spec
 from supervisor.process_manager import ProcessManager, ProcessInfo
-from supervisor.risk_engine import HardRiskEngine, RiskDecision, OrderRequest, OrderSide, OrderType
+from supervisor.risk_engine import (
+    HardRiskEngine,
+    RiskDecision,
+    OrderRequest,
+    OrderSide,
+    OrderType,
+)
 from supervisor import state as state_utils
-from supervisor.events import BaseEvent, EventLogger, EventType, new_run_id, prune_event_logs
-from supervisor.audit_report import load_events_for_date, compute_stats, render_markdown_report
+from supervisor.events import (
+    BaseEvent,
+    EventLogger,
+    EventType,
+    new_run_id,
+    prune_event_logs,
+)
+from supervisor.audit_report import (
+    load_events_for_date,
+    compute_stats,
+    render_markdown_report,
+)
 from supervisor.llm_supervisor import LlmSupervisor
 from supervisor.llm.chat_client import ChatCompletionsClient
 from supervisor.llm.trend_evaluator import TrendEvaluator
@@ -67,9 +83,19 @@ from supervisor.tasks.snapshot_scheduler import SnapshotScheduler
 from supervisor.dashboard.service import DashboardService
 from supervisor.dashboard.audit_log import DashboardAuditLogger
 from supervisor.dashboard.state_store import DashboardStateStore
-from supervisor.tsdb import NoopTimeseriesStore, ClickHouseTimeseriesStore, QuestDbTimeseriesStore, TsdbWriter
+from supervisor.tsdb import (
+    NoopTimeseriesStore,
+    ClickHouseTimeseriesStore,
+    QuestDbTimeseriesStore,
+    TsdbWriter,
+)
 from supervisor.tsdb.maintenance import apply_retention_and_rollups
-from supervisor.tsdb.query import build_timeseries_query, derive_questdb_query_url, questdb_query, sanitize_symbol
+from supervisor.tsdb.query import (
+    build_timeseries_query,
+    derive_questdb_query_url,
+    questdb_query,
+    sanitize_symbol,
+)
 from supervisor.ingest.pipeline import IngestPipeline
 from supervisor.ingest.parsers import parse_metrics_file, parse_event_line
 from policy.policy_contract import policy_fingerprint, POLICY_VERSION
@@ -79,8 +105,19 @@ from policy.heuristics import HeuristicThresholds
 from monitoring.api import TelemetryManager, TelemetryConfig
 from supervisor.stats import StatsAggregator
 from supervisor.run_context import RunContext
-from supervisor.regime_sm import RegimeStateMachine, RegimeConfig, DirectivesConfig, load_regime_config, load_directives_config
-from supervisor.guards import GuardEvaluator, GuardResult, GuardConfig, load_guard_config
+from supervisor.regime_sm import (
+    RegimeStateMachine,
+    RegimeConfig,
+    DirectivesConfig,
+    load_regime_config,
+    load_directives_config,
+)
+from supervisor.guards import (
+    GuardEvaluator,
+    GuardResult,
+    GuardConfig,
+    load_guard_config,
+)
 from supervisor.action_ledger import ActionLedger
 from supervisor.policy_store import resolve_active_policy_path
 from supervisor.autopilot.cli import (
@@ -101,6 +138,7 @@ from supervisor.process_spec import ProcessSpec
 from supervisor.lockbot.control_client import LockbotControlClient
 from supervisor.lockbot.models import PolicyRunnerConfig, load_lockbot_policy_config
 from supervisor.lockbot.policy_runner import LockbotPolicyRunner
+from monitor import ZmqHeartbeatSubscriber
 
 try:
     from tools.qe_config import get_qe_paths
@@ -108,30 +146,24 @@ except Exception:  # pragma: no cover - fallback for legacy runs
     get_qe_paths = None
 
 
-class ZmqHeartbeatSubscriber:
-    """Synchronous ZMQ Subscriber for Heartbeats."""
+class ZmqPolicyPublisher:
+    """Publishes policy updates via ZMQ."""
 
-    def __init__(self, endpoint: str = "tcp://127.0.0.1:5557"):
+    def __init__(self, endpoint: str):
         self.ctx = zmq.Context()
-        self.socket = self.ctx.socket(zmq.SUB)
-        self.socket.setsockopt(zmq.LINGER, 0)
-        # Prevent blocking on close
-        self.socket.setsockopt(zmq.RCVTIMEO, 0)
+        self.socket = self.ctx.socket(zmq.PUB)
         try:
-            self.socket.connect(endpoint)
-            self.socket.subscribe(b"heartbeat")
-        except zmq.ZMQError:
-            pass  # Log or handle?
+            self.socket.bind(endpoint)
+            logging.getLogger(__name__).info(f"Policy PUB bound to {endpoint}")
+        except zmq.ZMQError as e:
+            logging.getLogger(__name__).error(f"Failed to bind Policy PUB: {e}")
 
-    def check_messages(self) -> Optional[Dict[str, Any]]:
+    def publish(self, payload: Dict[str, Any]):
         try:
-            # Non-blocking poll
-            if self.socket.poll(0):
-                topic, msg = self.socket.recv_multipart()
-                return json.loads(msg.decode("utf-8"))
-        except (zmq.ZMQError, ValueError, json.JSONDecodeError):
+            msg = json.dumps(payload).encode("utf-8")
+            self.socket.send_multipart([b"policy", msg])
+        except Exception:
             pass
-        return None
 
     def close(self):
         self.socket.close()
@@ -164,9 +196,15 @@ class SupervisorApp:
         process_specs: Dict[str, ProcessSpec],
         project_root: Path,
         logger: Optional[logging.Logger] = None,
+        telemetry_port: int = 5557,
+        policy_port: int = 5558,
+        expected_bot_id: str = "ai_scalper_bot",
     ) -> None:
         self.paths = paths
         self.config = config
+        self.telemetry_port = telemetry_port
+        self.policy_port = policy_port
+        self.expected_bot_id = expected_bot_id
         self.risk_config = risk_config
         self.llm_config = llm_config
         self.trend_config = trend_config
@@ -190,7 +228,12 @@ class SupervisorApp:
         self.snapshots_dir.mkdir(parents=True, exist_ok=True)
         self.run_id = new_run_id()
         self._start_ts = time.time()
-        self.event_logger = EventLogger(events_path, self.logger, snapshots_dir=self.snapshots_dir, run_id=self.run_id)
+        self.event_logger = EventLogger(
+            events_path,
+            self.logger,
+            snapshots_dir=self.snapshots_dir,
+            run_id=self.run_id,
+        )
         prune_event_logs(paths.events_dir, config.events_retention_days, self.logger)
         # TSDB wiring
         self.tsdb_backend = "none"
@@ -200,7 +243,13 @@ class SupervisorApp:
             self.event_logger.tsdb_writer = self.tsdb_writer
         self.heartbeat_server = HeartbeatServer(config.heartbeat_timeout_s)
         risk_state = state_utils.load_risk_state(self.state_dir, today=date.today())
-        self.risk_engine = HardRiskEngine(risk_config, risk_state, self.logger, self.event_logger, llm_config.trust_policy)
+        self.risk_engine = HardRiskEngine(
+            risk_config,
+            risk_state,
+            self.logger,
+            self.event_logger,
+            llm_config.trust_policy,
+        )
         self.process_manager = ProcessManager(
             paths,
             config,
@@ -210,11 +259,26 @@ class SupervisorApp:
             processes=process_specs,
             run_id=self.run_id,
         )
-        self.llm_client = ChatCompletionsClient(llm_config.api_url, llm_config.api_key_env, self.logger)
-        self.llm_supervisor = LlmSupervisor(llm_config, risk_config, paths.events_dir, self.logger, self.event_logger, chat_client=self.llm_client)
-        self.trend_evaluator = TrendEvaluator(trend_config, self.llm_client, self.logger)
-        self.market_risk_monitor = MarketRiskMonitor(market_risk_config, self.llm_client, self.logger)
-        self.behavior_analyzer = TradingBehaviorAnalyzer(behavior_config, self.llm_client, self.logger)
+        self.llm_client = ChatCompletionsClient(
+            llm_config.api_url, llm_config.api_key_env, self.logger
+        )
+        self.llm_supervisor = LlmSupervisor(
+            llm_config,
+            risk_config,
+            paths.events_dir,
+            self.logger,
+            self.event_logger,
+            chat_client=self.llm_client,
+        )
+        self.trend_evaluator = TrendEvaluator(
+            trend_config, self.llm_client, self.logger
+        )
+        self.market_risk_monitor = MarketRiskMonitor(
+            market_risk_config, self.llm_client, self.logger
+        )
+        self.behavior_analyzer = TradingBehaviorAnalyzer(
+            behavior_config, self.llm_client, self.logger
+        )
         snapshot_state_path = self.state_dir / "last_snapshot.json"
         self.snapshot_scheduler = SnapshotScheduler(
             snapshot_config,
@@ -254,7 +318,9 @@ class SupervisorApp:
             port=config.heartbeat_port,
             auth_token=config.api_auth_token,
         )
-        self.api_server = ApiServer(api_config, self, self.logger) if config.api_enabled else None
+        self.api_server = (
+            ApiServer(api_config, self, self.logger) if config.api_enabled else None
+        )
         self._lock = threading.Lock()
         policy_file = Path(config.policy_file_path)
         if not policy_file.is_absolute():
@@ -289,7 +355,11 @@ class SupervisorApp:
             cb_open_sec=config.policy_llm_cb_open_sec,
             policy_state_path=self.paths.runtime_dir / "policy_state.json",
         )
-        telemetry_persist = Path(config.telemetry_persist_path) if config.telemetry_persist_path else None
+        telemetry_persist = (
+            Path(config.telemetry_persist_path)
+            if config.telemetry_persist_path
+            else None
+        )
         if telemetry_persist and not telemetry_persist.is_absolute():
             telemetry_persist = (self.paths.qe_root / telemetry_persist).resolve()
         telemetry_cfg = TelemetryConfig(
@@ -300,7 +370,14 @@ class SupervisorApp:
             alerts_cooldown_sec=config.telemetry_alerts_cooldown_sec,
         )
         self.telemetry = TelemetryManager(telemetry_cfg)
-        self.policy_engine = PolicyEngine(engine_cfg, self.paths, self.process_manager, self.risk_engine, self.logger, telemetry_manager=self.telemetry)
+        self.policy_engine = PolicyEngine(
+            engine_cfg,
+            self.paths,
+            self.process_manager,
+            self.risk_engine,
+            self.logger,
+            telemetry_manager=self.telemetry,
+        )
         self.policy_publisher = PolicyPublisher(policy_file, self.logger)
         self.policy_publish_interval_s = float(config.policy_publish_interval_s)
         self._last_policy_fingerprint: Optional[str] = None
@@ -326,15 +403,25 @@ class SupervisorApp:
         self.alert_storage = AlertStorage(self.paths.runtime_dir / "alerts")
         self.alert_engine = AlertEngine(alert_rules, self.alert_storage)
         dashboard_audit_path = self.paths.runtime_dir / "dashboard" / "audit.jsonl"
-        self.dashboard_audit_logger = DashboardAuditLogger(dashboard_audit_path, self.logger)
+        self.dashboard_audit_logger = DashboardAuditLogger(
+            dashboard_audit_path, self.logger
+        )
         self.dashboard_store = DashboardStateStore(
             audit_logger=self.dashboard_audit_logger,
             alert_engine=self.alert_engine,
-            telemetry_stale_ms=int(getattr(dashboard_config, "telemetry_stale_ms", 5000)),
+            telemetry_stale_ms=int(
+                getattr(dashboard_config, "telemetry_stale_ms", 5000)
+            ),
             cancel_window_sec=int(getattr(dashboard_config, "cancel_window_sec", 60)),
-            cancel_storm_threshold=int(getattr(dashboard_config, "cancel_storm_threshold", 20)),
-            dca_stuck_sell_ms=int(getattr(dashboard_config, "dca_stuck_sell_ms", 60000)),
-            alert_eval_interval_sec=int(getattr(dashboard_config, "alert_eval_interval_sec", 5)),
+            cancel_storm_threshold=int(
+                getattr(dashboard_config, "cancel_storm_threshold", 20)
+            ),
+            dca_stuck_sell_ms=int(
+                getattr(dashboard_config, "dca_stuck_sell_ms", 60000)
+            ),
+            alert_eval_interval_sec=int(
+                getattr(dashboard_config, "alert_eval_interval_sec", 5)
+            ),
         )
         self._alert_eval_interval_s = 10
         self._last_alert_eval_ts = 0.0
@@ -347,12 +434,22 @@ class SupervisorApp:
         self.lockbot_policy_runner: Optional[LockbotPolicyRunner] = None
         if self.lockbot_policy_cfg.enabled:
             if not self.lockbot_client:
-                self.logger.warning("Lockbot policy enabled but lockbot control client is disabled.")
+                self.logger.warning(
+                    "Lockbot policy enabled but lockbot control client is disabled."
+                )
             else:
-                self.lockbot_policy_runner = LockbotPolicyRunner(self.lockbot_policy_cfg, self.lockbot_client, self.logger)
+                self.lockbot_policy_runner = LockbotPolicyRunner(
+                    self.lockbot_policy_cfg, self.lockbot_client, self.logger
+                )
 
         # Initialize ZMQ Heartbeat Subscriber
-        self.heartbeat_subscriber = ZmqHeartbeatSubscriber()
+        self.heartbeat_subscriber = ZmqHeartbeatSubscriber(
+            endpoint=f"tcp://127.0.0.1:{self.telemetry_port}",
+            expected_id=self.expected_id,
+        )
+
+        # Initialize ZMQ Policy Publisher
+        self.zmq_policy_publisher = ZmqPolicyPublisher(f"tcp://*:{self.policy_port}")
 
     def _build_tsdb_writer(self, tsdb_config: TsdbConfig) -> Optional[TsdbWriter]:
         self.tsdb_backend = "none"
@@ -385,7 +482,9 @@ class SupervisorApp:
                     logger=self.logger,
                 )
         except Exception as exc:  # pylint: disable=broad-except
-            self.logger.warning("TSDB backend init failed; continuing without TSDB: %s", exc)
+            self.logger.warning(
+                "TSDB backend init failed; continuing without TSDB: %s", exc
+            )
             store = None
         if store is None:
             return None
@@ -449,13 +548,30 @@ class SupervisorApp:
         status["pid"] = info.pid
         return status
 
-    def get_events_tail(self, limit: int = 200, types: Optional[List[str]] = None, since_ts_ms: Optional[int] = None) -> Dict[str, Any]:
+    def get_events_tail(
+        self,
+        limit: int = 200,
+        types: Optional[List[str]] = None,
+        since_ts_ms: Optional[int] = None,
+    ) -> Dict[str, Any]:
         from supervisor.events import tail_events
 
-        events = tail_events(self.paths.events_dir / f"events_{date.today().isoformat()}.jsonl", limit=limit, types=types, since_ts_ms=since_ts_ms)
+        events = tail_events(
+            self.paths.events_dir / f"events_{date.today().isoformat()}.jsonl",
+            limit=limit,
+            types=types,
+            since_ts_ms=since_ts_ms,
+        )
         return {"events": events}
 
-    def log_api_call(self, method: str, path: str, status_code: int, duration_ms: int, trace_id: Optional[str]) -> None:
+    def log_api_call(
+        self,
+        method: str,
+        path: str,
+        status_code: int,
+        duration_ms: int,
+        trace_id: Optional[str],
+    ) -> None:
         event = BaseEvent(
             ts=datetime.now(timezone.utc),
             type=EventType.API_CALL,
@@ -553,7 +669,9 @@ class SupervisorApp:
 
     def autopilot_set_target_state(self, target_state: str) -> Dict[str, Any]:
         override_path = self.paths.runtime_dir / "autopilot" / "override.json"
-        return autopilot_set_target_state(override_path, target_state, audit=self.autopilot.audit)
+        return autopilot_set_target_state(
+            override_path, target_state, audit=self.autopilot.audit
+        )
 
     def policy_manager_for(self, symbol: Optional[str] = None):
         symbol = symbol or self.autopilot_cfg.policy_symbol
@@ -566,13 +684,20 @@ class SupervisorApp:
         if not runtime_dir.is_absolute():
             runtime_dir = (self.paths.qe_root / runtime_dir).resolve()
         history_dir = self.paths.runtime_dir / "policy_rollouts" / symbol
-        return PolicyManager(artifacts_dir, runtime_dir, history_dir, self.autopilot_cfg.policy_history_keep)
+        return PolicyManager(
+            artifacts_dir,
+            runtime_dir,
+            history_dir,
+            self.autopilot_cfg.policy_history_keep,
+        )
 
     def policy_list_payload(self, symbol: Optional[str] = None) -> Dict[str, Any]:
         manager = self.policy_manager_for(symbol)
         return policy_list(manager)
 
-    def policy_rollout_payload(self, symbol: Optional[str], policy_path: str) -> Dict[str, Any]:
+    def policy_rollout_payload(
+        self, symbol: Optional[str], policy_path: str
+    ) -> Dict[str, Any]:
         symbol = symbol or self.autopilot_cfg.policy_symbol
         manager = self.policy_manager_for(symbol)
         candidate = Path(policy_path)
@@ -584,22 +709,34 @@ class SupervisorApp:
         if symbol:
             base_artifacts = base_artifacts / symbol
         base_rollouts = self.paths.runtime_dir / "policy_rollouts" / symbol
-        if not (is_path_allowed(candidate, base_artifacts) or is_path_allowed(candidate, base_rollouts)):
+        if not (
+            is_path_allowed(candidate, base_artifacts)
+            or is_path_allowed(candidate, base_rollouts)
+        ):
             raise ValueError("policy_path_not_allowed")
-        return policy_rollout(manager, candidate, reason="manual_rollout", audit=self.autopilot.audit)
+        return policy_rollout(
+            manager, candidate, reason="manual_rollout", audit=self.autopilot.audit
+        )
 
     def policy_rollback_payload(self, symbol: Optional[str]) -> Dict[str, Any]:
         manager = self.policy_manager_for(symbol)
-        return policy_rollback(manager, reason="manual_rollback", audit=self.autopilot.audit)
+        return policy_rollback(
+            manager, reason="manual_rollback", audit=self.autopilot.audit
+        )
 
     def get_kill_switch_challenge(self) -> Dict[str, Any]:
         challenge_id = str(uuid.uuid4())
         expires_at = time.time() + 120
-        self._kill_switch_challenge = {"challenge_id": challenge_id, "expires_at": expires_at}
+        self._kill_switch_challenge = {
+            "challenge_id": challenge_id,
+            "expires_at": expires_at,
+        }
         return {"challenge_id": challenge_id, "expires_at": expires_at}
 
     def apply_kill_switch(self, enabled: bool, challenge_id: str) -> Dict[str, Any]:
-        error = validate_kill_switch_challenge(self._kill_switch_challenge, challenge_id, time.time())
+        error = validate_kill_switch_challenge(
+            self._kill_switch_challenge, challenge_id, time.time()
+        )
         if error:
             raise ValueError(error)
         kill_switch_path = self.paths.quantumedge_root / "state" / "kill_switch.json"
@@ -625,7 +762,10 @@ class SupervisorApp:
         if now - self._last_alert_eval_ts >= self._alert_eval_interval_s:
             self._evaluate_alerts()
         if self._last_alert_result:
-            return {"active": self._last_alert_result.active, "recent": self._last_alert_result.recent}
+            return {
+                "active": self._last_alert_result.active,
+                "recent": self._last_alert_result.recent,
+            }
         return {"active": [], "recent": []}
 
     def alerts_ack(self, alert_id: str, note: str) -> Dict[str, Any]:
@@ -647,9 +787,19 @@ class SupervisorApp:
     def run_foreground(self) -> None:
         """Run supervisor loop, restarting the child if it dies."""
 
-        next_llm_check_at = time.time() + (self.llm_config.check_interval_minutes * 60 if self.llm_config.enabled else 0)
-        snapshot_interval = self.snapshot_config.interval_minutes * 60 if self.snapshot_config.enabled else None
-        next_snapshot_at = time.time() + snapshot_interval if snapshot_interval else float("inf")
+        next_llm_check_at = time.time() + (
+            self.llm_config.check_interval_minutes * 60
+            if self.llm_config.enabled
+            else 0
+        )
+        snapshot_interval = (
+            self.snapshot_config.interval_minutes * 60
+            if self.snapshot_config.enabled
+            else None
+        )
+        next_snapshot_at = (
+            time.time() + snapshot_interval if snapshot_interval else float("inf")
+        )
         next_policy_publish_at = 0.0
         stats_interval = int(self.config.telemetry_stats_snapshot_interval_s or 30)
         if stats_interval <= 0:
@@ -659,7 +809,9 @@ class SupervisorApp:
         if directives_interval <= 0:
             directives_interval = 10
         next_directives_at = time.time()
-        autopilot_interval = int(getattr(self.autopilot_cfg, "check_interval_sec", 10) or 10)
+        autopilot_interval = int(
+            getattr(self.autopilot_cfg, "check_interval_sec", 10) or 10
+        )
         if autopilot_interval <= 0:
             autopilot_interval = 10
         next_autopilot_at = time.time() + autopilot_interval
@@ -667,7 +819,9 @@ class SupervisorApp:
         if alerts_interval <= 0:
             alerts_interval = 10
         next_alerts_at = time.time() + alerts_interval
-        episode_tags = getattr(self, "_episode_tags", {}) if hasattr(self, "_episode_tags") else {}
+        episode_tags = (
+            getattr(self, "_episode_tags", {}) if hasattr(self, "_episode_tags") else {}
+        )
         self.run_context = RunContext.create(
             project_root=self.project_root,
             policy_version=POLICY_VERSION,
@@ -681,12 +835,16 @@ class SupervisorApp:
         recovery = self.run_context.find_incomplete_previous_run()
         if recovery:
             self.run_context.log_event("RECOVERY_NOTE", {"previous_run": recovery})
-        self.run_context.log_event("RUN_START", {"mode": self.config.mode, "episode": episode_tags})
+        self.run_context.log_event(
+            "RUN_START", {"mode": self.config.mode, "episode": episode_tags}
+        )
         if any(episode_tags.values()):
             self.run_context.log_event("SESSION_MARK", {"episode": episode_tags})
         run_start_ts = time.time()
         self.stats = StatsAggregator(start_ts=run_start_ts)
-        self.action_ledger = ActionLedger(self.run_context.run_dir / "action_ledger.jsonl", self.run_context)
+        self.action_ledger = ActionLedger(
+            self.run_context.run_dir / "action_ledger.jsonl", self.run_context
+        )
         current_regime = self._get_strategy_mode()
         if current_regime:
             self.stats.on_regime_change(current_regime, now_ts=run_start_ts)
@@ -712,15 +870,65 @@ class SupervisorApp:
                 if hasattr(self, "heartbeat_subscriber"):
                     hb_payload = self.heartbeat_subscriber.check_messages()
                     if hb_payload:
+                        # Normalize payload fields
+                        if "source" in hb_payload:
+                            hb_payload["service_id"] = hb_payload["source"]
+                        if "status" in hb_payload:
+                            hb_payload["state"] = hb_payload["status"]
+
                         valid_keys = HeartbeatPayload.__dataclass_fields__.keys()
-                        filtered = {k: v for k, v in hb_payload.items() if k in valid_keys}
+                        filtered = {
+                            k: v for k, v in hb_payload.items() if k in valid_keys
+                        }
                         self.update_heartbeat(HeartbeatPayload(**filtered))
 
                 self.process_manager.tick()
-                self.telemetry.update_process_state(self.process_manager.get_status_payload())
+                self.telemetry.update_process_state(
+                    self.process_manager.get_status_payload()
+                )
+
+                # --- RISK & POLICY LOGIC (Stage 3) ---
+                # 1. Dead Bot Check
+                hb_state = self.heartbeat_server.get_state()
+                if hb_state.last_heartbeat_time:
+                    elapsed = (
+                        datetime.now(timezone.utc) - hb_state.last_heartbeat_time
+                    ).total_seconds()
+                    if elapsed > 5.0:
+                        self.logger.warning(
+                            f"Bot Dead? No heartbeat for {elapsed:.1f}s"
+                        )
+                        # Mark bot_status = DEAD (logic only, process might be running)
+
+                # 2. Risk Check & Policy Publish
+                risk_state = self.risk_engine.get_state()
+                allow_trading = True
+                reason = "OK"
+
+                if (
+                    risk_state.equity_start is not None
+                    and risk_state.equity_now is not None
+                ):
+                    daily_loss = risk_state.equity_start - risk_state.equity_now
+                    # Use max_daily_loss from config (assuming absolute value or handle pct)
+                    limit = self.risk_config.max_daily_loss_abs
+                    if limit and daily_loss > limit:
+                        allow_trading = False
+                        reason = "RISK_LIMIT"
+
+                policy_payload = {
+                    "allow_trading": allow_trading,
+                    "reason": reason,
+                    "timestamp": time.time(),
+                }
+                self.zmq_policy_publisher.publish(policy_payload)
+                # -------------------------------------
+
                 if time.time() >= next_policy_publish_at:
                     self._publish_policy()
-                    next_policy_publish_at = time.time() + self.policy_publish_interval_s
+                    next_policy_publish_at = (
+                        time.time() + self.policy_publish_interval_s
+                    )
                 if (
                     self.llm_config.enabled
                     and time.time() >= next_llm_check_at
@@ -730,7 +938,9 @@ class SupervisorApp:
                         self.run_llm_check_once()
                     except Exception as exc:
                         self.logger.error("LLM check failed: %s", exc)
-                    next_llm_check_at = time.time() + self.llm_config.check_interval_minutes * 60
+                    next_llm_check_at = (
+                        time.time() + self.llm_config.check_interval_minutes * 60
+                    )
                 if snapshot_interval and time.time() >= next_snapshot_at:
                     try:
                         self.run_snapshot_once(verbose=False)
@@ -742,13 +952,19 @@ class SupervisorApp:
                         telemetry_summary = self.telemetry.summary()
                         guard_context = self._build_guard_context(telemetry_summary)
                         guard_result = self.guard_evaluator.evaluate(guard_context)
-                        self.run_context.log_event("GUARD_EVALUATION", guard_result.to_dict())
+                        self.run_context.log_event(
+                            "GUARD_EVALUATION", guard_result.to_dict()
+                        )
                         if not guard_result.allowed:
                             for reason in guard_result.reason_codes:
-                                self._record_block(reason, {"details": guard_result.details})
+                                self._record_block(
+                                    reason, {"details": guard_result.details}
+                                )
 
                         signals = self._build_regime_signals(telemetry_summary)
-                        decision = self.regime_sm.evaluate(signals, guard_result.critical)
+                        decision = self.regime_sm.evaluate(
+                            signals, guard_result.critical
+                        )
                         if decision.changed:
                             self.stats.on_regime_change(decision.current_state)
                             self.run_context.log_event(
@@ -759,7 +975,11 @@ class SupervisorApp:
                                     "scores": decision.scores,
                                 },
                             )
-                        elif decision.proposed_state and decision.blocked_reason and self.action_ledger:
+                        elif (
+                            decision.proposed_state
+                            and decision.blocked_reason
+                            and self.action_ledger
+                        ):
                             self.action_ledger.append(
                                 "ACTION_REJECTED",
                                 action_type="SET_REGIME",
@@ -784,10 +1004,16 @@ class SupervisorApp:
                         guard_context = self._build_guard_context(telemetry_summary)
                         guard_result = self.guard_evaluator.evaluate(guard_context)
                         signals = self._build_regime_signals(telemetry_summary)
-                        decision = self.regime_sm.evaluate(signals, guard_result.critical)
-                        directives = self._build_directives(decision.current_state, guard_result, episode_tags)
+                        decision = self.regime_sm.evaluate(
+                            signals, guard_result.critical
+                        )
+                        directives = self._build_directives(
+                            decision.current_state, guard_result, episode_tags
+                        )
                         if self._update_directives(directives):
-                            self.run_context.log_event("DIRECTIVES_UPDATED", {"regime": decision.current_state})
+                            self.run_context.log_event(
+                                "DIRECTIVES_UPDATED", {"regime": decision.current_state}
+                            )
                     next_directives_at = time.time() + directives_interval
                 if time.time() >= next_autopilot_at:
                     try:
@@ -797,7 +1023,9 @@ class SupervisorApp:
                                 "AUTOPILOT_STATUS",
                                 {
                                     "state": autopilot_status.get("state"),
-                                    "target_state": autopilot_status.get("target_state"),
+                                    "target_state": autopilot_status.get(
+                                        "target_state"
+                                    ),
                                     "issues": autopilot_status.get("issues"),
                                 },
                             )
@@ -840,6 +1068,8 @@ class SupervisorApp:
                 self.lockbot_policy_runner.stop()
             if hasattr(self, "heartbeat_subscriber"):
                 self.heartbeat_subscriber.close()
+            if hasattr(self, "zmq_policy_publisher"):
+                self.zmq_policy_publisher.close()
             self.process_manager.stop_all()
 
     def risk_status(self) -> None:
@@ -857,12 +1087,14 @@ class SupervisorApp:
         print(f"Realized PnL today: {snapshot.realized_pnl_today}")
         print(f"Max equity intraday: {snapshot.max_equity_intraday}")
         print(f"Min equity intraday: {snapshot.min_equity_intraday}")
-        print(f"Limits: daily_loss_abs={self.risk_config.max_daily_loss_abs}, "
-              f"daily_loss_pct={self.risk_config.max_daily_loss_pct}, "
-              f"drawdown_abs={self.risk_config.max_drawdown_abs}, "
-              f"drawdown_pct={self.risk_config.max_drawdown_pct}, "
-              f"max_notional_per_symbol={self.risk_config.max_notional_per_symbol}, "
-              f"max_leverage={self.risk_config.max_leverage}")
+        print(
+            f"Limits: daily_loss_abs={self.risk_config.max_daily_loss_abs}, "
+            f"daily_loss_pct={self.risk_config.max_daily_loss_pct}, "
+            f"drawdown_abs={self.risk_config.max_drawdown_abs}, "
+            f"drawdown_pct={self.risk_config.max_drawdown_pct}, "
+            f"max_notional_per_symbol={self.risk_config.max_notional_per_symbol}, "
+            f"max_leverage={self.risk_config.max_leverage}"
+        )
 
     def _print_status(self, running: bool, info: Optional[ProcessInfo]) -> None:
         heartbeat_state = self.heartbeat_server.get_state()
@@ -873,12 +1105,22 @@ class SupervisorApp:
         print("Supervisor status")
         print("=================")
         if running and info:
-            uptime = (datetime.now(info.start_time.tzinfo) - info.start_time).total_seconds() if info.start_time else None
+            uptime = (
+                (datetime.now(info.start_time.tzinfo) - info.start_time).total_seconds()
+                if info.start_time
+                else None
+            )
             uptime_str = f"{uptime:.0f}s" if uptime is not None else "unknown"
             print(f"Bot: {state} (pid={info.pid}, uptime={uptime_str})")
         elif info:
-            exit_code = info.last_exit_code if info.last_exit_code is not None else "unknown"
-            exit_time = info.last_exit_time.isoformat() if info.last_exit_time else "unknown time"
+            exit_code = (
+                info.last_exit_code if info.last_exit_code is not None else "unknown"
+            )
+            exit_time = (
+                info.last_exit_time.isoformat()
+                if info.last_exit_time
+                else "unknown time"
+            )
             print(f"Bot: {state} (last exit code={exit_code}, last exit={exit_time})")
         else:
             print(f"Bot: {state}")
@@ -906,17 +1148,25 @@ class SupervisorApp:
             if daily_loss_pct is not None:
                 print(f"  daily_loss_pct: {daily_loss_pct:.2%}")
         if risk_state.realized_pnl_today is not None:
-            print(f"  realized_pnl_today: {risk_state.realized_pnl_today:.2f} {self.risk_config.currency}")
+            print(
+                f"  realized_pnl_today: {risk_state.realized_pnl_today:.2f} {self.risk_config.currency}"
+            )
 
         print("  limits:")
-        print(f"    max_daily_loss_abs: {self.risk_config.max_daily_loss_abs} {self.risk_config.currency}")
+        print(
+            f"    max_daily_loss_abs: {self.risk_config.max_daily_loss_abs} {self.risk_config.currency}"
+        )
         if self.risk_config.max_daily_loss_pct is not None:
             print(f"    max_daily_loss_pct: {self.risk_config.max_daily_loss_pct:.2%}")
         if self.risk_config.max_drawdown_abs is not None:
-            print(f"    max_drawdown_abs: {self.risk_config.max_drawdown_abs} {self.risk_config.currency}")
+            print(
+                f"    max_drawdown_abs: {self.risk_config.max_drawdown_abs} {self.risk_config.currency}"
+            )
         if self.risk_config.max_drawdown_pct is not None:
             print(f"    max_drawdown_pct: {self.risk_config.max_drawdown_pct:.2%}")
-        print(f"    max_notional_per_symbol: {self.risk_config.max_notional_per_symbol}")
+        print(
+            f"    max_notional_per_symbol: {self.risk_config.max_notional_per_symbol}"
+        )
         print(f"    max_leverage: {self.risk_config.max_leverage}")
 
     def update_heartbeat(self, payload: HeartbeatPayload) -> None:
@@ -931,8 +1181,12 @@ class SupervisorApp:
 
         decision = self.risk_engine.evaluate_order(order)
         if not decision.allowed:
-            self.logger.warning("Order blocked: %s - %s", decision.code, decision.reason)
-            self._record_block(decision.code, {"symbol": order.symbol, "reason": decision.reason})
+            self.logger.warning(
+                "Order blocked: %s - %s", decision.code, decision.reason
+            )
+            self._record_block(
+                decision.code, {"symbol": order.symbol, "reason": decision.reason}
+            )
         return decision
 
     def audit(self, target_date: date) -> None:
@@ -940,7 +1194,9 @@ class SupervisorApp:
 
         events = load_events_for_date(self.paths.events_dir, target_date)
         if not events:
-            print(f"No events found for {target_date.isoformat()} in {self.paths.events_dir}")
+            print(
+                f"No events found for {target_date.isoformat()} in {self.paths.events_dir}"
+            )
             return
 
         stats = compute_stats(events)
@@ -972,12 +1228,18 @@ class SupervisorApp:
 
         snapshot = state_utils.load_risk_state(self.state_dir, today=date.today())
         self.risk_engine.state = snapshot
-        advice = self.llm_supervisor.run_check(date.today(), snapshot, mode=self.config.mode)
+        advice = self.llm_supervisor.run_check(
+            date.today(), snapshot, mode=self.config.mode
+        )
         if advice is None:
-            print("LLM check produced no advice (disabled, insufficient data, or error).")
+            print(
+                "LLM check produced no advice (disabled, insufficient data, or error)."
+            )
             return
 
-        print(f"LLM Advice: action={advice.action.value}, risk_multiplier={advice.risk_multiplier}, comment={advice.comment}")
+        print(
+            f"LLM Advice: action={advice.action.value}, risk_multiplier={advice.risk_multiplier}, comment={advice.comment}"
+        )
 
         if self.llm_config.dry_run:
             self.logger.info("LLM advice received (dry-run): %s", advice)
@@ -994,7 +1256,9 @@ class SupervisorApp:
             self.stats.on_trade_result(data)
         return {"status": "ok"}
 
-    def _record_block(self, reason_code: str, details: Optional[Dict[str, Any]] = None) -> None:
+    def _record_block(
+        self, reason_code: str, details: Optional[Dict[str, Any]] = None
+    ) -> None:
         if self.stats:
             self.stats.on_block(reason_code, details)
         if self.run_context:
@@ -1003,25 +1267,33 @@ class SupervisorApp:
                 payload.update(details)
             self.run_context.log_event("BLOCK_REASON", payload)
 
-    def _build_guard_context(self, telemetry_summary: Dict[str, object]) -> Dict[str, Optional[float]]:
+    def _build_guard_context(
+        self, telemetry_summary: Dict[str, object]
+    ) -> Dict[str, Optional[float]]:
         drawdown_pct = None
         risk_state = self.risk_engine.get_state()
         if risk_state.equity_start and risk_state.equity_now is not None:
             try:
-                drawdown_pct = (risk_state.equity_start - risk_state.equity_now) / max(risk_state.equity_start, 1e-9)
+                drawdown_pct = (risk_state.equity_start - risk_state.equity_now) / max(
+                    risk_state.equity_start, 1e-9
+                )
             except Exception:
                 drawdown_pct = None
         return {
             "spread_bps": _coerce_float(telemetry_summary.get("spread_bps")),
             "depth_usd": _coerce_float(telemetry_summary.get("depth_usd")),
             "margin_used_pct": _coerce_float(telemetry_summary.get("margin_used_pct")),
-            "liq_distance_pct": _coerce_float(telemetry_summary.get("liq_distance_pct")),
+            "liq_distance_pct": _coerce_float(
+                telemetry_summary.get("liq_distance_pct")
+            ),
             "drawdown_pct": drawdown_pct,
             "loss_streak": _coerce_float(telemetry_summary.get("loss_streak")),
             "trades_per_hour": _coerce_float(telemetry_summary.get("trades_1h")),
         }
 
-    def _build_regime_signals(self, telemetry_summary: Dict[str, object]) -> Dict[str, Optional[float]]:
+    def _build_regime_signals(
+        self, telemetry_summary: Dict[str, object]
+    ) -> Dict[str, Optional[float]]:
         trend_score = _coerce_float(telemetry_summary.get("trend_score"))
         volatility = _coerce_float(telemetry_summary.get("volatility"))
         spread_bps = _coerce_float(telemetry_summary.get("spread_bps"))
@@ -1031,7 +1303,9 @@ class SupervisorApp:
             "spread_bps": spread_bps,
         }
 
-    def _build_directives(self, regime_state: str, guard_result: GuardResult, episode_tags: Dict[str, Any]) -> Dict[str, Any]:
+    def _build_directives(
+        self, regime_state: str, guard_result: GuardResult, episode_tags: Dict[str, Any]
+    ) -> Dict[str, Any]:
         allow_scalp = guard_result.allowed and regime_state in {"RANGE", "TREND"}
         directives = {
             "ts_utc": datetime.now(timezone.utc).isoformat(),
@@ -1109,10 +1383,15 @@ class SupervisorApp:
         now = time.time()
         risk_state = self.risk_engine.get_state()
         max_drawdown = None
-        if risk_state.equity_start is not None and risk_state.min_equity_intraday is not None:
+        if (
+            risk_state.equity_start is not None
+            and risk_state.min_equity_intraday is not None
+        ):
             max_drawdown = risk_state.equity_start - risk_state.min_equity_intraday
         return {
-            "start_ts_utc": datetime.fromtimestamp(start_ts, tz=timezone.utc).isoformat(),
+            "start_ts_utc": datetime.fromtimestamp(
+                start_ts, tz=timezone.utc
+            ).isoformat(),
             "end_ts_utc": datetime.now(timezone.utc).isoformat(),
             "duration_s": int(now - start_ts),
             "pnl_total": risk_state.realized_pnl_today,
@@ -1163,7 +1442,11 @@ class SupervisorApp:
             snapshot = self.risk_engine.get_state()
         return {
             "heartbeat_status": state.status,
-            "last_heartbeat_time": state.last_heartbeat_time.isoformat() if state.last_heartbeat_time else None,
+            "last_heartbeat_time": (
+                state.last_heartbeat_time.isoformat()
+                if state.last_heartbeat_time
+                else None
+            ),
             "risk": {
                 "halted": snapshot.halted,
                 "halt_reason": snapshot.halt_reason,
@@ -1191,9 +1474,21 @@ class SupervisorApp:
                 side=OrderSide(side),
                 order_type=OrderType(order_type),
                 quantity=quantity,
-                price=float(payload["price"]) if payload.get("price") is not None else None,
-                notional=float(payload["notional"]) if payload.get("notional") is not None else None,
-                leverage=float(payload["leverage"]) if payload.get("leverage") is not None else None,
+                price=(
+                    float(payload["price"])
+                    if payload.get("price") is not None
+                    else None
+                ),
+                notional=(
+                    float(payload["notional"])
+                    if payload.get("notional") is not None
+                    else None
+                ),
+                leverage=(
+                    float(payload["leverage"])
+                    if payload.get("leverage") is not None
+                    else None
+                ),
                 is_reduce_only=bool(payload.get("is_reduce_only", False)),
             )
         except ValueError as exc:
@@ -1204,7 +1499,10 @@ class SupervisorApp:
             snapshot = self.risk_engine.get_state()
             self.risk_engine.persist(self.state_dir)
             if not decision.allowed:
-                self._record_block(decision.code, {"symbol": order_request.symbol, "reason": decision.reason})
+                self._record_block(
+                    decision.code,
+                    {"symbol": order_request.symbol, "reason": decision.reason},
+                )
 
         return {
             "allowed": decision.allowed,
@@ -1234,16 +1532,31 @@ class SupervisorApp:
             "last_exit_code": status.get("last_exit_code"),
         }
         if running and info:
-            uptime = (datetime.now(info.start_time.tzinfo) - info.start_time).total_seconds() if info.start_time else None
+            uptime = (
+                (datetime.now(info.start_time.tzinfo) - info.start_time).total_seconds()
+                if info.start_time
+                else None
+            )
             bot_data.update({"pid": info.pid, "uptime_seconds": uptime})
         elif info:
-            bot_data.update({"last_exit_code": info.last_exit_code, "last_exit_time": info.last_exit_time.isoformat() if info.last_exit_time else None})
+            bot_data.update(
+                {
+                    "last_exit_code": info.last_exit_code,
+                    "last_exit_time": (
+                        info.last_exit_time.isoformat() if info.last_exit_time else None
+                    ),
+                }
+            )
 
         return {
             "bot": bot_data,
             "heartbeat": {
                 "status": heartbeat_state.status,
-                "last_heartbeat_time": heartbeat_state.last_heartbeat_time.isoformat() if heartbeat_state.last_heartbeat_time else None,
+                "last_heartbeat_time": (
+                    heartbeat_state.last_heartbeat_time.isoformat()
+                    if heartbeat_state.last_heartbeat_time
+                    else None
+                ),
             },
             "risk": {
                 "halted": snapshot.halted,
@@ -1284,11 +1597,19 @@ class SupervisorApp:
         return {
             "status": health.status,
             "issues": health.issues,
-            "last_heartbeat_at": health.last_heartbeat_at.isoformat() if health.last_heartbeat_at else None,
-            "last_snapshot_at": health.last_snapshot_at.isoformat() if health.last_snapshot_at else None,
+            "last_heartbeat_at": (
+                health.last_heartbeat_at.isoformat()
+                if health.last_heartbeat_at
+                else None
+            ),
+            "last_snapshot_at": (
+                health.last_snapshot_at.isoformat() if health.last_snapshot_at else None
+            ),
         }
 
-    def dashboard_events(self, limit: Optional[int] = None, types: Optional[List[str]] = None) -> List[Dict[str, Any]]:
+    def dashboard_events(
+        self, limit: Optional[int] = None, types: Optional[List[str]] = None
+    ) -> List[Dict[str, Any]]:
         if not self.dashboard_service or not self.dashboard_service.enabled:
             return []
         evs = self.dashboard_service.list_events(limit=limit, types=types)
@@ -1324,7 +1645,9 @@ class SupervisorApp:
         payload["ts_ms"] = int(time.time() * 1000)
         return payload
 
-    def dashboard_audit(self, since_ts_ms: Optional[int] = None, limit: int = 200) -> Dict[str, Any]:
+    def dashboard_audit(
+        self, since_ts_ms: Optional[int] = None, limit: int = 200
+    ) -> Dict[str, Any]:
         return self.dashboard_store.audit(since_ts_ms, limit)
 
     def dashboard_reset_counters(self) -> Dict[str, Any]:
@@ -1342,7 +1665,9 @@ class SupervisorApp:
         status = self.lockbot_client.status()
         return {"status": "ok", "payload": status}
 
-    def lockbot_execution_arm(self, mode: str, ttl_s: int, reason: str = "") -> Dict[str, Any]:
+    def lockbot_execution_arm(
+        self, mode: str, ttl_s: int, reason: str = ""
+    ) -> Dict[str, Any]:
         if not self.lockbot_client:
             return {"status": "disabled"}
         payload = {"mode": mode, "ttl_s": ttl_s, "reason": reason}
@@ -1374,7 +1699,9 @@ class SupervisorApp:
         )
         return {"status": "sent", "cmd_id": cmd_id}
 
-    def lockbot_execution_cancel_all(self, scope: str = "OPEN_ONLY", reason: str = "") -> Dict[str, Any]:
+    def lockbot_execution_cancel_all(
+        self, scope: str = "OPEN_ONLY", reason: str = ""
+    ) -> Dict[str, Any]:
         if not self.lockbot_client:
             return {"status": "disabled"}
         payload = {"scope": scope, "reason": reason}
@@ -1396,7 +1723,11 @@ class SupervisorApp:
         status = self.lockbot_client.status()
         payload = status.get("payload") if isinstance(status, dict) else None
         exec_state = payload.get("execution") if isinstance(payload, dict) else None
-        return {"status": "ok", "execution": exec_state, "events": self.lockbot_client.exec_recent(limit)}
+        return {
+            "status": "ok",
+            "execution": exec_state,
+            "events": self.lockbot_client.exec_recent(limit),
+        }
 
     def lockbot_policy_status(self) -> Dict[str, Any]:
         if not self.lockbot_policy_runner:
@@ -1412,7 +1743,10 @@ class SupervisorApp:
     def lockbot_policy_decisions(self, limit: int = 20) -> Dict[str, Any]:
         if not self.lockbot_policy_runner:
             return {"status": "disabled", "decisions": []}
-        return {"status": "ok", "decisions": self.lockbot_policy_runner.decisions(limit)}
+        return {
+            "status": "ok",
+            "decisions": self.lockbot_policy_runner.decisions(limit),
+        }
 
     def _build_alert_summary(self) -> Dict[str, Any]:
         metrics = self.autopilot.collector.collect()
@@ -1446,7 +1780,9 @@ class SupervisorApp:
         payload = self._build_alert_summary()
         self._last_alert_result = self.alert_engine.evaluate(payload)
         try:
-            self.dashboard_store.record_alert_transitions(self._last_alert_result, payload)
+            self.dashboard_store.record_alert_transitions(
+                self._last_alert_result, payload
+            )
         except Exception as exc:
             self.logger.debug("Dashboard alert audit failed: %s", exc)
         self._last_alert_eval_ts = time.time()
@@ -1490,8 +1826,11 @@ class SupervisorApp:
         reachable = None
         if enabled and self.tsdb_backend == "clickhouse":
             import urllib.request
+
             try:
-                with urllib.request.urlopen(f"{self.tsdb_config.clickhouse_url}/ping", timeout=3) as resp:
+                with urllib.request.urlopen(
+                    f"{self.tsdb_config.clickhouse_url}/ping", timeout=3
+                ) as resp:
                     reachable = resp.status == 200 and resp.read() in (b"Ok.", b"Ok.\n")
             except Exception:
                 reachable = False
@@ -1503,7 +1842,11 @@ class SupervisorApp:
             "enabled": enabled,
             "backend": self.tsdb_backend,
             "reachable": reachable,
-            "last_write_at": self.tsdb_writer.last_write_at.isoformat() if enabled and self.tsdb_writer.last_write_at else None,
+            "last_write_at": (
+                self.tsdb_writer.last_write_at.isoformat()
+                if enabled and self.tsdb_writer.last_write_at
+                else None
+            ),
             "queue_depth": self.tsdb_writer.queue_depth if enabled else 0,
             "ingest": ingest_status,
         }
@@ -1544,7 +1887,9 @@ class SupervisorApp:
         fallback = self._fallback_recent_events(limit)
         return {"rows": fallback}
 
-    def tsdb_timeseries(self, metric: str, symbol: str, start: str, end: str, bucket: str) -> Dict[str, Any]:
+    def tsdb_timeseries(
+        self, metric: str, symbol: str, start: str, end: str, bucket: str
+    ) -> Dict[str, Any]:
         if not self.tsdb_config.enabled or self.tsdb_backend != "questdb":
             return {"error": "tsdb_disabled"}
         if not start or not end:
@@ -1586,7 +1931,11 @@ class SupervisorApp:
         try:
             payload = json.loads(state_path.read_text(encoding="utf-8"))
         except Exception:
-            return {"enabled": bool(self.tsdb_config.ingest_enabled), "state_path": str(state_path), "status": "bad_json"}
+            return {
+                "enabled": bool(self.tsdb_config.ingest_enabled),
+                "state_path": str(state_path),
+                "status": "bad_json",
+            }
         now = time.time()
         event_lag = _compute_lag(payload.get("last_event_ts"), now)
         metrics_lag = _compute_lag(payload.get("last_metrics_ts"), now)
@@ -1670,17 +2019,26 @@ class SupervisorApp:
             add("FAIL", f"Logs dir missing: {self.paths.logs_dir}")
 
         if self.trend_config.enabled:
-            add("OK", f"TrendEvaluator config loaded (window={self.trend_config.history_window_minutes}m)")
+            add(
+                "OK",
+                f"TrendEvaluator config loaded (window={self.trend_config.history_window_minutes}m)",
+            )
         else:
             add("WARN", "TrendEvaluator disabled")
 
         if self.market_risk_config.enabled:
-            add("OK", f"MarketRiskMonitor config loaded (history={self.market_risk_config.history_window_minutes}m)")
+            add(
+                "OK",
+                f"MarketRiskMonitor config loaded (history={self.market_risk_config.history_window_minutes}m)",
+            )
         else:
             add("WARN", "MarketRiskMonitor disabled")
 
         if self.behavior_config.enabled:
-            add("OK", f"TradingBehaviorAnalyzer history trades={self.behavior_config.history_trades}")
+            add(
+                "OK",
+                f"TradingBehaviorAnalyzer history trades={self.behavior_config.history_trades}",
+            )
         else:
             add("WARN", "TradingBehaviorAnalyzer disabled")
 
@@ -1721,7 +2079,10 @@ class SupervisorApp:
         else:
             add("WARN", "TSDB disabled or using noop backend")
         if self.tsdb_retention.enabled:
-            add("OK", f"TSDB retention config loaded (raw_days={self.tsdb_retention.raw_days})")
+            add(
+                "OK",
+                f"TSDB retention config loaded (raw_days={self.tsdb_retention.raw_days})",
+            )
         else:
             add("WARN", "TSDB retention disabled")
 
@@ -1903,9 +2264,15 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
         dest="runs_path",
         help="Override runs directory for ops reports.",
     )
-    parser.add_argument("--episode-set", dest="episode_set", help="Episode set tag for this run.")
-    parser.add_argument("--episode-id", dest="episode_id", help="Episode id tag for this run.")
-    parser.add_argument("--scenario-id", dest="scenario_id", help="Scenario id tag for this run.")
+    parser.add_argument(
+        "--episode-set", dest="episode_set", help="Episode set tag for this run."
+    )
+    parser.add_argument(
+        "--episode-id", dest="episode_id", help="Episode id tag for this run."
+    )
+    parser.add_argument(
+        "--scenario-id", dest="scenario_id", help="Scenario id tag for this run."
+    )
     parser.add_argument("--note", dest="note", help="Optional note for this run.")
     parser.add_argument(
         "ml_args",
@@ -1934,12 +2301,22 @@ def build_app(
             processes_path = fallback
     process_specs = load_processes_spec(processes_path, paths_config.qe_root)
     risk_config = load_risk_config(supervisor_config_dir / "risk.yaml")
-    llm_config = load_llm_supervisor_config(supervisor_config_dir / "llm_supervisor.yaml")
-    trend_config = load_trend_evaluator_config(supervisor_config_dir / "llm_trend_evaluator.yaml")
-    market_risk_config = load_market_risk_config(supervisor_config_dir / "llm_market_risk.yaml")
-    behavior_config = load_trading_behavior_config(supervisor_config_dir / "llm_trading_behavior.yaml")
+    llm_config = load_llm_supervisor_config(
+        supervisor_config_dir / "llm_supervisor.yaml"
+    )
+    trend_config = load_trend_evaluator_config(
+        supervisor_config_dir / "llm_trend_evaluator.yaml"
+    )
+    market_risk_config = load_market_risk_config(
+        supervisor_config_dir / "llm_market_risk.yaml"
+    )
+    behavior_config = load_trading_behavior_config(
+        supervisor_config_dir / "llm_trading_behavior.yaml"
+    )
     snapshot_config = load_snapshot_scheduler_config(supervisor_config_path)
-    meta_config = load_meta_supervisor_config(supervisor_config_dir / "meta_supervisor.yaml", paths_config)
+    meta_config = load_meta_supervisor_config(
+        supervisor_config_dir / "meta_supervisor.yaml", paths_config
+    )
     dashboard_config = load_dashboard_config(supervisor_config_dir / "dashboard.yaml")
     lockbot_cfg = load_lockbot_config(supervisor_config_dir / "lockbot.yaml")
     policy_cfg_path = project_root / "configs" / "lockbot_btc_policy.yaml"
@@ -1949,12 +2326,37 @@ def build_app(
             policy_cfg_path = fallback
     lockbot_policy_cfg = load_lockbot_policy_config(policy_cfg_path)
     tsdb_config = load_tsdb_config(supervisor_config_dir / "tsdb.yaml")
-    tsdb_retention = load_tsdb_retention_config(supervisor_config_dir / "tsdb_retention.yaml")
+    tsdb_retention = load_tsdb_retention_config(
+        supervisor_config_dir / "tsdb_retention.yaml"
+    )
     autopilot_cfg = load_autopilot_config(supervisor_config_dir / "autopilot.yaml")
-    control_policy_path = resolve_active_policy_path(paths_config.runtime_dir, supervisor_config_dir / "policy.yaml")
+    control_policy_path = resolve_active_policy_path(
+        paths_config.runtime_dir, supervisor_config_dir / "policy.yaml"
+    )
     regime_cfg = load_regime_config(control_policy_path)
     guard_cfg = load_guard_config(control_policy_path)
     directives_cfg = load_directives_config(control_policy_path)
+
+    # Load services config
+    services_path = project_root / "config" / "services.yaml"
+    expected_bot_id = "ai_scalper_bot"
+    telemetry_port = 5557
+    policy_port = 5558
+
+    if services_path.exists():
+        try:
+            import yaml
+
+            with open(services_path) as f:
+                data = yaml.safe_load(f)
+                bot_cfg = data.get("services", {}).get("bot", {})
+                expected_bot_id = bot_cfg.get("id", expected_bot_id)
+                zmq = bot_cfg.get("zmq", {})
+                telemetry_port = int(zmq.get("telemetry_port", telemetry_port))
+                policy_port = int(zmq.get("policy_port", policy_port))
+        except Exception:
+            pass
+
     return SupervisorApp(
         paths_config,
         supervisor_config,
@@ -1977,6 +2379,9 @@ def build_app(
         process_specs,
         project_root,
         logging.getLogger(__name__),
+        telemetry_port=telemetry_port,
+        policy_port=policy_port,
+        expected_bot_id=expected_bot_id,
     )
 
 
@@ -2001,11 +2406,19 @@ def main(argv: Optional[list[str]] = None) -> None:
         except Exception:
             qe_paths = None
 
-    qe_root = Path(os.getenv("QE_ROOT") or (qe_paths["qe_root"] if qe_paths else project_root.parent))
+    qe_root = Path(
+        os.getenv("QE_ROOT")
+        or (qe_paths["qe_root"] if qe_paths else project_root.parent)
+    )
     os.environ.setdefault("QE_ROOT", str(qe_root))
 
-    config_dir = Path(os.getenv("QE_CONFIG_DIR") or (qe_paths["config_dir"] if qe_paths else qe_root / "config"))
-    supervisor_config_dir = Path(qe_paths["supervisor_config_dir"] if qe_paths else project_root / "config")
+    config_dir = Path(
+        os.getenv("QE_CONFIG_DIR")
+        or (qe_paths["config_dir"] if qe_paths else qe_root / "config")
+    )
+    supervisor_config_dir = Path(
+        qe_paths["supervisor_config_dir"] if qe_paths else project_root / "config"
+    )
     project_root = Path(qe_paths["supervisor_dir"] if qe_paths else project_root)
 
     if not supervisor_config_dir.exists():
@@ -2015,12 +2428,21 @@ def main(argv: Optional[list[str]] = None) -> None:
     if not paths_config_path.exists():
         paths_config_path = project_root / "config" / "paths.yaml"
 
-    supervisor_config_path = Path(args.config_path) if args.config_path else Path(os.getenv("SUPERVISOR_CONFIG") or config_dir / "supervisor.yaml")
+    supervisor_config_path = (
+        Path(args.config_path)
+        if args.config_path
+        else Path(os.getenv("SUPERVISOR_CONFIG") or config_dir / "supervisor.yaml")
+    )
     if not supervisor_config_path.exists():
         supervisor_config_path = supervisor_config_dir / "supervisor.yaml"
 
     try:
-        app = build_app(project_root, paths_config_path, supervisor_config_path, supervisor_config_dir)
+        app = build_app(
+            project_root,
+            paths_config_path,
+            supervisor_config_path,
+            supervisor_config_dir,
+        )
     except Exception as exc:
         print(f"Failed to initialize supervisor: {exc}", file=sys.stderr)
         sys.exit(1)
@@ -2069,7 +2491,12 @@ def main(argv: Optional[list[str]] = None) -> None:
         elif args.command == "tsdb-migrate":
             from supervisor.tsdb.migrations import run_tsdb_migrations
 
-            ok = run_tsdb_migrations(project_root, app.tsdb_config, logging.getLogger(__name__), retention=app.tsdb_retention)
+            ok = run_tsdb_migrations(
+                project_root,
+                app.tsdb_config,
+                logging.getLogger(__name__),
+                retention=app.tsdb_retention,
+            )
             sys.exit(0 if ok else 1)
         elif args.command == "tsdb-backfill":
             if not app.tsdb_config.enabled or app.tsdb_config.backend == "none":
@@ -2077,7 +2504,10 @@ def main(argv: Optional[list[str]] = None) -> None:
                 sys.exit(0)
             if args.from_ts or args.to_ts:
                 if not args.from_ts or not args.to_ts:
-                    print("Both --from and --to are required for ranged backfill.", file=sys.stderr)
+                    print(
+                        "Both --from and --to are required for ranged backfill.",
+                        file=sys.stderr,
+                    )
                     sys.exit(1)
                 from supervisor.ingest.backfill import parse_range, run_backfill
 
@@ -2086,7 +2516,15 @@ def main(argv: Optional[list[str]] = None) -> None:
                 start_ts, end_ts = parse_range(args.from_ts, args.to_ts)
                 events_path = app._resolve_qe_path(app.tsdb_config.ingest_events_path)
                 exec_path = app._resolve_qe_path(app.tsdb_config.ingest_exec_path)
-                run_backfill(events_path, exec_path, start_ts, end_ts, writer, logging.getLogger(__name__), symbol=args.symbol)
+                run_backfill(
+                    events_path,
+                    exec_path,
+                    start_ts,
+                    end_ts,
+                    writer,
+                    logging.getLogger(__name__),
+                    symbol=args.symbol,
+                )
                 writer.flush()
                 sys.exit(0)
             days = args.days or app.tsdb_config.backfill_from_days
@@ -2097,10 +2535,21 @@ def main(argv: Optional[list[str]] = None) -> None:
                 print("TSDB writer not initialized; cannot backfill.")
                 sys.exit(1)
             checkpoint = app.state_dir / "tsdb_backfill_state.json"
-            run_backfill(app.paths.events_dir, store, days, checkpoint, logging.getLogger(__name__))
+            run_backfill(
+                app.paths.events_dir,
+                store,
+                days,
+                checkpoint,
+                logging.getLogger(__name__),
+            )
             print(f"Backfill completed for last {days} day(s).")
         elif args.command == "tsdb-maintain":
-            ok = apply_retention_and_rollups(project_root, app.tsdb_config, app.tsdb_retention, logging.getLogger(__name__))
+            ok = apply_retention_and_rollups(
+                project_root,
+                app.tsdb_config,
+                app.tsdb_retention,
+                logging.getLogger(__name__),
+            )
             sys.exit(0 if ok else 1)
         elif args.command == "tsdb-ingest":
             action = args.ml_args[0].lower() if args.ml_args else "status"
@@ -2108,13 +2557,19 @@ def main(argv: Optional[list[str]] = None) -> None:
             stop_path = state_path.with_suffix(".stop")
             if action == "stop":
                 stop_path.write_text(json.dumps({"ts": time.time()}), encoding="utf-8")
-                print(json.dumps({"status": "stopping", "stop_path": str(stop_path)}, indent=2))
+                print(
+                    json.dumps(
+                        {"status": "stopping", "stop_path": str(stop_path)}, indent=2
+                    )
+                )
                 sys.exit(0)
             if action == "status":
                 print(json.dumps(app.get_tsdb_status().get("ingest"), indent=2))
                 sys.exit(0)
             if not app.tsdb_config.ingest_enabled:
-                print("TSDB ingest disabled in config/tsdb.yaml (ingest.enabled=false).")
+                print(
+                    "TSDB ingest disabled in config/tsdb.yaml (ingest.enabled=false)."
+                )
                 sys.exit(1)
             if stop_path.exists():
                 try:
@@ -2143,7 +2598,10 @@ def main(argv: Optional[list[str]] = None) -> None:
             print(json.dumps(app.tsdb_query_sql(args.sql), indent=2))
         elif args.command == "report":
             if not app.tsdb_config.enabled or app.tsdb_config.backend != "questdb":
-                print("TSDB reports require QuestDB (enable config/tsdb.yaml).", file=sys.stderr)
+                print(
+                    "TSDB reports require QuestDB (enable config/tsdb.yaml).",
+                    file=sys.stderr,
+                )
                 sys.exit(1)
             query_url = app._questdb_query_url()
             if not query_url:
@@ -2168,14 +2626,20 @@ def main(argv: Optional[list[str]] = None) -> None:
             code = run_ml_command(ml_args)
             sys.exit(code)
         elif args.command == "telemetry":
-            from supervisor.monitoring.cli import parse_telemetry_args, run_telemetry_command
+            from supervisor.monitoring.cli import (
+                parse_telemetry_args,
+                run_telemetry_command,
+            )
 
             telemetry_args = parse_telemetry_args(args.ml_args)
             code = run_telemetry_command(app, telemetry_args)
             sys.exit(code)
         elif args.command == "research":
             try:
-                from supervisor.research.cli import parse_research_args, run_research_command
+                from supervisor.research.cli import (
+                    parse_research_args,
+                    run_research_command,
+                )
             except ModuleNotFoundError:
                 from research.cli import parse_research_args, run_research_command
 
@@ -2183,14 +2647,25 @@ def main(argv: Optional[list[str]] = None) -> None:
             code = run_research_command(research_args)
             sys.exit(code)
         elif args.command in {"episodes-cut", "episodes-run", "episodes-report"}:
-            from supervisor.episodes.cli import parse_episodes_args, run_episodes_command
+            from supervisor.episodes.cli import (
+                parse_episodes_args,
+                run_episodes_command,
+            )
 
             episodes_args = parse_episodes_args(args.command, args.ml_args)
             code = run_episodes_command(args.command, episodes_args)
             sys.exit(code)
         elif args.command == "ops-autotune":
-            from supervisor.policy_store import load_active_policy, save_new_policy, activate_policy
-            from supervisor.ops.autotuner import load_policy_bundle, collect_metrics, propose_tuning
+            from supervisor.policy_store import (
+                load_active_policy,
+                save_new_policy,
+                activate_policy,
+            )
+            from supervisor.ops.autotuner import (
+                load_policy_bundle,
+                collect_metrics,
+                propose_tuning,
+            )
             from supervisor.ops.config import load_ops_config
             from supervisor.ops.regression_gates import run_regression_gates
 
@@ -2202,7 +2677,9 @@ def main(argv: Optional[list[str]] = None) -> None:
                 telemetry_path = Path(app.config.telemetry_persist_path)
                 if not telemetry_path.is_absolute():
                     telemetry_path = (app.paths.qe_root / telemetry_path).resolve()
-            active_policy, active_version, active_path = load_active_policy(runtime_dir, supervisor_config_dir / "policy.yaml")
+            active_policy, active_version, active_path = load_active_policy(
+                runtime_dir, supervisor_config_dir / "policy.yaml"
+            )
             policy_bundle = load_policy_bundle(active_policy)
             metrics = collect_metrics(runs_dir, telemetry_path, ops_cfg)
 
@@ -2217,13 +2694,30 @@ def main(argv: Optional[list[str]] = None) -> None:
                 if not changes:
                     ctx.log_event("ACTION_REJECTED", {"reason": "no_changes"})
                     _finalize_ops_context(ctx, start_ts, {"status": "no_changes"})
-                    print(json.dumps({"status": "no_changes", "metrics": metrics, "notes": notes}, indent=2))
+                    print(
+                        json.dumps(
+                            {
+                                "status": "no_changes",
+                                "metrics": metrics,
+                                "notes": notes,
+                            },
+                            indent=2,
+                        )
+                    )
                     sys.exit(0)
 
                 if _last_run_has_critical_events(runs_dir):
                     ctx.log_event("ACTION_REJECTED", {"reason": "critical_events"})
-                    _finalize_ops_context(ctx, start_ts, {"status": "blocked", "reason": "critical_events"})
-                    print(json.dumps({"status": "blocked", "reason": "critical_events"}, indent=2))
+                    _finalize_ops_context(
+                        ctx,
+                        start_ts,
+                        {"status": "blocked", "reason": "critical_events"},
+                    )
+                    print(
+                        json.dumps(
+                            {"status": "blocked", "reason": "critical_events"}, indent=2
+                        )
+                    )
                     sys.exit(1)
 
                 version = save_new_policy(
@@ -2239,7 +2733,11 @@ def main(argv: Optional[list[str]] = None) -> None:
                     "ACTION_PROPOSED",
                     action_type="POLICY_UPDATE",
                     target="Supervisor",
-                    payload={"version_id": version.version_id, "changes": changes, "notes": notes},
+                    payload={
+                        "version_id": version.version_id,
+                        "changes": changes,
+                        "notes": notes,
+                    },
                     reason_codes=["AUTOTUNE"],
                     status="PROPOSED",
                 )
@@ -2261,8 +2759,12 @@ def main(argv: Optional[list[str]] = None) -> None:
                 )
                 out_dir = runtime_dir / "regression" / version.version_id
                 out_dir.mkdir(parents=True, exist_ok=True)
-                (out_dir / "gate_report.json").write_text(json.dumps(gate_result, indent=2), encoding="utf-8")
-                (out_dir / "gate_report.md").write_text(_render_gate_report_md(gate_result), encoding="utf-8")
+                (out_dir / "gate_report.json").write_text(
+                    json.dumps(gate_result, indent=2), encoding="utf-8"
+                )
+                (out_dir / "gate_report.md").write_text(
+                    _render_gate_report_md(gate_result), encoding="utf-8"
+                )
 
                 if args.apply and gate_result.get("passed"):
                     activate_policy(runtime_dir, version.version_id, source="autotune")
@@ -2274,7 +2776,11 @@ def main(argv: Optional[list[str]] = None) -> None:
                         reason_codes=["AUTOTUNE"],
                         status="APPLIED",
                     )
-                    result = {"status": "applied", "policy_version": version.version_id, "gates": gate_result}
+                    result = {
+                        "status": "applied",
+                        "policy_version": version.version_id,
+                        "gates": gate_result,
+                    }
                     _finalize_ops_context(ctx, start_ts, result)
                     print(json.dumps(result, indent=2))
                     sys.exit(0)
@@ -2283,7 +2789,10 @@ def main(argv: Optional[list[str]] = None) -> None:
                     "ACTION_REJECTED",
                     action_type="POLICY_UPDATE",
                     target="Supervisor",
-                    payload={"version_id": version.version_id, "reason": "gates_failed_or_dry_run"},
+                    payload={
+                        "version_id": version.version_id,
+                        "reason": "gates_failed_or_dry_run",
+                    },
                     reason_codes=["AUTOTUNE"],
                     status="REJECTED",
                 )
@@ -2297,7 +2806,9 @@ def main(argv: Optional[list[str]] = None) -> None:
                 print(json.dumps(result, indent=2))
                 sys.exit(0 if gate_result.get("passed") else 1)
             finally:
-                _finalize_ops_context(ctx, start_ts, {"status": "completed"}, finalize_only=True)
+                _finalize_ops_context(
+                    ctx, start_ts, {"status": "completed"}, finalize_only=True
+                )
         elif args.command == "ops-regression-gate":
             from supervisor.policy_store import load_active_policy
             from supervisor.ops.regression_gates import run_regression_gates
@@ -2305,11 +2816,20 @@ def main(argv: Optional[list[str]] = None) -> None:
             runtime_dir = app.paths.runtime_dir
             candidate_path = Path(args.policy_path) if args.policy_path else None
             if candidate_path is None and args.policy_version:
-                candidate_path = runtime_dir / "policy_versions" / f"policy_{args.policy_version}.yaml"
+                candidate_path = (
+                    runtime_dir
+                    / "policy_versions"
+                    / f"policy_{args.policy_version}.yaml"
+                )
             if candidate_path is None:
-                print("Missing --policy-version or --policy-path for ops-regression-gate.", file=sys.stderr)
+                print(
+                    "Missing --policy-version or --policy-path for ops-regression-gate.",
+                    file=sys.stderr,
+                )
                 sys.exit(1)
-            _, _, active_path = load_active_policy(runtime_dir, supervisor_config_dir / "policy.yaml")
+            _, _, active_path = load_active_policy(
+                runtime_dir, supervisor_config_dir / "policy.yaml"
+            )
             result = run_regression_gates(
                 episode_set=args.episode_set or "tick_scenarios_v1",
                 runtime_dir=runtime_dir,
@@ -2320,8 +2840,12 @@ def main(argv: Optional[list[str]] = None) -> None:
             if args.policy_version:
                 out_dir = runtime_dir / "regression" / args.policy_version
                 out_dir.mkdir(parents=True, exist_ok=True)
-                (out_dir / "gate_report.json").write_text(json.dumps(result, indent=2), encoding="utf-8")
-                (out_dir / "gate_report.md").write_text(_render_gate_report_md(result), encoding="utf-8")
+                (out_dir / "gate_report.json").write_text(
+                    json.dumps(result, indent=2), encoding="utf-8"
+                )
+                (out_dir / "gate_report.md").write_text(
+                    _render_gate_report_md(result), encoding="utf-8"
+                )
             print(json.dumps(result, indent=2))
             sys.exit(0 if result.get("passed") else 1)
         elif args.command == "ops-daily-report":
@@ -2341,7 +2865,9 @@ def main(argv: Optional[list[str]] = None) -> None:
                 if not telemetry_path.is_absolute():
                     telemetry_path = (app.paths.qe_root / telemetry_path).resolve()
             report_dir = runtime_dir / "reports" / "daily"
-            report_path = generate_daily_report(target_date, runtime_dir, report_dir, telemetry_path=telemetry_path)
+            report_path = generate_daily_report(
+                target_date, runtime_dir, report_dir, telemetry_path=telemetry_path
+            )
             print(f"Daily report written to: {report_path}")
         elif args.command == "ops-rollback":
             from supervisor.policy_store import rollback_to
@@ -2370,13 +2896,25 @@ def main(argv: Optional[list[str]] = None) -> None:
                 sys.exit(1)
             print(
                 json.dumps(
-                    policy_rollout(manager, Path(args.path), reason="manual_rollout", audit=app.autopilot.audit),
+                    policy_rollout(
+                        manager,
+                        Path(args.path),
+                        reason="manual_rollout",
+                        audit=app.autopilot.audit,
+                    ),
                     indent=2,
                 )
             )
         elif args.command == "policy-rollback":
             manager = app.policy_manager_for(args.symbol)
-            print(json.dumps(policy_rollback(manager, reason="manual_rollback", audit=app.autopilot.audit), indent=2))
+            print(
+                json.dumps(
+                    policy_rollback(
+                        manager, reason="manual_rollback", audit=app.autopilot.audit
+                    ),
+                    indent=2,
+                )
+            )
         elif args.command == "lockbot-policy-status":
             print(json.dumps(app.lockbot_policy_status(), indent=2))
         elif args.command == "lockbot-policy-enable":
@@ -2386,15 +2924,29 @@ def main(argv: Optional[list[str]] = None) -> None:
         elif args.command == "lockbot-policy-decisions":
             print(json.dumps(app.lockbot_policy_decisions(args.limit), indent=2))
         elif args.command == "lockbot-exec-arm":
-            print(json.dumps(app.lockbot_execution_arm(args.exec_mode, args.exec_ttl_s, args.exec_reason), indent=2))
+            print(
+                json.dumps(
+                    app.lockbot_execution_arm(
+                        args.exec_mode, args.exec_ttl_s, args.exec_reason
+                    ),
+                    indent=2,
+                )
+            )
         elif args.command == "lockbot-exec-disarm":
             print(json.dumps(app.lockbot_execution_disarm(args.exec_reason), indent=2))
         elif args.command == "lockbot-exec-cancel-all":
-            print(json.dumps(app.lockbot_execution_cancel_all(args.exec_scope, args.exec_reason), indent=2))
+            print(
+                json.dumps(
+                    app.lockbot_execution_cancel_all(args.exec_scope, args.exec_reason),
+                    indent=2,
+                )
+            )
         elif args.command == "lockbot-exec-status":
             print(json.dumps(app.lockbot_execution_status(args.limit), indent=2))
     except Exception as exc:
-        logging.getLogger(__name__).exception("Command '%s' failed: %s", args.command, exc)
+        logging.getLogger(__name__).exception(
+            "Command '%s' failed: %s", args.command, exc
+        )
         sys.exit(1)
 
 
@@ -2453,7 +3005,11 @@ def _last_run_has_critical_events(runs_dir: Path) -> bool:
     critical_types = {"ERROR", "KILL_SWITCH", "RISK_LIMIT_BREACH", "HALT"}
     if not runs_dir.exists():
         return False
-    run_dirs = sorted([p for p in runs_dir.iterdir() if p.is_dir()], key=lambda p: p.stat().st_mtime, reverse=True)
+    run_dirs = sorted(
+        [p for p in runs_dir.iterdir() if p.is_dir()],
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
     for run_dir in run_dirs:
         summary_path = run_dir / "summary.json"
         if summary_path.exists():

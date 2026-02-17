@@ -14,7 +14,9 @@ from market_data.lockbot.schema import LockbotMarketEvent
 
 
 class HubSubscriber:
-    def __init__(self, endpoint: str, topics: Iterable[str], rcvhwm: int = 1000) -> None:
+    def __init__(
+        self, endpoint: str, topics: Iterable[str], rcvhwm: int = 1000
+    ) -> None:
         self._endpoint = endpoint
         self._topics = list(topics)
         self._ctx = zmq.asyncio.Context.instance()

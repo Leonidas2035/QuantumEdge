@@ -1,6 +1,7 @@
 import zmq
 import datetime
 
+
 def listen():
     context = zmq.Context()
     socket = context.socket(zmq.SUB)
@@ -25,6 +26,7 @@ def listen():
             break
         except Exception as e:
             print(f"Error: {e}")
+
 
 if __name__ == "__main__":
     listen()

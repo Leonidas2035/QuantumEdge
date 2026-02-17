@@ -16,7 +16,12 @@ def test_safety_gate_blocks_notional():
 
 def test_safety_gate_blocks_on_data_stale():
     gate = SafetyGate({})
-    intent = {"action": "buy", "reduce_only": False, "notional": 10.0, "position_notional": 0.0}
+    intent = {
+        "action": "buy",
+        "reduce_only": False,
+        "notional": 10.0,
+        "position_notional": 0.0,
+    }
     decision = gate.evaluate(intent, data_stale=True)
     assert not decision.allow
     assert decision.reason == "DATA_STALE"

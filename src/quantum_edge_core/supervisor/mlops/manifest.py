@@ -43,7 +43,9 @@ def validate_manifest(data: Dict[str, Any]) -> Dict[str, Any]:
     features_version = _require_str(data.get("features_version"), "features_version")
     feature_schema_version = data.get("feature_schema_version")
     if feature_schema_version is not None:
-        feature_schema_version = _require_str(feature_schema_version, "feature_schema_version")
+        feature_schema_version = _require_str(
+            feature_schema_version, "feature_schema_version"
+        )
     feature_names = data.get("feature_names")
     if feature_names is not None:
         if not isinstance(feature_names, list) or not feature_names:
@@ -79,9 +81,13 @@ def validate_manifest(data: Dict[str, Any]) -> Dict[str, Any]:
     if "python" in artifact:
         artifact_out["python"] = _require_str(artifact.get("python"), "artifact.python")
     if "platform" in artifact:
-        artifact_out["platform"] = _require_str(artifact.get("platform"), "artifact.platform")
+        artifact_out["platform"] = _require_str(
+            artifact.get("platform"), "artifact.platform"
+        )
     if "serializer" in artifact:
-        artifact_out["serializer"] = _require_str(artifact.get("serializer"), "artifact.serializer")
+        artifact_out["serializer"] = _require_str(
+            artifact.get("serializer"), "artifact.serializer"
+        )
     if "lib_versions" in artifact:
         lib_versions = artifact.get("lib_versions")
         if not isinstance(lib_versions, dict):

@@ -9,7 +9,15 @@ from typing import Iterable, List, Optional, Set
 from secret_masking import mask_secrets
 
 # Default settings for context collection
-DEFAULT_INCLUDE_EXTS: Set[str] = {".py", ".md", ".yaml", ".yml", ".toml", ".json", ".txt"}
+DEFAULT_INCLUDE_EXTS: Set[str] = {
+    ".py",
+    ".md",
+    ".yaml",
+    ".yml",
+    ".toml",
+    ".json",
+    ".txt",
+}
 DEFAULT_EXCLUDE_DIRS: Set[str] = {
     ".git",
     ".github",
@@ -50,6 +58,7 @@ DEFAULT_EXCLUDE_FILES: Set[str] = {
     "*.kdbx",
 }
 
+
 @dataclass
 class ScannerStats:
     """
@@ -88,9 +97,13 @@ class ProjectScanner:
             self.project_root = found_root or os.path.abspath(".")
         else:
             self.project_root = os.path.abspath(project_root)
-        self.include_exts = {ext.lower() for ext in (include_exts or DEFAULT_INCLUDE_EXTS)}
+        self.include_exts = {
+            ext.lower() for ext in (include_exts or DEFAULT_INCLUDE_EXTS)
+        }
         self.exclude_dirs = {d.lower() for d in (exclude_dirs or DEFAULT_EXCLUDE_DIRS)}
-        self.exclude_files = {f.lower() for f in (exclude_files or DEFAULT_EXCLUDE_FILES)}
+        self.exclude_files = {
+            f.lower() for f in (exclude_files or DEFAULT_EXCLUDE_FILES)
+        }
         self.max_file_chars = max_file_chars
         self.stats = ScannerStats()
 
@@ -105,7 +118,9 @@ class ProjectScanner:
         rel_lower = rel_path.replace("\\", "/").lower()
         name_lower = filename.lower()
         for pattern in self.exclude_files:
-            if fnmatch.fnmatch(name_lower, pattern) or fnmatch.fnmatch(rel_lower, pattern):
+            if fnmatch.fnmatch(name_lower, pattern) or fnmatch.fnmatch(
+                rel_lower, pattern
+            ):
                 return True
         return False
 
@@ -129,7 +144,11 @@ class ProjectScanner:
                 text=True,
                 check=True,
             )
-            return [os.path.join(self.project_root, line) for line in proc.stdout.splitlines() if line]
+            return [
+                os.path.join(self.project_root, line)
+                for line in proc.stdout.splitlines()
+                if line
+            ]
         except (subprocess.SubprocessError, FileNotFoundError):
             return None
 
@@ -152,7 +171,11 @@ class ProjectScanner:
         explicit_files: List[str] = []
         if focus_files:
             for entry in focus_files:
-                abs_path = entry if os.path.isabs(entry) else os.path.join(self.project_root, entry)
+                abs_path = (
+                    entry
+                    if os.path.isabs(entry)
+                    else os.path.join(self.project_root, entry)
+                )
                 abs_path = os.path.abspath(abs_path)
                 try:
                     common = os.path.commonpath([abs_path, self.project_root])
@@ -194,7 +217,9 @@ class ProjectScanner:
                     continue
 
                 try:
-                    with open(abs_path, "r", encoding="utf-8", errors="ignore") as handle:
+                    with open(
+                        abs_path, "r", encoding="utf-8", errors="ignore"
+                    ) as handle:
                         content = handle.read()
                 except OSError:
                     continue
@@ -237,7 +262,9 @@ class ProjectScanner:
                         continue
 
                     try:
-                        with open(abs_path, "r", encoding="utf-8", errors="ignore") as handle:
+                        with open(
+                            abs_path, "r", encoding="utf-8", errors="ignore"
+                        ) as handle:
                             content = handle.read()
                     except OSError:
                         continue
@@ -297,10 +324,11 @@ class ProjectScanner:
                 curr = curr[part]
 
         lines = ["."]
+
         def _render(node, indent=""):
             items = sorted(node.items())
             for idx, (name, children) in enumerate(items):
-                is_last = (idx == len(items) - 1)
+                is_last = idx == len(items) - 1
                 connector = "└── " if is_last else "├── "
                 lines.append(f"{indent}{connector}{name}")
                 if children:
@@ -323,7 +351,7 @@ class ProjectScanner:
         entries = [e for e in entries if not self._should_exclude_dir(e)]
 
         for idx, entry in enumerate(entries):
-            is_last = (idx == len(entries) - 1)
+            is_last = idx == len(entries) - 1
             connector = "└── " if is_last else "├── "
             abs_path = os.path.join(root_dir, entry)
             lines.append(f"{indent}{connector}{entry}")
@@ -373,10 +401,11 @@ class ProjectScanner:
                 curr = curr[part]
 
         lines = ["."]
+
         def _render(node, indent=""):
             items = sorted(node.items())
             for idx, (name, children) in enumerate(items):
-                is_last = (idx == len(items) - 1)
+                is_last = idx == len(items) - 1
                 connector = "└── " if is_last else "├── "
                 lines.append(f"{indent}{connector}{name}")
                 if children:
@@ -396,7 +425,7 @@ class ProjectScanner:
         try:
             return self.collect_project_context(
                 max_chars=1_000_000,
-                include_globs=["src/**/*", "config/**/*", "tests/**/*"]
+                include_globs=["src/**/*", "config/**/*", "tests/**/*"],
             )
         finally:
             self.include_exts = original_exts
@@ -414,8 +443,7 @@ class ProjectScanner:
             # We use include_globs to target src/ while keeping project_root at the base
             # so that relative paths remain correct (e.g., src/quantum_edge_core/...)
             context = self.collect_project_context(
-                max_chars=1_000_000,
-                include_globs=["src/**/*.py"]
+                max_chars=1_000_000, include_globs=["src/**/*.py"]
             )
 
             # If src/ was empty or missing, try root .py files as fallback
@@ -439,7 +467,9 @@ def collect_project_context(
     """
     Functional wrapper to collect project context without instantiating the class directly.
     """
-    scanner = ProjectScanner(project_root, include_exts=include_patterns, exclude_dirs=exclude_dirs)
+    scanner = ProjectScanner(
+        project_root, include_exts=include_patterns, exclude_dirs=exclude_dirs
+    )
     return scanner.collect_project_context(
         max_chars=max_chars,
         include_globs=include_globs,

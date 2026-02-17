@@ -8,7 +8,6 @@ from typing import Any, Dict, Tuple
 
 import msgspec
 
-
 SCHEMA_VERSION = "lockbot_control.v1"
 
 CMD_TOPIC = "LOCKBOT:BTCUSDT:cmd"
@@ -103,16 +102,29 @@ def validate_command(command: Dict[str, Any]) -> Tuple[bool, str]:
     cmd = payload.get("cmd")
     if cmd not in CMD_TYPES:
         return False, "cmd"
-    if cmd == "SET_REGIME" and payload.get("regime") not in {"RANGE", "TREND_UP", "TREND_DOWN", "CHAOS"}:
+    if cmd == "SET_REGIME" and payload.get("regime") not in {
+        "RANGE",
+        "TREND_UP",
+        "TREND_DOWN",
+        "CHAOS",
+    }:
         return False, "regime"
     if cmd == "SET_DELTA_TARGET":
         if payload.get("target") is None:
             return False, "target"
-    if cmd == "EXEC_STEP" and payload.get("action") not in {"TRIM_LONG", "TRIM_SHORT", "ADD_LONG", "ADD_SHORT"}:
+    if cmd == "EXEC_STEP" and payload.get("action") not in {
+        "TRIM_LONG",
+        "TRIM_SHORT",
+        "ADD_LONG",
+        "ADD_SHORT",
+    }:
         return False, "action"
     if cmd == "PANIC_LOCK" and "force_1to1" not in payload:
         return False, "force_1to1"
-    if cmd == "EXIT_LOCK" and payload.get("mode") not in {"MARKET", "LIMIT_AROUND_VWAP"}:
+    if cmd == "EXIT_LOCK" and payload.get("mode") not in {
+        "MARKET",
+        "LIMIT_AROUND_VWAP",
+    }:
         return False, "exit_mode"
     if cmd == "ARM_EXECUTION":
         if payload.get("mode") not in {"DRY_RUN", "DEMO_TESTNET", "LIVE_MAINNET"}:

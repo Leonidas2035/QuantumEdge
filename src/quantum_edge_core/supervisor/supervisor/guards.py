@@ -47,7 +47,9 @@ def load_guard_config(path: Path) -> GuardConfig:
         spread_bps_max=_coerce_optional_float(section.get("spread_bps_max")),
         depth_usd_min=_coerce_optional_float(section.get("depth_usd_min")),
         max_margin_used_pct=_coerce_optional_float(section.get("max_margin_used_pct")),
-        min_liq_distance_pct=_coerce_optional_float(section.get("min_liq_distance_pct")),
+        min_liq_distance_pct=_coerce_optional_float(
+            section.get("min_liq_distance_pct")
+        ),
         max_drawdown_pct=_coerce_optional_float(section.get("max_drawdown_pct")),
         max_loss_streak=_coerce_optional_int(section.get("max_loss_streak")),
         max_trades_per_hour=_coerce_optional_int(section.get("max_trades_per_hour")),
@@ -82,11 +84,19 @@ class GuardEvaluator:
         critical = False
 
         spread_bps = context.get("spread_bps")
-        if self.cfg.spread_bps_max is not None and spread_bps is not None and spread_bps > self.cfg.spread_bps_max:
+        if (
+            self.cfg.spread_bps_max is not None
+            and spread_bps is not None
+            and spread_bps > self.cfg.spread_bps_max
+        ):
             reasons.append("SPREAD_TOO_WIDE")
 
         depth_usd = context.get("depth_usd")
-        if self.cfg.depth_usd_min is not None and depth_usd is not None and depth_usd < self.cfg.depth_usd_min:
+        if (
+            self.cfg.depth_usd_min is not None
+            and depth_usd is not None
+            and depth_usd < self.cfg.depth_usd_min
+        ):
             reasons.append("DEPTH_TOO_LOW")
 
         margin_used_pct = context.get("margin_used_pct")
@@ -117,7 +127,11 @@ class GuardEvaluator:
             critical = True
 
         loss_streak = context.get("loss_streak")
-        if self.cfg.max_loss_streak is not None and loss_streak is not None and loss_streak >= self.cfg.max_loss_streak:
+        if (
+            self.cfg.max_loss_streak is not None
+            and loss_streak is not None
+            and loss_streak >= self.cfg.max_loss_streak
+        ):
             reasons.append("MAX_LOSS_STREAK")
 
         trades_per_hour = context.get("trades_per_hour")

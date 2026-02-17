@@ -50,11 +50,17 @@ def validate(root: Path) -> int:
 
     config = _load_json(config_path) if config_path.exists() else None
     horizons = _detect_horizons(root, config)
-    _check(bool(horizons), f"horizons detected: {horizons}" if horizons else "no horizons detected")
+    _check(
+        bool(horizons),
+        f"horizons detected: {horizons}" if horizons else "no horizons detected",
+    )
 
     if schema_path.exists():
         schema = _load_json(schema_path)
-        _check(schema.get("schema_hash") == schema_hash(), "schema hash matches feature builder")
+        _check(
+            schema.get("schema_hash") == schema_hash(),
+            "schema hash matches feature builder",
+        )
 
     for horizon in horizons:
         horizon_dir = root / f"horizon_h{horizon}"
@@ -64,16 +70,27 @@ def validate(root: Path) -> int:
             ok = len(found) == 1
             _check(ok, f"{split} file exists for h{horizon}")
             if ok:
-                df = pd.read_parquet(found[0]) if found[0].suffix == ".parquet" else pd.read_csv(found[0])
-                expected = set(feature_names() + [f"y_up_h{horizon}", f"fut_ret_h{horizon}"])
-                _check(expected.issubset(set(df.columns)), f"{split} columns include features + labels for h{horizon}")
+                df = (
+                    pd.read_parquet(found[0])
+                    if found[0].suffix == ".parquet"
+                    else pd.read_csv(found[0])
+                )
+                expected = set(
+                    feature_names() + [f"y_up_h{horizon}", f"fut_ret_h{horizon}"]
+                )
+                _check(
+                    expected.issubset(set(df.columns)),
+                    f"{split} columns include features + labels for h{horizon}",
+                )
 
     print(f"Summary: {checks} checks, {failures} FAIL")
     return 1 if failures else 0
 
 
 def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Validate ML datasets produced from scenarios.")
+    parser = argparse.ArgumentParser(
+        description="Validate ML datasets produced from scenarios."
+    )
     parser.add_argument("--root", required=True)
     return parser.parse_args(argv)
 

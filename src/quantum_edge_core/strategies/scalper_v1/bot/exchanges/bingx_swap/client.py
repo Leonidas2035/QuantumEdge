@@ -40,7 +40,9 @@ def build_query_string(params: Dict[str, Any]) -> str:
 
 
 def sign_query(query: str, secret: str) -> str:
-    return hmac.new(secret.encode("utf-8"), query.encode("utf-8"), hashlib.sha256).hexdigest()
+    return hmac.new(
+        secret.encode("utf-8"), query.encode("utf-8"), hashlib.sha256
+    ).hexdigest()
 
 
 @dataclass
@@ -104,31 +106,59 @@ class BingXClient:
         try:
             payload = response.json()
         except ValueError:
-            detail = BingXErrorDetail(status, None, f"Non-JSON response (status={status})", endpoint)
-            self.logger.warning("BingX API error endpoint=%s status=%s code=%s msg=%s", endpoint, status, None, detail.message)
+            detail = BingXErrorDetail(
+                status, None, f"Non-JSON response (status={status})", endpoint
+            )
+            self.logger.warning(
+                "BingX API error endpoint=%s status=%s code=%s msg=%s",
+                endpoint,
+                status,
+                None,
+                detail.message,
+            )
             raise BingXAPIError(detail) from None
 
         if status != 200:
             error_code = payload.get("code") if isinstance(payload, dict) else None
             message = payload.get("msg") if isinstance(payload, dict) else str(payload)
             detail = BingXErrorDetail(status, error_code, message, endpoint)
-            self.logger.warning("BingX API error endpoint=%s status=%s code=%s msg=%s", endpoint, status, error_code, message)
+            self.logger.warning(
+                "BingX API error endpoint=%s status=%s code=%s msg=%s",
+                endpoint,
+                status,
+                error_code,
+                message,
+            )
             raise BingXAPIError(detail)
 
         if isinstance(payload, dict) and payload.get("code") not in (0, None):
             error_code = payload.get("code")
             message = payload.get("msg", "BingX API error")
             detail = BingXErrorDetail(status, error_code, message, endpoint)
-            self.logger.warning("BingX API error endpoint=%s status=%s code=%s msg=%s", endpoint, status, error_code, message)
+            self.logger.warning(
+                "BingX API error endpoint=%s status=%s code=%s msg=%s",
+                endpoint,
+                status,
+                error_code,
+                message,
+            )
             raise BingXAPIError(detail)
 
         if isinstance(payload, dict) and "data" in payload:
             return payload.get("data")
         return payload
 
-    def request(self, method: str, path: str, params: Optional[Dict[str, Any]] = None, signed: bool = False) -> Any:
+    def request(
+        self,
+        method: str,
+        path: str,
+        params: Optional[Dict[str, Any]] = None,
+        signed: bool = False,
+    ) -> Any:
         if signed and not self.api_secret:
-            detail = BingXErrorDetail(None, None, "Missing API secret for signed request.", path)
+            detail = BingXErrorDetail(
+                None, None, "Missing API secret for signed request.", path
+            )
             raise BingXAPIError(detail)
 
         headers = {}
@@ -136,14 +166,20 @@ class BingXClient:
             headers["X-BX-APIKEY"] = self.api_key
 
         params = params or {}
-        url = self._build_signed_url(path, params) if signed else self._build_url(path, params)
+        url = (
+            self._build_signed_url(path, params)
+            if signed
+            else self._build_url(path, params)
+        )
 
         max_attempts = 3
         backoff = 0.5
         for attempt in range(max_attempts):
             self._throttle()
             try:
-                response = requests.request(method, url, headers=headers, timeout=self.timeout)
+                response = requests.request(
+                    method, url, headers=headers, timeout=self.timeout
+                )
             except requests.RequestException as exc:
                 if attempt < max_attempts - 1:
                     time.sleep(backoff + random.random() * 0.1)

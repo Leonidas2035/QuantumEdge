@@ -55,7 +55,14 @@ class BotState:
     def bump_state(self) -> None:
         self.state_version += 1
 
-    def record_decision(self, verdict: str, reasons: list[str], step_qty: Optional[float], cost_bps: Optional[float], plans: list[dict]) -> None:
+    def record_decision(
+        self,
+        verdict: str,
+        reasons: list[str],
+        step_qty: Optional[float],
+        cost_bps: Optional[float],
+        plans: list[dict],
+    ) -> None:
         self.last_ddn_verdict = verdict
         self.last_ddn_reasons = list(reasons)
         self.last_ddn_step_qty = step_qty
@@ -65,7 +72,9 @@ class BotState:
         while len(self.last_order_plans) > 20:
             self.last_order_plans.popleft()
 
-    def record_command(self, cmd_id: str, cmd_type: str, ts_ms: int, payload: dict) -> None:
+    def record_command(
+        self, cmd_id: str, cmd_type: str, ts_ms: int, payload: dict
+    ) -> None:
         self.last_cmd_id = cmd_id
         self.last_cmd_type = cmd_type
         self.last_cmd_ts = ts_ms

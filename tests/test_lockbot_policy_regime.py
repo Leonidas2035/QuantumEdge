@@ -1,4 +1,5 @@
 import pytest
+
 pytest.skip("Legacy test broken by src-layout migration", allow_module_level=True)
 import sys
 from pathlib import Path
@@ -8,11 +9,18 @@ SUPERVISOR_DIR = ROOT / "SupervisorAgent"
 if str(SUPERVISOR_DIR) not in sys.path:
     sys.path.insert(0, str(SUPERVISOR_DIR))
 
-from supervisor.lockbot.models import LiqHeatmapSummary, MarketSnapshot, OhlcvBar, RegimeDetectorConfig
+from supervisor.lockbot.models import (
+    LiqHeatmapSummary,
+    MarketSnapshot,
+    OhlcvBar,
+    RegimeDetectorConfig,
+)
 from supervisor.lockbot.regime_detector import RegimeDetector, RegimeHysteresis
 
 
-def _trend_bars(count: int = 30, start: float = 100.0, step: float = 1.0) -> list[OhlcvBar]:
+def _trend_bars(
+    count: int = 30, start: float = 100.0, step: float = 1.0
+) -> list[OhlcvBar]:
     bars = []
     price = start
     for idx in range(count):
@@ -20,13 +28,28 @@ def _trend_bars(count: int = 30, start: float = 100.0, step: float = 1.0) -> lis
         close_px = price + step
         high_px = max(open_px, close_px) + 0.5
         low_px = min(open_px, close_px) - 0.5
-        bars.append(OhlcvBar(ts_ms=idx * 300000, open=open_px, high=high_px, low=low_px, close=close_px, volume=1.0))
+        bars.append(
+            OhlcvBar(
+                ts_ms=idx * 300000,
+                open=open_px,
+                high=high_px,
+                low=low_px,
+                close=close_px,
+                volume=1.0,
+            )
+        )
         price = close_px
     return bars
 
 
 def test_regime_detector_trend_up() -> None:
-    cfg = RegimeDetectorConfig(adx_period=5, atr_period=5, atr_baseline_period=10, slope_bps_enter=1.0, trend_adx_enter=5.0)
+    cfg = RegimeDetectorConfig(
+        adx_period=5,
+        atr_period=5,
+        atr_baseline_period=10,
+        slope_bps_enter=1.0,
+        trend_adx_enter=5.0,
+    )
     detector = RegimeDetector(cfg)
     bars = _trend_bars()
     market = MarketSnapshot(

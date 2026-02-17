@@ -13,7 +13,9 @@ class OnlineFeatureBuilder:
     """
 
     def __init__(self, warmup_seconds: int = 600, max_ticks: int = 1200):
-        self._builder = FeatureBuilder(warmup_seconds=warmup_seconds, max_ticks=max_ticks)
+        self._builder = FeatureBuilder(
+            warmup_seconds=warmup_seconds, max_ticks=max_ticks
+        )
 
     def update_microstructure(self, microstructure: Dict[str, float]) -> None:
         self._builder.update_microstructure(microstructure)

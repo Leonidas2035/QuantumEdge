@@ -59,7 +59,13 @@ def _parse_last_exit_time(payload: Dict[str, Any]) -> Optional[float]:
         return None
 
 
-def collect_signals(paths, process_manager, risk_engine, logger, telemetry_summary: Optional[Dict[str, Any]] = None) -> Signals:
+def collect_signals(
+    paths,
+    process_manager,
+    risk_engine,
+    logger,
+    telemetry_summary: Optional[Dict[str, Any]] = None,
+) -> Signals:
     evidence: Dict[str, Any] = {}
     status = process_manager.get_status_payload()
     bot_running = status.get("state") == "RUNNING"
@@ -84,7 +90,11 @@ def collect_signals(paths, process_manager, risk_engine, logger, telemetry_summa
         risk_halt_reason = snapshot.halt_reason
         if snapshot.realized_pnl_today is not None:
             pnl_day = float(snapshot.realized_pnl_today)
-        if snapshot.equity_start is not None and snapshot.equity_now is not None and pnl_day is None:
+        if (
+            snapshot.equity_start is not None
+            and snapshot.equity_now is not None
+            and pnl_day is None
+        ):
             pnl_day = float(snapshot.equity_now - snapshot.equity_start)
         if snapshot.max_equity_intraday is not None and snapshot.equity_now is not None:
             drawdown_day = float(snapshot.max_equity_intraday - snapshot.equity_now)

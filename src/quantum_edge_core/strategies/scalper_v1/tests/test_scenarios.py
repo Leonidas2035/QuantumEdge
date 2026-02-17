@@ -45,8 +45,12 @@ def test_deterministic_manifest(tmp_path: Path) -> None:
     build_scenarios_pipeline("BTCUSDT", ticks_path, None, out_root_1, 5, 1, None, "csv")
     build_scenarios_pipeline("BTCUSDT", ticks_path, None, out_root_2, 5, 1, None, "csv")
 
-    manifest_1 = json.loads((out_root_1 / "BTCUSDT" / "S00" / "manifest.json").read_text(encoding="utf-8"))
-    manifest_2 = json.loads((out_root_2 / "BTCUSDT" / "S00" / "manifest.json").read_text(encoding="utf-8"))
+    manifest_1 = json.loads(
+        (out_root_1 / "BTCUSDT" / "S00" / "manifest.json").read_text(encoding="utf-8")
+    )
+    manifest_2 = json.loads(
+        (out_root_2 / "BTCUSDT" / "S00" / "manifest.json").read_text(encoding="utf-8")
+    )
     assert manifest_1.get("episodes") == manifest_2.get("episodes")
 
 

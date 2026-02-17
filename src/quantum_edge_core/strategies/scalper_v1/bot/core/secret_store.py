@@ -44,7 +44,9 @@ class SecretStorePaths:
         return self.root / "config" / "secrets.enc"
 
 
-def _derive_key(password: str, salt: bytes, iterations: int = DEFAULT_ITERATIONS) -> bytes:
+def _derive_key(
+    password: str, salt: bytes, iterations: int = DEFAULT_ITERATIONS
+) -> bytes:
     """Derive a 32-byte key from a password and salt using PBKDF2-HMAC-SHA256."""
     if not password:
         raise ValueError("Password must not be empty.")
@@ -57,7 +59,9 @@ def _derive_key(password: str, salt: bytes, iterations: int = DEFAULT_ITERATIONS
     return urlsafe_b64encode(kdf.derive(password.encode()))
 
 
-def encrypt_secrets(password: str, secrets: Dict[str, str], secret_file: Optional[Path] = None) -> Path:
+def encrypt_secrets(
+    password: str, secrets: Dict[str, str], secret_file: Optional[Path] = None
+) -> Path:
     """Encrypt and persist secrets to disk. Returns the written file path."""
     root = Path(__file__).resolve().parents[2]
     paths = SecretStorePaths(root=root)
@@ -97,7 +101,9 @@ def load_secrets(password: str, secret_file: Optional[Path] = None) -> Dict[str,
     try:
         decrypted = fernet.decrypt(token)
     except InvalidToken as exc:
-        raise SecretsIntegrityError("Secrets container corrupted or password incorrect.") from exc
+        raise SecretsIntegrityError(
+            "Secrets container corrupted or password incorrect."
+        ) from exc
 
     try:
         data = json.loads(decrypted.decode())

@@ -23,7 +23,9 @@ def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
     build.add_argument("--episodes", type=int, default=200)
     build.add_argument("--workers", type=int, default=4)
     build.add_argument("--limit-rows", type=int, default=None)
-    build.add_argument("--format", dest="output_format", default=None, help="csv|parquet")
+    build.add_argument(
+        "--format", dest="output_format", default=None, help="csv|parquet"
+    )
 
     validate = sub.add_parser("validate")
     validate.add_argument("--symbol", required=True)

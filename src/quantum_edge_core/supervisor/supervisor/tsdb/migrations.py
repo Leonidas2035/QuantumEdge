@@ -26,10 +26,14 @@ def apply_clickhouse(sql_path: Path, cfg: TsdbConfig, logger: logging.Logger) ->
             method="POST",
         )
         if cfg.clickhouse_user:
-            creds = f"{cfg.clickhouse_user}:{cfg.clickhouse_password or ''}".encode("utf-8")
+            creds = f"{cfg.clickhouse_user}:{cfg.clickhouse_password or ''}".encode(
+                "utf-8"
+            )
             import base64
 
-            req.add_header("Authorization", "Basic " + base64.b64encode(creds).decode("utf-8"))
+            req.add_header(
+                "Authorization", "Basic " + base64.b64encode(creds).decode("utf-8")
+            )
         req.add_header("Content-Type", "text/plain")
         with urllib.request.urlopen(req, timeout=5) as resp:
             if resp.status >= 300:
@@ -45,7 +49,9 @@ def apply_questdb(sql_path: Path, cfg: TsdbConfig, logger: logging.Logger) -> bo
     if not sql_path.exists():
         logger.warning("QuestDB schema file missing: %s", sql_path)
         return False
-    query_url = cfg.questdb_query_url or derive_questdb_query_url(cfg.questdb_ilp_http_url)
+    query_url = cfg.questdb_query_url or derive_questdb_query_url(
+        cfg.questdb_ilp_http_url
+    )
     if not query_url:
         logger.warning("QuestDB query URL missing; cannot apply schema.")
         return False
@@ -61,7 +67,12 @@ def apply_questdb(sql_path: Path, cfg: TsdbConfig, logger: logging.Logger) -> bo
     return True
 
 
-def run_tsdb_migrations(project_root: Path, cfg: TsdbConfig, logger: logging.Logger, retention: Optional[TsdbRetentionConfig] = None) -> bool:
+def run_tsdb_migrations(
+    project_root: Path,
+    cfg: TsdbConfig,
+    logger: logging.Logger,
+    retention: Optional[TsdbRetentionConfig] = None,
+) -> bool:
     """Apply TSDB schema best-effort."""
 
     if not cfg.enabled or cfg.backend == "none":

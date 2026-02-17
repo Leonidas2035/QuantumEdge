@@ -11,7 +11,9 @@ from bot.market_data.data_manager import DataManager
 
 class WSManager:
     def __init__(self):
-        self.base_ws = config.get("binance.ws_spot_base")  # wss://stream.binance.com:9443
+        self.base_ws = config.get(
+            "binance.ws_spot_base"
+        )  # wss://stream.binance.com:9443
         self.symbols = config.get("binance.symbols")
         self.data_manager = DataManager()
         self._last_depth: Dict[str, Dict[str, float]] = {}
@@ -60,7 +62,9 @@ class WSManager:
             except asyncio.CancelledError:
                 raise
             except Exception as e:  # pragma: no cover - network path
-                print(f"[WS] Error: {e}; reconnecting in {backoff:.1f}s (cap {self._backoff_cap}s)")
+                print(
+                    f"[WS] Error: {e}; reconnecting in {backoff:.1f}s (cap {self._backoff_cap}s)"
+                )
             await asyncio.sleep(backoff)
             backoff = min(backoff * 2, self._backoff_cap)
 

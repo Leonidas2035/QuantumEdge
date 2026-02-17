@@ -161,7 +161,9 @@ async def _run_benchmark(args: argparse.Namespace) -> Dict[str, Any]:
         queue_cfg.get("max_bytes", 256 * 1024 * 1024),
         256 * 1024 * 1024,
     )
-    drop_policy = (args.drop_policy or queue_cfg.get("drop_policy", "drop_lowest")).lower()
+    drop_policy = (
+        args.drop_policy or queue_cfg.get("drop_policy", "drop_lowest")
+    ).lower()
 
     bus = EventBus(
         max_events=queue_max_events,
@@ -263,7 +265,9 @@ async def _run_benchmark(args: argparse.Namespace) -> Dict[str, Any]:
         "writer_batches": writer.stats.batches,
         "writer_events": writer.stats.events,
         "writer_failures": writer.stats.failures,
-        "writer_rows_per_sec": round(writer.stats.events / elapsed, 2) if elapsed > 0 else 0.0,
+        "writer_rows_per_sec": (
+            round(writer.stats.events / elapsed, 2) if elapsed > 0 else 0.0
+        ),
         "spool_events": spooler.stats.events if spooler else 0,
         "spool_batches": spooler.stats.batches if spooler else 0,
         "spool_bytes": spooler.stats.bytes_written if spooler else 0,
@@ -307,34 +311,57 @@ def main() -> int:
     questdb = defaults.get("questdb", {}) or {}
 
     parser = argparse.ArgumentParser(description="Run QuestDB ILP ingestion benchmark.")
-    parser.add_argument("--duration-sec", type=float, default=20.0, help="Benchmark duration.")
-    parser.add_argument("--drain-sec", type=float, default=5.0, help="Drain time after generator stops.")
-    parser.add_argument("--sample-interval-sec", type=float, default=0.5, help="Queue sample interval.")
-    parser.add_argument("--trades-per-sec", type=float, default=20.0, help="Trades/sec per symbol.")
-    parser.add_argument("--l1-per-sec", type=float, default=20.0, help="L1 updates/sec per symbol.")
+    parser.add_argument(
+        "--duration-sec", type=float, default=20.0, help="Benchmark duration."
+    )
+    parser.add_argument(
+        "--drain-sec", type=float, default=5.0, help="Drain time after generator stops."
+    )
+    parser.add_argument(
+        "--sample-interval-sec", type=float, default=0.5, help="Queue sample interval."
+    )
+    parser.add_argument(
+        "--trades-per-sec", type=float, default=20.0, help="Trades/sec per symbol."
+    )
+    parser.add_argument(
+        "--l1-per-sec", type=float, default=20.0, help="L1 updates/sec per symbol."
+    )
     parser.add_argument("--symbols", nargs="+", default=None)
     parser.add_argument("--seed", type=int, default=7, help="Random seed.")
-    parser.add_argument("--writer-mode", choices=["questdb", "noop"], default="questdb", help="Writer target.")
+    parser.add_argument(
+        "--writer-mode",
+        choices=["questdb", "noop"],
+        default="questdb",
+        help="Writer target.",
+    )
     parser.add_argument(
         "--ilp-http-url",
         default=questdb.get("ilp_http_url", "http://127.0.0.1:9000/imp"),
         help="QuestDB ILP HTTP URL.",
     )
     parser.add_argument("--batch-rows", type=int, help="Override batch rows.")
-    parser.add_argument("--flush-interval-ms", type=int, help="Override flush interval (ms).")
-    parser.add_argument("--queue-max-events", type=int, help="Override queue max events.")
+    parser.add_argument(
+        "--flush-interval-ms", type=int, help="Override flush interval (ms)."
+    )
+    parser.add_argument(
+        "--queue-max-events", type=int, help="Override queue max events."
+    )
     parser.add_argument("--queue-max-bytes", type=int, help="Override queue max bytes.")
-    parser.add_argument("--drop-policy", choices=["drop_lowest", "drop_newest"], help="Queue drop policy.")
+    parser.add_argument(
+        "--drop-policy",
+        choices=["drop_lowest", "drop_newest"],
+        help="Queue drop policy.",
+    )
     parser.add_argument("--no-spool", action="store_true", help="Disable spooler.")
-    parser.add_argument("--lag-samples", type=int, default=10000, help="Max lag samples to keep.")
+    parser.add_argument(
+        "--lag-samples", type=int, default=10000, help="Max lag samples to keep."
+    )
     parser.add_argument("--out", help="Write summary JSON to this path.")
     args = parser.parse_args()
 
     if args.symbols and len(args.symbols) == 1 and "," in args.symbols[0]:
         args.symbols = [
-            item.strip().upper()
-            for item in args.symbols[0].split(",")
-            if item.strip()
+            item.strip().upper() for item in args.symbols[0].split(",") if item.strip()
         ]
     if not args.symbols:
         args.symbols = SYMBOLS_DEFAULT

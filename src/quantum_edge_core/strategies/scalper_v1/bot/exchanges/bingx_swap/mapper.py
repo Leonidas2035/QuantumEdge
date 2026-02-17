@@ -1,6 +1,5 @@
 import math
 
-
 QUOTE_ASSETS = ("USDT", "USDC", "USD")
 
 

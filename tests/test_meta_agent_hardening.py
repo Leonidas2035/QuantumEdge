@@ -1,4 +1,5 @@
 import pytest
+
 pytest.skip("Legacy test broken by src-layout migration", allow_module_level=True)
 import sys
 from pathlib import Path
@@ -59,7 +60,9 @@ def test_warn_verdict_writes_patches_only(tmp_path: Path) -> None:
     assert outcome.patch_files
 
 
-def test_stage_pipeline_routes_through_safety_policy(tmp_path: Path, monkeypatch) -> None:
+def test_stage_pipeline_routes_through_safety_policy(
+    tmp_path: Path, monkeypatch
+) -> None:
     base_dir = tmp_path / "base"
     base_dir.mkdir()
     project_root = base_dir / "project"
@@ -89,21 +92,38 @@ def test_stage_pipeline_routes_through_safety_policy(tmp_path: Path, monkeypatch
     # Ensure we import the correct meta_agent module from src/
     import importlib.util
 
-    spec = importlib.util.spec_from_file_location("meta_agent_real", str(META_AGENT_DIR / "meta_agent.py"))
+    spec = importlib.util.spec_from_file_location(
+        "meta_agent_real", str(META_AGENT_DIR / "meta_agent.py")
+    )
     meta_agent_mod = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(meta_agent_mod)
 
     monkeypatch.setattr(meta_agent_mod, "PATCHES_DIR", str(tmp_path / "patches"))
-    monkeypatch.setattr(meta_agent_mod, "write_json_report", lambda report: str(tmp_path / "report.json"))
-    monkeypatch.setattr(meta_agent_mod, "write_md_report", lambda report: str(tmp_path / "report.md"))
-    monkeypatch.setattr(meta_agent_mod.ProjectScanner, "collect_project_context", lambda self, **kwargs: "")
-    monkeypatch.setattr(meta_agent_mod.ProjectScanner, "get_project_structure", lambda self: ".")
+    monkeypatch.setattr(
+        meta_agent_mod,
+        "write_json_report",
+        lambda report: str(tmp_path / "report.json"),
+    )
+    monkeypatch.setattr(
+        meta_agent_mod, "write_md_report", lambda report: str(tmp_path / "report.md")
+    )
+    monkeypatch.setattr(
+        meta_agent_mod.ProjectScanner,
+        "collect_project_context",
+        lambda self, **kwargs: "",
+    )
+    monkeypatch.setattr(
+        meta_agent_mod.ProjectScanner, "get_project_structure", lambda self: "."
+    )
     monkeypatch.setattr(meta_agent_mod.ProjectScanner, "read_all_code", lambda self: "")
 
     monkeypatch.setattr(
         meta_agent_mod.MetaAgent,
         "_load_stages",
-        lambda self, path=str(stages_path): yaml.safe_load(stages_path.read_text(encoding="utf-8")) or [],
+        lambda self, path=str(stages_path): yaml.safe_load(
+            stages_path.read_text(encoding="utf-8")
+        )
+        or [],
     )
 
     class DummyClient:

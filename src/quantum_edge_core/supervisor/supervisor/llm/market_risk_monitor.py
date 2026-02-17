@@ -40,7 +40,9 @@ class MarketRiskMonitor:
     def analyze(self, risk_context: Dict[str, Any]) -> MarketRiskResult:
         timestamp = datetime.now(timezone.utc)
         if not risk_context:
-            return MarketRiskResult("LOW", ["insufficient data"], "No risk context", timestamp)
+            return MarketRiskResult(
+                "LOW", ["insufficient data"], "No risk context", timestamp
+            )
 
         if not self._config.enabled or not self._llm:
             return self._heuristic(risk_context, timestamp, "LLM disabled")
@@ -53,7 +55,10 @@ class MarketRiskMonitor:
             response = self._llm.complete(
                 model=self._config.model,
                 messages=[
-                    {"role": "system", "content": "You classify market risk. Respond JSON {\"risk_level\":LOW/MEDIUM/HIGH,\"triggers\":[],\"comment\":...}."},
+                    {
+                        "role": "system",
+                        "content": 'You classify market risk. Respond JSON {"risk_level":LOW/MEDIUM/HIGH,"triggers":[],"comment":...}.',
+                    },
                     {"role": "user", "content": prompt},
                 ],
                 temperature=self._config.temperature,
@@ -75,7 +80,9 @@ class MarketRiskMonitor:
             "Return JSON with risk_level LOW/MEDIUM/HIGH, triggers list, comment."
         )
 
-    def _heuristic(self, context: Dict[str, Any], timestamp: datetime, reason: str) -> MarketRiskResult:
+    def _heuristic(
+        self, context: Dict[str, Any], timestamp: datetime, reason: str
+    ) -> MarketRiskResult:
         volatility = abs(context.get("volatility_metric") or 0.0)
         breaches = int(context.get("breach_count") or 0)
         imbalance = abs(context.get("orderbook_imbalance") or 0.0)

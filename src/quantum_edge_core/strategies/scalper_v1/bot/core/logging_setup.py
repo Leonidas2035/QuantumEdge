@@ -17,7 +17,9 @@ def setup_logging(log_path: Path, level: str = "INFO") -> logging.Logger:
     formatter = logging.Formatter("%(asctime)s %(levelname)s %(name)s - %(message)s")
 
     if not any(isinstance(h, RotatingFileHandler) for h in logger.handlers):
-        file_handler = RotatingFileHandler(log_path, maxBytes=5_000_000, backupCount=3, encoding="utf-8")
+        file_handler = RotatingFileHandler(
+            log_path, maxBytes=5_000_000, backupCount=3, encoding="utf-8"
+        )
         file_handler.setFormatter(formatter)
         logger.addHandler(file_handler)
 

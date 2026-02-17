@@ -15,7 +15,6 @@ from supervisor.autopilot.quality import QualityMonitor, QualityIssue
 from supervisor.autopilot.remediation import RemediationManager
 from supervisor.autopilot.policy_manager import PolicyManager
 
-
 STATES = {"OFF", "SHADOW", "LIVE_DEMO", "LIVE", "DEGRADED", "HALTED"}
 
 
@@ -27,7 +26,12 @@ class AutopilotState:
 
 
 class AutopilotStateMachine:
-    def __init__(self, allowed_states: List[str], min_dwell_sec: int, max_transitions_per_hour: int) -> None:
+    def __init__(
+        self,
+        allowed_states: List[str],
+        min_dwell_sec: int,
+        max_transitions_per_hour: int,
+    ) -> None:
         self.allowed_states = [s for s in allowed_states if s in STATES]
         self.min_dwell_sec = max(int(min_dwell_sec), 0)
         self.max_transitions_per_hour = max(int(max_transitions_per_hour), 1)
@@ -38,7 +42,9 @@ class AutopilotStateMachine:
         recent = [t for t in state.transitions if now - t < 3600]
         return len(recent) < self.max_transitions_per_hour
 
-    def next_state(self, state: AutopilotState, desired: str, now: float) -> AutopilotState:
+    def next_state(
+        self, state: AutopilotState, desired: str, now: float
+    ) -> AutopilotState:
         desired = desired if desired in self.allowed_states else state.state
         if desired == state.state:
             return state
@@ -46,7 +52,9 @@ class AutopilotStateMachine:
             return state
         transitions = [t for t in state.transitions if now - t < 3600]
         transitions.append(now)
-        return AutopilotState(state=desired, last_transition_ts=now, transitions=transitions)
+        return AutopilotState(
+            state=desired, last_transition_ts=now, transitions=transitions
+        )
 
 
 class AutopilotController:
@@ -106,15 +114,31 @@ class AutopilotController:
 
         if snapshot.health.status == "UNKNOWN":
             desired_state = "DEGRADED"
-            issues.append(QualityIssue("AP_HEALTH_FAIL", "WARN", {"health": snapshot.health.status}))
+            issues.append(
+                QualityIssue(
+                    "AP_HEALTH_FAIL", "WARN", {"health": snapshot.health.status}
+                )
+            )
         if snapshot.health.status == "WARN":
-            issues.append(QualityIssue("AP_HEALTH_FAIL", "WARN", {"health": snapshot.health.status}))
+            issues.append(
+                QualityIssue(
+                    "AP_HEALTH_FAIL", "WARN", {"health": snapshot.health.status}
+                )
+            )
         if snapshot.health.status == "FAIL":
             desired_state = "DEGRADED"
-            issues.append(QualityIssue("AP_HEALTH_FAIL", "FAIL", {"health": snapshot.health.status}))
+            issues.append(
+                QualityIssue(
+                    "AP_HEALTH_FAIL", "FAIL", {"health": snapshot.health.status}
+                )
+            )
 
         for issue in issues:
-            if issue.code in {"AP_BREAKER_STORM", "AP_DATA_STALE", "AP_POLICY_MISMATCH"}:
+            if issue.code in {
+                "AP_BREAKER_STORM",
+                "AP_DATA_STALE",
+                "AP_POLICY_MISMATCH",
+            }:
                 desired_state = "DEGRADED"
                 break
 
@@ -131,7 +155,8 @@ class AutopilotController:
                     "action": "STATE_TRANSITION",
                     "from": self.state.state,
                     "to": new_state.state,
-                    "reason_codes": [i.code for i in issues] or ["AP_OPERATOR_OVERRIDE" if override else "OK"],
+                    "reason_codes": [i.code for i in issues]
+                    or ["AP_OPERATOR_OVERRIDE" if override else "OK"],
                     "evidence": _snapshot_evidence(snapshot),
                     "correlation_id": _correlation_id(),
                 }
@@ -156,7 +181,9 @@ class AutopilotController:
         return {
             "enabled": override.get("enabled", self.enabled),
             "state": self.state.state,
-            "target_state": str(override.get("target_state", self.target_state)).upper(),
+            "target_state": str(
+                override.get("target_state", self.target_state)
+            ).upper(),
             "health": snapshot.health.__dict__,
         }
 
@@ -170,9 +197,13 @@ class AutopilotController:
             if issue.code == "AP_DATA_STALE":
                 return self.remediation.disable_entries(issue.code, evidence=evidence)
         if snapshot.health.status == "FAIL":
-            return self.remediation.restart_quantumedge("AP_HEALTH_FAIL", evidence=evidence)
+            return self.remediation.restart_quantumedge(
+                "AP_HEALTH_FAIL", evidence=evidence
+            )
         if snapshot.health.status == "UNKNOWN":
-            return self.remediation.degrade_to_shadow("AP_HEALTH_FAIL", evidence=evidence)
+            return self.remediation.degrade_to_shadow(
+                "AP_HEALTH_FAIL", evidence=evidence
+            )
         return None
 
     def _load_state(self) -> AutopilotState:
@@ -205,18 +236,31 @@ class AutopilotController:
         except json.JSONDecodeError:
             return {}
 
-    def _policy_acceptance_issue(self, snapshot: MetricsSnapshot) -> Optional[QualityIssue]:
+    def _policy_acceptance_issue(
+        self, snapshot: MetricsSnapshot
+    ) -> Optional[QualityIssue]:
         record = self.policy_manager.current_record()
         if not record:
-            return QualityIssue("AP_POLICY_MISMATCH", "FAIL", {"reason": "policy_missing"})
+            return QualityIssue(
+                "AP_POLICY_MISMATCH", "FAIL", {"reason": "policy_missing"}
+            )
         applied_at = _parse_iso_ts(record.get("applied_at", ""))
         if applied_at is None:
-            return QualityIssue("AP_POLICY_MISMATCH", "FAIL", {"reason": "policy_applied_at_invalid"})
+            return QualityIssue(
+                "AP_POLICY_MISMATCH", "FAIL", {"reason": "policy_applied_at_invalid"}
+            )
         now = snapshot.ts
         age = now - applied_at
-        if self.policy_shadow_burnin_min_sec > 0 and age < self.policy_shadow_burnin_min_sec:
+        if (
+            self.policy_shadow_burnin_min_sec > 0
+            and age < self.policy_shadow_burnin_min_sec
+        ):
             remaining = int(self.policy_shadow_burnin_min_sec - age)
-            return QualityIssue("AP_METRICS_DEGRADED", "WARN", {"policy_burnin_remaining_sec": remaining})
+            return QualityIssue(
+                "AP_METRICS_DEGRADED",
+                "WARN",
+                {"policy_burnin_remaining_sec": remaining},
+            )
 
         window = max(
             self.quality.coverage_window_sec,
@@ -228,21 +272,32 @@ class AutopilotController:
         coverage = metrics.get("coverage")
         if self.policy_accept_min_coverage > 0:
             if coverage is None:
-                return QualityIssue("AP_METRICS_DEGRADED", "WARN", {"coverage": "missing"})
+                return QualityIssue(
+                    "AP_METRICS_DEGRADED", "WARN", {"coverage": "missing"}
+                )
             if coverage < self.policy_accept_min_coverage:
-                return QualityIssue("AP_METRICS_DEGRADED", "WARN", {"coverage": coverage})
+                return QualityIssue(
+                    "AP_METRICS_DEGRADED", "WARN", {"coverage": coverage}
+                )
         if self.policy_accept_max_breaker_storms > 0:
             breaker_count = metrics.get("breaker_count", 0)
             if breaker_count > self.policy_accept_max_breaker_storms:
-                return QualityIssue("AP_BREAKER_STORM", "FAIL", {"count": breaker_count})
+                return QualityIssue(
+                    "AP_BREAKER_STORM", "FAIL", {"count": breaker_count}
+                )
         if self.policy_accept_max_data_stale_sec > 0:
             max_tick_age = metrics.get("max_tick_age_ms")
             max_book_age = metrics.get("max_book_age_ms")
-            max_stale_ms = max([val for val in [max_tick_age, max_book_age] if val is not None], default=None)
+            max_stale_ms = max(
+                [val for val in [max_tick_age, max_book_age] if val is not None],
+                default=None,
+            )
             if max_stale_ms is not None:
                 max_stale_sec = max_stale_ms / 1000.0
                 if max_stale_sec > self.policy_accept_max_data_stale_sec:
-                    return QualityIssue("AP_DATA_STALE", "FAIL", {"max_stale_sec": max_stale_sec})
+                    return QualityIssue(
+                        "AP_DATA_STALE", "FAIL", {"max_stale_sec": max_stale_sec}
+                    )
         return None
 
 

@@ -81,7 +81,9 @@ class OrderIntent:
 
 
 class FeatureComputer:
-    def __init__(self, *, vol_window: int = 30, ema_fast: int = 5, ema_slow: int = 20) -> None:
+    def __init__(
+        self, *, vol_window: int = 30, ema_fast: int = 5, ema_slow: int = 20
+    ) -> None:
         self._returns: Deque[float] = deque(maxlen=max(vol_window, 2))
         self._last_mid: Optional[float] = None
         self._ema_fast: Optional[float] = None
@@ -100,11 +102,15 @@ class FeatureComputer:
             if self._ema_fast is None:
                 self._ema_fast = mid
             else:
-                self._ema_fast = self._alpha_fast * mid + (1 - self._alpha_fast) * self._ema_fast
+                self._ema_fast = (
+                    self._alpha_fast * mid + (1 - self._alpha_fast) * self._ema_fast
+                )
             if self._ema_slow is None:
                 self._ema_slow = mid
             else:
-                self._ema_slow = self._alpha_slow * mid + (1 - self._alpha_slow) * self._ema_slow
+                self._ema_slow = (
+                    self._alpha_slow * mid + (1 - self._alpha_slow) * self._ema_slow
+                )
 
         volume_imbalance = _volume_imbalance(book.bid_qty, book.ask_qty)
         short_vol = _std(self._returns)
@@ -124,7 +130,9 @@ class FeatureComputer:
 
 
 class RegimeDetector:
-    def __init__(self, *, max_spread_bps: float, max_short_vol_bps: float, trend_threshold: float) -> None:
+    def __init__(
+        self, *, max_spread_bps: float, max_short_vol_bps: float, trend_threshold: float
+    ) -> None:
         self._max_spread_bps = float(max_spread_bps)
         self._max_short_vol_bps = float(max_short_vol_bps)
         self._trend_threshold = float(trend_threshold)
@@ -192,13 +200,17 @@ class ExecutionEngine:
         if not self._open:
             if signal.side == 0 or not self.edge_ok(features):
                 return None
-            return self._place_intent(book, signal, now_ms, target_qty, reason="new_entry")
+            return self._place_intent(
+                book, signal, now_ms, target_qty, reason="new_entry"
+            )
 
         desired_price = book.bid_px if signal.side > 0 else book.ask_px
         if signal.side != self._open.side:
             return self._cancel_intent("side_flip")
         if now_ms - self._open.ts_ms >= self._ttl_ms:
-            return self._replace_or_cancel(book, signal, now_ms, target_qty, "ttl_expired")
+            return self._replace_or_cancel(
+                book, signal, now_ms, target_qty, "ttl_expired"
+            )
         if _price_diff(desired_price, self._open.price, self._tick_size):
             return self._replace_or_cancel(book, signal, now_ms, target_qty, "reprice")
         return None
@@ -207,7 +219,9 @@ class ExecutionEngine:
         if intent.action in {"place", "replace"}:
             requotes = 0
             if self._open:
-                requotes = self._open.requotes + (1 if intent.action == "replace" else 0)
+                requotes = self._open.requotes + (
+                    1 if intent.action == "replace" else 0
+                )
             self._open = OpenOrder(
                 side=intent.side,
                 price=intent.price,
@@ -229,7 +243,9 @@ class ExecutionEngine:
         if self._open.remaining_qty <= 0:
             self._open = None
 
-    def _place_intent(self, book: BookTop, signal: Signal, now_ms: int, target_qty: float, reason: str) -> OrderIntent:
+    def _place_intent(
+        self, book: BookTop, signal: Signal, now_ms: int, target_qty: float, reason: str
+    ) -> OrderIntent:
         price = book.bid_px if signal.side > 0 else book.ask_px
         qty = self._desired_qty(target_qty)
         if qty <= 0:
@@ -277,7 +293,11 @@ class ExecutionEngine:
             action="cancel",
             side=open_order.side if open_order else 0,
             price=open_order.price if open_order else 0.0,
-            qty=open_order.remaining_qty if open_order and open_order.remaining_qty else 0.0,
+            qty=(
+                open_order.remaining_qty
+                if open_order and open_order.remaining_qty
+                else 0.0
+            ),
             reason=reason,
             client_order_id=open_order.client_order_id if open_order else "",
             order_id=open_order.order_id if open_order else None,
@@ -309,7 +329,10 @@ class RiskManager:
         if spread_bps > self._spread_kill_bps:
             self._kill = True
             return False
-        if self._equity_usd > 0 and self._drawdown / self._equity_usd > self._daily_dd_limit:
+        if (
+            self._equity_usd > 0
+            and self._drawdown / self._equity_usd > self._daily_dd_limit
+        ):
             self._kill = True
             return False
         if self._consecutive_errors >= self._max_errors:
@@ -395,12 +418,20 @@ class SpotScalperEngine:
 
 
 class SpotOrderExecutor:
-    def __init__(self, mode: str, logger: logging.Logger, *, enable_trading: bool) -> None:
+    def __init__(
+        self, mode: str, logger: logging.Logger, *, enable_trading: bool
+    ) -> None:
         self._mode = mode if enable_trading else "paper"
         self._logger = logger
-        self._client = BinanceDemoExecutor(exchange_override="spot") if self._mode == "demo" else None
+        self._client = (
+            BinanceDemoExecutor(exchange_override="spot")
+            if self._mode == "demo"
+            else None
+        )
 
-    async def place_limit(self, symbol: str, side: str, qty: float, price: float, client_order_id: str) -> Optional[str]:
+    async def place_limit(
+        self, symbol: str, side: str, qty: float, price: float, client_order_id: str
+    ) -> Optional[str]:
         if self._mode != "demo":
             return None
         result = await self._client.submit_order(
@@ -417,10 +448,14 @@ class SpotOrderExecutor:
             return str(result.get("orderId") or "") or None
         return None
 
-    async def cancel(self, symbol: str, order_id: Optional[str], client_order_id: Optional[str]) -> bool:
+    async def cancel(
+        self, symbol: str, order_id: Optional[str], client_order_id: Optional[str]
+    ) -> bool:
         if self._mode != "demo":
             return True
-        return await self._client.cancel_order(symbol, order_id=order_id, client_order_id=client_order_id)
+        return await self._client.cancel_order(
+            symbol, order_id=order_id, client_order_id=client_order_id
+        )
 
 
 def _cfg_section(config: object, key: str) -> Dict[str, object]:
@@ -441,10 +476,14 @@ def _cfg_value(config: object, key: str, default: object = None) -> object:
 def _detect_futures_flags(config: object) -> list[str]:
     flags: list[str] = []
     app_cfg = _cfg_section(config, "app")
-    enabled_market = str(_cfg_value(config, "enabled_market", app_cfg.get("enabled_market", "spot"))).lower()
+    enabled_market = str(
+        _cfg_value(config, "enabled_market", app_cfg.get("enabled_market", "spot"))
+    ).lower()
     if enabled_market and enabled_market != "spot":
         flags.append(f"enabled_market={enabled_market}")
-    if bool(_cfg_value(config, "futures_enabled", False)) or bool(app_cfg.get("use_futures", False)):
+    if bool(_cfg_value(config, "futures_enabled", False)) or bool(
+        app_cfg.get("use_futures", False)
+    ):
         flags.append("futures_enabled")
     demo_cfg = _cfg_section(config, "binance_demo")
     demo_exchange = str(demo_cfg.get("exchange", "")).lower()
@@ -468,7 +507,9 @@ def _filter_spot_topics(raw_topics: object, symbols: list[str]) -> list[str]:
             if symbol in symbols and event_type in allowed_types:
                 topics.append(text)
     if not topics:
-        topics = [f"{symbol}:l1" for symbol in symbols] + [f"{symbol}:depth_l2" for symbol in symbols]
+        topics = [f"{symbol}:l1" for symbol in symbols] + [
+            f"{symbol}:depth_l2" for symbol in symbols
+        ]
     return topics
 
 
@@ -480,7 +521,9 @@ def _resolve_path(config: object, raw_path: str) -> Path:
     return path
 
 
-async def run_spot_scalper(config: Dict[str, object], *, logger: Optional[logging.Logger] = None) -> None:
+async def run_spot_scalper(
+    config: Dict[str, object], *, logger: Optional[logging.Logger] = None
+) -> None:
     logger = logger or logging.getLogger("spot_scalper")
     app_cfg = _cfg_section(config, "app")
     log_level = str(app_cfg.get("log_level", config.get("log_level", "INFO"))).upper()
@@ -489,7 +532,10 @@ async def run_spot_scalper(config: Dict[str, object], *, logger: Optional[loggin
     futures_flags = _detect_futures_flags(config)
     trading_enabled = not futures_flags
     if futures_flags:
-        logger.warning("Futures flags detected for scalper; forcing spot-only no-op (%s).", ", ".join(futures_flags))
+        logger.warning(
+            "Futures flags detected for scalper; forcing spot-only no-op (%s).",
+            ", ".join(futures_flags),
+        )
         mode = "paper"
 
     data_cfg = _cfg_section(config, "market_data")
@@ -504,7 +550,9 @@ async def run_spot_scalper(config: Dict[str, object], *, logger: Optional[loggin
         or ["BTCUSDT"]
     )
     if len(symbols) > 1:
-        logger.warning("Spot scalper supports one symbol per instance; using %s only.", symbols[0])
+        logger.warning(
+            "Spot scalper supports one symbol per instance; using %s only.", symbols[0]
+        )
         symbols = symbols[:1]
     hub_cfg = dict(data_cfg.get("hub", {}) or {})
     hub_cfg["topics"] = _filter_spot_topics(hub_cfg.get("topics"), symbols)
@@ -525,7 +573,9 @@ async def run_spot_scalper(config: Dict[str, object], *, logger: Optional[loggin
         max_short_vol_bps=float(thresholds.get("max_short_vol_bps", 15.0)),
         trend_threshold=float(thresholds.get("trend_threshold", 0.0005)),
     )
-    signal_engine = SignalEngine(imbalance_threshold=float(thresholds.get("imbalance_threshold", 0.1)))
+    signal_engine = SignalEngine(
+        imbalance_threshold=float(thresholds.get("imbalance_threshold", 0.1))
+    )
     execution_engine = ExecutionEngine(
         fee_bps=float(fees_cfg.get("fee_bps", 5.0)),
         slippage_bps=float(fees_cfg.get("slippage_bps", 1.0)),
@@ -550,14 +600,29 @@ async def run_spot_scalper(config: Dict[str, object], *, logger: Optional[loggin
         risk_manager=risk_manager,
     )
 
-    events_path = _resolve_path(config, scalper_cfg.get("events_path", "ai_scalper_bot/runtime/events/spot_scalper.jsonl"))
+    events_path = _resolve_path(
+        config,
+        scalper_cfg.get(
+            "events_path", "ai_scalper_bot/runtime/events/spot_scalper.jsonl"
+        ),
+    )
     event_writer = EventWriter(events_path)
-    status_file = _resolve_path(config, scalper_cfg.get("status_file", "ai_scalper_bot/runtime/status/spot_scalper.json"))
+    status_file = _resolve_path(
+        config,
+        scalper_cfg.get(
+            "status_file", "ai_scalper_bot/runtime/status/spot_scalper.json"
+        ),
+    )
     status_writer = BotStatusWriter(status_file, interval_seconds=2.0)
     order_executor = SpotOrderExecutor(mode, logger, enable_trading=trading_enabled)
 
     await hub_source.start()
-    logger.info("Spot scalper started (mode=%s trading=%s symbols=%s)", mode, trading_enabled, symbols)
+    logger.info(
+        "Spot scalper started (mode=%s trading=%s symbols=%s)",
+        mode,
+        trading_enabled,
+        symbols,
+    )
     try:
         async for event in hub_source.stream():
             if str(event.get("event_type")) not in {"l1", "depth_l2"}:
@@ -583,12 +648,22 @@ async def run_spot_scalper(config: Dict[str, object], *, logger: Optional[loggin
                 ts_ms = int(event.get("E") or event.get("T") or time.time() * 1000)
                 if bid_px <= 0 or ask_px <= 0:
                     continue
-                book = BookTop(bid_px=bid_px, bid_qty=bid_qty, ask_px=ask_px, ask_qty=ask_qty, ts_ms=ts_ms)
+                book = BookTop(
+                    bid_px=bid_px,
+                    bid_qty=bid_qty,
+                    ask_px=ask_px,
+                    ask_qty=ask_qty,
+                    ts_ms=ts_ms,
+                )
                 payload = engine.on_book(book, ts_ms)
                 intent = payload.get("intent")
                 if isinstance(intent, OrderIntent):
-                    await _apply_intent(intent, order_executor, event_writer, engine, ts_ms, symbol)
-                event_writer.write({"type": "spot_scalper_tick", "data": _sanitize_payload(payload)})
+                    await _apply_intent(
+                        intent, order_executor, event_writer, engine, ts_ms, symbol
+                    )
+                event_writer.write(
+                    {"type": "spot_scalper_tick", "data": _sanitize_payload(payload)}
+                )
                 status_writer.update(
                     {
                         "ts": ts_ms,
@@ -601,7 +676,9 @@ async def run_spot_scalper(config: Dict[str, object], *, logger: Optional[loggin
             except Exception as exc:
                 logger.warning("Spot scalper loop error: %s", exc)
                 risk_manager.record_error()
-                event_writer.write({"type": "spot_scalper_error", "data": {"error": str(exc)}})
+                event_writer.write(
+                    {"type": "spot_scalper_error", "data": {"error": str(exc)}}
+                )
     finally:
         await hub_source.stop()
 
@@ -617,19 +694,38 @@ async def _apply_intent(
     action = intent.action
     if action == "place":
         side = "BUY" if intent.side > 0 else "SELL"
-        order_id = await executor.place_limit(symbol, side, intent.qty, intent.price, intent.client_order_id)
+        order_id = await executor.place_limit(
+            symbol, side, intent.qty, intent.price, intent.client_order_id
+        )
         engine.apply_intent(intent, ts_ms)
-        event_writer.write({"type": "spot_scalper_order", "data": {"action": "place", "order_id": order_id, **intent.__dict__}})
+        event_writer.write(
+            {
+                "type": "spot_scalper_order",
+                "data": {"action": "place", "order_id": order_id, **intent.__dict__},
+            }
+        )
     elif action == "replace":
         await executor.cancel(symbol, intent.order_id, intent.client_order_id)
         side = "BUY" if intent.side > 0 else "SELL"
-        order_id = await executor.place_limit(symbol, side, intent.qty, intent.price, intent.client_order_id)
+        order_id = await executor.place_limit(
+            symbol, side, intent.qty, intent.price, intent.client_order_id
+        )
         engine.apply_intent(intent, ts_ms)
-        event_writer.write({"type": "spot_scalper_order", "data": {"action": "replace", "order_id": order_id, **intent.__dict__}})
+        event_writer.write(
+            {
+                "type": "spot_scalper_order",
+                "data": {"action": "replace", "order_id": order_id, **intent.__dict__},
+            }
+        )
     elif action == "cancel":
         await executor.cancel(symbol, intent.order_id, intent.client_order_id)
         engine.apply_intent(intent, ts_ms)
-        event_writer.write({"type": "spot_scalper_order", "data": {"action": "cancel", **intent.__dict__}})
+        event_writer.write(
+            {
+                "type": "spot_scalper_order",
+                "data": {"action": "cancel", **intent.__dict__},
+            }
+        )
 
 
 def _volume_imbalance(bid_qty: float, ask_qty: float) -> float:
@@ -644,7 +740,7 @@ def _std(values: Deque[float]) -> float:
         return 0.0
     mean = sum(values) / len(values)
     var = sum((v - mean) ** 2 for v in values) / len(values)
-    return var ** 0.5
+    return var**0.5
 
 
 def _price_diff(a: float, b: float, tick_size: float) -> bool:

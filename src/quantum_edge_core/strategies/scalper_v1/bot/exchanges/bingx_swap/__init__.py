@@ -1,5 +1,9 @@
 from bot.exchanges.bingx_swap.client import BingXClient, BingXAPIError
-from bot.exchanges.bingx_swap.execution import BingXExecution, ExchangeInfoCache, SymbolFilters
+from bot.exchanges.bingx_swap.execution import (
+    BingXExecution,
+    ExchangeInfoCache,
+    SymbolFilters,
+)
 from bot.exchanges.bingx_swap.marketdata import BingXMarketData
 from bot.exchanges.bingx_swap.models import OrderRequest, OrderResult, Position, Balance
 
@@ -22,11 +26,19 @@ class BingXSwapExchange:
     def place_order(self, req: OrderRequest) -> OrderResult:
         return self.execution.place_order(req)
 
-    def cancel_order(self, symbol: str, order_id: str = None, client_order_id: str = None):
-        return self.execution.cancel_order(symbol, order_id=order_id, client_order_id=client_order_id)
+    def cancel_order(
+        self, symbol: str, order_id: str = None, client_order_id: str = None
+    ):
+        return self.execution.cancel_order(
+            symbol, order_id=order_id, client_order_id=client_order_id
+        )
 
-    def get_order(self, symbol: str, order_id: str = None, client_order_id: str = None) -> OrderResult:
-        return self.execution.get_order(symbol, order_id=order_id, client_order_id=client_order_id)
+    def get_order(
+        self, symbol: str, order_id: str = None, client_order_id: str = None
+    ) -> OrderResult:
+        return self.execution.get_order(
+            symbol, order_id=order_id, client_order_id=client_order_id
+        )
 
     def get_open_orders(self, symbol: str):
         return self.execution.get_open_orders(symbol)

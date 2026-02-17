@@ -43,7 +43,9 @@ class PaperTrader:
     def _fee(self, notional: float) -> float:
         return abs(notional) * self.fee_rate
 
-    def set_bracket(self, side: str, tp_price: Optional[float], sl_price: Optional[float]) -> bool:
+    def set_bracket(
+        self, side: str, tp_price: Optional[float], sl_price: Optional[float]
+    ) -> bool:
         if not tp_price and not sl_price:
             return False
         self.bracket_side = side.lower()
@@ -61,25 +63,41 @@ class PaperTrader:
             return False
         hit = None
         if self.tp_price is not None:
-            if (self.position > 0 and price >= self.tp_price) or (self.position < 0 and price <= self.tp_price):
+            if (self.position > 0 and price >= self.tp_price) or (
+                self.position < 0 and price <= self.tp_price
+            ):
                 hit = "tp"
         if self.sl_price is not None:
-            if (self.position > 0 and price <= self.sl_price) or (self.position < 0 and price >= self.sl_price):
+            if (self.position > 0 and price <= self.sl_price) or (
+                self.position < 0 and price >= self.sl_price
+            ):
                 hit = hit or "sl"
         if not hit:
             return False
         action = "close_long" if self.position > 0 else "close_short"
         fee = self._fee(price * abs(self.position))
-        pnl = (price - self.entry_price) * self.position - fee if self.entry_price else 0.0
+        pnl = (
+            (price - self.entry_price) * self.position - fee
+            if self.entry_price
+            else 0.0
+        )
         self.realized_pnl += pnl
-        self.trades.append(PaperTrade(timestamp, action, price, self.position, fee, pnl))
+        self.trades.append(
+            PaperTrade(timestamp, action, price, self.position, fee, pnl)
+        )
         self.position = 0.0
         self.entry_price = None
         self._clear_bracket()
         self._record_trade(pnl, "SELL" if self.bracket_side == "buy" else "BUY")
         return True
 
-    async def process(self, decision: Decision, price: float, timestamp: int, symbol: Optional[str] = None):
+    async def process(
+        self,
+        decision: Decision,
+        price: float,
+        timestamp: int,
+        symbol: Optional[str] = None,
+    ):
         await self._latency()
 
         if decision.action == "hold":
@@ -95,7 +113,9 @@ class PaperTrader:
         if decision.action in ("buy", "close") and self.position < 0:
             pnl = (self.entry_price - price) * abs(self.position) - fee
             self.realized_pnl += pnl
-            self.trades.append(PaperTrade(timestamp, "close_short", price, self.position, fee, pnl))
+            self.trades.append(
+                PaperTrade(timestamp, "close_short", price, self.position, fee, pnl)
+            )
             self.position = 0.0
             self.entry_price = None
             self._clear_bracket()
@@ -104,7 +124,9 @@ class PaperTrader:
         if decision.action in ("sell", "close") and self.position > 0:
             pnl = (price - self.entry_price) * abs(self.position) - fee
             self.realized_pnl += pnl
-            self.trades.append(PaperTrade(timestamp, "close_long", price, self.position, fee, pnl))
+            self.trades.append(
+                PaperTrade(timestamp, "close_long", price, self.position, fee, pnl)
+            )
             self.position = 0.0
             self.entry_price = None
             self._clear_bracket()
@@ -114,7 +136,9 @@ class PaperTrader:
         if decision.action == "buy" and self.position == 0:
             self.position = size
             self.entry_price = price
-            self.trades.append(PaperTrade(timestamp, "open_long", price, size, fee, pnl))
+            self.trades.append(
+                PaperTrade(timestamp, "open_long", price, size, fee, pnl)
+            )
             tp_price = getattr(decision, "tp_price", None)
             sl_price = getattr(decision, "sl_price", None)
             if tp_price or sl_price:
@@ -122,7 +146,9 @@ class PaperTrader:
         elif decision.action == "sell" and self.position == 0:
             self.position = -size
             self.entry_price = price
-            self.trades.append(PaperTrade(timestamp, "open_short", price, size, fee, pnl))
+            self.trades.append(
+                PaperTrade(timestamp, "open_short", price, size, fee, pnl)
+            )
             tp_price = getattr(decision, "tp_price", None)
             sl_price = getattr(decision, "sl_price", None)
             if tp_price or sl_price:
@@ -149,9 +175,16 @@ class PaperTrader:
             "trades": len(self.trades),
         }
 
-    def process_sync(self, decision: Decision, price: float, timestamp: int, symbol: Optional[str] = None):
+    def process_sync(
+        self,
+        decision: Decision,
+        price: float,
+        timestamp: int,
+        symbol: Optional[str] = None,
+    ):
         """
         Convenience wrapper for non-async contexts.
         """
         import asyncio
+
         asyncio.run(self.process(decision, price, timestamp, symbol=symbol))

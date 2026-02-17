@@ -1,4 +1,5 @@
 import pytest
+
 pytest.skip("Legacy test broken by src-layout migration", allow_module_level=True)
 import sys
 from pathlib import Path
@@ -8,7 +9,12 @@ SUPERVISOR_DIR = ROOT / "SupervisorAgent"
 if str(SUPERVISOR_DIR) not in sys.path:
     sys.path.insert(0, str(SUPERVISOR_DIR))
 
-from supervisor.lockbot.models import BotStatusSnapshot, LiqHeatmapSummary, MarketSnapshot, TrendPolicyConfig
+from supervisor.lockbot.models import (
+    BotStatusSnapshot,
+    LiqHeatmapSummary,
+    MarketSnapshot,
+    TrendPolicyConfig,
+)
 from supervisor.lockbot.strategy_trend import evaluate_trend
 
 
@@ -50,7 +56,9 @@ def test_trend_requires_pullback() -> None:
         ohlcv_5m=[],
         ohlcv_15m=[],
     )
-    decision = evaluate_trend(market, _status(), TrendPolicyConfig(pullback_bps=20.0), "TREND_UP")
+    decision = evaluate_trend(
+        market, _status(), TrendPolicyConfig(pullback_bps=20.0), "TREND_UP"
+    )
     assert decision.intent is None
     assert decision.reason == "no_pullback"
 

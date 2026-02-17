@@ -4,7 +4,13 @@ from __future__ import annotations
 
 from typing import Optional
 
-from supervisor.lockbot.models import BotStatusSnapshot, MarketSnapshot, PolicyIntent, StrategyDecision, TrendPolicyConfig
+from supervisor.lockbot.models import (
+    BotStatusSnapshot,
+    MarketSnapshot,
+    PolicyIntent,
+    StrategyDecision,
+    TrendPolicyConfig,
+)
 
 
 def evaluate_trend(
@@ -53,10 +59,14 @@ def evaluate_trend(
         "target": target,
         "delta_gap": delta_gap,
     }
-    return StrategyDecision(intent=intent, action="EXEC_STEP", reason="trend_pullback", debug=debug)
+    return StrategyDecision(
+        intent=intent, action="EXEC_STEP", reason="trend_pullback", debug=debug
+    )
 
 
-def _select_reference_price(market: MarketSnapshot, cfg: TrendPolicyConfig) -> tuple[Optional[float], str]:
+def _select_reference_price(
+    market: MarketSnapshot, cfg: TrendPolicyConfig
+) -> tuple[Optional[float], str]:
     for anchor in cfg.avwap_anchor_preference:
         if anchor in market.avwap_anchors:
             return market.avwap_anchors[anchor], f"avwap:{anchor}"
@@ -92,7 +102,9 @@ def _heatmap_blocked(direction: str, market: MarketSnapshot, threshold: float) -
     return market.liq.intensity_above >= threshold
 
 
-def _funding_blocked(direction: str, funding_rate: Optional[float], max_abs: float) -> bool:
+def _funding_blocked(
+    direction: str, funding_rate: Optional[float], max_abs: float
+) -> bool:
     if funding_rate is None or max_abs <= 0:
         return False
     if direction == "TREND_UP" and funding_rate > max_abs:

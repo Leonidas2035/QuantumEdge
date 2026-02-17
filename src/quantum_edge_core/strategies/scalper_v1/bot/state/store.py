@@ -13,7 +13,9 @@ from typing import Any, Dict
 
 def _atomic_write(path: Path, payload: Dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    fd, tmp_path = tempfile.mkstemp(prefix=path.stem + "_", suffix=".json", dir=str(path.parent))
+    fd, tmp_path = tempfile.mkstemp(
+        prefix=path.stem + "_", suffix=".json", dir=str(path.parent)
+    )
     try:
         with open(fd, "w", encoding="utf-8") as handle:
             json.dump(payload, handle, indent=2)
@@ -47,11 +49,21 @@ class StateStore:
 
     def load_position_state(self) -> Dict[str, Any]:
         if not self.position_path.exists():
-            return {"schema_version": "v1", "position": 0.0, "entry_price": None, "updated_ts": None}
+            return {
+                "schema_version": "v1",
+                "position": 0.0,
+                "entry_price": None,
+                "updated_ts": None,
+            }
         try:
             return json.loads(self.position_path.read_text(encoding="utf-8"))
         except Exception:
-            return {"schema_version": "v1", "position": 0.0, "entry_price": None, "updated_ts": None}
+            return {
+                "schema_version": "v1",
+                "position": 0.0,
+                "entry_price": None,
+                "updated_ts": None,
+            }
 
     def save_position_state(self, data: Dict[str, Any]) -> None:
         payload = dict(data)
@@ -80,7 +92,9 @@ class StateStore:
         except Exception:
             return
 
-    def generate_client_order_id(self, symbol: str, side: str, action: str, ts_ms: int, size: float) -> str:
+    def generate_client_order_id(
+        self, symbol: str, side: str, action: str, ts_ms: int, size: float
+    ) -> str:
         bucket = int(ts_ms // 1000)
         base = f"{symbol}|{side}|{action}|{bucket}|{size:.6f}"
         digest = hashlib.sha1(base.encode("utf-8")).hexdigest()[:10]

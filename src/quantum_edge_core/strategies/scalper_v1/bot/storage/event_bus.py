@@ -77,18 +77,29 @@ class EventBus:
             return True
         return False
 
-    async def publish(self, event: Dict[str, Any], priority: EventPriority = EventPriority.NORMAL) -> bool:
+    async def publish(
+        self, event: Dict[str, Any], priority: EventPriority = EventPriority.NORMAL
+    ) -> bool:
         size = self._estimate_size(event)
         async with self._lock:
-            over_limit = self._events >= self._max_events or (self._bytes + size) > self._max_bytes
+            over_limit = (
+                self._events >= self._max_events
+                or (self._bytes + size) > self._max_bytes
+            )
             if over_limit and self._drop_policy == "drop_newest":
                 self._record_drop(priority)
                 return False
             while over_limit and self._events > 0:
                 if not self._drop_one_lowest_locked():
                     break
-                over_limit = self._events >= self._max_events or (self._bytes + size) > self._max_bytes
-            if self._events >= self._max_events or (self._bytes + size) > self._max_bytes:
+                over_limit = (
+                    self._events >= self._max_events
+                    or (self._bytes + size) > self._max_bytes
+                )
+            if (
+                self._events >= self._max_events
+                or (self._bytes + size) > self._max_bytes
+            ):
                 self._record_drop(priority)
                 return False
             queue = self._queues.get(priority, self._queues[EventPriority.NORMAL])
@@ -113,7 +124,11 @@ class EventBus:
 
     async def get(self) -> Dict[str, Any]:
         while True:
-            for priority in (EventPriority.HIGH, EventPriority.NORMAL, EventPriority.LOW):
+            for priority in (
+                EventPriority.HIGH,
+                EventPriority.NORMAL,
+                EventPriority.LOW,
+            ):
                 queue = self._queues[priority]
                 if not queue.empty():
                     event, size = await queue.get()
@@ -123,7 +138,9 @@ class EventBus:
                     return event
 
             tasks = [asyncio.create_task(q.get()) for q in self._queues.values()]
-            done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+            done, pending = await asyncio.wait(
+                tasks, return_when=asyncio.FIRST_COMPLETED
+            )
             for task in pending:
                 task.cancel()
             event, size = next(iter(done)).result()
@@ -135,7 +152,11 @@ class EventBus:
     async def drain(self, max_items: int) -> Tuple[Dict[str, Any], ...]:
         items = []
         for _ in range(max_items):
-            for priority in (EventPriority.HIGH, EventPriority.NORMAL, EventPriority.LOW):
+            for priority in (
+                EventPriority.HIGH,
+                EventPriority.NORMAL,
+                EventPriority.LOW,
+            ):
                 queue = self._queues[priority]
                 if not queue.empty():
                     event, size = queue.get_nowait()

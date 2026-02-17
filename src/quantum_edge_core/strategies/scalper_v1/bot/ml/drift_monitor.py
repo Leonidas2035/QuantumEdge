@@ -7,7 +7,6 @@ from dataclasses import dataclass, field
 from typing import Dict, Optional
 
 
-
 @dataclass
 class DriftSnapshot:
     drift_score: float
@@ -25,7 +24,9 @@ class DriftMonitor:
     _feature_exceed: Dict[str, int] = field(default_factory=dict)
     _count: int = 0
 
-    def update(self, feature_names: list[str], values: list[float]) -> Optional[DriftSnapshot]:
+    def update(
+        self, feature_names: list[str], values: list[float]
+    ) -> Optional[DriftSnapshot]:
         if not self.baseline_mean or not self.baseline_std:
             return None
         z_total = 0.0
@@ -56,5 +57,11 @@ class DriftMonitor:
         drift_score = sum(self._z_scores) / max(len(self._z_scores), 1)
         total_exceeds = sum(self._feature_exceed.values())
         exceed_rate = total_exceeds / max(self._count, 1)
-        top_features = sorted(self._feature_exceed, key=self._feature_exceed.get, reverse=True)[:5]
-        return DriftSnapshot(drift_score=float(drift_score), exceed_rate=float(exceed_rate), top_features=top_features)
+        top_features = sorted(
+            self._feature_exceed, key=self._feature_exceed.get, reverse=True
+        )[:5]
+        return DriftSnapshot(
+            drift_score=float(drift_score),
+            exceed_rate=float(exceed_rate),
+            top_features=top_features,
+        )

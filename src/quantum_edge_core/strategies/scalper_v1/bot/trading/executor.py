@@ -14,7 +14,6 @@ from bot.core.config_loader import config
 from bot.engine.decision_engine import Decision
 
 
-
 @dataclass
 class SymbolMeta:
     step_size: float
@@ -51,7 +50,9 @@ class BinanceDemoExecutor:
         self.exchange = str(self.demo_cfg.get("exchange", "futures")).lower()
         self._validate_config()
         self.allowed_symbols = self._load_allowed_symbols()
-        default_symbol = symbol or self.demo_cfg.get("default_symbol") or self._fallback_symbol()
+        default_symbol = (
+            symbol or self.demo_cfg.get("default_symbol") or self._fallback_symbol()
+        )
         self.symbol = (default_symbol or "BTCUSDT").upper()
         if self.allowed_symbols and self.symbol not in self.allowed_symbols:
             self.allowed_symbols.add(self.symbol)
@@ -78,10 +79,14 @@ class BinanceDemoExecutor:
 
     def _validate_config(self) -> None:
         if not self.demo_cfg.get("testnet", True):
-            raise ValueError("Demo mode enforces Binance testnet only. Set binance_demo.testnet to true.")
+            raise ValueError(
+                "Demo mode enforces Binance testnet only. Set binance_demo.testnet to true."
+            )
         base_url = self.demo_cfg.get("base_url") or BaseClient.FUTURES_TESTNET_URL
         if "testnet" not in base_url:
-            raise ValueError("binance_demo.base_url must point to the Binance testnet endpoints.")
+            raise ValueError(
+                "binance_demo.base_url must point to the Binance testnet endpoints."
+            )
 
     def _load_allowed_symbols(self) -> Set[str]:
         pairs_path = Path(__file__).resolve().parents[2] / "config" / "pairs.yaml"
@@ -125,7 +130,10 @@ class BinanceDemoExecutor:
                 sym_info = s
                 break
         if not sym_info:
-            self._log(f"[ERROR] Symbol {symbol} not found in exchangeInfo; skipping.", level="ERROR")
+            self._log(
+                f"[ERROR] Symbol {symbol} not found in exchangeInfo; skipping.",
+                level="ERROR",
+            )
             return None
 
         step_size = None
@@ -142,10 +150,18 @@ class BinanceDemoExecutor:
                 min_notional = float(f.get("notional") or f.get("minNotional", 0.0))
 
         if not step_size or not min_qty:
-            self._log(f"[ERROR] No LOT_SIZE filter for symbol {symbol} in exchangeInfo; skipping order.", level="ERROR")
+            self._log(
+                f"[ERROR] No LOT_SIZE filter for symbol {symbol} in exchangeInfo; skipping order.",
+                level="ERROR",
+            )
             return None
 
-        meta = SymbolMeta(step_size=step_size, min_qty=min_qty, tick_size=tick_size, min_notional=min_notional)
+        meta = SymbolMeta(
+            step_size=step_size,
+            min_qty=min_qty,
+            tick_size=tick_size,
+            min_notional=min_notional,
+        )
         self._symbol_meta[symbol] = meta
         return meta
 
@@ -169,7 +185,10 @@ class BinanceDemoExecutor:
         steps = int(raw_qty / step)
         qty = steps * step
         if qty < min_qty:
-            self._log(f"[WARN] Qty below minQty for {symbol}, skipping order (qty={raw_qty}, minQty={min_qty}).", "WARN")
+            self._log(
+                f"[WARN] Qty below minQty for {symbol}, skipping order (qty={raw_qty}, minQty={min_qty}).",
+                "WARN",
+            )
             return 0.0
         decimals = self._decimals_from_step(step)
         return float(f"{qty:.{decimals}f}")
@@ -211,7 +230,9 @@ class BinanceDemoExecutor:
         api_key = self.config.secret("BINANCE_DEMO_API_KEY")
         api_secret = self.config.secret("BINANCE_DEMO_API_SECRET")
         if not api_key or not api_secret:
-            self._log("Missing BINANCE_DEMO_API_KEY/SECRET in secrets store.", level="ERROR")
+            self._log(
+                "Missing BINANCE_DEMO_API_KEY/SECRET in secrets store.", level="ERROR"
+            )
             return False
 
         try:
@@ -222,7 +243,10 @@ class BinanceDemoExecutor:
                 self.client.FUTURES_TESTNET_URL = base_url
             else:
                 if "fapi" in str(base_url).lower() or "future" in str(base_url).lower():
-                    self._log("[WARN] Spot demo base_url points to futures; overriding to spot testnet.", level="WARN")
+                    self._log(
+                        "[WARN] Spot demo base_url points to futures; overriding to spot testnet.",
+                        level="WARN",
+                    )
                     base_url = BaseClient.API_TESTNET_URL
                 self.client.API_TESTNET_URL = base_url
             self._log(f"[DEMO] Binance client initialized for {self.exchange} testnet.")
@@ -259,7 +283,10 @@ class BinanceDemoExecutor:
     async def _compute_entry_qty(self, symbol: str, price: float) -> float:
         equity = await self._get_demo_equity_usdt()
         if equity <= 0:
-            self._log("[WARN] Unable to determine demo equity; skipping order sizing.", level="WARN")
+            self._log(
+                "[WARN] Unable to determine demo equity; skipping order sizing.",
+                level="WARN",
+            )
             return 0.0
         meta = await self._get_symbol_meta(symbol)
         target_notional = equity * max(self.position_pct, 0)
@@ -272,7 +299,9 @@ class BinanceDemoExecutor:
         raw_qty = target_notional / price
         return await self._normalize_qty(symbol, raw_qty)
 
-    def adjust_tp_for_fees(self, entry_price: float, raw_tp: float, side: str, fee_rate: float) -> float:
+    def adjust_tp_for_fees(
+        self, entry_price: float, raw_tp: float, side: str, fee_rate: float
+    ) -> float:
         if fee_rate <= 0 or entry_price <= 0:
             return raw_tp
         side_up = side.upper()
@@ -297,11 +326,18 @@ class BinanceDemoExecutor:
                 return await fn(*args, **kwargs)
             except (BinanceRequestException, BinanceAPIException) as exc:
                 attempts += 1
-                if (isinstance(exc, BinanceAPIException) and exc.code and exc.code >= 500) or isinstance(exc, BinanceRequestException):
+                if (
+                    isinstance(exc, BinanceAPIException)
+                    and exc.code
+                    and exc.code >= 500
+                ) or isinstance(exc, BinanceRequestException):
                     pass
                 else:
                     raise
-                self._log(f"[WARN] Order attempt {attempts} failed: {exc}; retrying in {backoff:.1f}s", level="WARN")
+                self._log(
+                    f"[WARN] Order attempt {attempts} failed: {exc}; retrying in {backoff:.1f}s",
+                    level="WARN",
+                )
                 await asyncio.sleep(backoff)
                 backoff = min(backoff * 2, 4.0)
         raise
@@ -330,7 +366,9 @@ class BinanceDemoExecutor:
 
         try:
             if self.exchange == "futures":
-                order_type = (order_type or ("MARKET" if norm_price is None else "LIMIT")).upper()
+                order_type = (
+                    order_type or ("MARKET" if norm_price is None else "LIMIT")
+                ).upper()
                 tif = time_in_force
                 if order_type == "LIMIT" and post_only and not tif:
                     tif = "GTX"
@@ -344,15 +382,25 @@ class BinanceDemoExecutor:
                 }
                 if client_order_id:
                     params["newClientOrderId"] = client_order_id
-                if norm_price is not None and not reduce_only and order_type != "MARKET":
+                if (
+                    norm_price is not None
+                    and not reduce_only
+                    and order_type != "MARKET"
+                ):
                     params["price"] = norm_price
                     params["timeInForce"] = tif or "GTC"
-                return await self._submit_with_retries(self.client.futures_create_order, **params)
+                return await self._submit_with_retries(
+                    self.client.futures_create_order, **params
+                )
 
             if reduce_only:
-                self._log("Reduce-only not supported for spot; skipping order.", level="WARN")
+                self._log(
+                    "Reduce-only not supported for spot; skipping order.", level="WARN"
+                )
                 return None
-            order_type = (order_type or ("MARKET" if norm_price is None else "LIMIT")).upper()
+            order_type = (
+                order_type or ("MARKET" if norm_price is None else "LIMIT")
+            ).upper()
             if order_type == "LIMIT" and post_only:
                 order_type = "LIMIT_MAKER"
             tif = time_in_force if order_type == "LIMIT" else None
@@ -390,16 +438,25 @@ class BinanceDemoExecutor:
         if result:
             executed = float(result.get("executedQty") or qty)
             pnl_price = float(result.get("avgPrice") or 0.0)
-            pnl = (pnl_price - (self.entry_price or pnl_price)) * (self.position if executed >= abs(self.position) else executed) - self._fee(
-                pnl_price * executed
-            ) if self.entry_price else 0.0
+            pnl = (
+                (pnl_price - (self.entry_price or pnl_price))
+                * (self.position if executed >= abs(self.position) else executed)
+                - self._fee(pnl_price * executed)
+                if self.entry_price
+                else 0.0
+            )
             self._record_trade(pnl, side)
             self.position = 0.0
             self.entry_price = None
             self.trades += 1
             self._bracket = None
 
-    async def cancel_order(self, symbol: str, order_id: Optional[str] = None, client_order_id: Optional[str] = None) -> bool:
+    async def cancel_order(
+        self,
+        symbol: str,
+        order_id: Optional[str] = None,
+        client_order_id: Optional[str] = None,
+    ) -> bool:
         if not await self.initialize():
             return False
         symbol = symbol.upper()
@@ -445,7 +502,13 @@ class BinanceDemoExecutor:
             self._log(f"[DEMO] Failed to sync positions: {exc}", level="WARN")
             return {}
 
-    async def process(self, decision: Decision, price: float, timestamp: int, symbol: Optional[str] = None):
+    async def process(
+        self,
+        decision: Decision,
+        price: float,
+        timestamp: int,
+        symbol: Optional[str] = None,
+    ):
         sym = (symbol or self.symbol).upper()
         self.last_price = price
         if self.allowed_symbols and sym not in self.allowed_symbols:
@@ -464,21 +527,32 @@ class BinanceDemoExecutor:
 
         if decision.action in ("buy", "sell"):
             if self._open_positions() >= self.max_open_positions:
-                self._log("[DEMO] Max open positions reached; not opening new trade.", level="WARN")
+                self._log(
+                    "[DEMO] Max open positions reached; not opening new trade.",
+                    level="WARN",
+                )
                 return
             if self.position != 0:
-                self._log("[DEMO] Position already open; waiting for close signal.", level="WARN")
+                self._log(
+                    "[DEMO] Position already open; waiting for close signal.",
+                    level="WARN",
+                )
                 return
 
             qty = await self._compute_entry_qty(sym, price)
             if qty <= 0:
-                self._log("[DEMO] Computed quantity <= 0 after normalization, skipping order.", level="WARN")
+                self._log(
+                    "[DEMO] Computed quantity <= 0 after normalization, skipping order.",
+                    level="WARN",
+                )
                 return
 
             side = "BUY" if decision.action == "buy" else "SELL"
             self._log(f"[DEMO] Placing MARKET {side} {sym} qty={qty} (testnet).")
             client_id = self._client_order_id(sym, decision.action)
-            result = await self.submit_order(sym, side, qty, reduce_only=False, client_order_id=client_id)
+            result = await self.submit_order(
+                sym, side, qty, reduce_only=False, client_order_id=client_id
+            )
             if result:
                 filled_qty = float(result.get("executedQty") or qty)
                 self._apply_fill(side, filled_qty, price, result)
@@ -499,7 +573,10 @@ class BinanceDemoExecutor:
             side = "SELL" if self.position > 0 else "BUY"
             qty = await self._normalize_qty(sym, abs(self.position))
             if qty <= 0:
-                self._log(f"[WARN] Normalized close qty <= 0 for {sym}, skipping close.", level="WARN")
+                self._log(
+                    f"[WARN] Normalized close qty <= 0 for {sym}, skipping close.",
+                    level="WARN",
+                )
                 return
             effective_price = price
             if self.entry_price is not None:
@@ -508,18 +585,41 @@ class BinanceDemoExecutor:
                 )
                 if is_profitable:
                     effective_price = await self._normalize_price(
-                        sym, self.adjust_tp_for_fees(self.entry_price, price, side, self.fee_rate)
+                        sym,
+                        self.adjust_tp_for_fees(
+                            self.entry_price, price, side, self.fee_rate
+                        ),
                     )
-            self._log(f"[DEMO] Closing position via MARKET {side} {sym} qty={qty} (reduce-only).")
+            self._log(
+                f"[DEMO] Closing position via MARKET {side} {sym} qty={qty} (reduce-only)."
+            )
             client_id = self._client_order_id(sym, "close")
-            result = await self.submit_order(sym, side, qty, reduce_only=True, price=effective_price, client_order_id=client_id)
+            result = await self.submit_order(
+                sym,
+                side,
+                qty,
+                reduce_only=True,
+                price=effective_price,
+                client_order_id=client_id,
+            )
             if result:
                 executed = float(result.get("executedQty") or qty)
-                pnl_price = effective_price if self.entry_price and effective_price else price
+                pnl_price = (
+                    effective_price if self.entry_price and effective_price else price
+                )
                 pnl = (
-                    (pnl_price - self.entry_price) * (self.position if executed >= abs(self.position) else executed)
-                    - self._fee(pnl_price * executed)
-                ) if self.entry_price else 0.0
+                    (
+                        (pnl_price - self.entry_price)
+                        * (
+                            self.position
+                            if executed >= abs(self.position)
+                            else executed
+                        )
+                        - self._fee(pnl_price * executed)
+                    )
+                    if self.entry_price
+                    else 0.0
+                )
                 self.realized_pnl += pnl
                 self._record_trade(pnl, side)
                 self._reduce_position(executed)
@@ -549,7 +649,13 @@ class BinanceDemoExecutor:
             "trades": self.trades,
         }
 
-    def _apply_fill(self, side: str, executed: float, price: float, result: Optional[Dict[str, Any]] = None) -> None:
+    def _apply_fill(
+        self,
+        side: str,
+        executed: float,
+        price: float,
+        result: Optional[Dict[str, Any]] = None,
+    ) -> None:
         status = (result or {}).get("status", "").upper() if result else ""
         if executed <= 0:
             return
@@ -564,7 +670,10 @@ class BinanceDemoExecutor:
         else:
             self.entry_price = None
         if status == "PARTIALLY_FILLED":
-            self._log(f"[DEMO] Partial fill detected status={status} executed={executed}", level="WARN")
+            self._log(
+                f"[DEMO] Partial fill detected status={status} executed={executed}",
+                level="WARN",
+            )
 
     def _reduce_position(self, executed: float) -> None:
         remaining = abs(self.position) - executed
@@ -573,9 +682,15 @@ class BinanceDemoExecutor:
             self.entry_price = None
             self._bracket = None
         else:
-            self.position = self.position - executed if self.position > 0 else self.position + executed
+            self.position = (
+                self.position - executed
+                if self.position > 0
+                else self.position + executed
+            )
 
-    def set_bracket(self, side: str, tp_price: Optional[float], sl_price: Optional[float]) -> bool:
+    def set_bracket(
+        self, side: str, tp_price: Optional[float], sl_price: Optional[float]
+    ) -> bool:
         if not tp_price and not sl_price:
             return False
         self._bracket = {
@@ -583,7 +698,9 @@ class BinanceDemoExecutor:
             "tp": float(tp_price) if tp_price else None,
             "sl": float(sl_price) if sl_price else None,
         }
-        self._log(f"[DEMO] Bracket set tp={self._bracket['tp']} sl={self._bracket['sl']}")
+        self._log(
+            f"[DEMO] Bracket set tp={self._bracket['tp']} sl={self._bracket['sl']}"
+        )
         return True
 
     async def check_brackets(self, price: float, timestamp: int) -> None:
@@ -593,23 +710,35 @@ class BinanceDemoExecutor:
         tp = self._bracket.get("tp")
         sl = self._bracket.get("sl")
         hit = None
-        if tp and ((self.position > 0 and price >= tp) or (self.position < 0 and price <= tp)):
+        if tp and (
+            (self.position > 0 and price >= tp) or (self.position < 0 and price <= tp)
+        ):
             hit = "tp"
-        if sl and ((self.position > 0 and price <= sl) or (self.position < 0 and price >= sl)):
+        if sl and (
+            (self.position > 0 and price <= sl) or (self.position < 0 and price >= sl)
+        ):
             hit = hit or "sl"
         if not hit:
             return False
         close_side = "SELL" if self.position > 0 else "BUY"
         qty = abs(self.position)
         client_id = self._client_order_id(self.symbol, f"bracket-{hit}")
-        self._log(f"[DEMO] {hit.upper()} hit -> closing {qty} via reduce-only.", level="WARN")
-        result = await self.submit_order(self.symbol, close_side, qty, reduce_only=True, client_order_id=client_id)
+        self._log(
+            f"[DEMO] {hit.upper()} hit -> closing {qty} via reduce-only.", level="WARN"
+        )
+        result = await self.submit_order(
+            self.symbol, close_side, qty, reduce_only=True, client_order_id=client_id
+        )
         if result:
             executed = float(result.get("executedQty") or qty)
             pnl_price = float(result.get("avgPrice") or price)
-            pnl = (pnl_price - self.entry_price) * (self.position if executed >= abs(self.position) else executed) - self._fee(
-                pnl_price * executed
-            ) if self.entry_price else 0.0
+            pnl = (
+                (pnl_price - self.entry_price)
+                * (self.position if executed >= abs(self.position) else executed)
+                - self._fee(pnl_price * executed)
+                if self.entry_price
+                else 0.0
+            )
             self.realized_pnl += pnl
             self._reduce_position(executed)
             return True

@@ -1,4 +1,5 @@
 import pytest
+
 pytest.skip("Legacy test broken by src-layout migration", allow_module_level=True)
 import asyncio
 import socket
@@ -35,11 +36,18 @@ async def test_microstructure_event_merges_features():
     publisher = ZmqPublisher(config)
     bus = EventBus()
     analyzer = MicrostructureAnalyzer(window_n=5)
-    micro_pub = MicrostructurePublisher(publisher, bus, writer=None, event_type=MICROSTRUCTURE_EVENT_TYPE)
+    micro_pub = MicrostructurePublisher(
+        publisher, bus, writer=None, event_type=MICROSTRUCTURE_EVENT_TYPE
+    )
 
     hub_source = HubMarketDataSource(
         ["BTCUSDT"],
-        source_cfg={"hub": {"pub_endpoint": endpoint, "topics": [f"BTCUSDT:{MICROSTRUCTURE_EVENT_TYPE}"]}},
+        source_cfg={
+            "hub": {
+                "pub_endpoint": endpoint,
+                "topics": [f"BTCUSDT:{MICROSTRUCTURE_EVENT_TYPE}"],
+            }
+        },
         connect_snapshot=False,
     )
     await hub_source.start()

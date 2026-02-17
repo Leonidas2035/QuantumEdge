@@ -16,7 +16,9 @@ def _write_episode(path: Path, start_ts_ms: int, rows: int = 120) -> None:
         qty = 1.0
         side = "buy" if idx % 2 == 0 else "sell"
         data.append([ts_ms, price, qty, side, "", "", ""])
-    df = pd.DataFrame(data, columns=["ts_ms", "price", "qty", "side", "bid", "ask", "depth_usd"])
+    df = pd.DataFrame(
+        data, columns=["ts_ms", "price", "qty", "side", "bid", "ask", "depth_usd"]
+    )
     df.to_csv(path, index=False)
 
 
@@ -41,7 +43,9 @@ def _setup_scenarios(tmp_path: Path) -> Path:
     splits_dir = root / "splits"
     splits_dir.mkdir(parents=True, exist_ok=True)
     split_time = {"train": [episodes[0]], "val": [episodes[1]], "test": [episodes[2]]}
-    (splits_dir / "split_time.json").write_text(json.dumps(split_time, indent=2), encoding="utf-8")
+    (splits_dir / "split_time.json").write_text(
+        json.dumps(split_time, indent=2), encoding="utf-8"
+    )
     return root
 
 

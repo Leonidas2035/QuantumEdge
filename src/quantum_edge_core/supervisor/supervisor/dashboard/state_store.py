@@ -11,7 +11,6 @@ from supervisor.alerts.engine import AlertResult
 from supervisor.alerts.engine import AlertEngine
 from supervisor.dashboard.audit_log import DashboardAuditLogger
 
-
 StrategyKey = Tuple[str, str]
 
 
@@ -25,7 +24,9 @@ class PerformanceCounters:
     fees: float = 0.0
     traded_volume_quote: float = 0.0
 
-    def record(self, net_pnl: float, gross_pnl: float, fees: float, volume_quote: float) -> None:
+    def record(
+        self, net_pnl: float, gross_pnl: float, fees: float, volume_quote: float
+    ) -> None:
         self.closed_deals += 1
         self.net_pnl += net_pnl
         self.gross_pnl += gross_pnl
@@ -72,7 +73,12 @@ class StrategyState:
     lot_status: Dict[str, Dict[str, Any]] = field(default_factory=dict)
 
     def last_update_ts_ms(self) -> Optional[int]:
-        values = [self.telemetry_ts_ms, self.limits_ts_ms, self.regime_ts_ms, self.dca_flash_ts_ms]
+        values = [
+            self.telemetry_ts_ms,
+            self.limits_ts_ms,
+            self.regime_ts_ms,
+            self.dca_flash_ts_ms,
+        ]
         values = [v for v in values if isinstance(v, int)]
         return max(values) if values else None
 
@@ -109,7 +115,11 @@ class DashboardStateStore:
         event_type = str(payload.get("type") or payload.get("event_type") or "")
         data = payload.get("data") if isinstance(payload.get("data"), dict) else {}
         ts_ms = _to_ts_ms(payload.get("ts") or payload.get("ts_ms"))
-        strategy_id = _coerce_id(data.get("strategy_id") or payload.get("strategy_id") or payload.get("source"))
+        strategy_id = _coerce_id(
+            data.get("strategy_id")
+            or payload.get("strategy_id")
+            or payload.get("source")
+        )
         symbol = _coerce_id(data.get("symbol") or payload.get("symbol"))
         if not strategy_id:
             strategy_id = "unknown"
@@ -144,7 +154,10 @@ class DashboardStateStore:
         if now - self._last_alert_eval_ts >= self._alert_eval_interval_sec:
             self.evaluate_alerts(now_ts=now)
         if self._last_alert_result:
-            return {"active": self._last_alert_result.active, "recent": self._last_alert_result.recent}
+            return {
+                "active": self._last_alert_result.active,
+                "recent": self._last_alert_result.recent,
+            }
         return {"active": [], "recent": []}
 
     def overview(self) -> Dict[str, Any]:
@@ -179,7 +192,9 @@ class DashboardStateStore:
                 effective_limits = _merge_limits(state.limits, state.regime)
                 breaches = _detect_limit_breaches(state.telemetry, state.limits)
                 dca_flash = state.dca_flash if state.strategy_id == "DCA_ETH" else None
-                dca_lots = _summarize_dca_lots(state.lot_status, now_ms, self._dca_stuck_sell_ms)
+                dca_lots = _summarize_dca_lots(
+                    state.lot_status, now_ms, self._dca_stuck_sell_ms
+                )
                 results.append(
                     {
                         "strategy_id": state.strategy_id,
@@ -204,7 +219,11 @@ class DashboardStateStore:
             by_strategy = []
             for key, counters in sorted(self._performance.items()):
                 strategy_id, symbol = key
-                row = {"strategy_id": strategy_id, "symbol": symbol, **counters.to_dict()}
+                row = {
+                    "strategy_id": strategy_id,
+                    "symbol": symbol,
+                    **counters.to_dict(),
+                }
                 by_strategy.append(row)
             session = self._aggregate_performance()
         return {"ts_ms": now_ms, "session": session, "by_strategy": by_strategy}
@@ -227,7 +246,9 @@ class DashboardStateStore:
         )
         return {"status": "ok", "ts_ms": int(time.time() * 1000)}
 
-    def record_alert_transitions(self, result: AlertResult, summary: Dict[str, Any]) -> None:
+    def record_alert_transitions(
+        self, result: AlertResult, summary: Dict[str, Any]
+    ) -> None:
         self._record_alert_transitions(result, summary)
         self._last_alert_result = result
         self._last_alert_eval_ts = time.time()
@@ -250,7 +271,9 @@ class DashboardStateStore:
                         stale_count += 1
                 breaches += len(_detect_limit_breaches(state.telemetry, state.limits))
                 api_errors += int(state.telemetry.get("api_errors_1m") or 0)
-                stuck_sells += _summarize_dca_lots(state.lot_status, now_ms, self._dca_stuck_sell_ms).get("stuck_sells", 0)
+                stuck_sells += _summarize_dca_lots(
+                    state.lot_status, now_ms, self._dca_stuck_sell_ms
+                ).get("stuck_sells", 0)
                 cancel_count += self._cancel_count_for(key, now_ms)
             cancel_rate = cancel_count
         return {
@@ -268,19 +291,27 @@ class DashboardStateStore:
             "health": {"api_errors_1m": api_errors, "degraded": api_errors > 0},
         }
 
-    def _update_telemetry(self, strategy_id: str, symbol: str, data: Dict[str, Any], ts_ms: Optional[int]) -> None:
+    def _update_telemetry(
+        self, strategy_id: str, symbol: str, data: Dict[str, Any], ts_ms: Optional[int]
+    ) -> None:
         key = (strategy_id, symbol)
         with self._lock:
-            state = self._strategies.get(key) or StrategyState(strategy_id=strategy_id, symbol=symbol)
+            state = self._strategies.get(key) or StrategyState(
+                strategy_id=strategy_id, symbol=symbol
+            )
             state.telemetry = data
             state.telemetry_ts_ms = ts_ms or int(time.time() * 1000)
             self._strategies[key] = state
             self._ingest_cancel_stats(key, data, state.telemetry_ts_ms)
 
-    def _update_limits(self, strategy_id: str, symbol: str, data: Dict[str, Any], ts_ms: Optional[int]) -> None:
+    def _update_limits(
+        self, strategy_id: str, symbol: str, data: Dict[str, Any], ts_ms: Optional[int]
+    ) -> None:
         key = (strategy_id, symbol)
         with self._lock:
-            state = self._strategies.get(key) or StrategyState(strategy_id=strategy_id, symbol=symbol)
+            state = self._strategies.get(key) or StrategyState(
+                strategy_id=strategy_id, symbol=symbol
+            )
             before = dict(state.limits)
             state.limits = data
             state.limits_ts_ms = ts_ms or int(time.time() * 1000)
@@ -295,10 +326,14 @@ class DashboardStateStore:
                 payload={"before": before, "after": data},
             )
 
-    def _update_regime(self, strategy_id: str, symbol: str, data: Dict[str, Any], ts_ms: Optional[int]) -> None:
+    def _update_regime(
+        self, strategy_id: str, symbol: str, data: Dict[str, Any], ts_ms: Optional[int]
+    ) -> None:
         key = (strategy_id, symbol)
         with self._lock:
-            state = self._strategies.get(key) or StrategyState(strategy_id=strategy_id, symbol=symbol)
+            state = self._strategies.get(key) or StrategyState(
+                strategy_id=strategy_id, symbol=symbol
+            )
             before = dict(state.regime)
             state.regime = data
             state.regime_ts_ms = ts_ms or int(time.time() * 1000)
@@ -313,29 +348,41 @@ class DashboardStateStore:
                 payload={"before": before, "after": data},
             )
 
-    def _update_dca_flash(self, strategy_id: str, symbol: str, data: Dict[str, Any], ts_ms: Optional[int]) -> None:
+    def _update_dca_flash(
+        self, strategy_id: str, symbol: str, data: Dict[str, Any], ts_ms: Optional[int]
+    ) -> None:
         key = (strategy_id, symbol)
         with self._lock:
-            state = self._strategies.get(key) or StrategyState(strategy_id=strategy_id, symbol=symbol)
+            state = self._strategies.get(key) or StrategyState(
+                strategy_id=strategy_id, symbol=symbol
+            )
             state.dca_flash = data
             state.dca_flash_ts_ms = ts_ms or int(time.time() * 1000)
             self._strategies[key] = state
 
-    def _update_dca_lot_status(self, strategy_id: str, symbol: str, data: Dict[str, Any], ts_ms: Optional[int]) -> None:
+    def _update_dca_lot_status(
+        self, strategy_id: str, symbol: str, data: Dict[str, Any], ts_ms: Optional[int]
+    ) -> None:
         lot_id = _coerce_id(data.get("lot_id"))
         if not lot_id:
             return
         key = (strategy_id, symbol)
         with self._lock:
-            state = self._strategies.get(key) or StrategyState(strategy_id=strategy_id, symbol=symbol)
+            state = self._strategies.get(key) or StrategyState(
+                strategy_id=strategy_id, symbol=symbol
+            )
             state.lot_status[lot_id] = {
                 "status": data.get("status"),
                 "ts_ms": ts_ms or int(time.time() * 1000),
             }
             self._strategies[key] = state
 
-    def _record_deal_closed(self, strategy_id: str, symbol: str, data: Dict[str, Any], ts_ms: Optional[int]) -> None:
-        deal_id = _coerce_id(data.get("deal_id") or data.get("lot_id") or data.get("cycle_id"))
+    def _record_deal_closed(
+        self, strategy_id: str, symbol: str, data: Dict[str, Any], ts_ms: Optional[int]
+    ) -> None:
+        deal_id = _coerce_id(
+            data.get("deal_id") or data.get("lot_id") or data.get("cycle_id")
+        )
         if not deal_id:
             deal_id = f"{strategy_id}:{symbol}:{ts_ms}"
         with self._lock:
@@ -354,7 +401,9 @@ class DashboardStateStore:
                 gross_pnl = _coerce_float(data.get("pnl"), default=0.0)
             if net_pnl is None:
                 net_pnl = gross_pnl - (fees or 0.0) if gross_pnl is not None else 0.0
-            counters.record(net_pnl or 0.0, gross_pnl or 0.0, fees or 0.0, volume_quote or 0.0)
+            counters.record(
+                net_pnl or 0.0, gross_pnl or 0.0, fees or 0.0, volume_quote or 0.0
+            )
         self._audit.append(
             severity="INFO",
             component="performance",
@@ -378,7 +427,9 @@ class DashboardStateStore:
             totals.traded_volume_quote += counters.traded_volume_quote
         return totals.to_dict()
 
-    def _ingest_cancel_stats(self, key: StrategyKey, data: Dict[str, Any], ts_ms: int) -> None:
+    def _ingest_cancel_stats(
+        self, key: StrategyKey, data: Dict[str, Any], ts_ms: int
+    ) -> None:
         cancel_count = _coerce_int(data.get("cancel_count_1m"))
         if cancel_count is None:
             cancel_count = _coerce_int(data.get("cancel_count"))
@@ -397,11 +448,19 @@ class DashboardStateStore:
         self._cancel_events[key] = fresh
         return sum(count for _, count in fresh)
 
-    def _record_alert_transitions(self, result: AlertResult, summary: Dict[str, Any]) -> None:
-        active = {item.get("alert_id") for item in result.active if isinstance(item, dict)}
+    def _record_alert_transitions(
+        self, result: AlertResult, summary: Dict[str, Any]
+    ) -> None:
+        active = {
+            item.get("alert_id") for item in result.active if isinstance(item, dict)
+        }
         previous = set()
         if self._last_alert_result:
-            previous = {item.get("alert_id") for item in self._last_alert_result.active if isinstance(item, dict)}
+            previous = {
+                item.get("alert_id")
+                for item in self._last_alert_result.active
+                if isinstance(item, dict)
+            }
         for item in result.active:
             if not isinstance(item, dict):
                 continue
@@ -438,17 +497,27 @@ def _merge_limits(limits: Dict[str, Any], regime: Dict[str, Any]) -> Dict[str, A
     return merged
 
 
-def _detect_limit_breaches(telemetry: Dict[str, Any], limits: Dict[str, Any]) -> list[str]:
+def _detect_limit_breaches(
+    telemetry: Dict[str, Any], limits: Dict[str, Any]
+) -> list[str]:
     breaches: list[str] = []
     if not telemetry or not limits:
         return breaches
-    _check_breach(breaches, telemetry, limits, "position_notional", "max_position_notional")
+    _check_breach(
+        breaches, telemetry, limits, "position_notional", "max_position_notional"
+    )
     _check_breach(breaches, telemetry, limits, "inventory_qty", "max_inventory_qty")
     _check_breach(breaches, telemetry, limits, "position_qty", "max_position_qty")
     return breaches
 
 
-def _check_breach(breaches: list[str], telemetry: Dict[str, Any], limits: Dict[str, Any], field: str, limit_field: str) -> None:
+def _check_breach(
+    breaches: list[str],
+    telemetry: Dict[str, Any],
+    limits: Dict[str, Any],
+    field: str,
+    limit_field: str,
+) -> None:
     value = _coerce_float(telemetry.get(field), default=None)
     limit = _coerce_float(limits.get(limit_field), default=None)
     if value is None or limit is None:
@@ -457,7 +526,9 @@ def _check_breach(breaches: list[str], telemetry: Dict[str, Any], limits: Dict[s
         breaches.append(field)
 
 
-def _summarize_dca_lots(lots: Dict[str, Dict[str, Any]], now_ms: int, stuck_ms: int) -> Dict[str, Any]:
+def _summarize_dca_lots(
+    lots: Dict[str, Dict[str, Any]], now_ms: int, stuck_ms: int
+) -> Dict[str, Any]:
     open_lots = 0
     stuck = 0
     for data in lots.values():

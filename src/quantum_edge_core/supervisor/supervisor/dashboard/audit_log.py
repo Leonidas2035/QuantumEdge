@@ -46,7 +46,9 @@ class DashboardAuditLogger:
         except OSError as exc:
             self.logger.warning("Dashboard audit log write failed: %s", exc)
 
-    def read(self, *, since_ts_ms: Optional[int] = None, limit: int = 200) -> list[Dict[str, Any]]:
+    def read(
+        self, *, since_ts_ms: Optional[int] = None, limit: int = 200
+    ) -> list[Dict[str, Any]]:
         if limit <= 0 or not self.path.exists():
             return []
         lines = _read_last_lines(self.path, max_lines=limit * 5)
@@ -59,7 +61,11 @@ class DashboardAuditLogger:
             except json.JSONDecodeError:
                 continue
             ts_ms = payload.get("ts_ms")
-            if since_ts_ms is not None and isinstance(ts_ms, (int, float)) and int(ts_ms) < since_ts_ms:
+            if (
+                since_ts_ms is not None
+                and isinstance(ts_ms, (int, float))
+                and int(ts_ms) < since_ts_ms
+            ):
                 continue
             items.append(payload)
             if len(items) >= limit:
@@ -67,7 +73,12 @@ class DashboardAuditLogger:
         return items
 
 
-def _read_last_lines(path: Path, max_lines: int = 200, chunk_size: int = 8192, max_bytes: int = 1024 * 1024) -> list[str]:
+def _read_last_lines(
+    path: Path,
+    max_lines: int = 200,
+    chunk_size: int = 8192,
+    max_bytes: int = 1024 * 1024,
+) -> list[str]:
     lines: list[str] = []
     size = 0
     with path.open("rb") as handle:

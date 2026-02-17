@@ -33,7 +33,9 @@ class OpenAIResponsesBackend:
         try:
             import httpx
         except Exception as exc:  # pragma: no cover - optional dependency
-            raise RuntimeError("httpx is required for OpenAI responses backend") from exc
+            raise RuntimeError(
+                "httpx is required for OpenAI responses backend"
+            ) from exc
 
         api_key = os.environ.get("OPENAI_API_KEY", "")
         if not api_key:
@@ -42,13 +44,21 @@ class OpenAIResponsesBackend:
             raise RuntimeError("OPENAI_MODEL is required")
 
         headers = {"Authorization": f"Bearer {api_key}"}
-        return httpx.Client(base_url=self.base_url, headers=headers, timeout=timeout_s, transport=self._transport)
+        return httpx.Client(
+            base_url=self.base_url,
+            headers=headers,
+            timeout=timeout_s,
+            transport=self._transport,
+        )
 
     def generate(self, prompt: str, *, system_prompt: str, timeout_s: float) -> str:
         payload = {
             "model": self.model,
             "input": [
-                {"role": "system", "content": [{"type": "input_text", "text": system_prompt}]},
+                {
+                    "role": "system",
+                    "content": [{"type": "input_text", "text": system_prompt}],
+                },
                 {"role": "user", "content": [{"type": "input_text", "text": prompt}]},
             ],
             "temperature": 0.0,

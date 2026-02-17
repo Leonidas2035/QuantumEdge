@@ -43,7 +43,8 @@ class BotEngine:
         )
         self.gateway = BinanceExecutionGateway(self.config)
         self.reporter = SupervisorReporter(
-            pub_endpoint=f"tcp://*:{self.config.supervisor_port}"
+            pub_endpoint=f"tcp://*:{self.config.telemetry_port}",
+            service_id=self.config.service_id,
         )
 
         # 2. Memory (State)

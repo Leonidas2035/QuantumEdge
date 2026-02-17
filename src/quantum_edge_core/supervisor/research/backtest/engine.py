@@ -66,7 +66,9 @@ class BacktestResult:
                 "size": self.config.size,
                 "policy_mode": self.config.policy_mode,
                 "disable_policy": self.config.disable_policy,
-                "models_dir": str(self.config.models_dir) if self.config.models_dir else None,
+                "models_dir": (
+                    str(self.config.models_dir) if self.config.models_dir else None
+                ),
                 "ml_mode": self.config.ml_mode,
             },
             "metrics": self.metrics,
@@ -85,7 +87,9 @@ class BacktestResult:
 
 
 class ExecutionSimulator:
-    def __init__(self, fee_bps: float, slippage_bps: float, base_latency_ms: int) -> None:
+    def __init__(
+        self, fee_bps: float, slippage_bps: float, base_latency_ms: int
+    ) -> None:
         self.fee_rate = max(fee_bps, 0.0) / 10_000
         self.slippage_rate = max(slippage_bps, 0.0) / 10_000
         self.base_latency_ms = max(base_latency_ms, 0)
@@ -102,10 +106,16 @@ class ExecutionSimulator:
             return mid * (1 + self.slippage_rate)
         return mid * (1 - self.slippage_rate)
 
-    def _record_trade(self, ts: int, action: str, price: float, size: float, pnl: float, fee: float) -> None:
-        self.trades.append(TradeFill(ts=ts, action=action, price=price, size=size, fee=fee, pnl=pnl))
+    def _record_trade(
+        self, ts: int, action: str, price: float, size: float, pnl: float, fee: float
+    ) -> None:
+        self.trades.append(
+            TradeFill(ts=ts, action=action, price=price, size=size, fee=fee, pnl=pnl)
+        )
 
-    def process(self, decision, event: MarketEvent, size_multiplier: float, allow_entry: bool) -> None:
+    def process(
+        self, decision, event: MarketEvent, size_multiplier: float, allow_entry: bool
+    ) -> None:
         if decision is None:
             return
         action = getattr(decision, "action", "")
@@ -153,7 +163,9 @@ class ExecutionSimulator:
                 fee = self._fee(fill * abs(self.position))
                 pnl = (self.entry_price - fill) * abs(self.position) - fee
                 self.realized_pnl += pnl
-                self._record_trade(ts, "close_short", fill, abs(self.position), pnl, fee)
+                self._record_trade(
+                    ts, "close_short", fill, abs(self.position), pnl, fee
+                )
             self.position = 0.0
             self.entry_price = None
 
@@ -230,8 +242,12 @@ class SimpleSignalProvider:
         p_up = 0.5 + edge
         p_down = 0.5 - edge
         direction = 1 if edge > 0 else (-1 if edge < 0 else 0)
-        signal = _SimpleSignalOutput(p_up=p_up, p_down=p_down, edge=edge, direction=direction)
-        return _SimpleEnsembleOutput(meta_edge=edge, direction=direction, components={1: signal})
+        signal = _SimpleSignalOutput(
+            p_up=p_up, p_down=p_down, edge=edge, direction=direction
+        )
+        return _SimpleEnsembleOutput(
+            meta_edge=edge, direction=direction, components={1: signal}
+        )
 
 
 class BotStrategy:
@@ -260,19 +276,28 @@ class BotStrategy:
         runtime_models = None
         thresholds = None
         try:
-            loaded, errors = load_runtime_models(symbol, [1, 5, 30], models_root=models_dir, compat_strict=False)
+            loaded, errors = load_runtime_models(
+                symbol, [1, 5, 30], models_root=models_dir, compat_strict=False
+            )
             if loaded:
                 runtime_models = {h: info.model for h, info in loaded.items()}
                 thresholds = {h: info.threshold for h, info in loaded.items()}
         except Exception:
             runtime_models = None
         try:
-            self.ensemble = EnsembleSignalModel(symbol=symbol, horizons=[1, 5, 30], runtime_models=runtime_models, thresholds=thresholds)
+            self.ensemble = EnsembleSignalModel(
+                symbol=symbol,
+                horizons=[1, 5, 30],
+                runtime_models=runtime_models,
+                thresholds=thresholds,
+            )
         except Exception:
             self.ensemble = None
 
     def decide(self, event: MarketEvent, position: float):
-        features = self.features.add_tick(event.ts, event.price, event.qty, side=event.side)
+        features = self.features.add_tick(
+            event.ts, event.price, event.qty, side=event.side
+        )
         if features is None:
             return None
         if self.ensemble is None:
@@ -310,7 +335,9 @@ class BacktestEngine:
     def _build_strategy(self):
         if self.config.ml_mode == "simple":
             return SimpleStrategy()
-        return BotStrategy(self.config.symbol, self.config.models_dir, self.config.ml_mode)
+        return BotStrategy(
+            self.config.symbol, self.config.models_dir, self.config.ml_mode
+        )
 
     def _policy_context(self) -> tuple[bool, float]:
         if self.config.disable_policy:
@@ -327,7 +354,9 @@ class BacktestEngine:
     def process_event(self, event: MarketEvent) -> None:
         allow_entry, size_multiplier = self._policy_context()
         decision = self.strategy.decide(event, self.simulator.position)
-        self.simulator.process(decision, event, size_multiplier=size_multiplier, allow_entry=allow_entry)
+        self.simulator.process(
+            decision, event, size_multiplier=size_multiplier, allow_entry=allow_entry
+        )
         equity = self.simulator.mark_to_market(event.price)
         self.equity_curve.append(EquityPoint(ts=event.ts, equity=equity))
 

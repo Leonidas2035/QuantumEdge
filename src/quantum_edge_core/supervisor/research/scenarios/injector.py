@@ -11,7 +11,9 @@ from ..replay.adapters import MarketEvent
 from .definitions import ScenarioSpec
 
 
-def _window_indices(total: int, start_ratio: float, duration_ratio: float) -> Tuple[int, int]:
+def _window_indices(
+    total: int, start_ratio: float, duration_ratio: float
+) -> Tuple[int, int]:
     if total <= 0:
         return 0, 0
     start = int(total * start_ratio)
@@ -22,7 +24,11 @@ def _window_indices(total: int, start_ratio: float, duration_ratio: float) -> Tu
 
 def _apply_spread(event: MarketEvent, factor: float) -> MarketEvent:
     mid = (event.bid + event.ask) / 2 if event.bid and event.ask else event.price
-    half = abs(event.ask - event.bid) / 2 if event.bid and event.ask else event.price * 0.0001
+    half = (
+        abs(event.ask - event.bid) / 2
+        if event.bid and event.ask
+        else event.price * 0.0001
+    )
     half *= max(factor, 1.0)
     event.bid = mid - half
     event.ask = mid + half
@@ -34,7 +40,9 @@ def _apply_latency(event: MarketEvent, extra_ms: int) -> MarketEvent:
     return event
 
 
-def _apply_volatility(event: MarketEvent, factor: float, rng: random.Random) -> MarketEvent:
+def _apply_volatility(
+    event: MarketEvent, factor: float, rng: random.Random
+) -> MarketEvent:
     if factor <= 0:
         return event
     shock = rng.uniform(-1.0, 1.0) * factor * event.price * 0.001
@@ -54,7 +62,9 @@ def inject_scenario(
     events_list = [copy.deepcopy(evt) for evt in events]
     if not events_list:
         return events_list
-    start, end = _window_indices(len(events_list), scenario.start_ratio, scenario.duration_ratio)
+    start, end = _window_indices(
+        len(events_list), scenario.start_ratio, scenario.duration_ratio
+    )
     rng = random.Random(seed)
     for idx in range(start, end):
         evt = events_list[idx]

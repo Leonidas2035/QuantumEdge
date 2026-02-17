@@ -40,7 +40,9 @@ class BinanceFuturesFeed(BaseFeed):
             except Exception as exc:
                 if self._stop_event.is_set():
                     break
-                self.logger.error("Connection failed: %s. Retrying in %.1fs", exc, retry_delay)
+                self.logger.error(
+                    "Connection failed: %s. Retrying in %.1fs", exc, retry_delay
+                )
                 await self._sleep(retry_delay)
                 retry_delay = min(retry_delay * 2, 60.0)
 
@@ -90,14 +92,14 @@ class BinanceFuturesFeed(BaseFeed):
                 taker_side = "sell" if data.get("m") else "buy"
 
                 event = TradeEvent(
-                    ts_ns=int(data["T"]) * 1_000_000, # ms to ns
+                    ts_ns=int(data["T"]) * 1_000_000,  # ms to ns
                     symbol=data["s"],
                     event_type="trade",
                     seq=self.bus.assign_sequence(data["s"], "trade"),
                     priority=Priority.L0,
                     price=float(data["p"]),
                     size=float(data["q"]),
-                    taker_side=taker_side
+                    taker_side=taker_side,
                 )
                 await self.bus.publish(event)
 

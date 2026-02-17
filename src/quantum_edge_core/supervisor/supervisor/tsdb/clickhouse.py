@@ -55,12 +55,19 @@ class ClickHouseTimeseriesStore(TimeseriesStore):
         backoff = self.base_backoff_ms / 1000.0
         while True:
             try:
-                req = urllib.request.Request(f"{self.url}/?database={self.database}&query={urllib.parse.quote(query)}", data=payload, method="POST")
+                req = urllib.request.Request(
+                    f"{self.url}/?database={self.database}&query={urllib.parse.quote(query)}",
+                    data=payload,
+                    method="POST",
+                )
                 if self.user:
                     creds = f"{self.user}:{self.password or ''}".encode("utf-8")
                     import base64
 
-                    req.add_header("Authorization", "Basic " + base64.b64encode(creds).decode("utf-8"))
+                    req.add_header(
+                        "Authorization",
+                        "Basic " + base64.b64encode(creds).decode("utf-8"),
+                    )
                 req.add_header("Content-Type", "application/json")
                 with urllib.request.urlopen(req, timeout=5) as resp:
                     if resp.status >= 300:
@@ -69,7 +76,9 @@ class ClickHouseTimeseriesStore(TimeseriesStore):
             except Exception as exc:  # pylint: disable=broad-except
                 attempt += 1
                 if attempt > self.max_retries:
-                    self.logger.warning("ClickHouse write failed after retries: %s", exc)
+                    self.logger.warning(
+                        "ClickHouse write failed after retries: %s", exc
+                    )
                     return
                 time.sleep(backoff)
                 backoff = min(self.max_backoff_ms / 1000.0, backoff * 2)

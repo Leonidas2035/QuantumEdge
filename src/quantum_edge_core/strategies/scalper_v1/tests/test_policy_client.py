@@ -6,7 +6,13 @@ from bot.policy.policy_client import PolicyClient
 from bot.policy.policy_contract import POLICY_VERSION
 
 
-def _write_policy(path: Path, ts: int, ttl_sec: int = 30, allow_trading: bool = True, mode: str = "normal"):
+def _write_policy(
+    path: Path,
+    ts: int,
+    ttl_sec: int = 30,
+    allow_trading: bool = True,
+    mode: str = "normal",
+):
     payload = {
         "version": POLICY_VERSION,
         "ts": ts,

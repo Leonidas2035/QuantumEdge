@@ -6,7 +6,9 @@ from typing import Optional
 
 class OpenAICompatBackend:
     def __init__(self) -> None:
-        self.base_url = os.environ.get("SUPERVISOR_LLM_BASE_URL", "http://127.0.0.1:8000")
+        self.base_url = os.environ.get(
+            "SUPERVISOR_LLM_BASE_URL", "http://127.0.0.1:8000"
+        )
         self.model = os.environ.get("SUPERVISOR_LLM_MODEL", "gemma3-4b")
         self.max_tokens = int(os.environ.get("SUPERVISOR_LLM_MAX_TOKENS", "128"))
         self.name = "trtllm_openai_compat"
@@ -17,7 +19,9 @@ class OpenAICompatBackend:
         try:
             import httpx
         except Exception as exc:  # pragma: no cover - optional dependency
-            raise RuntimeError("httpx is required for OpenAI-compatible backend") from exc
+            raise RuntimeError(
+                "httpx is required for OpenAI-compatible backend"
+            ) from exc
         return httpx.AsyncClient(timeout=timeout_s, base_url=self.base_url)
 
     async def _check_models(self) -> None:
@@ -55,7 +59,9 @@ class OpenAICompatBackend:
         }
         return await client.post("/v1/completions", json=payload)
 
-    async def generate(self, prompt: str, *, system_prompt: str, timeout_s: float) -> str:
+    async def generate(
+        self, prompt: str, *, system_prompt: str, timeout_s: float
+    ) -> str:
         await self._check_models()
         async with self._get_client(timeout_s=timeout_s) as client:
             if self._mode is None:
@@ -63,7 +69,9 @@ class OpenAICompatBackend:
                 if resp.status_code == 404:
                     resp = await self._post_completions(client, prompt, system_prompt)
                     if resp.status_code == 404:
-                        raise RuntimeError("Neither chat nor completions endpoint available")
+                        raise RuntimeError(
+                            "Neither chat nor completions endpoint available"
+                        )
                     self._mode = "completions"
                 else:
                     self._mode = "chat"

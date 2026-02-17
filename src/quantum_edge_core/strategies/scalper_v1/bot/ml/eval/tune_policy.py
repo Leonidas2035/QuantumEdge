@@ -26,7 +26,9 @@ class CostConfig:
     latency_bps: float = 0.0
 
     def total_cost(self) -> float:
-        return (self.fee_bps + self.slippage_bps + self.spread_bps + self.latency_bps) / 10_000.0
+        return (
+            self.fee_bps + self.slippage_bps + self.spread_bps + self.latency_bps
+        ) / 10_000.0
 
 
 def _load_dataset(path: Path) -> pd.DataFrame:
@@ -70,7 +72,9 @@ def _apply_calibrator(calibrator, probs: np.ndarray) -> np.ndarray:
 def _merge_horizons(frames: List[pd.DataFrame]) -> pd.DataFrame:
     merged = frames[0]
     for other in frames[1:]:
-        merged = merged.merge(other, on=["ts_ms", "scenario_id", "episode_id"], how="inner")
+        merged = merged.merge(
+            other, on=["ts_ms", "scenario_id", "episode_id"], how="inner"
+        )
     return merged
 
 
@@ -93,9 +97,19 @@ def _prepare_predictions(
         df = _load_dataset(_find_split(horizon_dir, split))
         X = df[features].to_numpy(dtype=float)
         probs = model.predict_proba(X)[:, 1]
-        calibrator = _load_calibrator(calib_root, symbol, horizon) if calib_root else None
+        calibrator = (
+            _load_calibrator(calib_root, symbol, horizon) if calib_root else None
+        )
         probs = _apply_calibrator(calibrator, probs)
-        frame = df[["ts_ms", "scenario_id", "episode_id", f"fut_ret_h{horizon}", f"y_up_h{horizon}"]].copy()
+        frame = df[
+            [
+                "ts_ms",
+                "scenario_id",
+                "episode_id",
+                f"fut_ret_h{horizon}",
+                f"y_up_h{horizon}",
+            ]
+        ].copy()
         frame[f"p_up_h{horizon}"] = probs
         frames.append(frame)
     return _merge_horizons(frames)
@@ -148,7 +162,14 @@ def select_thresholds(
 
 
 def validate_policy_schema(policy: Dict[str, object]) -> List[str]:
-    required = ["symbol", "horizons", "policy_type", "thresholds", "schema_hash", "created_at"]
+    required = [
+        "symbol",
+        "horizons",
+        "policy_type",
+        "thresholds",
+        "schema_hash",
+        "created_at",
+    ]
     missing = [key for key in required if key not in policy]
     if missing:
         return missing
@@ -173,9 +194,13 @@ def tune_policy(
     out_root = out_root.resolve()
     out_root.mkdir(parents=True, exist_ok=True)
 
-    horizons = sorted(int(p.name.replace("horizon_h", "")) for p in data_root.glob("horizon_h*"))
+    horizons = sorted(
+        int(p.name.replace("horizon_h", "")) for p in data_root.glob("horizon_h*")
+    )
     if len(horizons) != 3:
-        raise ValueError("Expected exactly three horizons (h1/h5/h30) for policy tuning.")
+        raise ValueError(
+            "Expected exactly three horizons (h1/h5/h30) for policy tuning."
+        )
 
     merged = _prepare_predictions(
         data_root=data_root,
@@ -187,7 +212,9 @@ def tune_policy(
     )
 
     grid = _grid_values(0.50, 0.70, grid_step)
-    thresholds, meta = select_thresholds(merged, horizons, grid, cost_cfg, min_coverage=min_coverage)
+    thresholds, meta = select_thresholds(
+        merged, horizons, grid, cost_cfg, min_coverage=min_coverage
+    )
 
     policy = {
         "symbol": symbol,
@@ -216,9 +243,15 @@ def tune_policy(
         "created_at": policy["created_at"],
     }
 
-    (out_root / "policy.json").write_text(json.dumps(policy, indent=2), encoding="utf-8")
-    (out_root / "policy_manifest.json").write_text(json.dumps(manifest, indent=2), encoding="utf-8")
-    (out_root / "tuning_report.json").write_text(json.dumps(policy, indent=2), encoding="utf-8")
+    (out_root / "policy.json").write_text(
+        json.dumps(policy, indent=2), encoding="utf-8"
+    )
+    (out_root / "policy_manifest.json").write_text(
+        json.dumps(manifest, indent=2), encoding="utf-8"
+    )
+    (out_root / "tuning_report.json").write_text(
+        json.dumps(policy, indent=2), encoding="utf-8"
+    )
     (out_root / "tuning_report.md").write_text(_render_report(policy), encoding="utf-8")
     return 0
 
@@ -236,13 +269,17 @@ def _render_report(policy: Dict[str, object]) -> str:
 
 
 def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Tune ML thresholds and export policy.")
+    parser = argparse.ArgumentParser(
+        description="Tune ML thresholds and export policy."
+    )
     parser.add_argument("--symbol", required=True)
     parser.add_argument("--data_root", required=True)
     parser.add_argument("--models_root", required=True)
     parser.add_argument("--calib_root", default=None)
     parser.add_argument("--out", required=True)
-    parser.add_argument("--policy", dest="policy_type", default="and_gate", choices=["and_gate"])
+    parser.add_argument(
+        "--policy", dest="policy_type", default="and_gate", choices=["and_gate"]
+    )
     parser.add_argument("--grid_step", type=float, default=0.01)
     parser.add_argument("--min_coverage", type=float, default=0.05)
     parser.add_argument("--fee_bps", type=float, default=0.0)

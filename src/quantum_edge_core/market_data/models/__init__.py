@@ -32,7 +32,10 @@ from .orderbook import (
     decode_orderbook,
 )
 from .snapshots import SnapshotRequest, SnapshotResponse
-from quantum_edge_core.market_data.microstructure.schema import MicrostructureEvent, MICROSTRUCTURE_EVENT_TYPE
+from quantum_edge_core.market_data.microstructure.schema import (
+    MicrostructureEvent,
+    MICROSTRUCTURE_EVENT_TYPE,
+)
 from quantum_edge_core.market_data.lockbot.schema import LockbotMarketEvent
 
 __all__ = [

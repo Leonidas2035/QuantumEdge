@@ -16,7 +16,9 @@ def detect_kv_cache_flags(help_text: str) -> List[str]:
 
 def main() -> int:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--kv-cache-flags", action="store_true", help="Output kv cache flags")
+    parser.add_argument(
+        "--kv-cache-flags", action="store_true", help="Output kv cache flags"
+    )
     args = parser.parse_args()
 
     help_text = sys.stdin.read()

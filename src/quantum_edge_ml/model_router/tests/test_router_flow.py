@@ -13,7 +13,9 @@ class StaticBackend:
         self.outputs = list(outputs)
         self.calls = 0
 
-    async def generate(self, prompt: str, *, system_prompt: str, timeout_s: float) -> str:
+    async def generate(
+        self, prompt: str, *, system_prompt: str, timeout_s: float
+    ) -> str:
         self.calls += 1
         return self.outputs[min(self.calls - 1, len(self.outputs) - 1)]
 
@@ -21,8 +23,12 @@ class StaticBackend:
 @pytest.mark.asyncio
 async def test_fallback_to_teacher(tmp_path):
     student = StaticBackend(["not json"])
-    teacher = StaticBackend(['{"v":1,"s":"BUY","c":0.7,"sl":null,"tp":null,"r":"ok","rk":"LOW"}'])
-    router = Router(student_backend=student, teacher_backend=teacher, runtime_dir=tmp_path)
+    teacher = StaticBackend(
+        ['{"v":1,"s":"BUY","c":0.7,"sl":null,"tp":null,"r":"ok","rk":"LOW"}']
+    )
+    router = Router(
+        student_backend=student, teacher_backend=teacher, runtime_dir=tmp_path
+    )
 
     result = await router.route("prompt", hints={"mode": "fallback"})
     assert result.backend == "teacher"
@@ -31,9 +37,15 @@ async def test_fallback_to_teacher(tmp_path):
 
 @pytest.mark.asyncio
 async def test_shadow_distill_logged(tmp_path):
-    student = StaticBackend(['{"v":1,"s":"HOLD","c":0.2,"sl":null,"tp":null,"r":"ok","rk":"LOW"}'])
-    teacher = StaticBackend(['{"v":1,"s":"BUY","c":0.7,"sl":null,"tp":null,"r":"ok","rk":"LOW"}'])
-    router = Router(student_backend=student, teacher_backend=teacher, runtime_dir=tmp_path)
+    student = StaticBackend(
+        ['{"v":1,"s":"HOLD","c":0.2,"sl":null,"tp":null,"r":"ok","rk":"LOW"}']
+    )
+    teacher = StaticBackend(
+        ['{"v":1,"s":"BUY","c":0.7,"sl":null,"tp":null,"r":"ok","rk":"LOW"}']
+    )
+    router = Router(
+        student_backend=student, teacher_backend=teacher, runtime_dir=tmp_path
+    )
 
     await router.route("prompt", hints={"mode": "shadow"})
     distill_path = tmp_path / "distill" / "teacher_student_pairs.jsonl"

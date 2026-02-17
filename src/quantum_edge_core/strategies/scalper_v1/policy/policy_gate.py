@@ -8,7 +8,9 @@ from typing import Optional
 from .policy_contract import Policy
 
 
-def policy_allows_entry(action: str, policy: Policy, now_ts: Optional[float] = None) -> bool:
+def policy_allows_entry(
+    action: str, policy: Policy, now_ts: Optional[float] = None
+) -> bool:
     action_name = str(action).lower()
     if action_name != "enter":
         return True

@@ -45,15 +45,27 @@ def _parse_report(path: Path) -> Dict[str, Any]:
         try:
             return json.loads(path.read_text(encoding="utf-8"))
         except Exception:
-            return {"title": path.name, "body": "", "severity": _severity_from_name(path.name)}
+            return {
+                "title": path.name,
+                "body": "",
+                "severity": _severity_from_name(path.name),
+            }
     try:
         text = path.read_text(encoding="utf-8")
     except Exception:
-        return {"title": path.name, "body": "", "severity": _severity_from_name(path.name)}
+        return {
+            "title": path.name,
+            "body": "",
+            "severity": _severity_from_name(path.name),
+        }
     lines = [ln.strip() for ln in text.splitlines()]
     title = lines[0].lstrip("# ").strip() if lines else path.name
     body = "\n".join(lines[:40])
-    return {"title": title or path.name, "body": body, "severity": _severity_from_name(path.name)}
+    return {
+        "title": title or path.name,
+        "body": body,
+        "severity": _severity_from_name(path.name),
+    }
 
 
 def _select_project_for_report(report: Dict[str, Any]) -> str:
@@ -114,7 +126,9 @@ def run_supervisor_maintenance_once(
     max_items = int(backlog_cfg.get("max_items_per_run", 5))
     min_sev = str(backlog_cfg.get("min_severity", "normal")).lower()
 
-    backlog = build_backlog_from_reports(registry, max_items=max_items, min_severity=min_sev)
+    backlog = build_backlog_from_reports(
+        registry, max_items=max_items, min_severity=min_sev
+    )
     if not backlog:
         return {"status": "no_backlog", "tasks": []}
 

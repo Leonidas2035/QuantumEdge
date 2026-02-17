@@ -18,7 +18,9 @@ class MockWSManager:
         m: is_buyer_maker (taker sell boolean)
     """
 
-    def __init__(self, symbols: List[str], delay_min: float = 0.01, delay_max: float = 0.05):
+    def __init__(
+        self, symbols: List[str], delay_min: float = 0.01, delay_max: float = 0.05
+    ):
         self.symbols = symbols
         self.delay_min = delay_min
         self.delay_max = delay_max

@@ -24,6 +24,10 @@ def test_confidence_range():
 
 
 def test_reason_length():
-    raw = '{"v":1,"s":"HOLD","c":0.2,"sl":null,"tp":null,"r":"' + "a" * 61 + '","rk":"LOW"}'
+    raw = (
+        '{"v":1,"s":"HOLD","c":0.2,"sl":null,"tp":null,"r":"'
+        + "a" * 61
+        + '","rk":"LOW"}'
+    )
     with pytest.raises(ValidationError, match="invalid_reason_length"):
         decode_decision(raw)

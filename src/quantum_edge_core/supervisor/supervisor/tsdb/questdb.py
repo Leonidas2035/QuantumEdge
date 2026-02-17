@@ -30,7 +30,9 @@ def _encode_field(value: object) -> str:
 
 def point_to_line(point: Point) -> str:
     tags = ",".join(f"{_escape(k)}={_escape(v)}" for k, v in point.tags.items())
-    fields = ",".join(f"{_escape(k)}={_encode_field(v)}" for k, v in point.fields.items())
+    fields = ",".join(
+        f"{_escape(k)}={_encode_field(v)}" for k, v in point.fields.items()
+    )
     ts_ns = int(point.ts.timestamp() * 1_000_000_000)
     if tags:
         return f"{_escape(point.measurement)},{tags} {fields} {ts_ns}"

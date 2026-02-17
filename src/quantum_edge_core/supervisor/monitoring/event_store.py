@@ -9,7 +9,9 @@ from typing import Deque, Dict, List, Optional
 
 
 class TelemetryEventStore:
-    def __init__(self, max_events: int = 5000, persist_path: Optional[Path] = None) -> None:
+    def __init__(
+        self, max_events: int = 5000, persist_path: Optional[Path] = None
+    ) -> None:
         self._events: Deque[Dict[str, object]] = deque(maxlen=max_events)
         self._persist_path = persist_path
 

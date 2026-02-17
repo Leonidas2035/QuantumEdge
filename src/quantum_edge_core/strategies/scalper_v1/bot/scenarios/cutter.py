@@ -163,7 +163,9 @@ def build_stats(episodes: List[Episode]) -> Dict[str, object]:
     }
 
 
-def _select_scenario(metrics: Dict[str, object], specs: List[ScenarioSpec]) -> Optional[Tuple[ScenarioSpec, float, List[str]]]:
+def _select_scenario(
+    metrics: Dict[str, object], specs: List[ScenarioSpec]
+) -> Optional[Tuple[ScenarioSpec, float, List[str]]]:
     best: Optional[Tuple[ScenarioSpec, float, List[str]]] = None
     for spec in specs:
         ok, score, reasons = spec.evaluate(metrics)
@@ -174,7 +176,9 @@ def _select_scenario(metrics: Dict[str, object], specs: List[ScenarioSpec]) -> O
     return best
 
 
-def _skip_reason(spec: ScenarioSpec, episodes: List[Episode], depth_available: bool) -> Optional[str]:
+def _skip_reason(
+    spec: ScenarioSpec, episodes: List[Episode], depth_available: bool
+) -> Optional[str]:
     if episodes:
         return None
     if spec.requires_depth and not depth_available:

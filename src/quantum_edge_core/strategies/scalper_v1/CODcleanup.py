@@ -27,7 +27,6 @@ from datetime import datetime, timedelta
 from pathlib import Path
 from typing import Iterable, List, Set, Tuple
 
-
 ROOT = Path(__file__).resolve().parent
 THIS_FILE = Path(__file__).resolve()
 
@@ -62,13 +61,17 @@ SKIP_DIR_NAMES: Set[str] = {".git", "venv", ".venv"}
 # Additional directories to drop when specifically under certain parents
 SPECIAL_TMP_DIRS: Tuple[Tuple[str, str], ...] = (
     ("installer", "tmp"),  # installer/tmp
-    ("data", "tmp"),       # data/tmp
+    ("data", "tmp"),  # data/tmp
 )
 
 
 def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Safe cleanup for ai_scalper_bot (dry-run by default).")
-    parser.add_argument("--apply", action="store_true", help="Actually delete files/directories.")
+    parser = argparse.ArgumentParser(
+        description="Safe cleanup for ai_scalper_bot (dry-run by default)."
+    )
+    parser.add_argument(
+        "--apply", action="store_true", help="Actually delete files/directories."
+    )
     parser.add_argument("--dry-run", action="store_true", help="Dry run (default).")
     parser.add_argument(
         "--max-log-age",
@@ -131,7 +134,9 @@ def collect_dir_size(path: Path) -> int:
     return total
 
 
-def scan(root: Path, log_age_days: int) -> Tuple[List[Tuple[Path, str]], List[Tuple[Path, str]]]:
+def scan(
+    root: Path, log_age_days: int
+) -> Tuple[List[Tuple[Path, str]], List[Tuple[Path, str]]]:
     files_to_delete: List[Tuple[Path, str]] = []
     dirs_to_delete: List[Tuple[Path, str]] = []
 
@@ -180,7 +185,11 @@ def delete_path(path: Path, is_dir: bool, dry_run: bool) -> int:
     """
     Delete a path; return freed bytes (approx). In dry-run, return size only.
     """
-    size = collect_dir_size(path) if is_dir else (safe_stat(path).st_size if safe_stat(path) else 0)
+    size = (
+        collect_dir_size(path)
+        if is_dir
+        else (safe_stat(path).st_size if safe_stat(path) else 0)
+    )
     if dry_run:
         return size
     try:

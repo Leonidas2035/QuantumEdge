@@ -89,7 +89,9 @@ class DataManager:
             for bar in self._bars.flush_all():
                 try:
                     loop = asyncio.get_running_loop()
-                    loop.create_task(self._sink.publish(bar, priority=EventPriority.NORMAL))
+                    loop.create_task(
+                        self._sink.publish(bar, priority=EventPriority.NORMAL)
+                    )
                 except Exception:
                     pass
 
@@ -109,7 +111,9 @@ class _Bars1sAggregator:
     def __init__(self) -> None:
         self._state: Dict[str, _BarState] = {}
 
-    def add_trade(self, symbol: str, ts_ms: int, price: float, qty: float) -> Optional[Dict[str, object]]:
+    def add_trade(
+        self, symbol: str, ts_ms: int, price: float, qty: float
+    ) -> Optional[Dict[str, object]]:
         sec = int(ts_ms // 1000)
         state = self._state.get(symbol)
         if state and state.sec != sec:
@@ -124,10 +128,26 @@ class _Bars1sAggregator:
                 "trades": state.trades,
                 "ts": state.sec * 1000,
             }
-            self._state[symbol] = _BarState(sec=sec, open=price, high=price, low=price, close=price, volume=qty, trades=1)
+            self._state[symbol] = _BarState(
+                sec=sec,
+                open=price,
+                high=price,
+                low=price,
+                close=price,
+                volume=qty,
+                trades=1,
+            )
             return bar
         if state is None:
-            self._state[symbol] = _BarState(sec=sec, open=price, high=price, low=price, close=price, volume=qty, trades=1)
+            self._state[symbol] = _BarState(
+                sec=sec,
+                open=price,
+                high=price,
+                low=price,
+                close=price,
+                volume=qty,
+                trades=1,
+            )
             return None
         state.high = max(state.high, price)
         state.low = min(state.low, price)

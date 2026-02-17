@@ -2,6 +2,7 @@
 Supervisor Reporter.
 Publishes bot health and status metrics to the Supervisor system via ZMQ.
 """
+
 import zmq
 import ujson
 import time
@@ -12,28 +13,41 @@ from quantum_edge_core.ai_scalper_bot.bot.execution.strategy_core import BotStat
 
 logger = logging.getLogger(__name__)
 
+
 class SupervisorReporter:
     """
     Publishes heartbeat and metrics to a ZMQ PUB socket.
     """
-    def __init__(self, pub_endpoint: str = "tcp://*:5557"):
+
+    def __init__(
+        self, pub_endpoint: str = "tcp://*:5557", service_id: str = "ai_scalper_bot"
+    ):
+        self.service_id = service_id
         self.context = AsyncContext()
         self.socket = self.context.socket(zmq.PUB)
         try:
             self.socket.bind(pub_endpoint)
-            logger.info(f"SupervisorReporter bound to {pub_endpoint}")
+            logger.info(
+                f"SupervisorReporter bound to {pub_endpoint} with ID {service_id}"
+            )
         except zmq.ZMQError as e:
             logger.error(f"Failed to bind SupervisorReporter: {e}")
             raise
 
-    async def send_heartbeat(self, state: BotState, pnl: float, open_positions_qty: float, drawdown_pct: float = 0.0):
+    async def send_heartbeat(
+        self,
+        state: BotState,
+        pnl: float,
+        open_positions_qty: float,
+        drawdown_pct: float = 0.0,
+    ):
         """
         Sends a JSON heartbeat packet.
         Schema:
         {
-          "service_id": "ai_scalper_bot",
+          "source": "ai_scalper_bot",
           "timestamp": <unix_epoch_float>,
-          "state": "RUNNING",
+          "status": "RUNNING",
           "metrics": {
               "pnl_session": <float>,
               "active_positions_count": <int>,
@@ -44,23 +58,23 @@ class SupervisorReporter:
         }
         """
         msg = {
-            "service_id": "ai_scalper_bot",
+            "source": self.service_id,
             "timestamp": time.time(),
-            "state": state.name,  # Using BotState name (e.g., RUNNING, IDLE, ERROR)
+            "status": state.name,  # Using BotState name (e.g., RUNNING, IDLE, ERROR)
+            "pnl_session": float(pnl),
+            "drawdown_pct": float(drawdown_pct),
             "metrics": {
-                "pnl_session": float(pnl),
                 "active_positions_count": int(open_positions_qty),
-                "current_drawdown_pct": float(drawdown_pct),
-                "cpu_usage": 0.0
+                "cpu_usage": 0.0,
             },
-            "errors": []
+            "errors": [],
         }
-        
+
         try:
             # Create JSON string
             payload = ujson.dumps(msg)
             # Send Multipart [topic, payload]
-            await self.socket.send_multipart([b"heartbeat", payload.encode("utf-8")])
+            await self.socket.send_multipart([b"telemetry", payload.encode("utf-8")])
         except Exception as e:
             logger.warning(f"Failed to send heartbeat: {e}")
 

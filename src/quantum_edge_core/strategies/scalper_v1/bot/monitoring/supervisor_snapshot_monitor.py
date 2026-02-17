@@ -7,11 +7,18 @@ import logging
 from pathlib import Path
 from typing import Optional
 
-from bot.integrations.supervisor_snapshot_client import SupervisorSnapshotClient, SupervisorSnapshot
+from bot.integrations.supervisor_snapshot_client import (
+    SupervisorSnapshotClient,
+    SupervisorSnapshot,
+)
 from bot.core.config_loader import SupervisorSnapshotsSettings
 
 
-async def run_supervisor_snapshot_monitor(settings: SupervisorSnapshotsSettings, client: SupervisorSnapshotClient, logger: logging.Logger) -> None:
+async def run_supervisor_snapshot_monitor(
+    settings: SupervisorSnapshotsSettings,
+    client: SupervisorSnapshotClient,
+    logger: logging.Logger,
+) -> None:
     """Poll snapshots periodically for observability only."""
 
     if not settings.enabled:
@@ -35,7 +42,12 @@ async def run_supervisor_snapshot_monitor(settings: SupervisorSnapshotsSettings,
         await asyncio.sleep(poll_interval)
 
 
-def _log_snapshot(snapshot: SupervisorSnapshot, settings: SupervisorSnapshotsSettings, logger: logging.Logger, log_file_path: Optional[Path]) -> None:
+def _log_snapshot(
+    snapshot: SupervisorSnapshot,
+    settings: SupervisorSnapshotsSettings,
+    logger: logging.Logger,
+    log_file_path: Optional[Path],
+) -> None:
     ts = snapshot.timestamp.isoformat() if snapshot.timestamp else "unknown"
     line = (
         f"[{ts}] trend={snapshot.trend} conf={snapshot.trend_confidence} "

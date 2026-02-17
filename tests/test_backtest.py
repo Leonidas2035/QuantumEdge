@@ -1,4 +1,5 @@
 import pytest
+
 pytest.skip("Legacy test broken by src-layout migration", allow_module_level=True)
 """
 Integration Test for Backtesting Engine.
@@ -24,15 +25,10 @@ mock_cfg.config = {
         "thresholds": {"min_conf_primary": 0.5},
         "loss_streak": {"max_losses": 3},
         "overtrading": {"max_trades_per_hour": 100},
-        "regimes": {}
+        "regimes": {},
     },
-    "risk": {
-        "session": {"max_daily_loss_abs": 100}
-    },
-    "ml": {
-        "horizons": [1, 5, 15],
-        "inference_backend": "cpu"
-    }
+    "risk": {"session": {"max_daily_loss_abs": 100}},
+    "ml": {"horizons": [1, 5, 15], "inference_backend": "cpu"},
 }
 sys.modules["bot.core.config_loader"] = mock_cfg
 
@@ -53,9 +49,10 @@ sys.modules["binance.exceptions"] = mock_exceptions
 from quantum_edge_core.backtesting.runner import BacktestRunner
 from quantum_edge_core.backtesting.metrics import BacktestMetrics
 
+
 class TestBacktestEngine(unittest.TestCase):
-    
-    @patch('quantum_edge_core.backtesting.runner.QuestDataLoader')
+
+    @patch("quantum_edge_core.backtesting.runner.QuestDataLoader")
     def test_full_backtest_loop(self, MockLoader):
         """
         Verify that runner consumes data, triggers signals (mock ML), executes trades, and calculates metrics.
@@ -66,81 +63,86 @@ class TestBacktestEngine(unittest.TestCase):
         # But for mock ML signal heuristic in runner:
         # If Ret > 0.0005 -> Long. (Price UP)
         # If Ret < -0.0005 -> Short. (Price DOWN)
-        
+
         # Trades with types
         # 0..10: Price 100 -> 101 (Ret ~1%) -> Should triggering LONG
         # 11..20: Price 101 -> 100 (Ret ~-1%) -> Should trigger SHORT
-        
+
         events = []
         base = 100.0
         ts = datetime(2025, 1, 1, 12, 0, 0)
-        
+
         # Up Trend (20 ticks)
         for i in range(20):
-            price = base + (i * 0.1) # 100.0, 100.1 ... 102.0
-            events.append({
-                "timestamp": ts,
-                "price": price,
-                "quantity": 1.0,
-                "side": "BUY" if i % 2 == 0 else "SELL",
-                "type": "trade"
-            })
-            ts = ts + timedelta(seconds=1) # 1 sec per tick
-            
+            price = base + (i * 0.1)  # 100.0, 100.1 ... 102.0
+            events.append(
+                {
+                    "timestamp": ts,
+                    "price": price,
+                    "quantity": 1.0,
+                    "side": "BUY" if i % 2 == 0 else "SELL",
+                    "type": "trade",
+                }
+            )
+            ts = ts + timedelta(seconds=1)  # 1 sec per tick
+
         # Down Trend (20 ticks)
         base = 102.0
         for i in range(20):
-            price = base - (i * 0.1) # 102.0 ... 100.0
-            events.append({
-                "timestamp": ts,
-                "price": price,
-                "quantity": 1.0,
-                "side": "SELL",
-                "type": "trade"
-            })
+            price = base - (i * 0.1)  # 102.0 ... 100.0
+            events.append(
+                {
+                    "timestamp": ts,
+                    "price": price,
+                    "quantity": 1.0,
+                    "side": "SELL",
+                    "type": "trade",
+                }
+            )
             ts = ts + timedelta(seconds=1)
-            
+
         # Configure Mock Loader
         mock_instance = MockLoader.return_value
         mock_instance.load_data.return_value = events
-        
+
         # Run
         runner = BacktestRunner(
             symbol="BTCUSDT",
             start_time=datetime(2025, 1, 1),
-            end_time=datetime(2025, 1, 2)
+            end_time=datetime(2025, 1, 2),
         )
-        
+
         # Override order_manager min notional for test (prices are small $100)
-        runner.order_manager.min_notional = 1.0 
-        
+        runner.order_manager.min_notional = 1.0
+
         # Set small candle interval for test (since we generate 1s ticks)
         runner.candle_interval = 1.0
-        
+
         stats = runner.run()
-        
+
         # Assertions
         print(f"Test Stats: {stats}")
-        
+
         # Should have some trades
-        self.assertGreater(stats['total_trades'], 0)
-        
+        self.assertGreater(stats["total_trades"], 0)
+
         # Should have updated equity
-        self.assertNotEqual(stats['final_equity'], 10000.0) # Started at 10k
-        
+        self.assertNotEqual(stats["final_equity"], 10000.0)  # Started at 10k
+
         # Metrics calculated
-        self.assertIsNotNone(stats['sharpe_ratio'])
-        self.assertIsNotNone(stats['max_drawdown_pct'])
-        
+        self.assertIsNotNone(stats["sharpe_ratio"])
+        self.assertIsNotNone(stats["max_drawdown_pct"])
+
     def test_metrics_logic(self):
         # Manual check
         equity_curve = [100.0, 105.0, 95.0, 110.0]
         # PnL: +10%
         # Drawdown: 105 -> 95 is -9.5%
-        
+
         stats = BacktestMetrics.calculate_stats([], equity_curve, 100.0)
-        self.assertEqual(stats['total_pnl_pct'], 10.0)
-        self.assertAlmostEqual(stats['max_drawdown_pct'], -9.52, places=1)
-        
-if __name__ == '__main__':
+        self.assertEqual(stats["total_pnl_pct"], 10.0)
+        self.assertAlmostEqual(stats["max_drawdown_pct"], -9.52, places=1)
+
+
+if __name__ == "__main__":
     unittest.main()

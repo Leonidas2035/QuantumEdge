@@ -1,4 +1,5 @@
 ﻿"""Deprecated wrapper. Moved to SupervisorAgent.research.sandbox.generate_synthetic_ticks."""
+
 from __future__ import annotations
 
 import importlib
@@ -25,7 +26,9 @@ def _ensure_sys_path() -> None:
 
 def _target():
     _ensure_sys_path()
-    return importlib.import_module("SupervisorAgent.research.sandbox.generate_synthetic_ticks")
+    return importlib.import_module(
+        "SupervisorAgent.research.sandbox.generate_synthetic_ticks"
+    )
 
 
 def __getattr__(name):
@@ -36,7 +39,9 @@ def main():
     target = _target()
     if hasattr(target, "main"):
         return target.main()
-    raise SystemExit("No CLI entrypoint in SupervisorAgent.research.sandbox.generate_synthetic_ticks")
+    raise SystemExit(
+        "No CLI entrypoint in SupervisorAgent.research.sandbox.generate_synthetic_ticks"
+    )
 
 
 if __name__ == "__main__":

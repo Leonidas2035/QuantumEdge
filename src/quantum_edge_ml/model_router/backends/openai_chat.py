@@ -24,9 +24,16 @@ class OpenAIChatBackend:
             raise RuntimeError("OPENAI_MODEL is required")
 
         headers = {"Authorization": f"Bearer {api_key}"}
-        return httpx.AsyncClient(base_url=self.base_url, headers=headers, timeout=timeout_s, transport=self._transport)
+        return httpx.AsyncClient(
+            base_url=self.base_url,
+            headers=headers,
+            timeout=timeout_s,
+            transport=self._transport,
+        )
 
-    async def generate(self, prompt: str, *, system_prompt: str, timeout_s: float) -> str:
+    async def generate(
+        self, prompt: str, *, system_prompt: str, timeout_s: float
+    ) -> str:
         payload = {
             "model": self.model,
             "messages": [

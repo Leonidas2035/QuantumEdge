@@ -21,7 +21,9 @@ def load_processes_spec(path: Path, base_dir: Path) -> Dict[str, ProcessSpec]:
         raise ValueError("processes.yaml must define a 'processes' mapping")
 
     default_env = _coerce_env(defaults.get("env", {}) or {})
-    default_restart = _parse_restart(defaults.get("restart", {}) or {}, RestartPolicySpec())
+    default_restart = _parse_restart(
+        defaults.get("restart", {}) or {}, RestartPolicySpec()
+    )
     specs: Dict[str, ProcessSpec] = {}
     for key, value in processes.items():
         if not isinstance(value, dict):
@@ -39,8 +41,14 @@ def load_processes_spec(path: Path, base_dir: Path) -> Dict[str, ProcessSpec]:
         if not cwd.exists():
             raise ValueError(f"Process '{name}' cwd does not exist: {cwd}")
         cmd = value.get("cmd")
-        if not isinstance(cmd, list) or not cmd or not all(isinstance(item, str) and item for item in cmd):
-            raise ValueError(f"Process '{name}' cmd must be a non-empty list of strings")
+        if (
+            not isinstance(cmd, list)
+            or not cmd
+            or not all(isinstance(item, str) and item for item in cmd)
+        ):
+            raise ValueError(
+                f"Process '{name}' cmd must be a non-empty list of strings"
+            )
 
         env = {**default_env, **_coerce_env(value.get("env", {}) or {})}
         ports = _coerce_ports(value.get("ports", []) or [])
@@ -146,4 +154,6 @@ def _parse_health(raw: dict) -> HealthCheckSpec:
             host = "127.0.0.1"
         if port_val is None:
             raise ValueError("TCP healthcheck requires port")
-    return HealthCheckSpec(type=hc_type, url=url, host=host, port=port_val, timeout_s=timeout_s)
+    return HealthCheckSpec(
+        type=hc_type, url=url, host=host, port=port_val, timeout_s=timeout_s
+    )

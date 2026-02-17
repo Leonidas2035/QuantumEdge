@@ -16,7 +16,9 @@ class StaticBackend:
 
 
 def test_enforce_valid_output():
-    backend = StaticBackend('{"v":1,"s":"HOLD","c":0.2,"sl":null,"tp":null,"r":"ok","rk":"LOW"}')
+    backend = StaticBackend(
+        '{"v":1,"s":"HOLD","c":0.2,"sl":null,"tp":null,"r":"ok","rk":"LOW"}'
+    )
     result = enforce_decision("test prompt", backend, timeout_s=1.0)
     assert result.ok is True
     assert result.attempts == 1

@@ -26,7 +26,9 @@ def load_events(path: Path) -> Iterable[Dict]:
                 continue
 
 
-async def replay_events(spool_dir: Path, batch_rows: int, writer: QuestDbIlpWriter) -> int:
+async def replay_events(
+    spool_dir: Path, batch_rows: int, writer: QuestDbIlpWriter
+) -> int:
     sent = 0
     batch: List[Dict] = []
     for file_path in iter_spool_files(spool_dir):
@@ -46,10 +48,18 @@ async def replay_events(spool_dir: Path, batch_rows: int, writer: QuestDbIlpWrit
 
 def main() -> None:
     cfg = load_tsdb_config()
-    parser = argparse.ArgumentParser(description="Replay TSDB spool files into QuestDB ILP.")
-    parser.add_argument("--spool-dir", default=str(cfg.spool.path), help="Path to spool directory.")
-    parser.add_argument("--batch-rows", type=int, default=cfg.writer.batch_rows, help="Rows per flush.")
-    parser.add_argument("--ilp-http-url", default=cfg.questdb.ilp_http_url, help="QuestDB ILP HTTP URL.")
+    parser = argparse.ArgumentParser(
+        description="Replay TSDB spool files into QuestDB ILP."
+    )
+    parser.add_argument(
+        "--spool-dir", default=str(cfg.spool.path), help="Path to spool directory."
+    )
+    parser.add_argument(
+        "--batch-rows", type=int, default=cfg.writer.batch_rows, help="Rows per flush."
+    )
+    parser.add_argument(
+        "--ilp-http-url", default=cfg.questdb.ilp_http_url, help="QuestDB ILP HTTP URL."
+    )
     args = parser.parse_args()
 
     writer = QuestDbIlpWriter(

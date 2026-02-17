@@ -1,4 +1,5 @@
 import pytest
+
 pytest.skip("Legacy test broken by src-layout migration", allow_module_level=True)
 import json
 import sys
@@ -36,7 +37,9 @@ def _write_projects_yaml(path: Path) -> None:
     path.write_text(yaml.safe_dump(payload, sort_keys=False), encoding="utf-8")
 
 
-def test_projects_registry_load_default_active(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_projects_registry_load_default_active(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setenv("QE_ROOT", str(tmp_path))
     (tmp_path / "config").mkdir()
     projects_path = tmp_path / "config" / "projects.yaml"
@@ -47,14 +50,20 @@ def test_projects_registry_load_default_active(tmp_path: Path, monkeypatch: pyte
     assert active == "meta_agent"
 
 
-def test_create_task_writes_inbox_yaml(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_create_task_writes_inbox_yaml(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setenv("QE_ROOT", str(tmp_path))
     monkeypatch.setenv("META_AGENT_RUNTIME_DIR", str(tmp_path / "runtime"))
     (tmp_path / "config").mkdir()
     _write_projects_yaml(tmp_path / "config" / "projects.yaml")
 
     result = create_task_inbox(
-        {"objective": "Update docs", "instructions": "Touch README", "project_id": "meta_agent"},
+        {
+            "objective": "Update docs",
+            "instructions": "Touch README",
+            "project_id": "meta_agent",
+        },
         runtime_dir=str(tmp_path / "runtime"),
     )
     task_path = tmp_path / "runtime" / "inbox" / result["filename"]
@@ -63,7 +72,9 @@ def test_create_task_writes_inbox_yaml(tmp_path: Path, monkeypatch: pytest.Monke
     assert data["project_id"] == "meta_agent"
 
 
-def test_approve_apply_warn_runs_gates_then_apply(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+def test_approve_apply_warn_runs_gates_then_apply(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
     monkeypatch.setenv("QE_ROOT", str(tmp_path))
     runtime_dir = tmp_path / "runtime"
     run_id = "run123"
@@ -90,7 +101,9 @@ def test_approve_apply_warn_runs_gates_then_apply(tmp_path: Path, monkeypatch: p
         },
         "mode": "task",
     }
-    (run_dir / "task.yaml").write_text(yaml.safe_dump(task, sort_keys=False), encoding="utf-8")
+    (run_dir / "task.yaml").write_text(
+        yaml.safe_dump(task, sort_keys=False), encoding="utf-8"
+    )
 
     changeset = {
         "project_root": str(tmp_path / "project"),
@@ -100,16 +113,30 @@ def test_approve_apply_warn_runs_gates_then_apply(tmp_path: Path, monkeypatch: p
 
     shadow_dir = tmp_path / "shadow"
     shadow_dir.mkdir()
-    monkeypatch.setattr("approval_engine.create_shadow", lambda *args, **kwargs: str(shadow_dir))
+    monkeypatch.setattr(
+        "approval_engine.create_shadow", lambda *args, **kwargs: str(shadow_dir)
+    )
     monkeypatch.setattr("approval_engine.cleanup_shadow", lambda *args, **kwargs: None)
 
     gate_results = GateResults(
         passed=True,
-        steps=[GateStepResult(name="smoke", exit_code=0, duration_ms=1, stdout_path=None, stderr_path=None, timed_out=False, error=None)],
+        steps=[
+            GateStepResult(
+                name="smoke",
+                exit_code=0,
+                duration_ms=1,
+                stdout_path=None,
+                stderr_path=None,
+                timed_out=False,
+                error=None,
+            )
+        ],
         started_at="2026-01-01T00:00:00Z",
         finished_at="2026-01-01T00:00:01Z",
     )
-    monkeypatch.setattr("approval_engine.run_gates", lambda *args, **kwargs: gate_results)
+    monkeypatch.setattr(
+        "approval_engine.run_gates", lambda *args, **kwargs: gate_results
+    )
 
     calls = {"count": 0}
 
@@ -124,7 +151,9 @@ def test_approve_apply_warn_runs_gates_then_apply(tmp_path: Path, monkeypatch: p
             created_files=[],
             deleted_files=[],
             patch_files=[],
-            safety_eval=SafetyEvaluation(write_mode="direct", overall_verdict="allow", files=[], reasons=[]),
+            safety_eval=SafetyEvaluation(
+                write_mode="direct", overall_verdict="allow", files=[], reasons=[]
+            ),
         )
 
     monkeypatch.setattr("approval_engine.apply_change_set_with_policy", fake_apply)
@@ -156,10 +185,29 @@ def test_approve_apply_rejects_block_gate_failed_dry_run(
     run_dir = runtime_dir / "runs" / run_id
     run_dir.mkdir(parents=True)
 
-    report = {"run_id": run_id, "verdict": verdict, "exit_code": exit_code, "changes": {"applied": False}}
+    report = {
+        "run_id": run_id,
+        "verdict": verdict,
+        "exit_code": exit_code,
+        "changes": {"applied": False},
+    }
     (run_dir / "report.json").write_text(json.dumps(report), encoding="utf-8")
-    (run_dir / "task.yaml").write_text(yaml.safe_dump({"task_id": "t", "created_at": "x", "project_id": "meta_agent", "objective": "o", "instructions": "i", "mode": "task"}), encoding="utf-8")
-    (run_dir / "changeset.json").write_text(json.dumps({"project_root": str(tmp_path), "changes": {}}), encoding="utf-8")
+    (run_dir / "task.yaml").write_text(
+        yaml.safe_dump(
+            {
+                "task_id": "t",
+                "created_at": "x",
+                "project_id": "meta_agent",
+                "objective": "o",
+                "instructions": "i",
+                "mode": "task",
+            }
+        ),
+        encoding="utf-8",
+    )
+    (run_dir / "changeset.json").write_text(
+        json.dumps({"project_root": str(tmp_path), "changes": {}}), encoding="utf-8"
+    )
 
     with pytest.raises(ApprovalError):
         approve_apply(run_id, runtime_dir=str(runtime_dir), method="test")

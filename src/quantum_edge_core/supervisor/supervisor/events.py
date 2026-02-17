@@ -133,7 +133,15 @@ class EventLogger:
             ts=self._now(),
             type=EventType.BOT_START,
             source="ProcessManager",
-            data={"mode": mode, "pid": process_info.pid, "start_time": process_info.start_time.isoformat() if process_info.start_time else None},
+            data={
+                "mode": mode,
+                "pid": process_info.pid,
+                "start_time": (
+                    process_info.start_time.isoformat()
+                    if process_info.start_time
+                    else None
+                ),
+            },
             severity="INFO",
         )
         self.log_event(event)
@@ -144,15 +152,27 @@ class EventLogger:
             data.update(
                 {
                     "pid": process_info.pid,
-                    "start_time": process_info.start_time.isoformat() if process_info.start_time else None,
+                    "start_time": (
+                        process_info.start_time.isoformat()
+                        if process_info.start_time
+                        else None
+                    ),
                     "exit_code": process_info.last_exit_code,
-                    "exit_time": process_info.last_exit_time.isoformat() if process_info.last_exit_time else None,
+                    "exit_time": (
+                        process_info.last_exit_time.isoformat()
+                        if process_info.last_exit_time
+                        else None
+                    ),
                 }
             )
-        event = BaseEvent(ts=self._now(), type=EventType.BOT_STOP, source="ProcessManager", data=data)
+        event = BaseEvent(
+            ts=self._now(), type=EventType.BOT_STOP, source="ProcessManager", data=data
+        )
         self.log_event(event)
 
-    def log_order_decision(self, order: "OrderRequest", decision: "RiskDecision") -> None:
+    def log_order_decision(
+        self, order: "OrderRequest", decision: "RiskDecision"
+    ) -> None:
         data = {
             "symbol": order.symbol,
             "side": order.side.value,
@@ -166,12 +186,22 @@ class EventLogger:
             "code": decision.code,
             "reason": decision.reason,
         }
-        event = BaseEvent(ts=self._now(), type=EventType.ORDER_DECISION, source="RiskEngine", data=data)
+        event = BaseEvent(
+            ts=self._now(),
+            type=EventType.ORDER_DECISION,
+            source="RiskEngine",
+            data=data,
+        )
         self.log_event(event)
 
     def log_risk_limit_breach(self, code: str, details: Mapping[str, Any]) -> None:
         data = {"code": code, **details}
-        event = BaseEvent(ts=self._now(), type=EventType.RISK_LIMIT_BREACH, source="RiskEngine", data=data)
+        event = BaseEvent(
+            ts=self._now(),
+            type=EventType.RISK_LIMIT_BREACH,
+            source="RiskEngine",
+            data=data,
+        )
         self.log_event(event)
 
     def log_mode_change(self, old_mode: str, new_mode: str, reason: str) -> None:
@@ -183,16 +213,25 @@ class EventLogger:
         )
         self.log_event(event)
 
-    def log_anomaly(self, kind: str, message: str, extra: Optional[Mapping[str, Any]] = None) -> None:
+    def log_anomaly(
+        self, kind: str, message: str, extra: Optional[Mapping[str, Any]] = None
+    ) -> None:
         data: Dict[str, Any] = {"kind": kind, "message": message}
         if extra:
             data.update(extra)
-        event = BaseEvent(ts=self._now(), type=EventType.ANOMALY, source="Supervisor", data=data)
+        event = BaseEvent(
+            ts=self._now(), type=EventType.ANOMALY, source="Supervisor", data=data
+        )
         self.log_event(event)
 
     def log_order_result(self, result: str, data: Mapping[str, Any]) -> None:
         payload = {"result": result, **data}
-        event = BaseEvent(ts=self._now(), type=EventType.ORDER_RESULT, source="RiskEngine", data=payload)
+        event = BaseEvent(
+            ts=self._now(),
+            type=EventType.ORDER_RESULT,
+            source="RiskEngine",
+            data=payload,
+        )
         self.log_event(event)
 
     def log_llm_advice(
@@ -211,7 +250,9 @@ class EventLogger:
         }
         if extra:
             data.update(extra)
-        event = BaseEvent(ts=self._now(), type=EventType.LLM_ADVICE, source="LlmSupervisor", data=data)
+        event = BaseEvent(
+            ts=self._now(), type=EventType.LLM_ADVICE, source="LlmSupervisor", data=data
+        )
         self.log_event(event)
 
     def log_meta_supervisor_run_started(self, reason: str) -> None:
@@ -232,7 +273,9 @@ class EventLogger:
         )
         self.log_event(event)
 
-    def log_meta_supervisor_result(self, status: str, reports: Mapping[str, Any] | list) -> None:
+    def log_meta_supervisor_result(
+        self, status: str, reports: Mapping[str, Any] | list
+    ) -> None:
         rep_list = reports if isinstance(reports, list) else []
         event = BaseEvent(
             ts=self._now(),
@@ -255,7 +298,10 @@ class EventLogger:
         self.log_event(event)
 
         if self.snapshots_dir:
-            filename = self.snapshots_dir / f"snapshots_{snapshot.timestamp.date().isoformat()}.jsonl"
+            filename = (
+                self.snapshots_dir
+                / f"snapshots_{snapshot.timestamp.date().isoformat()}.jsonl"
+            )
             try:
                 with filename.open("a", encoding="utf-8") as handle:
                     json.dump(data, handle)
@@ -306,7 +352,9 @@ def tail_events(
     return results
 
 
-def prune_event_logs(events_dir: Path, retention_days: int, logger: Optional[logging.Logger] = None) -> int:
+def prune_event_logs(
+    events_dir: Path, retention_days: int, logger: Optional[logging.Logger] = None
+) -> int:
     log = logger or logging.getLogger(__name__)
     if retention_days <= 0:
         return 0
@@ -329,7 +377,12 @@ def prune_event_logs(events_dir: Path, retention_days: int, logger: Optional[log
     return deleted
 
 
-def _read_last_lines(path: Path, max_lines: int = 200, chunk_size: int = 8192, max_bytes: int = 1024 * 1024) -> list[str]:
+def _read_last_lines(
+    path: Path,
+    max_lines: int = 200,
+    chunk_size: int = 8192,
+    max_bytes: int = 1024 * 1024,
+) -> list[str]:
     lines: list[str] = []
     size = 0
     with path.open("rb") as handle:
@@ -358,7 +411,11 @@ def _read_last_lines(path: Path, max_lines: int = 200, chunk_size: int = 8192, m
 def _parse_v1_event(raw: Mapping[str, Any]) -> Optional[BaseEvent]:
     event_type = str(raw.get("event_type") or raw.get("type") or "ANOMALY")
     component = str(raw.get("component") or raw.get("source") or "unknown")
-    fields = raw.get("fields") if isinstance(raw.get("fields"), dict) else raw.get("data") or {}
+    fields = (
+        raw.get("fields")
+        if isinstance(raw.get("fields"), dict)
+        else raw.get("data") or {}
+    )
     severity = str(raw.get("severity") or "INFO")
     run_id = str(raw.get("run_id") or "")
     trace_id = raw.get("trace_id")

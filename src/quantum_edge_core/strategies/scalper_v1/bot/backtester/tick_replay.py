@@ -1,4 +1,5 @@
 ﻿"""Deprecated wrapper. Moved to SupervisorAgent.research.backtest.tick_replay."""
+
 from __future__ import annotations
 
 import importlib
@@ -36,7 +37,9 @@ def main():
     target = _target()
     if hasattr(target, "main"):
         return target.main()
-    raise SystemExit("No CLI entrypoint in SupervisorAgent.research.backtest.tick_replay")
+    raise SystemExit(
+        "No CLI entrypoint in SupervisorAgent.research.backtest.tick_replay"
+    )
 
 
 if __name__ == "__main__":

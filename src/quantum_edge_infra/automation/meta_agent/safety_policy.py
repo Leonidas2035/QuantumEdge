@@ -80,7 +80,9 @@ def load_safety_policy(path: str = SAFETY_POLICY_PATH) -> SafetyPolicy:
     policy.default_write_mode = raw.get("default_write_mode", policy.default_write_mode)
     if policy.default_write_mode not in ("patch_only", "direct"):
         policy.default_write_mode = "patch_only"
-    policy.max_files_changed = int(raw.get("max_files_changed", policy.max_files_changed))
+    policy.max_files_changed = int(
+        raw.get("max_files_changed", policy.max_files_changed)
+    )
     policy.max_file_size_kb = int(raw.get("max_file_size_kb", policy.max_file_size_kb))
     policy.protected_paths = raw.get("protected_paths", policy.protected_paths)
     policy.warning_paths = raw.get("warning_paths", policy.warning_paths)
@@ -101,7 +103,9 @@ def evaluate_change_set(policy: SafetyPolicy, change_set) -> SafetyEvaluation:
 
     # File count limit
     if len(change_set.changes) > policy.max_files_changed:
-        reasons.append(f"Changed files exceed max_files_changed={policy.max_files_changed}")
+        reasons.append(
+            f"Changed files exceed max_files_changed={policy.max_files_changed}"
+        )
 
     for rel_path, change in change_set.changes.items():
         verdict = "allow"
@@ -127,7 +131,9 @@ def evaluate_change_set(policy: SafetyPolicy, change_set) -> SafetyEvaluation:
             verdict = "warn" if verdict == "allow" else verdict
             file_reasons.append(f"New content exceeds {policy.max_file_size_kb} KB")
 
-        files_status.append(FileSafetyStatus(path=rel_path, verdict=verdict, reasons=file_reasons))
+        files_status.append(
+            FileSafetyStatus(path=rel_path, verdict=verdict, reasons=file_reasons)
+        )
 
     overall = "allow"
     if reasons:

@@ -46,7 +46,9 @@ class DistillWriter:
             "backend_meta": backend_meta,
         }
         with open(self.path, "a", encoding="utf-8") as handle:
-            handle.write(json.dumps(entry, separators=(",", ":"), ensure_ascii=False) + "\n")
+            handle.write(
+                json.dumps(entry, separators=(",", ":"), ensure_ascii=False) + "\n"
+            )
 
     def make_payload(self, ok: bool, decision_json: str, raw_text: str) -> Dict:
         payload = {

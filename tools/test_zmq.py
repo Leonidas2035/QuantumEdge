@@ -3,6 +3,7 @@ import zmq
 import json
 import time
 
+
 def main():
     ctx = zmq.Context()
     socket = ctx.socket(zmq.SUB)
@@ -17,7 +18,7 @@ def main():
             frames = socket.recv_multipart()
             if len(frames) >= 2:
                 topic = frames[0].decode()
-                payload = frames[1] # bytes, JSON
+                payload = frames[1]  # bytes, JSON
                 try:
                     data = json.loads(payload)
                     print(f"[{topic}] {data}")
@@ -31,6 +32,7 @@ def main():
     finally:
         socket.close()
         ctx.term()
+
 
 if __name__ == "__main__":
     main()

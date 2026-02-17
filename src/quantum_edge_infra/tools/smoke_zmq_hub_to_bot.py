@@ -12,7 +12,9 @@ from market_data.models import L1Event, Priority
 from bot.market_data.hub_source import HubMarketDataSource
 
 
-async def _publish_events(publisher: ZmqPublisher, cache: SnapshotCache, symbols: Iterable[str]) -> None:
+async def _publish_events(
+    publisher: ZmqPublisher, cache: SnapshotCache, symbols: Iterable[str]
+) -> None:
     symbol = list(symbols)[0]
     event = L1Event(
         ts_ns=time.time_ns(),

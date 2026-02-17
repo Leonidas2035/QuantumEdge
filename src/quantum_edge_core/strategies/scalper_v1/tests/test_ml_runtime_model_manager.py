@@ -15,6 +15,11 @@ def test_model_manager_schema_mismatch(tmp_path: Path) -> None:
         "files": {"model": {"path": "model.json", "sha256": "x"}},
     }
     (model_dir / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
-    mgr = ModelManager(symbol="BTCUSDT", horizons=[1], models_root=tmp_path / "artifacts" / "models", source="artifacts")
+    mgr = ModelManager(
+        symbol="BTCUSDT",
+        horizons=[1],
+        models_root=tmp_path / "artifacts" / "models",
+        source="artifacts",
+    )
     mgr.load()
     assert mgr.errors.get(1) == "SCHEMA_HASH_MISMATCH"

@@ -1,4 +1,5 @@
 import pytest
+
 pytest.skip("Legacy test broken by src-layout migration", allow_module_level=True)
 import math
 from datetime import datetime, timezone
@@ -56,8 +57,12 @@ def test_vwap_resets_at_midnight() -> None:
     engine, stub = _engine()
     ts1 = _ms(datetime(2026, 1, 1, 23, 59, 59, tzinfo=timezone.utc))
     ts2 = _ms(datetime(2026, 1, 2, 0, 0, 1, tzinfo=timezone.utc))
-    engine.on_trade(symbol="BTCUSDT", price=100.0, qty=1.0, ts_event_ms=ts1, is_buyer_maker=False)
-    engine.on_trade(symbol="BTCUSDT", price=200.0, qty=1.0, ts_event_ms=ts2, is_buyer_maker=False)
+    engine.on_trade(
+        symbol="BTCUSDT", price=100.0, qty=1.0, ts_event_ms=ts1, is_buyer_maker=False
+    )
+    engine.on_trade(
+        symbol="BTCUSDT", price=200.0, qty=1.0, ts_event_ms=ts2, is_buyer_maker=False
+    )
     vwap_events = _events(stub.events, TOPIC_VWAP_D)
     assert len(vwap_events) >= 2
     latest = vwap_events[-1].payload
@@ -70,15 +75,25 @@ def test_vwap_resets_at_midnight() -> None:
 def test_vwap_bands_std() -> None:
     engine, stub = _engine()
     ts1 = _ms(datetime(2026, 1, 1, 12, 0, 0, tzinfo=timezone.utc))
-    engine.on_trade(symbol="BTCUSDT", price=100.0, qty=1.0, ts_event_ms=ts1, is_buyer_maker=False)
+    engine.on_trade(
+        symbol="BTCUSDT", price=100.0, qty=1.0, ts_event_ms=ts1, is_buyer_maker=False
+    )
     bands = _events(stub.events, TOPIC_VWAP_BANDS_D)[-1].payload
     assert math.isclose(bands["std"], 0.0, abs_tol=1e-9)
     assert math.isclose(bands["band_1u"], bands["vwap"], abs_tol=1e-9)
     assert math.isclose(bands["band_1l"], bands["vwap"], abs_tol=1e-9)
 
     engine, stub = _engine()
-    engine.on_trade(symbol="BTCUSDT", price=100.0, qty=1.0, ts_event_ms=ts1, is_buyer_maker=False)
-    engine.on_trade(symbol="BTCUSDT", price=110.0, qty=1.0, ts_event_ms=ts1 + 1000, is_buyer_maker=False)
+    engine.on_trade(
+        symbol="BTCUSDT", price=100.0, qty=1.0, ts_event_ms=ts1, is_buyer_maker=False
+    )
+    engine.on_trade(
+        symbol="BTCUSDT",
+        price=110.0,
+        qty=1.0,
+        ts_event_ms=ts1 + 1000,
+        is_buyer_maker=False,
+    )
     bands = _events(stub.events, TOPIC_VWAP_BANDS_D)[-1].payload
     assert bands["std"] > 0.0
     upper = bands["band_1u"] - bands["vwap"]
@@ -92,8 +107,20 @@ def test_avwap_anchor_independence() -> None:
     t2 = t1 + 60_000
     engine.set_anchor("BTCUSDT", "trend_start", t1)
     engine.set_anchor("BTCUSDT", "liq_sweep", t2)
-    engine.on_trade(symbol="BTCUSDT", price=100.0, qty=1.0, ts_event_ms=t1 + 1000, is_buyer_maker=False)
-    engine.on_trade(symbol="BTCUSDT", price=110.0, qty=1.0, ts_event_ms=t2 + 1000, is_buyer_maker=False)
+    engine.on_trade(
+        symbol="BTCUSDT",
+        price=100.0,
+        qty=1.0,
+        ts_event_ms=t1 + 1000,
+        is_buyer_maker=False,
+    )
+    engine.on_trade(
+        symbol="BTCUSDT",
+        price=110.0,
+        qty=1.0,
+        ts_event_ms=t2 + 1000,
+        is_buyer_maker=False,
+    )
     avwap = _events(stub.events, TOPIC_AVWAP)[-1].payload
     anchors = {item["anchor_id"]: item for item in avwap["anchors"]}
     assert anchors["trend_start"]["vwap"] != anchors["liq_sweep"]["vwap"]
@@ -102,15 +129,21 @@ def test_avwap_anchor_independence() -> None:
 def test_liq_heatmap_decay() -> None:
     engine, stub = _engine()
     t1 = _ms(datetime(2026, 1, 1, 10, 0, 0, tzinfo=timezone.utc))
-    engine.on_force_order(symbol="BTCUSDT", side="BUY", price=100.0, qty=2.0, ts_liq_ms=t1)
-    engine.on_force_order(symbol="BTCUSDT", side="SELL", price=110.0, qty=1.0, ts_liq_ms=t1 + 1000)
+    engine.on_force_order(
+        symbol="BTCUSDT", side="BUY", price=100.0, qty=2.0, ts_liq_ms=t1
+    )
+    engine.on_force_order(
+        symbol="BTCUSDT", side="SELL", price=110.0, qty=1.0, ts_liq_ms=t1 + 1000
+    )
     heatmap = _events(stub.events, TOPIC_LIQ_HEATMAP)[-1].payload
     levels = heatmap["levels"]
     assert len(levels) >= 2
     assert levels[0]["intensity"] >= levels[1]["intensity"]
     prev_intensity = levels[0]["intensity"]
 
-    engine.on_force_order(symbol="BTCUSDT", side="BUY", price=100.0, qty=0.0, ts_liq_ms=t1 + 10_000)
+    engine.on_force_order(
+        symbol="BTCUSDT", side="BUY", price=100.0, qty=0.0, ts_liq_ms=t1 + 10_000
+    )
     heatmap = _events(stub.events, TOPIC_LIQ_HEATMAP)[-1].payload
     levels = heatmap["levels"]
     assert levels[0]["intensity"] < prev_intensity
@@ -120,10 +153,22 @@ def test_schema_contracts() -> None:
     engine, stub = _engine()
     t1 = _ms(datetime(2026, 1, 1, 9, 0, 0, tzinfo=timezone.utc))
     engine.on_mark_price(symbol="BTCUSDT", mark_price=100.0, ts_event_ms=t1)
-    engine.on_funding_rate(symbol="BTCUSDT", funding_rate=0.0001, funding_time_ms=t1, ts_event_ms=t1)
-    engine.on_trade(symbol="BTCUSDT", price=100.0, qty=1.0, ts_event_ms=t1, is_buyer_maker=False)
-    engine.on_trade(symbol="BTCUSDT", price=101.0, qty=1.0, ts_event_ms=t1 + 61_000, is_buyer_maker=False)
-    engine.on_force_order(symbol="BTCUSDT", side="SELL", price=99.0, qty=2.0, ts_liq_ms=t1 + 5000)
+    engine.on_funding_rate(
+        symbol="BTCUSDT", funding_rate=0.0001, funding_time_ms=t1, ts_event_ms=t1
+    )
+    engine.on_trade(
+        symbol="BTCUSDT", price=100.0, qty=1.0, ts_event_ms=t1, is_buyer_maker=False
+    )
+    engine.on_trade(
+        symbol="BTCUSDT",
+        price=101.0,
+        qty=1.0,
+        ts_event_ms=t1 + 61_000,
+        is_buyer_maker=False,
+    )
+    engine.on_force_order(
+        symbol="BTCUSDT", side="SELL", price=99.0, qty=2.0, ts_liq_ms=t1 + 5000
+    )
 
     for event in stub.events:
         data = event_to_dict(event)
@@ -142,4 +187,3 @@ def test_schema_contracts() -> None:
     assert TOPIC_VWAP_BANDS_D in types_seen
     assert TOPIC_AVWAP in types_seen
     assert TOPIC_LIQ_HEATMAP in types_seen
-

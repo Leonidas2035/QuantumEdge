@@ -1,4 +1,5 @@
 import pytest
+
 pytest.skip("Legacy test broken by src-layout migration", allow_module_level=True)
 import sys
 from pathlib import Path
@@ -8,7 +9,12 @@ SUPERVISOR_DIR = ROOT / "SupervisorAgent"
 if str(SUPERVISOR_DIR) not in sys.path:
     sys.path.insert(0, str(SUPERVISOR_DIR))
 
-from supervisor.lockbot.models import BotStatusSnapshot, LiqHeatmapSummary, MarketSnapshot, RangePolicyConfig
+from supervisor.lockbot.models import (
+    BotStatusSnapshot,
+    LiqHeatmapSummary,
+    MarketSnapshot,
+    RangePolicyConfig,
+)
 from supervisor.lockbot.strategy_range import evaluate_range
 
 

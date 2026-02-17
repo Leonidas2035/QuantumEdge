@@ -19,7 +19,9 @@ def _load_dataset(path: Path) -> Tuple[pd.DataFrame, pd.Series]:
     return X, y
 
 
-def _split(X: pd.DataFrame, y: pd.Series, val_ratio: float = 0.2) -> Tuple[pd.DataFrame, pd.Series]:
+def _split(
+    X: pd.DataFrame, y: pd.Series, val_ratio: float = 0.2
+) -> Tuple[pd.DataFrame, pd.Series]:
     split_at = int(len(X) * (1 - val_ratio))
     split_at = max(split_at, 1)
     return X.iloc[split_at:], y.iloc[split_at:]
@@ -52,4 +54,3 @@ def validate_model(
     manifest.metrics.update(metrics)
     manifest.write(manifest_path)
     return metrics
-

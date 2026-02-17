@@ -49,7 +49,9 @@ def load_regime_config(path: Path) -> RegimeConfig:
         enter_confirm_cycles=int(section.get("enter_confirm_cycles", 2)),
         exit_confirm_cycles=int(section.get("exit_confirm_cycles", 2)),
         cooldown_sec=int(section.get("cooldown_sec", 10)),
-        trend_score_threshold=_coerce_optional_float(section.get("trend_score_threshold")),
+        trend_score_threshold=_coerce_optional_float(
+            section.get("trend_score_threshold")
+        ),
         volatility_panic=_coerce_optional_float(section.get("volatility_panic")),
         volatility_recover=_coerce_optional_float(section.get("volatility_recover")),
         spread_bps_panic=_coerce_optional_float(section.get("spread_bps_panic")),
@@ -129,7 +131,10 @@ class RegimeStateMachine:
             blocked_reason = "COOLDOWN_ACTIVE"
         elif proposed_state:
             confirm_needed = self.cfg.enter_confirm_cycles
-            if self.state in {"PANIC", "FREEZE", "UNWIND"} and proposed_state == "RANGE":
+            if (
+                self.state in {"PANIC", "FREEZE", "UNWIND"}
+                and proposed_state == "RANGE"
+            ):
                 confirm_needed = self.cfg.exit_confirm_cycles
             if proposed_state == self._pending_state:
                 self._pending_count += 1
@@ -162,9 +167,17 @@ class RegimeStateMachine:
 def _panic_condition(signals: Dict[str, Optional[float]], cfg: RegimeConfig) -> bool:
     vol = signals.get("volatility")
     spread = signals.get("spread_bps")
-    if cfg.volatility_panic is not None and vol is not None and vol >= cfg.volatility_panic:
+    if (
+        cfg.volatility_panic is not None
+        and vol is not None
+        and vol >= cfg.volatility_panic
+    ):
         return True
-    if cfg.spread_bps_panic is not None and spread is not None and spread >= cfg.spread_bps_panic:
+    if (
+        cfg.spread_bps_panic is not None
+        and spread is not None
+        and spread >= cfg.spread_bps_panic
+    ):
         return True
     return False
 

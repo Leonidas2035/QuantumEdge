@@ -1,6 +1,7 @@
 import unittest
 from supervisor.llm.google_client import GoogleClient
 
+
 class TestGoogleClient(unittest.TestCase):
     def test_generate_risk_query(self):
         client = GoogleClient(api_key_env="TEST_KEY")
@@ -9,7 +10,7 @@ class TestGoogleClient(unittest.TestCase):
             "pnl_pct": -1.2,
             "drawdown_pct": 0.5,
             "volatility": "HIGH",
-            "spread_bps": 25
+            "spread_bps": 25,
         }
         prompt = client.generate_risk_query(context)
         expected = "SYS:HFT_SUPERVISOR. MODE:SCALP. PNL:-1.2%. DD:0.5%. VOL:HIGH. SPREAD:25bps. Q: RISK_ASSESSMENT? OUTPUT: JSON {verdict: 'CONTINUE'|'REDUCE'|'HALT', reason: '...'}"
@@ -20,6 +21,7 @@ class TestGoogleClient(unittest.TestCase):
 
         self.assertEqual(prompt, expected)
         print(f"Prompt verified: {prompt}")
+
 
 if __name__ == "__main__":
     unittest.main()

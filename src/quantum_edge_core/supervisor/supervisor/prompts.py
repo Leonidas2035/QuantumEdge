@@ -36,26 +36,24 @@ Params Override:
 JSON_SCHEMA = {
     "type": "object",
     "properties": {
-        "regime": {
-            "type": "string",
-            "enum": ["TREND_LONG", "RANGE", "DUMP_RISK"]
-        },
+        "regime": {"type": "string", "enum": ["TREND_LONG", "RANGE", "DUMP_RISK"]},
         "action": {
             "type": "string",
-            "enum": ["CONTINUE", "REDUCE_SIZE", "CLOSE_ALL", "FREEZE"]
+            "enum": ["CONTINUE", "REDUCE_SIZE", "CLOSE_ALL", "FREEZE"],
         },
         "params_override": {
             "type": "object",
             "properties": {
                 "leverage_cap": {"type": "number"},
-                "min_order_size": {"type": "number"}
+                "min_order_size": {"type": "number"},
             },
-            "required": ["leverage_cap", "min_order_size"]
+            "required": ["leverage_cap", "min_order_size"],
         },
-        "reasoning": {"type": "string"}
+        "reasoning": {"type": "string"},
     },
-    "required": ["regime", "action", "params_override", "reasoning"]
+    "required": ["regime", "action", "params_override", "reasoning"],
 }
+
 
 def format_history(last_decisions: List[Dict[str, Any]]) -> str:
     """
@@ -63,9 +61,11 @@ def format_history(last_decisions: List[Dict[str, Any]]) -> str:
     """
     if not last_decisions:
         return "History: None"
-        
+
     lines = ["Recent Decisions:"]
     for i, dec in enumerate(last_decisions[-3:]):
-        lines.append(f"- T-{len(last_decisions)-i}: {dec.get('action')} ({dec.get('regime')}) Reason: {dec.get('reasoning')[:50]}...")
-        
+        lines.append(
+            f"- T-{len(last_decisions)-i}: {dec.get('action')} ({dec.get('regime')}) Reason: {dec.get('reasoning')[:50]}..."
+        )
+
     return "\n".join(lines)

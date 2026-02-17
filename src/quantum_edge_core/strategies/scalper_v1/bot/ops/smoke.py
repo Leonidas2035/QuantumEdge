@@ -14,16 +14,16 @@ def _write_temp_config(mode: str) -> Path:
     payload = (
         "app:\n"
         f"  mode: \"{'demo' if mode == 'live-demo' else 'paper'}\"\n"
-        "  websocket: \"mock\"\n"
-        "  log_level: \"INFO\"\n"
+        '  websocket: "mock"\n'
+        '  log_level: "INFO"\n'
         "  llm_enabled: false\n"
         "execution:\n"
-        "  mode: \"normal\"\n"
+        '  mode: "normal"\n'
         f"  shadow: {str(mode != 'live-demo').lower()}\n"
         "telemetry:\n"
         "  enabled: false\n"
         "ops:\n"
-        "  status_file: \"state/bot_status.json\"\n"
+        '  status_file: "state/bot_status.json"\n'
     )
     fd, path = tempfile.mkstemp(prefix="qe_smoke_", suffix=".yaml")
     with open(fd, "w", encoding="utf-8") as handle:

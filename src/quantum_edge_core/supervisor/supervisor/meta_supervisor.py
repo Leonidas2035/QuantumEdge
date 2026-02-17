@@ -48,7 +48,9 @@ class MetaSupervisorRunner:
     def save_state(self, state: state_utils.MetaSupervisorState) -> None:
         state_utils.save_meta_supervisor_state(self._state_path, state)
 
-    def should_run(self, state: state_utils.MetaSupervisorState, ctx: MetaSupervisorContext) -> Tuple[bool, str]:
+    def should_run(
+        self, state: state_utils.MetaSupervisorState, ctx: MetaSupervisorContext
+    ) -> Tuple[bool, str]:
         if not self._config.enabled:
             return False, "disabled"
         if not self._meta_root or not Path(self._meta_root).exists():
@@ -70,7 +72,11 @@ class MetaSupervisorRunner:
         reports_dir = Path(self._meta_root) / "reports" / "supervisor"
         if not reports_dir.exists():
             return []
-        candidates = sorted([p for p in reports_dir.glob("**/*") if p.is_file()], key=lambda p: p.stat().st_mtime, reverse=True)
+        candidates = sorted(
+            [p for p in reports_dir.glob("**/*") if p.is_file()],
+            key=lambda p: p.stat().st_mtime,
+            reverse=True,
+        )
         return candidates
 
     def _run_meta_agent_supervisor(self) -> Tuple[str, List[Path]]:
@@ -94,7 +100,9 @@ class MetaSupervisorRunner:
             cmd.append(str(supervisor_runner))
             run_mode = "supervisor_runner"
         elif meta_agent_py.exists():
-            cmd.extend([str(meta_agent_py), "--once", "--project", self._config.project_id])
+            cmd.extend(
+                [str(meta_agent_py), "--once", "--project", self._config.project_id]
+            )
             run_mode = "task_mode"
         else:
             self._logger.error("No Meta-Agent entrypoint found in %s", meta_root_path)
@@ -102,7 +110,9 @@ class MetaSupervisorRunner:
             return "ERROR", []
 
         self._logger.info("Running Meta-Agent supervisor via: %s", " ".join(cmd))
-        result = subprocess.run(cmd, cwd=meta_root_path, capture_output=True, text=True, check=False)
+        result = subprocess.run(
+            cmd, cwd=meta_root_path, capture_output=True, text=True, check=False
+        )
         if result.stdout:
             self._logger.debug("Meta-Agent stdout:\n%s", result.stdout)
         if result.stderr:
@@ -113,7 +123,9 @@ class MetaSupervisorRunner:
         self._last_run_mode = run_mode
         return status, reports
 
-    def run_cycle(self, ctx: MetaSupervisorContext, *, force: bool = False) -> state_utils.MetaSupervisorState:
+    def run_cycle(
+        self, ctx: MetaSupervisorContext, *, force: bool = False
+    ) -> state_utils.MetaSupervisorState:
         state = self.load_state()
 
         allowed, reason = self.should_run(state, ctx)

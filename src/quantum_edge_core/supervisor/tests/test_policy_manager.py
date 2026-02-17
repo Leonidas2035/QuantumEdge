@@ -10,7 +10,9 @@ def test_policy_validation_and_rollout(tmp_path: Path):
     history = tmp_path / "history"
     artifacts.mkdir()
     policy_path = artifacts / "policy.json"
-    policy_path.write_text(json.dumps({"schema_hash": "abc", "thresholds": {"h1": 0.55}}), encoding="utf-8")
+    policy_path.write_text(
+        json.dumps({"schema_hash": "abc", "thresholds": {"h1": 0.55}}), encoding="utf-8"
+    )
 
     manager = PolicyManager(artifacts, runtime, history, history_keep=3)
     dest = manager.rollout(policy_path, reason="test")

@@ -8,7 +8,6 @@ import msgspec
 
 from market_data.lockbot.schema import LockbotMarketEvent
 
-
 LOCKBOT_TOPICS: List[str] = [
     "BTCUSDT:mark_price_1s",
     "BTCUSDT:trades_agg",
@@ -36,4 +35,3 @@ def extract_payload(event: LockbotMarketEvent) -> Dict[str, object]:
 
 def topics_for_symbol(symbol: str) -> Iterable[str]:
     return [topic.replace("BTCUSDT", symbol) for topic in LOCKBOT_TOPICS]
-

@@ -1,4 +1,5 @@
 import pytest
+
 pytest.skip("Legacy test broken by src-layout migration", allow_module_level=True)
 import json
 from pathlib import Path
@@ -34,7 +35,12 @@ def _make_rest_session(responses):
 
 
 def _build_rest_builder():
-    config = AccountConfig(spot_api_key="spot", spot_api_secret="secret", usdm_api_key="u", usdm_api_secret="s")
+    config = AccountConfig(
+        spot_api_key="spot",
+        spot_api_secret="secret",
+        usdm_api_key="u",
+        usdm_api_secret="s",
+    )
     responses = [
         _load_account_rest("ticker_price.json"),
         _load_account_rest("premium_index.json"),
@@ -114,10 +120,16 @@ def test_offline_smoke_sequence_generates_deltas():
     snapshot = state.build_snapshot(["BTCUSDT"])
     assert snapshot is not None
     events = [
-        state.apply_spot_outboundAccountPosition(_load_ws_event("spot_outbound_position.json")),
-        state.apply_spot_execution_report(_load_ws_event("spot_execution_report_new.json")),
+        state.apply_spot_outboundAccountPosition(
+            _load_ws_event("spot_outbound_position.json")
+        ),
+        state.apply_spot_execution_report(
+            _load_ws_event("spot_execution_report_new.json")
+        ),
         state.apply_usdm_ACCOUNT_UPDATE(_load_ws_event("usdm_account_update.json")),
-        state.apply_usdm_ORDER_TRADE_UPDATE(_load_ws_event("usdm_order_trade_update_new.json")),
+        state.apply_usdm_ORDER_TRADE_UPDATE(
+            _load_ws_event("usdm_order_trade_update_new.json")
+        ),
     ]
     assert all(event is not None for event in events)
     assert len(events) == 4

@@ -26,7 +26,9 @@ def _resolve_base_dir() -> str:
     if env_root:
         return env_root
     parent = os.path.abspath(os.path.join(base, os.pardir))
-    if os.path.isdir(os.path.join(parent, "config")) and os.path.isdir(os.path.join(parent, "ai_scalper_bot")):
+    if os.path.isdir(os.path.join(parent, "config")) and os.path.isdir(
+        os.path.join(parent, "ai_scalper_bot")
+    ):
         return parent
     return base
 
@@ -90,7 +92,9 @@ def _load_task_spec(run_dir: str) -> TaskSpec:
     try:
         return load_task_spec(task_path)
     except TaskValidationError as exc:
-        raise ApprovalError(f"Invalid task spec: {exc}", status_code=400, exit_code=40) from exc
+        raise ApprovalError(
+            f"Invalid task spec: {exc}", status_code=400, exit_code=40
+        ) from exc
 
 
 def _write_approval_record(run_dir: str, payload: dict) -> str:
@@ -125,7 +129,9 @@ def approve_apply(
         raise ApprovalError("run_id not found", status_code=404)
 
     log_level = (os.getenv("META_AGENT_LOG_LEVEL") or "INFO").upper()
-    logger = configure_logger("meta_agent.approve_apply", runtime_root, log_level, run_id=run_id)
+    logger = configure_logger(
+        "meta_agent.approve_apply", runtime_root, log_level, run_id=run_id
+    )
 
     lock_path = resolve_lock_path(_resolve_base_dir())
     lock = RunLock(lock_path)
@@ -148,13 +154,19 @@ def approve_apply(
         if applied:
             raise ApprovalError("Run already applied", status_code=409)
         if verdict != "warn":
-            raise ApprovalError("Approve/apply allowed only for warn verdicts", status_code=409)
+            raise ApprovalError(
+                "Approve/apply allowed only for warn verdicts", status_code=409
+            )
         if exit_code != 10:
-            raise ApprovalError("Approve/apply allowed only for warn (exit_code=10)", status_code=409)
+            raise ApprovalError(
+                "Approve/apply allowed only for warn (exit_code=10)", status_code=409
+            )
 
         spec = _load_task_spec(run_dir)
         if spec.execution.dry_run:
-            raise ApprovalError("Approve/apply not allowed for dry_run tasks", status_code=409)
+            raise ApprovalError(
+                "Approve/apply not allowed for dry_run tasks", status_code=409
+            )
 
         change_set = _load_changeset(run_dir)
         policy = load_safety_policy()
@@ -184,7 +196,9 @@ def approve_apply(
         gates_passed = True
         gates_artifacts_dir = os.path.join(run_dir, "approval", "gates")
         if spec.gates.enabled and spec.gates.steps:
-            gate_results = run_gates(shadow_dir, spec.gates, logger, artifacts_dir=gates_artifacts_dir)
+            gate_results = run_gates(
+                shadow_dir, spec.gates, logger, artifacts_dir=gates_artifacts_dir
+            )
             gates_passed = gate_results.passed
 
         approval_payload = {
@@ -198,8 +212,14 @@ def approve_apply(
         if not gates_passed:
             approval_payload["exit_code"] = 12
             record_path = _write_approval_record(run_dir, approval_payload)
-            _update_report(run_dir, {"approval": {"record_path": record_path, **approval_payload}})
-            return {"exit_code": 12, "message": "Gates failed; not applied", "applied": False}
+            _update_report(
+                run_dir, {"approval": {"record_path": record_path, **approval_payload}}
+            )
+            return {
+                "exit_code": 12,
+                "message": "Gates failed; not applied",
+                "applied": False,
+            }
 
         outcome = apply_change_set_with_policy(
             change_set,

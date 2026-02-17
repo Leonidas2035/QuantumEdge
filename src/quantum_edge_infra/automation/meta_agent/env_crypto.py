@@ -7,7 +7,6 @@ from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
-
 DEFAULT_PASSWORD = "1111"
 DEFAULT_SALT_SIZE = 16
 DEFAULT_ITERATIONS = 390000

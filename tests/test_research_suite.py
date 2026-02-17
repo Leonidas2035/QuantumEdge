@@ -1,4 +1,5 @@
 import pytest
+
 pytest.skip("Legacy test broken by src-layout migration", allow_module_level=True)
 import hashlib
 import json
@@ -22,7 +23,9 @@ def _result_hash(result) -> str:
 def test_backtest_deterministic():
     data_file = Path(__file__).parent / "data" / "ticks_small.csv"
     events = load_events(data_file)
-    cfg = BacktestConfig(symbol="BTCUSDT", seed=42, ml_mode="simple", disable_policy=True)
+    cfg = BacktestConfig(
+        symbol="BTCUSDT", seed=42, ml_mode="simple", disable_policy=True
+    )
     result1 = BacktestEngine(cfg).run(events)
     result2 = BacktestEngine(cfg).run(events)
     assert _result_hash(result1) == _result_hash(result2)
@@ -30,7 +33,9 @@ def test_backtest_deterministic():
 
 def test_scenario_injection():
     base = [
-        MarketEvent(ts=1000 + i * 1000, price=100.0, bid=99.5, ask=100.5, qty=1.0, side="buy")
+        MarketEvent(
+            ts=1000 + i * 1000, price=100.0, bid=99.5, ask=100.5, qty=1.0, side="buy"
+        )
         for i in range(10)
     ]
     spread = inject_scenario(base, get_scenario("spread_spike"), seed=1)

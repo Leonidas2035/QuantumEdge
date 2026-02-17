@@ -65,7 +65,7 @@ class FeatureBuilder:
             high=("price", "max"),
             low=("price", "min"),
             close=("price", "last"),
-            volume=("qty", "sum")
+            volume=("qty", "sum"),
         )
 
         # Якщо даних менше ніж 2-3 секунди — не будуємо фічі

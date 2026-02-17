@@ -7,7 +7,6 @@ from typing import Iterator
 
 import pandas as pd
 
-
 TRADES_DIR = os.path.join("data", "trades")
 ORDERBOOKS_DIR = os.path.join("data", "orderbooks")
 OFFLINE_DIR = os.path.join("data", "offline")
@@ -89,7 +88,9 @@ class OfflineSimulator:
             ts = int(t.ts)
             if last_ts is not None and ts <= last_ts:
                 ts = last_ts + 1
-            prepared.append(Tick(ts=ts, price=t.price, qty=t.qty, side=t.side, bid=t.bid, ask=t.ask))
+            prepared.append(
+                Tick(ts=ts, price=t.price, qty=t.qty, side=t.side, bid=t.bid, ask=t.ask)
+            )
             last_ts = ts
 
         # Spread ticks into 1s buckets if they are too dense (e.g., all within the same second)
@@ -102,7 +103,7 @@ class OfflineSimulator:
                     qty=t.qty,
                     side=t.side,
                     bid=t.bid,
-                    ask=t.ask
+                    ask=t.ask,
                 )
                 for i, t in enumerate(prepared)
             ]
@@ -117,7 +118,7 @@ class OfflineSimulator:
                     qty=last.qty,
                     side=last.side,
                     bid=last.bid,
-                    ask=last.ask
+                    ask=last.ask,
                 )
             )
 
@@ -145,7 +146,7 @@ class OfflineSimulator:
                 "p": tick.price,
                 "q": tick.qty,
                 "m": tick.side == "sell",
-                "s": self.symbol
+                "s": self.symbol,
             }
             with open(trade_path, "w") as f:
                 json.dump(trade_event, f)
@@ -155,7 +156,7 @@ class OfflineSimulator:
                 "E": tick.ts,
                 "bids": [[tick.bid, tick.qty]],
                 "asks": [[tick.ask, tick.qty]],
-                "s": self.symbol
+                "s": self.symbol,
             }
             with open(ob_path, "w") as f:
                 json.dump(ob_event, f)

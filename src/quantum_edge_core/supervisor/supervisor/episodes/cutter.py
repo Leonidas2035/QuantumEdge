@@ -82,9 +82,19 @@ class EpisodeStats:
         self.last_ts = tick.ts
 
     def finalize(self) -> Dict[str, Optional[float]]:
-        if self.first_ts is not None and self.last_ts is not None and self.min_price is not None:
-            if self._last_price is not None and self.min_price is not None and self.min_price != 0:
-                self.return_bps = (self._last_price - self.min_price) / self.min_price * 10000.0
+        if (
+            self.first_ts is not None
+            and self.last_ts is not None
+            and self.min_price is not None
+        ):
+            if (
+                self._last_price is not None
+                and self.min_price is not None
+                and self.min_price != 0
+            ):
+                self.return_bps = (
+                    (self._last_price - self.min_price) / self.min_price * 10000.0
+                )
         vol = None
         if self._returns_count > 1:
             mean = self._returns_sum / self._returns_count
@@ -127,7 +137,11 @@ class RollingWindow:
         if len(self._prices) >= 2:
             first_price = self._prices[0][1]
             last_price = self._prices[-1][1]
-            return_bps = (last_price - first_price) / first_price * 10000.0 if first_price else None
+            return_bps = (
+                (last_price - first_price) / first_price * 10000.0
+                if first_price
+                else None
+            )
         else:
             return_bps = None
         vol = None
@@ -184,9 +198,13 @@ def cut_episodes(
     out_dir: Optional[Path] = None,
     scenarios_path: Optional[Path] = None,
 ) -> Path:
-    scenario_path = scenarios_path or (Path(__file__).resolve().parents[2] / "episodes" / "scenarios_v1.yaml")
+    scenario_path = scenarios_path or (
+        Path(__file__).resolve().parents[2] / "episodes" / "scenarios_v1.yaml"
+    )
     scenarios = load_scenarios(scenario_path)
-    episode_root = out_dir or (Path(__file__).resolve().parents[2] / "runtime" / "episodes" / episode_set)
+    episode_root = out_dir or (
+        Path(__file__).resolve().parents[2] / "runtime" / "episodes" / episode_set
+    )
     episode_root.mkdir(parents=True, exist_ok=True)
 
     files = iter_tick_files(ticks_path, fmt)
@@ -197,7 +215,9 @@ def cut_episodes(
 
     selected = _select_candidates(candidates, max_episodes_per_scenario, seed)
     slices = _build_slices(selected, scenarios)
-    manifest_path = _write_episodes(slices, episode_root, fmt, episode_set, scenarios, symbols, ticks_path)
+    manifest_path = _write_episodes(
+        slices, episode_root, fmt, episode_set, scenarios, symbols, ticks_path
+    )
     return manifest_path
 
 
@@ -245,7 +265,11 @@ def _detect_candidates(
     return candidates
 
 
-def _match_scenario(stats: Dict[str, Optional[float]], spread_bps: Optional[float], detect: Dict[str, object]) -> bool:
+def _match_scenario(
+    stats: Dict[str, Optional[float]],
+    spread_bps: Optional[float],
+    detect: Dict[str, object],
+) -> bool:
     ret = stats.get("return_bps")
     vol = stats.get("volatility_bps")
     trade_rate = stats.get("trade_rate")
@@ -253,11 +277,17 @@ def _match_scenario(stats: Dict[str, Optional[float]], spread_bps: Optional[floa
 
     if not _check_threshold(ret, detect, "return_bps_min", "return_bps_max", direction):
         return False
-    if not _check_threshold(vol, detect, "volatility_bps_min", "volatility_bps_max", "any"):
+    if not _check_threshold(
+        vol, detect, "volatility_bps_min", "volatility_bps_max", "any"
+    ):
         return False
-    if not _check_threshold(trade_rate, detect, "trade_rate_min", "trade_rate_max", "any"):
+    if not _check_threshold(
+        trade_rate, detect, "trade_rate_min", "trade_rate_max", "any"
+    ):
         return False
-    if not _check_threshold(spread_bps, detect, "spread_bps_min", "spread_bps_max", "any"):
+    if not _check_threshold(
+        spread_bps, detect, "spread_bps_min", "spread_bps_max", "any"
+    ):
         return False
     return True
 
@@ -312,7 +342,9 @@ def _select_candidates(
     return sorted(selected, key=lambda c: (c.source_file.as_posix(), c.event_ts))
 
 
-def _build_slices(candidates: list[EventCandidate], scenarios: list[ScenarioSpec]) -> list[EpisodeSlice]:
+def _build_slices(
+    candidates: list[EventCandidate], scenarios: list[ScenarioSpec]
+) -> list[EpisodeSlice]:
     scenario_lookup = {s.scenario_id: s for s in scenarios}
     slices: list[EpisodeSlice] = []
     counters: Dict[str, int] = {}
@@ -320,7 +352,9 @@ def _build_slices(candidates: list[EventCandidate], scenarios: list[ScenarioSpec
         spec = scenario_lookup[cand.scenario_id]
         counters.setdefault(cand.scenario_id, 0)
         counters[cand.scenario_id] += 1
-        episode_id = f"{cand.scenario_id}_{counters[cand.scenario_id]:03d}_{int(cand.event_ts)}"
+        episode_id = (
+            f"{cand.scenario_id}_{counters[cand.scenario_id]:03d}_{int(cand.event_ts)}"
+        )
         t0 = cand.event_ts - spec.pre_roll_s
         t1 = cand.event_ts + spec.event_window_s + spec.post_roll_s
         slices.append(
@@ -409,7 +443,9 @@ def _write_episodes_for_file(
                 still_active.append((episode, stats, handle))
             else:
                 handle.close()
-                _finalize_episode(episode, stats, source_file, manifest, scenario_lookup)
+                _finalize_episode(
+                    episode, stats, source_file, manifest, scenario_lookup
+                )
         active = still_active
 
     for episode, stats, handle in active:
@@ -430,7 +466,9 @@ def _finalize_episode(
             "episode_set": manifest.get("episode_set"),
             "scenario_id": episode.scenario_id,
             "episode_id": episode.episode_id,
-            "episode_path": str(Path(episode.scenario_id) / f"{episode.episode_id}.jsonl"),
+            "episode_path": str(
+                Path(episode.scenario_id) / f"{episode.episode_id}.jsonl"
+            ),
             "event_ts": episode.event_ts,
             "t0": episode.t0,
             "t1": episode.t1,

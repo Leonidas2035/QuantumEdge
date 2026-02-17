@@ -142,8 +142,18 @@ def generate_scenario(cfg: ScenarioConfig) -> List[Dict[str, object]]:
                         "bin_size": 10.0,
                         "decay": {"type": "exp", "half_life_s": 900},
                         "levels": [
-                            {"price": mark * 1.002, "intensity": above, "side": "SELL", "n": 1},
-                            {"price": mark * 0.998, "intensity": below, "side": "BUY", "n": 1},
+                            {
+                                "price": mark * 1.002,
+                                "intensity": above,
+                                "side": "SELL",
+                                "n": 1,
+                            },
+                            {
+                                "price": mark * 0.998,
+                                "intensity": below,
+                                "side": "BUY",
+                                "n": 1,
+                            },
                         ],
                         "intensity_above": above,
                         "intensity_below": below,
@@ -154,10 +164,14 @@ def generate_scenario(cfg: ScenarioConfig) -> List[Dict[str, object]]:
 
         bar5.update(t, mark)
         if bar5.should_emit(t):
-            events.append(factory.make(f"{cfg.symbol}:ohlcv_5m", ts_event, bar5.emit(ts_event)))
+            events.append(
+                factory.make(f"{cfg.symbol}:ohlcv_5m", ts_event, bar5.emit(ts_event))
+            )
         bar15.update(t, mark)
         if bar15.should_emit(t):
-            events.append(factory.make(f"{cfg.symbol}:ohlcv_15m", ts_event, bar15.emit(ts_event)))
+            events.append(
+                factory.make(f"{cfg.symbol}:ohlcv_15m", ts_event, bar15.emit(ts_event))
+            )
 
         if t % 1 == 0:
             positions, risk = risk_fn(t, mark)
@@ -215,7 +229,9 @@ def _scenario_functions(
         period = 900.0
 
         def price_fn(t: int) -> float:
-            return base + 2000.0 + slope * t + amp * math.sin(2.0 * math.pi * t / period)
+            return (
+                base + 2000.0 + slope * t + amp * math.sin(2.0 * math.pi * t / period)
+            )
 
         def funding_fn(t: int) -> float:
             return -0.0001
@@ -231,7 +247,12 @@ def _scenario_functions(
         def price_fn(t: int) -> float:
             if t < 1800:
                 return base + slope * t + amp * math.sin(2.0 * math.pi * t / period)
-            return base + 1000.0 - slope * (t - 1800) + amp * math.sin(2.0 * math.pi * t / period)
+            return (
+                base
+                + 1000.0
+                - slope * (t - 1800)
+                + amp * math.sin(2.0 * math.pi * t / period)
+            )
 
         def funding_fn(t: int) -> float:
             return 0.00002 if t < 1800 else -0.00002
@@ -315,8 +336,20 @@ class _BarAccumulator:
         return (t + 1) % self.interval_s == 0
 
     def emit(self, ts_event: int) -> Dict[str, object]:
-        if self.open is None or self.high is None or self.low is None or self.close is None:
-            payload = {"open": 0.0, "high": 0.0, "low": 0.0, "close": 0.0, "volume": 0.0, "bar_start_ts": ts_event}
+        if (
+            self.open is None
+            or self.high is None
+            or self.low is None
+            or self.close is None
+        ):
+            payload = {
+                "open": 0.0,
+                "high": 0.0,
+                "low": 0.0,
+                "close": 0.0,
+                "volume": 0.0,
+                "bar_start_ts": ts_event,
+            }
             self._reset()
             return payload
         bar_start = ts_event - (self.interval_s - 1) * 1000

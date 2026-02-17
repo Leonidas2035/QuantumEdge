@@ -2,6 +2,7 @@
 Test script to simulate Bot Heartbeats using the fixed protocol.
 This verifies if the Supervisor (once fixed) can receive heartbeats on ZMQ port 5557.
 """
+
 import zmq
 import time
 import json
@@ -12,6 +13,7 @@ from datetime import datetime, timezone
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(message)s")
 logger = logging.getLogger("FakeBot")
+
 
 def run_fake_bot():
     context = zmq.Context()
@@ -41,9 +43,9 @@ def run_fake_bot():
                     "pnl_session": 10.5,
                     "active_positions_count": 1,
                     "current_drawdown_pct": 0.0,
-                    "cpu_usage": 0.0
+                    "cpu_usage": 0.0,
                 },
-                "errors": []
+                "errors": [],
             }
 
             json_str = json.dumps(payload)
@@ -52,7 +54,9 @@ def run_fake_bot():
             topic = b"heartbeat"
             socket.send_multipart([topic, json_str.encode("utf-8")])
 
-            logger.info(f"Sent heartbeat: {payload['state']} pnl={payload['metrics']['pnl_session']}")
+            logger.info(
+                f"Sent heartbeat: {payload['state']} pnl={payload['metrics']['pnl_session']}"
+            )
             time.sleep(1.0)
 
     except KeyboardInterrupt:
@@ -60,6 +64,7 @@ def run_fake_bot():
     finally:
         socket.close()
         context.term()
+
 
 if __name__ == "__main__":
     run_fake_bot()

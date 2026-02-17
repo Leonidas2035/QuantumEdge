@@ -18,7 +18,9 @@ class TsdbPublisher:
         self.bot_id = bot_id
         self._sink = get_tsdb_sink()
 
-    async def publish_signal(self, symbol: str, signal: str, score: float, model: Optional[str], ts_ms: int) -> None:
+    async def publish_signal(
+        self, symbol: str, signal: str, score: float, model: Optional[str], ts_ms: int
+    ) -> None:
         await self._sink.publish(
             {
                 "table": "signals",
@@ -102,7 +104,9 @@ class TsdbPublisher:
                 "symbol": symbol,
                 "position": float(position),
                 "entry_price": float(entry_price) if entry_price is not None else None,
-                "unrealized_pnl": float(unrealized_pnl) if unrealized_pnl is not None else None,
+                "unrealized_pnl": (
+                    float(unrealized_pnl) if unrealized_pnl is not None else None
+                ),
                 "leverage": float(leverage) if leverage is not None else None,
                 "ts": _ts_ms(ts_ms),
             },

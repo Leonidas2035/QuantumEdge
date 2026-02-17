@@ -41,7 +41,9 @@ def task_path_from_id(task_id: str) -> str:
     """
     _ensure_tasks_dir()
     filename = f"{task_id}.md" if not task_id.lower().endswith(".md") else task_id
-    return os.path.join(TASKS_DIR, filename if filename.endswith(".md") else f"{filename}.md")
+    return os.path.join(
+        TASKS_DIR, filename if filename.endswith(".md") else f"{filename}.md"
+    )
 
 
 def create_task(
@@ -93,7 +95,9 @@ def load_task(task_id_or_path: str) -> Task:
     return parse_task_file(candidate_path)
 
 
-def list_tasks(project: Optional[str] = None, task_type: Optional[str] = None) -> List[Task]:
+def list_tasks(
+    project: Optional[str] = None, task_type: Optional[str] = None
+) -> List[Task]:
     """
     Lists all tasks in TASKS_DIR, optionally filtering by project and task_type.
     """

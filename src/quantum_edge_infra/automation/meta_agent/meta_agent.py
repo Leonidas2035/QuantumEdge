@@ -144,12 +144,20 @@ def run_diag() -> int:
     # Config
     cfg_path = Path(_resolve_meta_config_path(None))
     cfg_ok = cfg_path.exists() and os.access(cfg_path, os.R_OK)
-    record("config", cfg_ok, str(cfg_path) if cfg_ok else f"missing/unreadable ({cfg_path})")
+    record(
+        "config",
+        cfg_ok,
+        str(cfg_path) if cfg_ok else f"missing/unreadable ({cfg_path})",
+    )
 
     # Projects registry
     try:
         registry = load_project_registry()
-        missing = [pid for pid, info in registry.projects.items() if not info.root_path.exists()]
+        missing = [
+            pid
+            for pid, info in registry.projects.items()
+            if not info.root_path.exists()
+        ]
         if missing:
             record("projects_registry", False, f"missing roots: {', '.join(missing)}")
         else:
@@ -227,7 +235,9 @@ def run_diag() -> int:
         if proc.returncode != 0:
             record("tracked_secrets", False, "git ls-files failed")
         else:
-            tracked = [line.strip() for line in proc.stdout.splitlines() if line.strip()]
+            tracked = [
+                line.strip() for line in proc.stdout.splitlines() if line.strip()
+            ]
             hits = []
             for path in tracked:
                 lower = path.lower()
@@ -237,9 +247,17 @@ def run_diag() -> int:
                     continue
                 if lower.endswith((".env.enc", "engine_defaults.env")):
                     continue
-                if lower.endswith(secret_suffixes) or "/secrets/" in lower or "\\secrets\\" in lower:
+                if (
+                    lower.endswith(secret_suffixes)
+                    or "/secrets/" in lower
+                    or "\\secrets\\" in lower
+                ):
                     hits.append(path)
-            record("tracked_secrets", not hits, "none" if not hits else f"found: {', '.join(hits)}")
+            record(
+                "tracked_secrets",
+                not hits,
+                "none" if not hits else f"found: {', '.join(hits)}",
+            )
     except Exception as exc:
         record("tracked_secrets", False, f"{exc}")
 
@@ -375,12 +393,20 @@ class MetaAgent:
         self.config = self._load_config(resolved)
         self.builder = PromptBuilder()
         self.mode = self._resolve_mode()
-        self.client = LLMClient(provider=self.config.get("provider"), mode=self.mode, model=self.config.get("model"))
+        self.client = LLMClient(
+            provider=self.config.get("provider"),
+            mode=self.mode,
+            model=self.config.get("model"),
+        )
         self.lock_busy = False
         # Architect Mode: default to global project root
         self.project_root = self.config.get("project_root") or _resolve_base_dir()
         projects_path = (self.config or {}).get("projects_path")
-        self.project_registry = load_project_registry(projects_path) if projects_path else load_project_registry()
+        self.project_registry = (
+            load_project_registry(projects_path)
+            if projects_path
+            else load_project_registry()
+        )
 
     def _load_config(self, path: str) -> Dict:
         if not os.path.exists(path):
@@ -419,7 +445,9 @@ class MetaAgent:
             common = ""
 
         if common != meta_root:
-            print("[WARN] output_path is outside the Meta-Agent directory; redirecting to output/.")
+            print(
+                "[WARN] output_path is outside the Meta-Agent directory; redirecting to output/."
+            )
             dest = os.path.abspath(os.path.join("output", os.path.basename(dest)))
 
         return dest
@@ -435,7 +463,9 @@ class MetaAgent:
             print(f"[ERROR] Failed to parse stages file: {exc}")
             return []
 
-    def run_stage_pipeline(self, override_project_id: Optional[str] = None) -> tuple[bool, list]:
+    def run_stage_pipeline(
+        self, override_project_id: Optional[str] = None
+    ) -> tuple[bool, list]:
         print("[INFO] Starting stage pipeline (Architect Mode)...")
         stages = self._load_stages()
         if not stages:
@@ -466,20 +496,28 @@ class MetaAgent:
                 project_id = "monorepo"
 
                 if not os.path.isdir(target_project):
-                    print(f"[ERROR] Target repository root does not exist: {target_project}")
+                    print(
+                        f"[ERROR] Target repository root does not exist: {target_project}"
+                    )
                     return False, stages
 
                 if os.path.isabs(prompt_file):
                     resolved_prompt = prompt_file
                 else:
                     stage_base = os.path.dirname(STAGES_PATH)
-                    resolved_prompt = os.path.abspath(os.path.join(stage_base, prompt_file))
+                    resolved_prompt = os.path.abspath(
+                        os.path.join(stage_base, prompt_file)
+                    )
                 if not os.path.exists(resolved_prompt):
-                    alternative = os.path.abspath(os.path.join(PROMPTS_DIR, os.path.basename(prompt_file)))
+                    alternative = os.path.abspath(
+                        os.path.join(PROMPTS_DIR, os.path.basename(prompt_file))
+                    )
                     if os.path.exists(alternative):
                         resolved_prompt = alternative
                     else:
-                        print(f"[ERROR] Prompt file not found for stage {name}: {prompt_file}")
+                        print(
+                            f"[ERROR] Prompt file not found for stage {name}: {prompt_file}"
+                        )
                         return False, stages
 
                 print(f"[INFO] Running stage: {name} using {prompt_file}")
@@ -487,14 +525,18 @@ class MetaAgent:
                     with open(resolved_prompt, "r", encoding="utf-8") as handle:
                         stage_instructions = handle.read()
 
-                    print(f"[INFO] Collecting global project context for stage {name}...")
+                    print(
+                        f"[INFO] Collecting global project context for stage {name}..."
+                    )
                     scanner = ProjectScanner(target_project)
 
                     # Global Architect Mode: Gather Tree + All Source
                     tree_view = scanner.get_project_structure()
                     source_context = scanner.read_all_code()
 
-                    print(f"[INFO] Collected context for stage {name} (Architect Mode).")
+                    print(
+                        f"[INFO] Collected context for stage {name} (Architect Mode)."
+                    )
 
                     system_prompt = (
                         "You are a Global Architect. You have full vision of the project structure and source code.\n"
@@ -515,20 +557,32 @@ class MetaAgent:
                         },
                     )
 
-                    print(f"[INFO] Sending prompt to LLM for stage {name} (Architect Mode)...")
-                    response = self.client.send(full_prompt, system_prompt=system_prompt)
+                    print(
+                        f"[INFO] Sending prompt to LLM for stage {name} (Architect Mode)..."
+                    )
+                    response = self.client.send(
+                        full_prompt, system_prompt=system_prompt
+                    )
                     print(f"[INFO] LLM response received for stage {name}.")
 
-                    if isinstance(response, str) and response.lstrip().startswith("[ERROR]"):
+                    if isinstance(response, str) and response.lstrip().startswith(
+                        "[ERROR]"
+                    ):
                         print(f"[ERROR] LLM call failed for stage {name}: {response}")
                         return False, stages
 
-                    change_set = build_change_set_from_response(target_project, response)
+                    change_set = build_change_set_from_response(
+                        target_project, response
+                    )
 
-                    safety_mode = (self.config.get("safety") or {}).get("mode", "manual")
+                    safety_mode = (self.config.get("safety") or {}).get(
+                        "mode", "manual"
+                    )
                     force_direct = safety_mode == "auto"
 
-                    outcome = apply_change_set_with_policy(change_set, PATCHES_DIR, force_direct=force_direct)
+                    outcome = apply_change_set_with_policy(
+                        change_set, PATCHES_DIR, force_direct=force_direct
+                    )
 
                     if outcome.applied:
                         for f in outcome.created_files:
@@ -556,8 +610,16 @@ class MetaAgent:
                         created_files=outcome.created_files,
                         deleted_files=outcome.deleted_files,
                         safety_status=outcome.safety_eval.overall_verdict,
-                        blocked_files=[f.path for f in outcome.safety_eval.files if f.verdict == "block"],
-                        warning_files=[f.path for f in outcome.safety_eval.files if f.verdict == "warn"],
+                        blocked_files=[
+                            f.path
+                            for f in outcome.safety_eval.files
+                            if f.verdict == "block"
+                        ],
+                        warning_files=[
+                            f.path
+                            for f in outcome.safety_eval.files
+                            if f.verdict == "warn"
+                        ],
                         patch_files=outcome.patch_files,
                         meta={
                             "started_at": started_at,
@@ -573,7 +635,9 @@ class MetaAgent:
                     )
                     write_json_report(report)
                     write_md_report(report)
-                    print(f"[INFO] Stage {name} completed with status={outcome.status}.")
+                    print(
+                        f"[INFO] Stage {name} completed with status={outcome.status}."
+                    )
                 except Exception as exc:
                     print(f"[ERROR] Stage {name} failed: {exc}")
                     return False, stages
@@ -607,32 +671,66 @@ class MetaAgent:
 
 def parse_args(argv: Optional[list[str]] = None):
     parser = argparse.ArgumentParser(description="Meta-Agent CLI")
-    parser.add_argument("--config", dest="config_path", help="Path to meta-agent config (YAML/JSON).")
     parser.add_argument(
-        "--mode", default="auto", help="Execution mode (stages|task) or supervisor cadence (daily|weekly|adhoc|auto)."
+        "--config", dest="config_path", help="Path to meta-agent config (YAML/JSON)."
     )
-    parser.add_argument("--task", dest="task_path", help="Path to a .md task file for task mode.")
-    parser.add_argument("--task-id", dest="task_id", help="Task ID to resolve in tasks/<ID>.md for task mode.")
-    parser.add_argument("--task-file", dest="task_file", help="Alias for --task (legacy).")
-    parser.add_argument("--list-tasks", action="store_true", help="List available tasks from tasks/ directory.")
-    parser.add_argument("--project", dest="filter_project", help="Filter tasks by project when listing.")
-    parser.add_argument("--task-type", dest="filter_task_type", help="Filter tasks by task type when listing.")
-    parser.add_argument("--supervisor-goal", dest="supervisor_goal", help="Run a supervisor goal (high-level string).")
+    parser.add_argument(
+        "--mode",
+        default="auto",
+        help="Execution mode (stages|task) or supervisor cadence (daily|weekly|adhoc|auto).",
+    )
+    parser.add_argument(
+        "--task", dest="task_path", help="Path to a .md task file for task mode."
+    )
+    parser.add_argument(
+        "--task-id",
+        dest="task_id",
+        help="Task ID to resolve in tasks/<ID>.md for task mode.",
+    )
+    parser.add_argument(
+        "--task-file", dest="task_file", help="Alias for --task (legacy)."
+    )
+    parser.add_argument(
+        "--list-tasks",
+        action="store_true",
+        help="List available tasks from tasks/ directory.",
+    )
+    parser.add_argument(
+        "--project", dest="filter_project", help="Filter tasks by project when listing."
+    )
+    parser.add_argument(
+        "--task-type",
+        dest="filter_task_type",
+        help="Filter tasks by task type when listing.",
+    )
+    parser.add_argument(
+        "--supervisor-goal",
+        dest="supervisor_goal",
+        help="Run a supervisor goal (high-level string).",
+    )
     parser.add_argument(
         "--supervisor-project",
         dest="supervisor_project",
         help="Project root for supervisor goal runs.",
         default="ai_scalper_bot",
     )
-    parser.add_argument("--project-id", dest="stage_project_id", help="Override project id for stage pipeline.")
-    parser.add_argument("--once", action="store_true", help="Run once and exit (default behavior).")
+    parser.add_argument(
+        "--project-id",
+        dest="stage_project_id",
+        help="Override project id for stage pipeline.",
+    )
+    parser.add_argument(
+        "--once", action="store_true", help="Run once and exit (default behavior)."
+    )
     return parser.parse_args(argv)
 
 
 def parse_run_task_args(argv: list[str]):
     parser = argparse.ArgumentParser(description="Run a TaskSpec")
     parser.add_argument(
-        "--task", required=True, help="Path to task.yaml or task.md OR a natural language instruction string."
+        "--task",
+        required=True,
+        help="Path to task.yaml or task.md OR a natural language instruction string.",
     )
     parser.add_argument("--timeout-seconds", type=int, dest="timeout_seconds")
     parser.add_argument("--llm-timeout-seconds", type=int, dest="llm_timeout_seconds")
@@ -649,7 +747,9 @@ def parse_create_task_args(argv: list[str]):
     return parser.parse_args(argv)
 
 
-def _create_task_spec_file(project_id: str, objective: str, output_path: Optional[str]) -> str:
+def _create_task_spec_file(
+    project_id: str, objective: str, output_path: Optional[str]
+) -> str:
     stamp = datetime.now(timezone.utc).strftime("%Y%m%d_%H%M%S")
     task_id = f"T{stamp}_{project_id}"
     created_at = datetime.now(timezone.utc).isoformat()
@@ -670,7 +770,9 @@ def _create_task_spec_file(project_id: str, objective: str, output_path: Optiona
     if output_path:
         dest = os.path.abspath(output_path)
     else:
-        runtime_dir = os.getenv("QE_RUNTIME_DIR") or os.path.join(_resolve_base_dir(), "runtime")
+        runtime_dir = os.getenv("QE_RUNTIME_DIR") or os.path.join(
+            _resolve_base_dir(), "runtime"
+        )
         inbox_dir = os.path.join(runtime_dir, "inbox")
         os.makedirs(inbox_dir, exist_ok=True)
         dest = os.path.join(inbox_dir, f"{task_id}.yaml")
@@ -778,7 +880,9 @@ def _status_cli(limit: int, show_last: bool, json_mode: bool, quiet: bool) -> in
             }
             print(json.dumps(payload, ensure_ascii=True))
         elif not quiet:
-            print(f"[INFO] run_id={last.get('run_id')} verdict={last.get('verdict')} exit_code={last.get('exit_code')}")
+            print(
+                f"[INFO] run_id={last.get('run_id')} verdict={last.get('verdict')} exit_code={last.get('exit_code')}"
+            )
             print(f"[INFO] finished_at={last.get('finished_at')}")
             print(f"[INFO] report_path={last.get('artifacts', {}).get('report_path')}")
         return 0
@@ -849,7 +953,10 @@ def _health_cli(json_mode: bool, quiet: bool) -> int:
     if json_mode:
         payload = {
             "ok": ok,
-            "checks": [{"name": name, "ok": passed, "detail": detail} for name, passed, detail in results],
+            "checks": [
+                {"name": name, "ok": passed, "detail": detail}
+                for name, passed, detail in results
+            ],
         }
         print(json.dumps(payload, ensure_ascii=True))
         return 0 if ok else 1
@@ -930,7 +1037,11 @@ def cleanup_after_successful_run(stages: list) -> None:
             rel_root = os.path.relpath(root, REPORTS_DIR)
             for filename in files:
                 src = os.path.join(root, filename)
-                dest_dir = os.path.join(OUTPUT_DIR, rel_root) if rel_root != "." else OUTPUT_DIR
+                dest_dir = (
+                    os.path.join(OUTPUT_DIR, rel_root)
+                    if rel_root != "."
+                    else OUTPUT_DIR
+                )
                 os.makedirs(dest_dir, exist_ok=True)
                 dest = os.path.join(dest_dir, filename)
                 try:
@@ -977,7 +1088,9 @@ def main() -> int:
         return 0
     if cmd == "status":
         args = parse_status_args(remaining[1:])
-        return _status_cli(args.limit, args.last, json_mode=global_args.json, quiet=global_args.quiet)
+        return _status_cli(
+            args.limit, args.last, json_mode=global_args.json, quiet=global_args.quiet
+        )
     if cmd == "health":
         parse_health_args(remaining[1:])
         return _health_cli(json_mode=global_args.json, quiet=global_args.quiet)
@@ -993,7 +1106,9 @@ def main() -> int:
     if cmd == "scheduler-status":
         args = parse_scheduler_status_args(remaining[1:])
         try:
-            payload = scheduler_status(args.schedules_dir or None, _resolve_runtime_dir())
+            payload = scheduler_status(
+                args.schedules_dir or None, _resolve_runtime_dir()
+            )
         except ScheduleValidationError as exc:
             if not global_args.quiet:
                 print(f"[ERROR] {exc}")
@@ -1025,13 +1140,17 @@ def main() -> int:
     if cmd == "approve-apply":
         args = parse_approve_args(remaining[1:])
         try:
-            result = approve_apply(args.run_id, runtime_dir=_resolve_runtime_dir(), method="cli")
+            result = approve_apply(
+                args.run_id, runtime_dir=_resolve_runtime_dir(), method="cli"
+            )
         except ApprovalError as exc:
             if not global_args.quiet:
                 print(f"[ERROR] {exc}")
             return exc.exit_code
         if not global_args.quiet:
-            print(f"[INFO] approve_apply exit_code={result.get('exit_code')} applied={result.get('applied')}")
+            print(
+                f"[INFO] approve_apply exit_code={result.get('exit_code')} applied={result.get('applied')}"
+            )
         return int(result.get("exit_code") or 0)
     if cmd == "dump-run":
         args = parse_dump_run_args(remaining[1:])
@@ -1056,8 +1175,12 @@ def main() -> int:
         if global_args.json:
             print(json.dumps(payload, ensure_ascii=True))
         elif not global_args.quiet:
-            print(f"run_id={payload['run_id']} verdict={payload['verdict']} exit_code={payload['exit_code']}")
-            print(f"applied={payload['applied']} gates_passed={payload['gates_passed']}")
+            print(
+                f"run_id={payload['run_id']} verdict={payload['verdict']} exit_code={payload['exit_code']}"
+            )
+            print(
+                f"applied={payload['applied']} gates_passed={payload['gates_passed']}"
+            )
             print(f"report_path={payload['report_path']}")
             print(f"patches_dir={payload['patches_dir']}")
         return 0
@@ -1071,7 +1194,9 @@ def main() -> int:
 
     if args.list_tasks:
         try:
-            tasks = list_tasks(project=args.filter_project, task_type=args.filter_task_type)
+            tasks = list_tasks(
+                project=args.filter_project, task_type=args.filter_task_type
+            )
         except Exception as exc:
             print(f"[ERROR] Failed to list tasks: {exc}")
             return 1
@@ -1082,7 +1207,9 @@ def main() -> int:
         print(header)
         print("-" * len(header))
         for task in tasks:
-            print(f"{task.task_id:30} {task.project:18} {task.task_type:14} {task.title}")
+            print(
+                f"{task.task_id:30} {task.project:18} {task.task_type:14} {task.title}"
+            )
         return 0
 
     if args.supervisor_goal:
@@ -1099,9 +1226,15 @@ def main() -> int:
             print(f"[ERROR] Supervisor run failed: {exc}")
             return 1
 
-        ok_count = sum(1 for r in sup_result.get("tasks", []) if r.get("status") == "ok")
-        err_count = sum(1 for r in sup_result.get("tasks", []) if r.get("status") == "error")
-        partial_count = sum(1 for r in sup_result.get("tasks", []) if r.get("status") == "partial")
+        ok_count = sum(
+            1 for r in sup_result.get("tasks", []) if r.get("status") == "ok"
+        )
+        err_count = sum(
+            1 for r in sup_result.get("tasks", []) if r.get("status") == "error"
+        )
+        partial_count = sum(
+            1 for r in sup_result.get("tasks", []) if r.get("status") == "partial"
+        )
 
         print("[INFO] Supervisor run completed.")
         print(f"  Goal: {sup_result.get('goal')}")
@@ -1133,7 +1266,9 @@ def main() -> int:
                 return 1
             resolved_task = task_identifier
             if not os.path.exists(resolved_task):
-                legacy_candidate = os.path.join("meta_agent", "tasks", f"{task_identifier}.md")
+                legacy_candidate = os.path.join(
+                    "meta_agent", "tasks", f"{task_identifier}.md"
+                )
                 if os.path.exists(legacy_candidate):
                     resolved_task = legacy_candidate
             report = run_task(resolved_task)
@@ -1146,7 +1281,9 @@ def main() -> int:
             return report.exit_code
 
         agent = MetaAgent()
-        success, stages = agent.run_stage_pipeline(override_project_id=args.stage_project_id)
+        success, stages = agent.run_stage_pipeline(
+            override_project_id=args.stage_project_id
+        )
     except Exception as exc:
         print(f"[ERROR] Meta-Agent failed: {exc}")
         return 1

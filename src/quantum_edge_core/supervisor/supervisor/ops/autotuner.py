@@ -20,12 +20,17 @@ def load_policy_bundle(active_policy: Dict[str, Any]) -> Dict[str, Any]:
 
     bot_cfg_path = Path(paths["config_dir"]) / "bot.yaml"
     bot_cfg = _safe_load_yaml(bot_cfg_path)
-    bot_thresholds = ((bot_cfg.get("ml") or {}).get("thresholds") or {}) if isinstance(bot_cfg, dict) else {}
+    bot_thresholds = (
+        ((bot_cfg.get("ml") or {}).get("thresholds") or {})
+        if isinstance(bot_cfg, dict)
+        else {}
+    )
 
     settings_path = Path(paths["bot_dir"]) / "config" / "settings.yaml"
     settings_cfg = _safe_load_yaml(settings_path)
     order_policy = (
-        ((settings_cfg.get("execution") or {}).get("scalp") or {}).get("order_policy") or {}
+        ((settings_cfg.get("execution") or {}).get("scalp") or {}).get("order_policy")
+        or {}
         if isinstance(settings_cfg, dict)
         else {}
     )
@@ -36,7 +41,9 @@ def load_policy_bundle(active_policy: Dict[str, Any]) -> Dict[str, Any]:
 
     exec_section = policy.setdefault("execution", {})
     if isinstance(exec_section, dict):
-        exec_section.setdefault("passive_offset_bps", order_policy.get("near_touch_offset_bps"))
+        exec_section.setdefault(
+            "passive_offset_bps", order_policy.get("near_touch_offset_bps")
+        )
         exec_section.setdefault("passive_ttl_ms", order_policy.get("cancel_timeout_ms"))
         if "max_requotes" in order_policy:
             exec_section.setdefault("max_requotes", order_policy.get("max_requotes"))
@@ -44,7 +51,9 @@ def load_policy_bundle(active_policy: Dict[str, Any]) -> Dict[str, Any]:
     return policy
 
 
-def collect_metrics(runs_dir: Path, telemetry_path: Optional[Path], ops_cfg: Dict[str, Any]) -> Dict[str, Any]:
+def collect_metrics(
+    runs_dir: Path, telemetry_path: Optional[Path], ops_cfg: Dict[str, Any]
+) -> Dict[str, Any]:
     window_runs = int(get_nested(ops_cfg, "autotune.window_runs", 5) or 5)
     summaries = _load_recent_summaries(runs_dir, window_runs)
 
@@ -122,9 +131,15 @@ def propose_tuning(
 
     guard_bounds = bounds.get("guards", {}) if isinstance(bounds, dict) else {}
     exec_bounds = bounds.get("execution", {}) if isinstance(bounds, dict) else {}
-    ml_bounds = (bounds.get("ml") or {}).get("thresholds") if isinstance(bounds, dict) else {}
+    ml_bounds = (
+        (bounds.get("ml") or {}).get("thresholds") if isinstance(bounds, dict) else {}
+    )
 
-    if winrate is not None and block_rate >= block_rate_high and winrate >= winrate_high:
+    if (
+        winrate is not None
+        and block_rate >= block_rate_high
+        and winrate >= winrate_high
+    ):
         current = _get_path(candidate, "guards.spread_bps_max")
         new_val = _nudge(current, +1, guard_bounds.get("spread_bps_max"))
         if new_val is not None:
@@ -148,7 +163,11 @@ def propose_tuning(
             apply_change("execution.max_requotes", requotes_new)
             notes.append("reduce_requotes_for_latency")
 
-    if winrate is not None and winrate <= winrate_low and (drift_score_max is None or drift_score_max <= drift_high):
+    if (
+        winrate is not None
+        and winrate <= winrate_low
+        and (drift_score_max is None or drift_score_max <= drift_high)
+    ):
         for horizon in ("h1", "h5", "h15"):
             current = _get_path(candidate, f"ml.thresholds.{horizon}")
             new_val = _nudge(current, +1, (ml_bounds or {}).get(horizon))
@@ -157,7 +176,12 @@ def propose_tuning(
         if any(change["path"].startswith("ml.thresholds") for change in changes):
             notes.append("tighten_ml_thresholds")
 
-    if winrate is not None and winrate >= winrate_high and trades <= trades_low and block_rate < block_rate_high:
+    if (
+        winrate is not None
+        and winrate >= winrate_high
+        and trades <= trades_low
+        and block_rate < block_rate_high
+    ):
         for horizon in ("h1", "h5", "h15"):
             current = _get_path(candidate, f"ml.thresholds.{horizon}")
             new_val = _nudge(current, -1, (ml_bounds or {}).get(horizon))
@@ -173,7 +197,11 @@ def _load_recent_summaries(runs_dir: Path, limit: int) -> list[Dict[str, Any]]:
     summaries: list[Dict[str, Any]] = []
     if not runs_dir.exists():
         return summaries
-    run_dirs = sorted([p for p in runs_dir.iterdir() if p.is_dir()], key=lambda p: p.stat().st_mtime, reverse=True)
+    run_dirs = sorted(
+        [p for p in runs_dir.iterdir() if p.is_dir()],
+        key=lambda p: p.stat().st_mtime,
+        reverse=True,
+    )
     for run_dir in run_dirs:
         summary_path = run_dir / "summary.json"
         if not summary_path.exists():
@@ -188,9 +216,16 @@ def _load_recent_summaries(runs_dir: Path, limit: int) -> list[Dict[str, Any]]:
     return summaries
 
 
-def _load_telemetry_metrics(telemetry_path: Optional[Path], drift_score_high: float) -> Dict[str, Any]:
+def _load_telemetry_metrics(
+    telemetry_path: Optional[Path], drift_score_high: float
+) -> Dict[str, Any]:
     if telemetry_path is None or not telemetry_path.exists():
-        return {"latency_p95": None, "error_events": 0, "ml_snapshot_count": 0, "drift_score_max": None}
+        return {
+            "latency_p95": None,
+            "error_events": 0,
+            "ml_snapshot_count": 0,
+            "drift_score_max": None,
+        }
 
     latency_vals = []
     error_events = 0
@@ -204,7 +239,12 @@ def _load_telemetry_metrics(telemetry_path: Optional[Path], drift_score_high: fl
             for line in handle:
                 tail.append(line)
     except OSError:
-        return {"latency_p95": None, "error_events": 0, "ml_snapshot_count": 0, "drift_score_max": None}
+        return {
+            "latency_p95": None,
+            "error_events": 0,
+            "ml_snapshot_count": 0,
+            "drift_score_max": None,
+        }
 
     for line in tail:
         try:
@@ -241,9 +281,12 @@ def _load_telemetry_metrics(telemetry_path: Optional[Path], drift_score_high: fl
         "latency_p95": latency_p95,
         "error_events": error_events,
         "ml_snapshot_count": ml_snapshot_count,
-        "blocked_avg": (blocked_total / ml_snapshot_count) if ml_snapshot_count else None,
+        "blocked_avg": (
+            (blocked_total / ml_snapshot_count) if ml_snapshot_count else None
+        ),
         "drift_score_max": drift_score_max,
-        "drift_high": drift_score_max is not None and drift_score_max >= drift_score_high,
+        "drift_high": drift_score_max is not None
+        and drift_score_max >= drift_score_high,
     }
 
 
@@ -295,7 +338,9 @@ def _set_path(data: Dict[str, Any], path: str, value: Any) -> Optional[Any]:
     return old
 
 
-def _nudge(current: Optional[float], direction: int, bounds: Optional[Dict[str, Any]]) -> Optional[float]:
+def _nudge(
+    current: Optional[float], direction: int, bounds: Optional[Dict[str, Any]]
+) -> Optional[float]:
     if current is None or bounds is None:
         return None
     try:

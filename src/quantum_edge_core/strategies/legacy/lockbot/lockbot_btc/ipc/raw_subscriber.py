@@ -12,7 +12,9 @@ import zmq.asyncio
 
 
 class RawSubscriber:
-    def __init__(self, endpoint: str, topics: Iterable[str], rcvhwm: int = 1000) -> None:
+    def __init__(
+        self, endpoint: str, topics: Iterable[str], rcvhwm: int = 1000
+    ) -> None:
         self._endpoint = endpoint
         self._topics = list(topics)
         self._ctx = zmq.asyncio.Context.instance()
@@ -63,4 +65,3 @@ class RawSubscriber:
                 continue
             if isinstance(data, dict):
                 self._queue.put_nowait((topic.decode("utf-8", errors="ignore"), data))
-

@@ -54,7 +54,9 @@ class LockbotPolicyRunner:
         self._control = control_client
         self._logger = logger or logging.getLogger(__name__)
         self._market_cache = MarketDataCache(cfg.symbol)
-        self._hub_sub = LockbotHubSubscriber(cfg.hub_sub_endpoint, cfg.hub_topics, self._market_cache)
+        self._hub_sub = LockbotHubSubscriber(
+            cfg.hub_sub_endpoint, cfg.hub_topics, self._market_cache
+        )
         self._regime_detector = RegimeDetector(cfg.regime)
         self._hysteresis = RegimeHysteresis(cfg.regime)
         self._thread: Optional[threading.Thread] = None
@@ -126,11 +128,21 @@ class LockbotPolicyRunner:
 
         market_lag = _lag_ms(now_ms, market.mark_ts)
         account_lag = status.account_lag_ms
-        is_stale = _is_stale(market_lag, account_lag, self._cfg.max_market_lag_ms, self._cfg.max_account_lag_ms)
-        lock_present = status.long_qty >= self._cfg.min_leg_qty and status.short_qty >= self._cfg.min_leg_qty
+        is_stale = _is_stale(
+            market_lag,
+            account_lag,
+            self._cfg.max_market_lag_ms,
+            self._cfg.max_account_lag_ms,
+        )
+        lock_present = (
+            status.long_qty >= self._cfg.min_leg_qty
+            and status.short_qty >= self._cfg.min_leg_qty
+        )
 
         if status.ddn_verdict == "REJECT" and self._last_ddn_verdict != "REJECT":
-            self._cooldown_until_ms = max(self._cooldown_until_ms, now_ms + self._cfg.cooldown_after_reject_ms)
+            self._cooldown_until_ms = max(
+                self._cooldown_until_ms, now_ms + self._cfg.cooldown_after_reject_ms
+            )
             self._reject_count += 1
         elif status.ddn_verdict in {"ALLOW", "MODIFY", "PANIC_ONLY"}:
             self._reject_count = 0
@@ -142,7 +154,9 @@ class LockbotPolicyRunner:
                 self._manual_hold_sent = False
 
         regime_decision = self._regime_detector.evaluate(market)
-        current_regime, changed = self._hysteresis.update(regime_decision.candidate, now_ms)
+        current_regime, changed = self._hysteresis.update(
+            regime_decision.candidate, now_ms
+        )
         intent_sent: Optional[PolicyIntent] = None
         reason = "noop"
         if is_stale:
@@ -151,7 +165,12 @@ class LockbotPolicyRunner:
             self._send_intents([intent_sent], now_ms, lock_present)
         elif self._manual_hold:
             if not self._manual_hold_sent:
-                pause_intent = PolicyIntent(cmd="PAUSE", payload={"reason": "ddn_rejects"}, reason="manual_hold", priority=5)
+                pause_intent = PolicyIntent(
+                    cmd="PAUSE",
+                    payload={"reason": "ddn_rejects"},
+                    reason="manual_hold",
+                    priority=5,
+                )
                 self._send_intents([pause_intent], now_ms, lock_present)
                 self._manual_hold_sent = True
             reason = "manual_hold"
@@ -168,7 +187,9 @@ class LockbotPolicyRunner:
                     intents.append(decision.intent)
                     reason = decision.reason
             elif current_regime in {"TREND_UP", "TREND_DOWN"}:
-                decision = evaluate_trend(market, status, self._cfg.trend_policy, current_regime)
+                decision = evaluate_trend(
+                    market, status, self._cfg.trend_policy, current_regime
+                )
                 if decision.intent:
                     intents.append(decision.intent)
                     reason = decision.reason
@@ -209,10 +230,26 @@ class LockbotPolicyRunner:
         status_payload = payload.get("payload") if "payload" in payload else payload
         if not isinstance(status_payload, dict):
             return None
-        positions = status_payload.get("positions") if isinstance(status_payload.get("positions"), dict) else {}
-        lags = status_payload.get("lags") if isinstance(status_payload.get("lags"), dict) else {}
-        ddn = status_payload.get("ddn") if isinstance(status_payload.get("ddn"), dict) else {}
-        policy = status_payload.get("policy") if isinstance(status_payload.get("policy"), dict) else {}
+        positions = (
+            status_payload.get("positions")
+            if isinstance(status_payload.get("positions"), dict)
+            else {}
+        )
+        lags = (
+            status_payload.get("lags")
+            if isinstance(status_payload.get("lags"), dict)
+            else {}
+        )
+        ddn = (
+            status_payload.get("ddn")
+            if isinstance(status_payload.get("ddn"), dict)
+            else {}
+        )
+        policy = (
+            status_payload.get("policy")
+            if isinstance(status_payload.get("policy"), dict)
+            else {}
+        )
         return BotStatusSnapshot(
             mode=str(status_payload.get("mode", "UNKNOWN")),
             regime=str(status_payload.get("regime", "UNKNOWN")),
@@ -221,10 +258,22 @@ class LockbotPolicyRunner:
             short_qty=float(positions.get("short_qty") or 0.0),
             market_lag_ms=_safe_int(lags.get("market_lag_ms")),
             account_lag_ms=_safe_int(lags.get("account_lag_ms")),
-            ddn_verdict=str(ddn.get("last_verdict")) if ddn.get("last_verdict") is not None else None,
+            ddn_verdict=(
+                str(ddn.get("last_verdict"))
+                if ddn.get("last_verdict") is not None
+                else None
+            ),
             ddn_reasons=list(ddn.get("last_reasons") or []),
-            last_cmd_type=str(policy.get("last_cmd_type")) if policy.get("last_cmd_type") is not None else None,
-            last_cmd_id=str(policy.get("last_cmd_id")) if policy.get("last_cmd_id") is not None else None,
+            last_cmd_type=(
+                str(policy.get("last_cmd_type"))
+                if policy.get("last_cmd_type") is not None
+                else None
+            ),
+            last_cmd_id=(
+                str(policy.get("last_cmd_id"))
+                if policy.get("last_cmd_id") is not None
+                else None
+            ),
             last_cmd_ts=_safe_int(policy.get("last_cmd_ts")),
         )
 
@@ -263,9 +312,13 @@ class LockbotPolicyRunner:
             if now_ms - self._last_target_sent_ms < refresh_s * 1000:
                 return None
         self._last_target_payload = dict(payload)
-        return PolicyIntent(cmd="SET_DELTA_TARGET", payload=payload, reason="set_target", priority=30)
+        return PolicyIntent(
+            cmd="SET_DELTA_TARGET", payload=payload, reason="set_target", priority=30
+        )
 
-    def _send_intents(self, intents: list[PolicyIntent], now_ms: int, lock_present: bool) -> Optional[PolicyIntent]:
+    def _send_intents(
+        self, intents: list[PolicyIntent], now_ms: int, lock_present: bool
+    ) -> Optional[PolicyIntent]:
         if not intents:
             return None
         sent = None
@@ -363,22 +416,30 @@ class LockbotPolicyRunner:
                 "ddn_verdict": status.ddn_verdict,
                 "ddn_reasons": list(status.ddn_reasons),
             },
-            "intent": {
-                "cmd": intent.cmd,
-                "payload": intent.payload,
-                "reason": intent.reason,
-            }
-            if intent
-            else None,
+            "intent": (
+                {
+                    "cmd": intent.cmd,
+                    "payload": intent.payload,
+                    "reason": intent.reason,
+                }
+                if intent
+                else None
+            ),
             "reason": reason,
             "stale": is_stale,
-            "lock_present": status.long_qty >= self._cfg.min_leg_qty and status.short_qty >= self._cfg.min_leg_qty,
+            "lock_present": status.long_qty >= self._cfg.min_leg_qty
+            and status.short_qty >= self._cfg.min_leg_qty,
             "manual_hold": self._manual_hold,
         }
 
 
 def _intent_set_regime(regime: str) -> PolicyIntent:
-    return PolicyIntent(cmd="SET_REGIME", payload={"regime": regime, "reason": "policy_regime"}, reason="set_regime", priority=20)
+    return PolicyIntent(
+        cmd="SET_REGIME",
+        payload={"regime": regime, "reason": "policy_regime"},
+        reason="set_regime",
+        priority=20,
+    )
 
 
 def _safe_int(value: object) -> Optional[int]:

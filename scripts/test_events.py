@@ -1,6 +1,6 @@
-
 import time
 from quantum_edge_core.events import EventCodec, MarketTrade, BaseEvent
+
 
 def main():
     print("Testing Event Serialization...")
@@ -11,7 +11,7 @@ def main():
         price=100000.0,
         quantity=0.1,
         side="buy",
-        timestamp=time.time()
+        timestamp=time.time(),
     )
     print(f"Original: {original_event}")
 
@@ -29,11 +29,12 @@ def main():
     assert decoded.symbol == original_event.symbol
     assert decoded.price == original_event.price
     assert decoded.timestamp == original_event.timestamp
-    
+
     # 5. Verify polymorphism (BaseEvent type)
     assert isinstance(decoded, BaseEvent)
 
     print("\n[SUCCESS] Round-trip serialization verified!")
+
 
 if __name__ == "__main__":
     main()

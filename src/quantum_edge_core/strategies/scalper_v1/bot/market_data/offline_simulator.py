@@ -1,4 +1,5 @@
 ﻿"""Deprecated wrapper. Moved to SupervisorAgent.research.offline.offline_simulator."""
+
 from __future__ import annotations
 
 import importlib
@@ -36,7 +37,9 @@ def main():
     target = _target()
     if hasattr(target, "main"):
         return target.main()
-    raise SystemExit("No CLI entrypoint in SupervisorAgent.research.offline.offline_simulator")
+    raise SystemExit(
+        "No CLI entrypoint in SupervisorAgent.research.offline.offline_simulator"
+    )
 
 
 if __name__ == "__main__":

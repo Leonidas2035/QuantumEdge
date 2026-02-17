@@ -60,4 +60,3 @@ class LockbotPublisher:
             except RuntimeError:
                 logging.debug("QuestDB writer task scheduling failed for lockbot event")
         return event
-

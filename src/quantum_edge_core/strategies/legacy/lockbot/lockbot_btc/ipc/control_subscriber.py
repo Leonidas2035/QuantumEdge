@@ -63,4 +63,3 @@ class ControlSubscriber:
             except Exception:
                 continue
             self._queue.put_nowait(cmd)
-

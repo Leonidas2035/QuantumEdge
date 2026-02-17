@@ -42,8 +42,14 @@ class MetricsCollector:
     def collect(self) -> MetricsSnapshot:
         raw = self._fetch_metrics()
         now = time.time()
-        counters = raw.get("counters", {}) if isinstance(raw.get("counters"), dict) else {}
-        breaker_trips = raw.get("breaker_trips", {}) if isinstance(raw.get("breaker_trips"), dict) else {}
+        counters = (
+            raw.get("counters", {}) if isinstance(raw.get("counters"), dict) else {}
+        )
+        breaker_trips = (
+            raw.get("breaker_trips", {})
+            if isinstance(raw.get("breaker_trips"), dict)
+            else {}
+        )
         breaker = raw.get("breaker", {}) if isinstance(raw.get("breaker"), dict) else {}
         health = self._assess_health(raw)
         return MetricsSnapshot(

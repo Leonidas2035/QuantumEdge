@@ -8,7 +8,11 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Optional
 
-from model_router.contracts.decision_v1 import DecisionV1, decode_decision, fallback_decision
+from model_router.contracts.decision_v1 import (
+    DecisionV1,
+    decode_decision,
+    fallback_decision,
+)
 from model_router.decoding.enforce import enforce_decision
 from model_router.router.budgets import BudgetConfig, TeacherBudgets
 from model_router.router.cache import RouterCache
@@ -59,7 +63,9 @@ class Router:
     ) -> None:
         self.student_backend = student_backend
         self.teacher_backend = teacher_backend
-        self.runtime_dir = runtime_dir or Path(__file__).resolve().parents[1] / "runtime"
+        self.runtime_dir = (
+            runtime_dir or Path(__file__).resolve().parents[1] / "runtime"
+        )
         self.runtime_dir.mkdir(parents=True, exist_ok=True)
 
         ttl_s = int(os.environ.get("SUPERVISOR_CACHE_TTL_S", "600"))
@@ -68,9 +74,13 @@ class Router:
 
         budgets = BudgetConfig(
             max_requests_per_day=int(os.environ.get("TEACHER_MAX_REQ_PER_DAY", "200")),
-            max_tokens_per_day=int(os.environ.get("TEACHER_MAX_TOKENS_PER_DAY", "200000")),
+            max_tokens_per_day=int(
+                os.environ.get("TEACHER_MAX_TOKENS_PER_DAY", "200000")
+            ),
         )
-        self.budgets = TeacherBudgets(self.runtime_dir / "teacher_budgets.json", budgets)
+        self.budgets = TeacherBudgets(
+            self.runtime_dir / "teacher_budgets.json", budgets
+        )
 
         circuit_conf = CircuitConfig(
             failure_threshold=int(os.environ.get("ROUTER_CIRCUIT_FAILURES", "3")),
@@ -78,8 +88,12 @@ class Router:
             cool_down_s=int(os.environ.get("ROUTER_CIRCUIT_COOLDOWN_S", "120")),
         )
         state_path = self.runtime_dir / "circuit_state.json"
-        self.student_circuit = CircuitBreaker("student", circuit_conf, state_path=state_path)
-        self.teacher_circuit = CircuitBreaker("teacher", circuit_conf, state_path=state_path)
+        self.student_circuit = CircuitBreaker(
+            "student", circuit_conf, state_path=state_path
+        )
+        self.teacher_circuit = CircuitBreaker(
+            "teacher", circuit_conf, state_path=state_path
+        )
 
         distill_cfg = DistillConfig(
             enable=_load_bool("DISTILL_ENABLE", "1"),
@@ -105,8 +119,12 @@ class Router:
             force_teacher=hints.get("force_teacher"),
         )
         now_utc = _utc_now_str()
-        prompt_info = redact_prompt(prompt, store_prompt=self.distill.config.store_prompt)
-        cache_key = _make_cache_key("DecisionV1", self._student_model_id(), prompt_info.prompt_hash, policy.mode)
+        prompt_info = redact_prompt(
+            prompt, store_prompt=self.distill.config.store_prompt
+        )
+        cache_key = _make_cache_key(
+            "DecisionV1", self._student_model_id(), prompt_info.prompt_hash, policy.mode
+        )
 
         cache_entry = self.cache.get(cache_key)
         if cache_entry:
@@ -121,7 +139,13 @@ class Router:
                     error=None,
                     attempts=0,
                 )
-                self._log_event(result, request_id, prompt_info.prompt_hash, policy.mode, cache_hit=True)
+                self._log_event(
+                    result,
+                    request_id,
+                    prompt_info.prompt_hash,
+                    policy.mode,
+                    cache_hit=True,
+                )
                 return result
             except Exception:
                 self.cache.delete(cache_key)
@@ -140,7 +164,9 @@ class Router:
             if self.student_circuit.is_open(time.time()):
                 return None
             attempts += 1
-            result = await enforce_decision(prompt, self.student_backend, timeout_s=timeout_s)
+            result = await enforce_decision(
+                prompt, self.student_backend, timeout_s=timeout_s
+            )
             if result.ok:
                 self.student_circuit.record_success(time.time())
             else:
@@ -155,7 +181,9 @@ class Router:
             if not self.budgets.can_use(now_utc, tokens_est):
                 return None
             attempts += 1
-            result = await enforce_decision(prompt, self.teacher_backend, timeout_s=timeout_s)
+            result = await enforce_decision(
+                prompt, self.teacher_backend, timeout_s=timeout_s
+            )
             tokens_used = tokens_est + _approx_tokens(result.decision.to_compact_json())
             self.budgets.record(now_utc, tokens_used)
             if result.ok:
@@ -179,7 +207,9 @@ class Router:
                 teacher_result = await call_teacher()
                 chosen = teacher_result or student_result
         elif policy.mode == "ab":
-            use_teacher = self._choose_teacher(prompt_info.prompt_hash, policy.teacher_ratio, _day_bucket(now_utc))
+            use_teacher = self._choose_teacher(
+                prompt_info.prompt_hash, policy.teacher_ratio, _day_bucket(now_utc)
+            )
             if use_teacher:
                 teacher_result = await call_teacher()
                 if teacher_result:
@@ -224,7 +254,13 @@ class Router:
         if ok:
             self.cache.set(cache_key, decision.to_compact_json(), backend_used)
 
-        self._log_event(result, request_id, prompt_info.prompt_hash, policy.mode, cache_hit=cache_hit)
+        self._log_event(
+            result,
+            request_id,
+            prompt_info.prompt_hash,
+            policy.mode,
+            cache_hit=cache_hit,
+        )
         self._maybe_log_distill(prompt_info, student_result, teacher_result)
         return result
 
@@ -237,7 +273,14 @@ class Router:
     def _student_model_id(self) -> str:
         return os.environ.get("SUPERVISOR_LLM_MODEL", "local")
 
-    def _log_event(self, result: RouterResult, request_id: Optional[str], prompt_hash: str, mode: str, cache_hit: bool) -> None:
+    def _log_event(
+        self,
+        result: RouterResult,
+        request_id: Optional[str],
+        prompt_hash: str,
+        mode: str,
+        cache_hit: bool,
+    ) -> None:
         payload = {
             "ts_utc": _utc_now_str(),
             "request_id": request_id,
@@ -251,9 +294,13 @@ class Router:
             "error_code": result.error,
         }
         with open(self.events_path, "a", encoding="utf-8") as handle:
-            handle.write(json.dumps(payload, separators=(",", ":"), ensure_ascii=False) + "\n")
+            handle.write(
+                json.dumps(payload, separators=(",", ":"), ensure_ascii=False) + "\n"
+            )
 
-    def _maybe_log_distill(self, prompt_info: RedactionResult, student_result, teacher_result) -> None:
+    def _maybe_log_distill(
+        self, prompt_info: RedactionResult, student_result, teacher_result
+    ) -> None:
         if not student_result or not teacher_result:
             return
         student_payload = self.distill.make_payload(
@@ -278,4 +325,6 @@ class Router:
             "lat_ms_student": round(student_result.latency_ms, 2),
             "lat_ms_teacher": round(teacher_result.latency_ms, 2),
         }
-        self.distill.write(prompt_info, student_payload, teacher_payload, diff, backend_meta)
+        self.distill.write(
+            prompt_info, student_payload, teacher_payload, diff, backend_meta
+        )

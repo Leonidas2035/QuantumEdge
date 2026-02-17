@@ -95,7 +95,9 @@ class TelemetryAggregator:
             if isinstance(data, dict):
                 self._equity = _safe_float(data.get("equity"), self._equity)
                 self._pnl_day = _safe_float(data.get("pnl_day"), self._pnl_day)
-                self._drawdown_day = _safe_float(data.get("drawdown_day"), self._drawdown_day)
+                self._drawdown_day = _safe_float(
+                    data.get("drawdown_day"), self._drawdown_day
+                )
         elif event_type == "policy":
             if isinstance(data, dict):
                 self._policy_mode = str(data.get("mode") or self._policy_mode)

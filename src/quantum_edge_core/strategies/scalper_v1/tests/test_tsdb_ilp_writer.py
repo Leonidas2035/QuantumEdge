@@ -23,10 +23,26 @@ def test_ilp_writer_flush_on_batch():
         stop = asyncio.Event()
         task = asyncio.create_task(writer.run(bus, stop))
         await bus.publish(
-            {"table": "market_l1", "symbol": "BTCUSDT", "bid": 1.0, "ask": 2.0, "bid_sz": 1.0, "ask_sz": 1.0, "ts": 1}
+            {
+                "table": "market_l1",
+                "symbol": "BTCUSDT",
+                "bid": 1.0,
+                "ask": 2.0,
+                "bid_sz": 1.0,
+                "ask_sz": 1.0,
+                "ts": 1,
+            }
         )
         await bus.publish(
-            {"table": "market_l1", "symbol": "BTCUSDT", "bid": 1.1, "ask": 2.1, "bid_sz": 1.0, "ask_sz": 1.0, "ts": 2}
+            {
+                "table": "market_l1",
+                "symbol": "BTCUSDT",
+                "bid": 1.1,
+                "ask": 2.1,
+                "bid_sz": 1.0,
+                "ask_sz": 1.0,
+                "ts": 2,
+            }
         )
         await asyncio.sleep(0.05)
         stop.set()
@@ -57,7 +73,17 @@ def test_ilp_writer_spools_on_failure(tmp_path):
             transport=transport,
         )
         ok = await writer.flush_events(
-            [{"table": "market_l1", "symbol": "BTCUSDT", "bid": 1.0, "ask": 2.0, "bid_sz": 1.0, "ask_sz": 1.0, "ts": 1}]
+            [
+                {
+                    "table": "market_l1",
+                    "symbol": "BTCUSDT",
+                    "bid": 1.0,
+                    "ask": 2.0,
+                    "bid_sz": 1.0,
+                    "ask_sz": 1.0,
+                    "ts": 1,
+                }
+            ]
         )
         assert not ok
         assert list(tmp_path.rglob("*.jsonl.gz"))

@@ -80,7 +80,9 @@ def metrics_to_point(payload: Dict[str, Any]) -> Optional[Point]:
             "tick_age_ms": payload.get("tick_age_ms"),
             "book_age_ms": payload.get("book_age_ms"),
             "breakers_active": breaker.get("reason") if breaker.get("active") else None,
-            "rejects_top": json.dumps(rejects_top, separators=(",", ":")) if rejects_top else None,
+            "rejects_top": (
+                json.dumps(rejects_top, separators=(",", ":")) if rejects_top else None
+            ),
             "inference_p50_ms": payload.get("latency_p50_ms"),
             "inference_p95_ms": payload.get("latency_p95_ms"),
             "position_notional": payload.get("position_notional"),
@@ -114,7 +116,9 @@ def exec_to_point(payload: Dict[str, Any]) -> Optional[Point]:
         tags={
             "symbol": str(payload.get("symbol") or "unknown"),
             "side": str(payload.get("side") or payload.get("direction") or "unknown"),
-            "order_type": str(payload.get("order_type") or payload.get("type") or "unknown"),
+            "order_type": str(
+                payload.get("order_type") or payload.get("type") or "unknown"
+            ),
         },
         fields={
             "qty": payload.get("size") or payload.get("qty"),

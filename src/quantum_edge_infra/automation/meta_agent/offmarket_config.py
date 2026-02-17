@@ -39,9 +39,9 @@ class OffMarketConfig:
 
 @dataclass
 class OffMarketState:
-    last_runs: Dict[str, str] = field(default_factory=dict)   # goal -> ISO ts
+    last_runs: Dict[str, str] = field(default_factory=dict)  # goal -> ISO ts
     runs_today: Dict[str, int] = field(default_factory=dict)  # goal -> count
-    runs_date: Optional[str] = None                           # YYYY-MM-DD in config timezone
+    runs_date: Optional[str] = None  # YYYY-MM-DD in config timezone
 
 
 def _ensure_dir(path: str) -> None:
@@ -58,7 +58,9 @@ def _resolve_base_dir() -> str:
         except Exception:
             pass
     parent = os.path.abspath(os.path.join(BASE_DIR, os.pardir))
-    if os.path.isdir(os.path.join(parent, "config")) and os.path.isdir(os.path.join(parent, "ai_scalper_bot")):
+    if os.path.isdir(os.path.join(parent, "config")) and os.path.isdir(
+        os.path.join(parent, "ai_scalper_bot")
+    ):
         return parent
     return BASE_DIR
 
@@ -74,7 +76,9 @@ def _resolve_config_path(path: Optional[str]) -> str:
 def _resolve_state_path(path: Optional[str]) -> str:
     runtime_dir = os.getenv("QE_RUNTIME_DIR")
     if runtime_dir:
-        return os.path.abspath(os.path.join(runtime_dir, "meta_agent", "offmarket_state.json"))
+        return os.path.abspath(
+            os.path.join(runtime_dir, "meta_agent", "offmarket_state.json")
+        )
     base = _resolve_base_dir()
     candidate = path or DEFAULT_STATE_PATH
     if os.path.isabs(candidate):
@@ -84,7 +88,9 @@ def _resolve_state_path(path: Optional[str]) -> str:
 
 def _load_meta_agent_defaults() -> Dict[str, str]:
     base = _resolve_base_dir()
-    cfg_path = os.getenv("META_AGENT_CONFIG") or os.path.join(base, "config", "meta_agent.yaml")
+    cfg_path = os.getenv("META_AGENT_CONFIG") or os.path.join(
+        base, "config", "meta_agent.yaml"
+    )
     if not os.path.exists(cfg_path):
         return {}
     try:
@@ -129,7 +135,9 @@ def load_offmarket_config(path: str = DEFAULT_CONFIG_PATH) -> OffMarketConfig:
     require_bot_idle = bool(raw.get("require_bot_idle", True))
     bot_status_file = raw.get("bot_status_file")
     if bot_status_file and not os.path.isabs(bot_status_file):
-        bot_status_file = os.path.abspath(os.path.join(_resolve_base_dir(), bot_status_file))
+        bot_status_file = os.path.abspath(
+            os.path.join(_resolve_base_dir(), bot_status_file)
+        )
 
     schedules_raw = raw.get("schedules") or []
     schedules: List[OffMarketScheduleItem] = []

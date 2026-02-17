@@ -94,7 +94,9 @@ def _json_safe(obj: Any) -> Any:
 
 
 def _stable_hash(payload: Dict[str, Any]) -> str:
-    encoded = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False)
+    encoded = json.dumps(
+        payload, sort_keys=True, separators=(",", ":"), ensure_ascii=False
+    )
     return hashlib.sha256(encoded.encode("utf-8")).hexdigest()
 
 
@@ -151,11 +153,15 @@ class RunContext:
     ) -> "RunContext":
         now = _utc_now()
         git_commit = _git_commit(project_root)
-        git_short = git_commit[:7] if git_commit and git_commit != "unknown" else "nogit"
+        git_short = (
+            git_commit[:7] if git_commit and git_commit != "unknown" else "nogit"
+        )
         run_id = f"{now.strftime('%Y%m%d_%H%M%S')}_{git_short}"
         run_dir = project_root / "runtime" / "runs" / run_id
         run_dir.mkdir(parents=True, exist_ok=True)
-        supervisor_version = supervisor_version or (git_commit if git_commit != "unknown" else "dev")
+        supervisor_version = supervisor_version or (
+            git_commit if git_commit != "unknown" else "dev"
+        )
         ctx = cls(
             run_id=run_id,
             run_dir=run_dir,
@@ -201,9 +207,13 @@ class RunContext:
             "config": safe_payload,
         }
         path = self.run_dir / "config_snapshot.json"
-        path.write_text(json.dumps(snapshot, indent=2, ensure_ascii=False), encoding="utf-8")
+        path.write_text(
+            json.dumps(snapshot, indent=2, ensure_ascii=False), encoding="utf-8"
+        )
 
-    def log_event(self, event_type: str, payload: Optional[Dict[str, Any]] = None) -> None:
+    def log_event(
+        self, event_type: str, payload: Optional[Dict[str, Any]] = None
+    ) -> None:
         event = {
             **self._breadcrumbs(),
             "type": event_type,
@@ -231,7 +241,9 @@ class RunContext:
             **_json_safe(summary_payload),
         }
         path = self.run_dir / "summary.json"
-        path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+        path.write_text(
+            json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8"
+        )
 
     def find_incomplete_previous_run(self) -> Optional[Dict[str, Any]]:
         parent = self.run_dir.parent
@@ -269,7 +281,9 @@ class RunContext:
             entry = {
                 "name": item.name,
                 "size_bytes": stat.st_size,
-                "mtime_utc": _iso_utc(datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc)),
+                "mtime_utc": _iso_utc(
+                    datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc)
+                ),
             }
             if item.name in {"summary.json", "config_snapshot.json"}:
                 entry["sha256"] = _sha256_file(item)
@@ -279,11 +293,15 @@ class RunContext:
             "artifacts": entries,
         }
         path = self.run_dir / "artifacts.json"
-        path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+        path.write_text(
+            json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8"
+        )
 
 
 def _atomic_write_json(path: Path, payload: Dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp_path = path.with_suffix(path.suffix + ".tmp")
-    tmp_path.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+    tmp_path.write_text(
+        json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8"
+    )
     tmp_path.replace(path)

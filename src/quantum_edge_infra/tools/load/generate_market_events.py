@@ -23,7 +23,6 @@ _bootstrap_paths()
 
 from bot.storage.event_bus import EventBus, EventPriority
 
-
 SYMBOLS_DEFAULT = [
     "BTCUSDT",
     "ETHUSDT",
@@ -218,20 +217,32 @@ async def _run_cli(args: argparse.Namespace) -> int:
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Generate synthetic market events into EventBus.")
-    parser.add_argument("--duration-sec", type=float, default=10.0, help="Runtime duration.")
-    parser.add_argument("--trades-per-sec", type=float, default=5.0, help="Trades/sec per symbol.")
-    parser.add_argument("--l1-per-sec", type=float, default=5.0, help="L1 updates/sec per symbol.")
+    parser = argparse.ArgumentParser(
+        description="Generate synthetic market events into EventBus."
+    )
+    parser.add_argument(
+        "--duration-sec", type=float, default=10.0, help="Runtime duration."
+    )
+    parser.add_argument(
+        "--trades-per-sec", type=float, default=5.0, help="Trades/sec per symbol."
+    )
+    parser.add_argument(
+        "--l1-per-sec", type=float, default=5.0, help="L1 updates/sec per symbol."
+    )
     parser.add_argument("--symbols", help="Comma-separated symbols (default 10).")
     parser.add_argument("--seed", type=int, help="Random seed.")
-    parser.add_argument("--queue-max-events", type=int, default=10000, help="EventBus max events.")
+    parser.add_argument(
+        "--queue-max-events", type=int, default=10000, help="EventBus max events."
+    )
     parser.add_argument(
         "--queue-max-bytes",
         type=int,
         default=256 * 1024 * 1024,
         help="EventBus max bytes.",
     )
-    parser.add_argument("--drain", action="store_true", help="Drain the EventBus while generating.")
+    parser.add_argument(
+        "--drain", action="store_true", help="Drain the EventBus while generating."
+    )
     args = parser.parse_args()
     return asyncio.run(_run_cli(args))
 

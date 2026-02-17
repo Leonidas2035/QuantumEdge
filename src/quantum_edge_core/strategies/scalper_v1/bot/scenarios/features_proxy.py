@@ -99,8 +99,12 @@ def compute_metrics(ticks: List[Tick]) -> WindowMetrics:
         burstiness=burstiness,
         alternation_rate=alternation_rate,
         gap_bps_max=gap_bps_max,
-        slope_first_bps_per_min=slope_first * 60.0 * 10000.0 if slope_first is not None else None,
-        slope_last_bps_per_min=slope_last * 60.0 * 10000.0 if slope_last is not None else None,
+        slope_first_bps_per_min=(
+            slope_first * 60.0 * 10000.0 if slope_first is not None else None
+        ),
+        slope_last_bps_per_min=(
+            slope_last * 60.0 * 10000.0 if slope_last is not None else None
+        ),
         range_first_bps=range_first,
         range_last_bps=range_last,
         vol_first_bps=vol_first,
@@ -138,7 +142,9 @@ def _range_bps(prices: List[float]) -> Optional[float]:
     return (high - low) / mid * 10000.0
 
 
-def _trend_slope(prices: List[float], times_s: List[float]) -> Tuple[Optional[float], Optional[float]]:
+def _trend_slope(
+    prices: List[float], times_s: List[float]
+) -> Tuple[Optional[float], Optional[float]]:
     if len(prices) < 3:
         return None, None
     xs = [t - times_s[0] for t in times_s]
@@ -246,7 +252,9 @@ def _split_ticks(ticks: List[Tick]) -> Tuple[List[Tick], List[Tick]]:
     return ticks[:mid], ticks[mid:]
 
 
-def _breakout_flags(first: List[Tick], last: List[Tick]) -> Tuple[Optional[bool], Optional[bool]]:
+def _breakout_flags(
+    first: List[Tick], last: List[Tick]
+) -> Tuple[Optional[bool], Optional[bool]]:
     if not first or not last:
         return None, None
     first_prices = [t.price for t in first]

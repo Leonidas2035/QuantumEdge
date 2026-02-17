@@ -25,7 +25,9 @@ from quantum_edge_core.market_data.models.orderbook import DepthLevel
 from quantum_edge_core.market_data.orderbook.book import OrderBook
 from quantum_edge_core.market_data.ipc.snapshot_server import SnapshotCache
 from quantum_edge_core.market_data.microstructure.ofi import MicrostructureAnalyzer
-from quantum_edge_core.market_data.microstructure.publisher import MicrostructurePublisher
+from quantum_edge_core.market_data.microstructure.publisher import (
+    MicrostructurePublisher,
+)
 
 
 @dataclass
@@ -157,12 +159,7 @@ class OrderBookAggregator:
         self._stats.depth_publish_total += 1
         if self._config.snapshot.include_depth:
             self._snapshot_cache.update(event)
-        if (
-            self._microstructure
-            and self._micro_publisher
-            and best_bid
-            and best_ask
-        ):
+        if self._microstructure and self._micro_publisher and best_bid and best_ask:
             snapshot = self._microstructure.update_book(
                 symbol=symbol,
                 bid_px=best_bid[0],
@@ -184,8 +181,12 @@ class OrderBookAggregator:
             mid = (best_bid[0] + best_ask[0]) / 2.0
         threshold_qty = self._config.walls.per_symbol_threshold_qty.get(symbol)
         threshold_notional = self._config.walls.default_threshold_notional_usd
-        bids_walls = self._filter_walls(bids, mid, threshold_qty, threshold_notional, "bid")
-        asks_walls = self._filter_walls(asks, mid, threshold_qty, threshold_notional, "ask")
+        bids_walls = self._filter_walls(
+            bids, mid, threshold_qty, threshold_notional, "bid"
+        )
+        asks_walls = self._filter_walls(
+            asks, mid, threshold_qty, threshold_notional, "ask"
+        )
         summary = WallsSummary(
             count_bid_walls=len(bids_walls),
             count_ask_walls=len(asks_walls),
@@ -222,34 +223,54 @@ class OrderBookAggregator:
         for level in levels[: self._config.walls.top_k]:
             meets_qty = threshold_qty is not None and level.qty >= threshold_qty
             notional = level.price * level.qty
-            meets_notional = threshold_notional is not None and notional >= threshold_notional
+            meets_notional = (
+                threshold_notional is not None and notional >= threshold_notional
+            )
             if not (meets_qty or meets_notional):
                 continue
             distance = None
             if mid:
                 distance = abs(level.price - mid) / mid * 10000
-                if self._config.walls.max_distance_bps and distance > self._config.walls.max_distance_bps:
+                if (
+                    self._config.walls.max_distance_bps
+                    and distance > self._config.walls.max_distance_bps
+                ):
                     continue
             walls.append(
-                WallLevel(price=level.price, qty=level.qty, notional=notional, distance_bps=distance)
+                WallLevel(
+                    price=level.price,
+                    qty=level.qty,
+                    notional=notional,
+                    distance_bps=distance,
+                )
             )
         return walls
 
     def _nearest_distance(self, walls: List[WallLevel]) -> Optional[float]:
-        distances = [wall.distance_bps for wall in walls if wall.distance_bps is not None]
+        distances = [
+            wall.distance_bps for wall in walls if wall.distance_bps is not None
+        ]
         if not distances:
             return None
         return min(distances)
 
     async def _synthetic_feed(self) -> None:
         """Simple generator to keep order book moving while real feed is absent."""
-        base_prices = {symbol: 40000.0 if "BTC" in symbol else 3000.0 for symbol in self._books}
+        base_prices = {
+            symbol: 40000.0 if "BTC" in symbol else 3000.0 for symbol in self._books
+        }
         step = 0.1
         while self._running:
             for symbol, book in self._books.items():
                 mid = base_prices[symbol]
-                bids = [(mid - i * step, 5.0 + i * 0.5) for i in range(self._config.top_n_levels)]
-                asks = [(mid + i * step, 5.0 + i * 0.3) for i in range(self._config.top_n_levels)]
+                bids = [
+                    (mid - i * step, 5.0 + i * 0.5)
+                    for i in range(self._config.top_n_levels)
+                ]
+                asks = [
+                    (mid + i * step, 5.0 + i * 0.3)
+                    for i in range(self._config.top_n_levels)
+                ]
                 # introduce jitter
                 self.apply_delta(
                     symbol,

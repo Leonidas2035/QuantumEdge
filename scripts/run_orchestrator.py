@@ -40,20 +40,23 @@ def _load_secure_env(qe_root: Path) -> None:
             logger.warning("MASTER_KEY set but file not found", path=str(enc_path))
     else:
         if enc_path.exists():
-            logger.warning(".env.enc found but MASTER_KEY not set. Cannot decrypt secrets.")
+            logger.warning(
+                ".env.enc found but MASTER_KEY not set. Cannot decrypt secrets."
+            )
 
     # Fallback to .env (legacy/insecure) if no vars loaded or explicit fallback needed
     # But usually dotenv loading happens automatically or we do it here.
-    # QuantumEdge seems to rely on finding them in env or .env processing elsewhere? 
+    # QuantumEdge seems to rely on finding them in env or .env processing elsewhere?
     # Actually, QuantumEdge.py doesn't seem to load .env explicitly using python-dotenv.
     # It assumes they are in os.environ.
     # So we SHOULD load .env here if not encrypted.
-    
-    if plain_path.exists() and not os.environ.get("GOOGLE_API_KEY"): # naive check if loaded
+
+    if plain_path.exists() and not os.environ.get(
+        "GOOGLE_API_KEY"
+    ):  # naive check if loaded
         # We can implement simple .env loading if we want parity, or assume user does `source .env`.
         # But request says "If not found, fall back to .env (but log a security warning)."
         pass
-
 
 
 def _now_iso() -> str:
@@ -189,7 +192,9 @@ def _resolve_cli_path(value: Optional[str], default_rel: str, qe_root: Path) -> 
     return (qe_root / default_rel).resolve()
 
 
-def _resolve_config_path(value: Optional[str], env_var: str, default_rel: str, qe_root: Path) -> Path:
+def _resolve_config_path(
+    value: Optional[str], env_var: str, default_rel: str, qe_root: Path
+) -> Path:
     if value:
         return _resolve_cli_path(value, default_rel, qe_root)
     env_value = os.getenv(env_var)
@@ -210,7 +215,11 @@ def _load_global_config(config_path: Path, logger: logging.Logger) -> dict:
 
 
 def _extract_supervisor_settings(global_config: dict) -> dict:
-    supervisor_cfg = global_config.get("supervisor", {}) if isinstance(global_config.get("supervisor"), dict) else {}
+    supervisor_cfg = (
+        global_config.get("supervisor", {})
+        if isinstance(global_config.get("supervisor"), dict)
+        else {}
+    )
     env_host = os.getenv("SUPERVISOR_HOST") or os.getenv("QE_SUPERVISOR_HOST")
     env_port = os.getenv("SUPERVISOR_PORT") or os.getenv("QE_SUPERVISOR_PORT")
     env_url = os.getenv("SUPERVISOR_URL")
@@ -226,10 +235,16 @@ def _extract_supervisor_settings(global_config: dict) -> dict:
 
 
 def _extract_orchestrator_config(global_config: dict) -> dict:
-    orch_cfg = global_config.get("orchestrator", {}) if isinstance(global_config.get("orchestrator"), dict) else {}
+    orch_cfg = (
+        global_config.get("orchestrator", {})
+        if isinstance(global_config.get("orchestrator"), dict)
+        else {}
+    )
     supervisor_spawns_bot = orch_cfg.get("supervisor_spawns_bot", True)
     health_path = orch_cfg.get("supervisor_health_path", "/api/v1/dashboard/health")
-    fallback_paths = orch_cfg.get("supervisor_health_fallbacks", ["/api/v1/status", "/"])
+    fallback_paths = orch_cfg.get(
+        "supervisor_health_fallbacks", ["/api/v1/status", "/"]
+    )
     timeout = orch_cfg.get("startup_timeout_s", 30)
     interval = orch_cfg.get("poll_interval_s", 1)
     try:
@@ -265,17 +280,26 @@ def _load_optional_config(config_path: Path, logger: logging.Logger) -> dict:
 
 
 def _get_supervisor_health_path(supervisor_config: dict, default_path: str) -> str:
-    value = supervisor_config.get("health_path") if isinstance(supervisor_config, dict) else None
+    value = (
+        supervisor_config.get("health_path")
+        if isinstance(supervisor_config, dict)
+        else None
+    )
     return str(value) if value else default_path
 
 
 def _get_supervisor_spawn_flag(supervisor_config: dict) -> Optional[bool]:
-    if isinstance(supervisor_config, dict) and "supervisor_spawns_bot" in supervisor_config:
+    if (
+        isinstance(supervisor_config, dict)
+        and "supervisor_spawns_bot" in supervisor_config
+    ):
         return bool(supervisor_config["supervisor_spawns_bot"])
     return None
 
 
-def _resolve_bot_management(supervisor_config: dict, orchestrator_settings: dict) -> bool:
+def _resolve_bot_management(
+    supervisor_config: dict, orchestrator_settings: dict
+) -> bool:
     managed = bool(orchestrator_settings.get("supervisor_spawns_bot", True))
     supervisor_flag = _get_supervisor_spawn_flag(supervisor_config)
     if supervisor_flag is not None:
@@ -290,7 +314,10 @@ def _build_env(paths: dict, supervisor_settings: dict, config_paths: dict) -> di
     env.setdefault("QE_RUNTIME_DIR", str(paths["runtime_dir"]))
     env.setdefault("QE_LOGS_DIR", str(paths["logs_dir"]))
     env.setdefault("QE_DATA_DIR", str(paths["data_dir"]))
-    env.setdefault("QE_ARTIFACTS_DIR", str(paths.get("artifacts_dir", Path(paths["qe_root"]) / "artifacts")))
+    env.setdefault(
+        "QE_ARTIFACTS_DIR",
+        str(paths.get("artifacts_dir", Path(paths["qe_root"]) / "artifacts")),
+    )
     env.setdefault("SUPERVISOR_HOST", supervisor_settings["host"])
     env.setdefault("SUPERVISOR_PORT", str(supervisor_settings["port"]))
     env.setdefault("SUPERVISOR_URL", supervisor_settings["url"])
@@ -324,7 +351,9 @@ def _probe_url(url: str, timeout: float = 3.0) -> Optional[int]:
         return None
 
 
-def _fetch_json(url: str, logger: logging.Logger, timeout: float = 3.0) -> Optional[dict]:
+def _fetch_json(
+    url: str, logger: logging.Logger, timeout: float = 3.0
+) -> Optional[dict]:
     req = Request(url, method="GET")
     try:
         with urlopen(req, timeout=timeout) as resp:
@@ -359,7 +388,9 @@ def _wait_for_http_ready(
     return None
 
 
-def _get_supervisor_bot_state(supervisor_url: str, logger: logging.Logger) -> tuple[str, Optional[int]]:
+def _get_supervisor_bot_state(
+    supervisor_url: str, logger: logging.Logger
+) -> tuple[str, Optional[int]]:
     api_url = _join_url(supervisor_url, "/api/v1/bot/status")
     payload = _fetch_json(api_url, logger)
     if payload and isinstance(payload, dict) and payload.get("state"):
@@ -392,7 +423,16 @@ def _port_available(host: str, port: int) -> bool:
 
 def _scan_for_secret_files(root: Path) -> list[Path]:
     suspicious: list[Path] = []
-    ignore_dirs = {".git", ".venv", "venv", "__pycache__", "node_modules", "logs", "runtime", "data"}
+    ignore_dirs = {
+        ".git",
+        ".venv",
+        "venv",
+        "__pycache__",
+        "node_modules",
+        "logs",
+        "runtime",
+        "data",
+    }
     ignore_suffixes = {".env.example", ".env.sample", ".env.template"}
     for dirpath, dirnames, filenames in os.walk(root):
         for dirname in list(dirnames):
@@ -406,7 +446,11 @@ def _scan_for_secret_files(root: Path) -> list[Path]:
             lower = filename.lower()
             if any(lower.endswith(sfx) for sfx in ignore_suffixes):
                 continue
-            if lower in {"secrets.env", ".env"} or lower.endswith(".env") or lower.endswith(".enc"):
+            if (
+                lower in {"secrets.env", ".env"}
+                or lower.endswith(".env")
+                or lower.endswith(".enc")
+            ):
                 suspicious.append(Path(dirpath) / filename)
                 continue
             if lower in {"secrets", "backup_secrets"}:
@@ -438,7 +482,6 @@ def _status_from_pid(pid: Optional[int]) -> dict:
 # Logger config removed in favor of logging_setup.py
 
 
-
 def _tail_file(path: Path, lines: int) -> str:
     if not path.exists():
         return ""
@@ -460,7 +503,9 @@ def _print_status(
     supervisor_pid = _read_pid(_pid_path(paths, "supervisor"))
     bot_pid = _read_pid(_pid_path(paths, "bot"))
     meta_pid = _read_pid(_pid_path(paths, "meta"))
-    managed_by_supervisor = _resolve_bot_management(supervisor_config, orchestrator_settings)
+    managed_by_supervisor = _resolve_bot_management(
+        supervisor_config, orchestrator_settings
+    )
 
     print("QuantumEdge status")
     print("==================")
@@ -471,18 +516,24 @@ def _print_status(
         print(f"  - {name}: {path}")
     print("Processes:")
     supervisor_status = _status_from_pid(supervisor_pid)
-    print(f"  - supervisor: pid={supervisor_status['pid']} running={supervisor_status['running']}")
+    print(
+        f"  - supervisor: pid={supervisor_status['pid']} running={supervisor_status['running']}"
+    )
 
     if managed_by_supervisor:
         if supervisor_status["running"]:
-            state, remote_pid = _get_supervisor_bot_state(supervisor_settings["url"], logger)
+            state, remote_pid = _get_supervisor_bot_state(
+                supervisor_settings["url"], logger
+            )
         else:
             state, remote_pid = "UNKNOWN", None
         pid_note = f" pid={remote_pid}" if remote_pid else ""
         print(f"  - bot: managed_by_supervisor=True state={state}{pid_note}")
     else:
         bot_status = _status_from_pid(bot_pid)
-        print(f"  - bot: managed_by_supervisor=False pid={bot_status['pid']} running={bot_status['running']}")
+        print(
+            f"  - bot: managed_by_supervisor=False pid={bot_status['pid']} running={bot_status['running']}"
+        )
 
     meta_status = _status_from_pid(meta_pid)
     print(f"  - meta: pid={meta_status['pid']} running={meta_status['running']}")
@@ -506,7 +557,11 @@ def _stop_all(
     logger: logging.Logger,
     supervisor_first: bool = False,
 ) -> int:
-    order = ["supervisor", "bot", "meta"] if supervisor_first else ["meta", "bot", "supervisor"]
+    order = (
+        ["supervisor", "bot", "meta"]
+        if supervisor_first
+        else ["meta", "bot", "supervisor"]
+    )
     failures = 0
     for name in order:
         pid_file = _pid_path(paths, name)
@@ -570,7 +625,9 @@ def _start_services(
     primary_health_url = _join_url(supervisor_settings["url"], health_paths[0])
     logger.info("Waiting for supervisor health: %s", primary_health_url)
     if len(health_paths) > 1:
-        fallback_urls = [_join_url(supervisor_settings["url"], path) for path in health_paths[1:]]
+        fallback_urls = [
+            _join_url(supervisor_settings["url"], path) for path in health_paths[1:]
+        ]
         logger.info("Health fallbacks: %s", ", ".join(fallback_urls))
     ready_path = _wait_for_http_ready(
         supervisor_settings["url"],
@@ -585,7 +642,9 @@ def _start_services(
         if log_tail:
             logger.error("Supervisor log tail:\n%s", log_tail)
         else:
-            logger.error("No supervisor log data. Try: python SupervisorAgent/supervisor.py run-foreground")
+            logger.error(
+                "No supervisor log data. Try: python SupervisorAgent/supervisor.py run-foreground"
+            )
         if supervisor_started:
             pid = _read_pid(supervisor_pid_file)
             if pid:
@@ -659,14 +718,22 @@ def _start_services(
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="QuantumEdge orchestrator")
-    parser.add_argument("--config", dest="global_config", help="Path to global quantumedge.yaml.")
-    parser.add_argument("--supervisor-config", dest="supervisor_config", help="Path to supervisor.yaml.")
+    parser.add_argument(
+        "--config", dest="global_config", help="Path to global quantumedge.yaml."
+    )
+    parser.add_argument(
+        "--supervisor-config", dest="supervisor_config", help="Path to supervisor.yaml."
+    )
     parser.add_argument("--bot-config", dest="bot_config", help="Path to bot.yaml.")
-    parser.add_argument("--meta-config", dest="meta_config", help="Path to meta_agent.yaml.")
+    parser.add_argument(
+        "--meta-config", dest="meta_config", help="Path to meta_agent.yaml."
+    )
 
     subparsers = parser.add_subparsers(dest="command", required=True)
     start_parser = subparsers.add_parser("start")
-    start_parser.add_argument("--with-meta", action="store_true", help="Start meta-agent.")
+    start_parser.add_argument(
+        "--with-meta", action="store_true", help="Start meta-agent."
+    )
     start_parser.add_argument(
         "--no-supervisor-bot",
         action="store_true",
@@ -674,7 +741,9 @@ def main() -> int:
     )
     subparsers.add_parser("stop")
     restart_parser = subparsers.add_parser("restart")
-    restart_parser.add_argument("--with-meta", action="store_true", help="Start meta-agent.")
+    restart_parser.add_argument(
+        "--with-meta", action="store_true", help="Start meta-agent."
+    )
     restart_parser.add_argument(
         "--no-supervisor-bot",
         action="store_true",
@@ -684,7 +753,9 @@ def main() -> int:
     diag_parser = subparsers.add_parser("diag")
     diag_parser.add_argument("--json", action="store_true", help="Emit JSON output.")
     logs_parser = subparsers.add_parser("logs")
-    logs_parser.add_argument("--name", choices=["supervisor", "bot", "meta", "quantumedge"], help="Log name.")
+    logs_parser.add_argument(
+        "--name", choices=["supervisor", "bot", "meta", "quantumedge"], help="Log name."
+    )
     logs_parser.add_argument("--lines", type=int, default=200, help="Lines to tail.")
 
     args = parser.parse_args()
@@ -695,12 +766,29 @@ def main() -> int:
     qe_root = Path(paths["qe_root"])
     _load_secure_env(qe_root)
 
-    global_config_path = _resolve_cli_path(args.global_config, "src/quantum_edge_core/config/quantumedge.yaml", qe_root)
+    global_config_path = _resolve_cli_path(
+        args.global_config, "src/quantum_edge_core/config/quantumedge.yaml", qe_root
+    )
     config_paths = {
         "global": global_config_path,
-        "supervisor": _resolve_config_path(args.supervisor_config, "SUPERVISOR_CONFIG", "src/quantum_edge_core/config/supervisor.yaml", qe_root),
-        "bot": _resolve_config_path(args.bot_config, "QE_CONFIG_PATH", "src/quantum_edge_core/config/bot.yaml", qe_root),
-        "meta": _resolve_config_path(args.meta_config, "META_AGENT_CONFIG", "src/quantum_edge_core/config/meta_agent.yaml", qe_root),
+        "supervisor": _resolve_config_path(
+            args.supervisor_config,
+            "SUPERVISOR_CONFIG",
+            "src/quantum_edge_core/config/supervisor.yaml",
+            qe_root,
+        ),
+        "bot": _resolve_config_path(
+            args.bot_config,
+            "QE_CONFIG_PATH",
+            "src/quantum_edge_core/config/bot.yaml",
+            qe_root,
+        ),
+        "meta": _resolve_config_path(
+            args.meta_config,
+            "META_AGENT_CONFIG",
+            "src/quantum_edge_core/config/meta_agent.yaml",
+            qe_root,
+        ),
     }
 
     setup_logging()
@@ -718,10 +806,23 @@ def main() -> int:
     if args.command == "diag":
         if args.json:
             return run_doctor(json_output=True)
-        return _run_diag(paths, config_paths, supervisor_settings, orchestrator_settings, supervisor_config)
+        return _run_diag(
+            paths,
+            config_paths,
+            supervisor_settings,
+            orchestrator_settings,
+            supervisor_config,
+        )
 
     if args.command == "status":
-        return _print_status(paths, config_paths, supervisor_settings, orchestrator_settings, supervisor_config, logger)
+        return _print_status(
+            paths,
+            config_paths,
+            supervisor_settings,
+            orchestrator_settings,
+            supervisor_config,
+            logger,
+        )
 
     if args.command == "logs":
         name = args.name or "quantumedge"

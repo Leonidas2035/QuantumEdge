@@ -34,7 +34,9 @@ class QuestDbClient:
                     timeout=self.timeout,
                 )
                 if resp.status_code >= 300:
-                    raise RuntimeError(f"QuestDB query failed: {resp.status_code} {resp.text}")
+                    raise RuntimeError(
+                        f"QuestDB query failed: {resp.status_code} {resp.text}"
+                    )
                 payload = resp.json()
                 return _rows_from_questdb(payload)
             except Exception:
@@ -49,5 +51,7 @@ def _rows_from_questdb(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
     cols = [col.get("name") for col in payload.get("columns", [])]
     rows = []
     for row in payload.get("dataset", []) or []:
-        rows.append({cols[i]: row[i] if i < len(row) else None for i in range(len(cols))})
+        rows.append(
+            {cols[i]: row[i] if i < len(row) else None for i in range(len(cols))}
+        )
     return rows

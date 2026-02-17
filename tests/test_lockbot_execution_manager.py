@@ -1,7 +1,9 @@
 from __future__ import annotations
 import pytest
+
 pytest.skip("Legacy test broken by src-layout migration", allow_module_level=True)
 import pytest
+
 pytest.skip("Legacy test broken by src-layout migration", allow_module_level=True)
 
 from pathlib import Path
@@ -9,9 +11,17 @@ from pathlib import Path
 from LockBotBTC.lockbot.contracts.lockbot_exec_v1 import EVENT_TYPES
 from LockBotBTC.lockbot_btc.ddn.config import DDNConfig
 from LockBotBTC.lockbot_btc.ddn.engine import OrderPlan
-from LockBotBTC.lockbot_btc.execution.base import CancelAllResult, CancelResult, ExecutionConfig, SubmitResult
+from LockBotBTC.lockbot_btc.execution.base import (
+    CancelAllResult,
+    CancelResult,
+    ExecutionConfig,
+    SubmitResult,
+)
 from LockBotBTC.lockbot_btc.execution.ledger import ExecutionLedger
-from LockBotBTC.lockbot_btc.execution.manager import ExecutionManager, make_client_order_id
+from LockBotBTC.lockbot_btc.execution.manager import (
+    ExecutionManager,
+    make_client_order_id,
+)
 from LockBotBTC.lockbot_btc.state.order_tracker import OrderTracker
 
 
@@ -22,18 +32,30 @@ class FakeExecutor:
 
     def submit_order(self, **kwargs):
         self.submits.append(kwargs)
-        return SubmitResult(ok=True, client_order_id=kwargs["client_order_id"], order_id="1001", status="NEW")
+        return SubmitResult(
+            ok=True,
+            client_order_id=kwargs["client_order_id"],
+            order_id="1001",
+            status="NEW",
+        )
 
     def cancel_order(self, **kwargs):
         self.cancels.append(kwargs)
-        return CancelResult(ok=True, client_order_id=kwargs.get("client_order_id"), order_id=kwargs.get("order_id"), status="CANCELED")
+        return CancelResult(
+            ok=True,
+            client_order_id=kwargs.get("client_order_id"),
+            order_id=kwargs.get("order_id"),
+            status="CANCELED",
+        )
 
     def cancel_all(self, **kwargs):
         self.cancels.append(kwargs)
         return CancelAllResult(ok=True, status="ok")
 
 
-def _manager(tmp_path: Path, *, auto_submit: bool = True) -> tuple[ExecutionManager, list, FakeExecutor]:
+def _manager(
+    tmp_path: Path, *, auto_submit: bool = True
+) -> tuple[ExecutionManager, list, FakeExecutor]:
     events = []
 
     def emit(event):
@@ -142,5 +164,7 @@ def test_idempotent_submit(tmp_path: Path) -> None:
 
 def test_reconciliation_mismatch(tmp_path: Path) -> None:
     manager, events, _ = _manager(tmp_path, auto_submit=True)
-    manager.handle_order_update({"clientOrderId": "unknown", "status": "NEW"}, 1_000, "account_delta")
+    manager.handle_order_update(
+        {"clientOrderId": "unknown", "status": "NEW"}, 1_000, "account_delta"
+    )
     assert events[-1].event_type == "RECONCILIATION_MISMATCH"

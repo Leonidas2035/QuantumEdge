@@ -58,20 +58,42 @@ class NormalExecutionMode:
                 trader_decision = type(
                     "Tmp",
                     (),
-                    {"action": action, "size": decision.size, "order_type": "market", "tp_price": tp_price, "sl_price": sl_price},
+                    {
+                        "action": action,
+                        "size": decision.size,
+                        "order_type": "market",
+                        "tp_price": tp_price,
+                        "sl_price": sl_price,
+                    },
                 )
                 await trader.process(trader_decision, price, timestamp, symbol=symbol)
                 if hasattr(trader, "set_bracket"):
                     trader.set_bracket(action, tp_price, sl_price)
-                return ExecutionResult(executed=True, reason="enter", size=decision.size or 0.0, action=action)
-            return ExecutionResult(executed=False, reason="supervisor_block", skipped=True)
+                return ExecutionResult(
+                    executed=True,
+                    reason="enter",
+                    size=decision.size or 0.0,
+                    action=action,
+                )
+            return ExecutionResult(
+                executed=False, reason="supervisor_block", skipped=True
+            )
 
         if decision.action == DecisionAction.EXIT:
             if await allow_fn("close", abs(trader.position), True):
-                trader_decision = type("Tmp", (), {"action": "close", "size": 0, "order_type": "market"})
+                trader_decision = type(
+                    "Tmp", (), {"action": "close", "size": 0, "order_type": "market"}
+                )
                 await trader.process(trader_decision, price, timestamp, symbol=symbol)
-                return ExecutionResult(executed=True, reason="exit", size=abs(trader.position), action="close")
-            return ExecutionResult(executed=False, reason="supervisor_block", skipped=True)
+                return ExecutionResult(
+                    executed=True,
+                    reason="exit",
+                    size=abs(trader.position),
+                    action="close",
+                )
+            return ExecutionResult(
+                executed=False, reason="supervisor_block", skipped=True
+            )
 
         return ExecutionResult(executed=False, reason="noop", skipped=True)
 
@@ -99,7 +121,12 @@ class ScalpExecutionMode:
         self.min_prob_up = float(self.cfg.get("min_prob_up", 0.55))
         self.min_edge = float(self.cfg.get("min_edge", 0.0))
         self.max_spread_bps = float(self.cfg.get("max_spread_bps", 2.0))
-        self.min_depth_usd = float(self.cfg.get("min_orderbook_depth_usd", self.cfg.get("min_depth_quote", 1000.0) or 1000.0))
+        self.min_depth_usd = float(
+            self.cfg.get(
+                "min_orderbook_depth_usd",
+                self.cfg.get("min_depth_quote", 1000.0) or 1000.0,
+            )
+        )
         self.max_hold_seconds = int(self.cfg.get("max_position_hold_seconds", 60))
         self._disable_if_no_depth = bool(self.cfg.get("disable_without_depth", True))
 
@@ -118,7 +145,9 @@ class ScalpExecutionMode:
         spread = ask - bid
         return self._bps(spread / ((ask + bid) / 2))
 
-    def _depth_usd(self, last_event: Optional[Dict[str, Any]], price: float, qty: float) -> float:
+    def _depth_usd(
+        self, last_event: Optional[Dict[str, Any]], price: float, qty: float
+    ) -> float:
         # Approximate depth using last trade size if no orderbook is available.
         if not last_event:
             return price * qty
@@ -146,7 +175,12 @@ class ScalpExecutionMode:
         else:
             sl_price = price * (1 + sl_bps / 10_000)
             tp_price = price * (1 - tp_bps / 10_000)
-        return {"sl_price": sl_price, "tp_price": tp_price, "sl_bps": sl_bps, "tp_bps": tp_bps}
+        return {
+            "sl_price": sl_price,
+            "tp_price": tp_price,
+            "sl_bps": sl_bps,
+            "tp_bps": tp_bps,
+        }
 
     def evaluate_entry(
         self,
@@ -213,7 +247,12 @@ class ScalpExecutionMode:
                     if h5 and float(getattr(h5, "p_down", 0.0)) < h5_thr:
                         return {"ok": False, "reason": "H5_GATE_SHORT"}
 
-        return {"ok": True, "reason": "OK", "spread_bps": spread_bps, "depth_usd": depth_usd}
+        return {
+            "ok": True,
+            "reason": "OK",
+            "spread_bps": spread_bps,
+            "depth_usd": depth_usd,
+        }
 
     async def execute_trade(
         self,
@@ -233,11 +272,20 @@ class ScalpExecutionMode:
         # Exit handling remains straightforward; apply guard bookkeeping.
         if decision.action == DecisionAction.EXIT:
             if await allow_fn("close", abs(trader.position), True):
-                await self.policy.close_position(trader, abs(trader.position), price, timestamp, symbol=symbol)
+                await self.policy.close_position(
+                    trader, abs(trader.position), price, timestamp, symbol=symbol
+                )
                 self.guard.record_exit()
                 self.entry_times.pop(symbol, None)
-                return ExecutionResult(executed=True, reason="exit", action="close", size=abs(trader.position))
-            return ExecutionResult(executed=False, reason="supervisor_block", skipped=True)
+                return ExecutionResult(
+                    executed=True,
+                    reason="exit",
+                    action="close",
+                    size=abs(trader.position),
+                )
+            return ExecutionResult(
+                executed=False, reason="supervisor_block", skipped=True
+            )
 
         if decision.action != DecisionAction.ENTER:
             return ExecutionResult(executed=False, reason="noop", skipped=True)
@@ -253,7 +301,9 @@ class ScalpExecutionMode:
         )
         if not gate.get("ok"):
             self.logger.info("Scalp entry blocked: %s", gate.get("reason"))
-            return ExecutionResult(executed=False, reason=str(gate.get("reason")), skipped=True)
+            return ExecutionResult(
+                executed=False, reason=str(gate.get("reason")), skipped=True
+            )
 
         action = "buy" if decision.direction == "long" else "sell"
         size = decision.size
@@ -280,12 +330,18 @@ class ScalpExecutionMode:
             )
             executed = bool(result.get("executed", result.get("filled", True)))
             if not executed:
-                return ExecutionResult(executed=False, reason=str(result.get("reason", "execution_blocked")), skipped=True)
+                return ExecutionResult(
+                    executed=False,
+                    reason=str(result.get("reason", "execution_blocked")),
+                    skipped=True,
+                )
             if hasattr(trader, "set_bracket"):
                 trader.set_bracket(action, stops["tp_price"], stops["sl_price"])
             self.guard.record_entry()
             self.entry_times[symbol] = timestamp / 1000.0
-            return ExecutionResult(executed=True, reason="enter", action=action, size=size)
+            return ExecutionResult(
+                executed=True, reason="enter", action=action, size=size
+            )
         return ExecutionResult(executed=False, reason="supervisor_block", skipped=True)
 
     async def enforce_time_stop(
@@ -306,9 +362,20 @@ class ScalpExecutionMode:
             return None
 
         if allow_fn is None or await allow_fn("close", abs(trader.position), True):
-            await self.policy.close_position(trader, abs(trader.position), price, timestamp, symbol=symbol)
+            await self.policy.close_position(
+                trader, abs(trader.position), price, timestamp, symbol=symbol
+            )
             self.guard.record_exit()
             self.entry_times.pop(symbol, None)
-            self.logger.info("Closed scalp position due to max hold time for %s", symbol)
-            return ExecutionResult(executed=True, reason="time_stop", action="close", size=abs(trader.position))
-        return ExecutionResult(executed=False, reason="supervisor_block_time_stop", skipped=True)
+            self.logger.info(
+                "Closed scalp position due to max hold time for %s", symbol
+            )
+            return ExecutionResult(
+                executed=True,
+                reason="time_stop",
+                action="close",
+                size=abs(trader.position),
+            )
+        return ExecutionResult(
+            executed=False, reason="supervisor_block_time_stop", skipped=True
+        )

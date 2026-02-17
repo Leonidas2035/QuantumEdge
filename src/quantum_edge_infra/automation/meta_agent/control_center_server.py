@@ -28,7 +28,9 @@ def _resolve_base_dir() -> str:
     if env_root:
         return env_root
     parent = os.path.abspath(os.path.join(base, os.pardir))
-    if os.path.isdir(os.path.join(parent, "config")) and os.path.isdir(os.path.join(parent, "ai_scalper_bot")):
+    if os.path.isdir(os.path.join(parent, "config")) and os.path.isdir(
+        os.path.join(parent, "ai_scalper_bot")
+    ):
         return parent
     return base
 
@@ -87,7 +89,9 @@ class ControlCenterHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(body)
 
-    def _send_text(self, status: int, content: str, content_type: str = "text/plain") -> None:
+    def _send_text(
+        self, status: int, content: str, content_type: str = "text/plain"
+    ) -> None:
         body = content.encode("utf-8")
         self.send_response(status)
         self.send_header("Content-Type", content_type)
@@ -178,9 +182,11 @@ class ControlCenterHandler(BaseHTTPRequestHandler):
                             "id": p.project_id,
                             "label": p.label,
                             "root": p.root,
-                            "root_exists": os.path.isdir(p.root)
-                            if os.path.isabs(p.root)
-                            else os.path.isdir(os.path.join(base_dir, p.root)),
+                            "root_exists": (
+                                os.path.isdir(p.root)
+                                if os.path.isabs(p.root)
+                                else os.path.isdir(os.path.join(base_dir, p.root))
+                            ),
                         }
                         for p in projects
                     ],
@@ -238,12 +244,16 @@ class ControlCenterHandler(BaseHTTPRequestHandler):
                 return
             self._send_json(HTTPStatus.OK, result)
             return
-        if parsed.path.startswith("/api/run/") and parsed.path.endswith("/approve-apply"):
+        if parsed.path.startswith("/api/run/") and parsed.path.endswith(
+            "/approve-apply"
+        ):
             run_id = parsed.path.split("/")[3]
             try:
                 result = approve_apply_run(run_id, runtime_dir)
             except ApprovalError as exc:
-                self._send_json(exc.status_code, {"error": str(exc), "exit_code": exc.exit_code})
+                self._send_json(
+                    exc.status_code, {"error": str(exc), "exit_code": exc.exit_code}
+                )
                 return
             self._send_json(HTTPStatus.OK, result)
             return
@@ -258,7 +268,9 @@ class ControlCenterHandler(BaseHTTPRequestHandler):
             except FileNotFoundError:
                 self._send_json(HTTPStatus.NOT_FOUND, {"error": "schedule not found"})
                 return
-            self._send_json(HTTPStatus.OK, {"schedule_id": schedule_id, "enabled": enabled})
+            self._send_json(
+                HTTPStatus.OK, {"schedule_id": schedule_id, "enabled": enabled}
+            )
             return
         if parsed.path == "/api/active-project":
             payload = self._read_json()
@@ -344,10 +356,17 @@ def _health_check(runtime_dir: str) -> tuple[bool, list[dict]]:
     return ok, checks
 
 
-def run_server(bind: str, port: int, token: Optional[str] = None) -> tuple[str, int, str]:
+def run_server(
+    bind: str, port: int, token: Optional[str] = None
+) -> tuple[str, int, str]:
     runtime_dir = _resolve_runtime_dir()
     log_level = (os.getenv("META_AGENT_LOG_LEVEL") or "INFO").upper()
-    logger = configure_logger("meta_agent.control_center", runtime_dir, log_level, log_filename="control_center.log")
+    logger = configure_logger(
+        "meta_agent.control_center",
+        runtime_dir,
+        log_level,
+        log_filename="control_center.log",
+    )
 
     cc_token = token or secrets.token_urlsafe(16)
     server = ThreadedHTTPServer((bind, port), ControlCenterHandler)

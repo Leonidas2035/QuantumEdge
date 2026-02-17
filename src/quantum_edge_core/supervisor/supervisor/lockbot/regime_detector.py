@@ -5,7 +5,12 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import List, Optional, Sequence, Tuple
 
-from supervisor.lockbot.models import MarketSnapshot, OhlcvBar, RegimeDetectorConfig, RegimeSignals
+from supervisor.lockbot.models import (
+    MarketSnapshot,
+    OhlcvBar,
+    RegimeDetectorConfig,
+    RegimeSignals,
+)
 
 
 @dataclass
@@ -19,10 +24,18 @@ class RegimeDetector:
         self._cfg = cfg
 
     def evaluate(self, market: MarketSnapshot) -> RegimeDecision:
-        bars = market.ohlcv_15m if len(market.ohlcv_15m) >= self._cfg.adx_period + 1 else market.ohlcv_5m
+        bars = (
+            market.ohlcv_15m
+            if len(market.ohlcv_15m) >= self._cfg.adx_period + 1
+            else market.ohlcv_5m
+        )
         adx = _adx(bars, self._cfg.adx_period)
         atr = _atr(bars, self._cfg.atr_period)
-        atr_baseline = _atr(bars, self._cfg.atr_baseline_period) if self._cfg.atr_baseline_period > 0 else atr
+        atr_baseline = (
+            _atr(bars, self._cfg.atr_baseline_period)
+            if self._cfg.atr_baseline_period > 0
+            else atr
+        )
         slope_bps = _slope_bps(bars, self._cfg.ema_fast, self._cfg.ema_slow)
         chaos, chaos_reasons = _detect_chaos(
             market,
@@ -41,7 +54,11 @@ class RegimeDetector:
         )
         if chaos:
             return RegimeDecision(candidate="CHAOS", signals=signals)
-        if adx is not None and adx >= self._cfg.trend_adx_enter and slope_bps is not None:
+        if (
+            adx is not None
+            and adx >= self._cfg.trend_adx_enter
+            and slope_bps is not None
+        ):
             if slope_bps >= self._cfg.slope_bps_enter:
                 return RegimeDecision(candidate="TREND_UP", signals=signals)
             if slope_bps <= -self._cfg.slope_bps_enter:
@@ -174,13 +191,22 @@ def _detect_chaos(
     liq_intensity = market.liq.intensity_above + market.liq.intensity_below
     if liq_intensity >= cfg.chaos_liq_intensity:
         reasons.append("LIQ_INTENSITY")
-    if market.mark_price and market.band_2u and market.band_2l and slope_bps is not None:
+    if (
+        market.mark_price
+        and market.band_2u
+        and market.band_2l
+        and slope_bps is not None
+    ):
         if market.mark_price > market.band_2u:
-            dist_bps = (market.mark_price - market.band_2u) / market.mark_price * 10000.0
+            dist_bps = (
+                (market.mark_price - market.band_2u) / market.mark_price * 10000.0
+            )
             if dist_bps >= cfg.chaos_band_bps and slope_bps > cfg.slope_bps_enter:
                 reasons.append("BAND_BREAKOUT")
         if market.mark_price < market.band_2l:
-            dist_bps = (market.band_2l - market.mark_price) / market.mark_price * 10000.0
+            dist_bps = (
+                (market.band_2l - market.mark_price) / market.mark_price * 10000.0
+            )
             if dist_bps >= cfg.chaos_band_bps and slope_bps < -cfg.slope_bps_enter:
                 reasons.append("BAND_BREAKDOWN")
     return bool(reasons), reasons

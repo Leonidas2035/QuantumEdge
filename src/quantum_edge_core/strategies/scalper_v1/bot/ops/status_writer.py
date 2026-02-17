@@ -22,7 +22,9 @@ class BotStatusWriter:
         now = time.time()
         if now - self._last_write < self.interval:
             return
-        tmp_fd, tmp_path = tempfile.mkstemp(prefix="bot_status_", suffix=".json", dir=str(self.path.parent))
+        tmp_fd, tmp_path = tempfile.mkstemp(
+            prefix="bot_status_", suffix=".json", dir=str(self.path.parent)
+        )
         try:
             with open(tmp_fd, "w", encoding="utf-8") as handle:
                 json.dump(payload, handle, indent=2)

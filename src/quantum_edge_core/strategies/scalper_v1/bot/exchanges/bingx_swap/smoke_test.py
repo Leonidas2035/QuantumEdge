@@ -4,7 +4,11 @@ import sys
 import time
 
 from bot.exchanges.bingx_swap import BingXClient, BingXSwapExchange, OrderRequest
-from bot.exchanges.bingx_swap.mapper import normalize_symbol, round_price_to_tick, round_qty_to_step
+from bot.exchanges.bingx_swap.mapper import (
+    normalize_symbol,
+    round_price_to_tick,
+    round_qty_to_step,
+)
 
 
 def _build_client() -> BingXClient:
@@ -14,7 +18,9 @@ def _build_client() -> BingXClient:
         raise RuntimeError("Missing BINGX_DEMO_API_KEY/BINGX_DEMO_API_SECRET env vars.")
     base_url = os.getenv("BINGX_BASE_URL", "https://open-api.bingx.com")
     recv_window = int(os.getenv("BINGX_RECV_WINDOW", "5000"))
-    return BingXClient(base_url, api_key, api_secret, recv_window=recv_window, timeout=10.0)
+    return BingXClient(
+        base_url, api_key, api_secret, recv_window=recv_window, timeout=10.0
+    )
 
 
 def _print_kv(label: str, value) -> None:
@@ -23,8 +29,14 @@ def _print_kv(label: str, value) -> None:
 
 def main(argv: list[str]) -> int:
     parser = argparse.ArgumentParser(description="BingX swap smoke test (demo mode).")
-    parser.add_argument("--symbol", default="BTC-USDT", help="Symbol like BTC-USDT or BTCUSDT.")
-    parser.add_argument("--place-test-order", action="store_true", help="Place and cancel a tiny LIMIT order.")
+    parser.add_argument(
+        "--symbol", default="BTC-USDT", help="Symbol like BTC-USDT or BTCUSDT."
+    )
+    parser.add_argument(
+        "--place-test-order",
+        action="store_true",
+        help="Place and cancel a tiny LIMIT order.",
+    )
     args = parser.parse_args(argv)
 
     env = os.getenv("BINGX_ENV", "demo")
@@ -36,7 +48,10 @@ def main(argv: list[str]) -> int:
     symbol = normalize_symbol(args.symbol)
 
     server_time = client.request("GET", "/openApi/swap/v2/server/time", signed=False)
-    _print_kv("server_time", server_time.get("serverTime") if isinstance(server_time, dict) else server_time)
+    _print_kv(
+        "server_time",
+        server_time.get("serverTime") if isinstance(server_time, dict) else server_time,
+    )
 
     last_price = exchange.get_last_price(symbol)
     mark_price = exchange.get_mark_price(symbol)
@@ -79,8 +94,16 @@ def main(argv: list[str]) -> int:
     _print_kv("order_id", result.order_id or "n/a")
     _print_kv("client_order_id", result.client_order_id or "n/a")
 
-    exchange.cancel_order(symbol, order_id=result.order_id or None, client_order_id=result.client_order_id or None)
-    refreshed = exchange.get_order(symbol, order_id=result.order_id or None, client_order_id=result.client_order_id or None)
+    exchange.cancel_order(
+        symbol,
+        order_id=result.order_id or None,
+        client_order_id=result.client_order_id or None,
+    )
+    refreshed = exchange.get_order(
+        symbol,
+        order_id=result.order_id or None,
+        client_order_id=result.client_order_id or None,
+    )
     _print_kv("cancel_status", refreshed.status)
     return 0
 

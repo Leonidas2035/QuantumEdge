@@ -7,7 +7,9 @@ from .train import train_model
 
 
 def parse_args():
-    parser = argparse.ArgumentParser(description="Train all signal models across symbols/horizons.")
+    parser = argparse.ArgumentParser(
+        description="Train all signal models across symbols/horizons."
+    )
     parser.add_argument(
         "--symbols",
         type=str,
@@ -20,9 +22,24 @@ def parse_args():
         default="1,5,15",
         help="Comma-separated horizons (e.g., 1,5,15)",
     )
-    parser.add_argument("--min-rows", type=int, default=1000, help="Minimum rows required to train per horizon.")
-    parser.add_argument("--data", type=str, default=None, help="Path to tick CSV directory (defaults to data/ticks).")
-    parser.add_argument("--limit-files", type=int, default=None, help="Limit number of tick CSVs to load (optional).")
+    parser.add_argument(
+        "--min-rows",
+        type=int,
+        default=1000,
+        help="Minimum rows required to train per horizon.",
+    )
+    parser.add_argument(
+        "--data",
+        type=str,
+        default=None,
+        help="Path to tick CSV directory (defaults to data/ticks).",
+    )
+    parser.add_argument(
+        "--limit-files",
+        type=int,
+        default=None,
+        help="Limit number of tick CSVs to load (optional).",
+    )
     return parser.parse_args()
 
 
@@ -35,8 +52,12 @@ def main():
     dataset_dir.mkdir(parents=True, exist_ok=True)
     data_path = Path(args.data) if args.data else None
 
-    symbols: List[str] = [s.strip().upper() for s in args.symbols.split(",") if s.strip()]
-    horizons: List[int] = [int(h.strip()) for h in args.horizons.split(",") if h.strip()]
+    symbols: List[str] = [
+        s.strip().upper() for s in args.symbols.split(",") if s.strip()
+    ]
+    horizons: List[int] = [
+        int(h.strip()) for h in args.horizons.split(",") if h.strip()
+    ]
 
     summary: Dict[str, Dict[int, Dict]] = {}
     for sym in symbols:

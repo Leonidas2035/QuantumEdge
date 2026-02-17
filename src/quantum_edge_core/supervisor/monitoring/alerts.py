@@ -43,7 +43,11 @@ class AlertManager:
 
         restart_rate = _safe_float(summary.get("restart_rate_per_hour"))
         restart_threshold = _safe_float(self.thresholds.get("restart_rate_per_hour"))
-        if restart_rate is not None and restart_threshold is not None and restart_rate >= restart_threshold:
+        if (
+            restart_rate is not None
+            and restart_threshold is not None
+            and restart_rate >= restart_threshold
+        ):
             conditions["BOT_RESTART_LOOP"] = (
                 "high",
                 f"Restart rate {restart_rate:.2f}/h >= {restart_threshold:.2f}/h",
@@ -52,7 +56,11 @@ class AlertManager:
 
         error_rate = _safe_float(summary.get("error_rate_1m"))
         error_threshold = _safe_float(self.thresholds.get("error_rate_1m"))
-        if error_rate is not None and error_threshold is not None and error_rate >= error_threshold:
+        if (
+            error_rate is not None
+            and error_threshold is not None
+            and error_rate >= error_threshold
+        ):
             conditions["ERROR_SPIKE"] = (
                 "high",
                 f"Errors/min {int(error_rate)} >= {int(error_threshold)}",
@@ -61,7 +69,11 @@ class AlertManager:
 
         latency_p95 = _safe_float(summary.get("latency_ms_p95"))
         latency_threshold = _safe_float(self.thresholds.get("latency_ms"))
-        if latency_p95 is not None and latency_threshold is not None and latency_p95 >= latency_threshold:
+        if (
+            latency_p95 is not None
+            and latency_threshold is not None
+            and latency_p95 >= latency_threshold
+        ):
             conditions["LATENCY_SPIKE"] = (
                 "medium",
                 f"Latency p95 {latency_p95:.1f}ms >= {latency_threshold:.1f}ms",
@@ -70,7 +82,11 @@ class AlertManager:
 
         drawdown = _safe_float(summary.get("drawdown_day"))
         drawdown_threshold = _safe_float(self.thresholds.get("drawdown_abs"))
-        if drawdown is not None and drawdown_threshold is not None and drawdown >= drawdown_threshold:
+        if (
+            drawdown is not None
+            and drawdown_threshold is not None
+            and drawdown >= drawdown_threshold
+        ):
             conditions["DRAWDOWN_LIMIT"] = (
                 "high",
                 f"Drawdown {drawdown:.2f} >= {drawdown_threshold:.2f}",
@@ -79,7 +95,11 @@ class AlertManager:
 
         pnl_day = _safe_float(summary.get("pnl_day"))
         max_daily_loss = _safe_float(self.thresholds.get("max_daily_loss"))
-        if pnl_day is not None and max_daily_loss is not None and pnl_day <= -abs(max_daily_loss):
+        if (
+            pnl_day is not None
+            and max_daily_loss is not None
+            and pnl_day <= -abs(max_daily_loss)
+        ):
             conditions["DRAWDOWN_LIMIT"] = (
                 "high",
                 f"PnL {pnl_day:.2f} <= -{abs(max_daily_loss):.2f}",
@@ -105,11 +125,26 @@ class AlertManager:
                 alert.last_seen = now
                 self._history.append(alert)
 
-    def _upsert_alert(self, key: str, severity: str, message: str, evidence: Dict[str, object], now: float) -> None:
+    def _upsert_alert(
+        self,
+        key: str,
+        severity: str,
+        message: str,
+        evidence: Dict[str, object],
+        now: float,
+    ) -> None:
         last_fired = self._last_fired.get(key, 0.0)
         alert = self._alerts.get(key)
         if alert is None:
-            alert = Alert(key=key, severity=severity, message=message, first_seen=now, last_seen=now, active=True, evidence=evidence)
+            alert = Alert(
+                key=key,
+                severity=severity,
+                message=message,
+                first_seen=now,
+                last_seen=now,
+                active=True,
+                evidence=evidence,
+            )
             self._alerts[key] = alert
             if now - last_fired >= self.cooldown_sec:
                 self._last_fired[key] = now
@@ -142,5 +177,10 @@ def _safe_float(value: object) -> Optional[float]:
 
 def _policy_safe_reason(reason: str) -> bool:
     reason = reason.upper()
-    tokens = ["POLICY_MISSING", "POLICY_EXPIRED", "POLICY_NOT_READY", "POLICY_MISSING_OR_EXPIRED"]
+    tokens = [
+        "POLICY_MISSING",
+        "POLICY_EXPIRED",
+        "POLICY_NOT_READY",
+        "POLICY_MISSING_OR_EXPIRED",
+    ]
     return any(token in reason for token in tokens)

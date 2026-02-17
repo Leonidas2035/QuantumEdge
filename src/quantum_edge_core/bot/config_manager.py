@@ -9,20 +9,22 @@ from typing import Dict, Any
 
 logger = logging.getLogger(__name__)
 
+
 class DynamicConfig:
     """
     Manages the Bot's dynamic configuration state.
     """
+
     def __init__(self):
-        self.current_mode = "NORMAL" # NORMAL, FREEZE, REDUCE_ONLY, SNIPER_ONLY
+        self.current_mode = "NORMAL"  # NORMAL, FREEZE, REDUCE_ONLY, SNIPER_ONLY
         self.overrides: Dict[str, float] = {}
-        
+
         # Defaults (would typically come from initial config)
         self.defaults = {
             "leverage_cap": 20.0,
             "min_order_size": 10.0,
             "dca_multiplier": 1.0,
-            "min_confidence": 0.65
+            "min_confidence": 0.65,
         }
 
     def apply_policy(self, policy: Dict[str, Any]):
@@ -31,28 +33,31 @@ class DynamicConfig:
         """
         action = policy.get("action")
         # Map ACtion to Mode (simplified mapping)
-        
-        # Logic: 
+
+        # Logic:
         # CLOSE_ALL -> Special trigger handled by service, likely enters FREEZE or RESTART
         # FREEZE -> FREEZE
         # REDUCE_SIZE -> REDUCE_ONLY (or just reduce leverage)
         # CONTINUE -> NORMAL (or keep previous if compatible)
-        
+
         # For this prototype, we map explicitly or use logic
         if action == "FREEZE":
             self.current_mode = "FREEZE"
         elif action == "CLOSE_ALL":
-            self.current_mode = "FREEZE" # And trigger close
+            self.current_mode = "FREEZE"  # And trigger close
         elif action == "REDUCE_SIZE":
-             self.current_mode = "REDUCE_ONLY"
+            self.current_mode = "REDUCE_ONLY"
         elif action == "CONTINUE":
             self.current_mode = "NORMAL"
-            
+
         # Params Override
         params = policy.get("params_override", {})
         if params:
             for k, v in params.items():
-                if k in self.defaults or k in ["leverage_cap", "min_order_size"]: # Allow specific known keys
+                if k in self.defaults or k in [
+                    "leverage_cap",
+                    "min_order_size",
+                ]:  # Allow specific known keys
                     try:
                         val_f = float(v)
                         self.overrides[k] = val_f
