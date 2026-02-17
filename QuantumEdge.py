@@ -22,6 +22,15 @@ class ProcessManager:
 
         self.config = self._load_yaml(self.config_path)
 
+        # Load services config
+        self.services_config_path = self.config_path.parent / "services.yaml"
+        self.services_config = {}
+        if self.services_config_path.exists():
+            try:
+                self.services_config = self._load_yaml(self.services_config_path)
+            except Exception as e:
+                print(f"Warning: Failed to load services config from {self.services_config_path}: {e}")
+
         # Merge secrets if available
         secrets_path = self.config_path.parent / "secrets.yaml"
         if secrets_path.exists():
@@ -98,6 +107,21 @@ class ProcessManager:
         if config_env:
             for k, v in config_env.items():
                 env[str(k)] = str(v)
+
+        # Inject services config
+        if self.services_config:
+            services = self.services_config.get("services", {})
+            bot_cfg = services.get("bot", {})
+            sup_cfg = services.get("supervisor", {})
+
+            if bot_cfg:
+                env["QE_BOT_ID"] = str(bot_cfg.get("id", ""))
+                zmq = bot_cfg.get("zmq", {})
+                env["QE_BOT_TELEMETRY_PORT"] = str(zmq.get("telemetry_port", ""))
+                env["QE_BOT_POLICY_PORT"] = str(zmq.get("policy_port", ""))
+
+            if sup_cfg:
+                env["QE_SUPERVISOR_ID"] = str(sup_cfg.get("id", ""))
 
         python_path = env.get("PYTHONPATH", "")
         src_path = Path(project_root) / "src"

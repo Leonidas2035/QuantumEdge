@@ -1,0 +1,9 @@
+services:
+  bot:
+    id: "ai_scalper_bot"  # The ONLY place this ID is defined
+    zmq:
+      telemetry_port: 5557
+      policy_port: 5558
+  supervisor:
+    id: "supervisor_core"
+    check_interval_ms: 1000

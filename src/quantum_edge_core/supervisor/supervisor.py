@@ -101,6 +101,7 @@ from supervisor.process_spec import ProcessSpec
 from supervisor.lockbot.control_client import LockbotControlClient
 from supervisor.lockbot.models import PolicyRunnerConfig, load_lockbot_policy_config
 from supervisor.lockbot.policy_runner import LockbotPolicyRunner
+from monitor import ZmqHeartbeatSubscriber
 
 try:
     from tools.qe_config import get_qe_paths
@@ -108,30 +109,24 @@ except Exception:  # pragma: no cover - fallback for legacy runs
     get_qe_paths = None
 
 
-class ZmqHeartbeatSubscriber:
-    """Synchronous ZMQ Subscriber for Heartbeats."""
+class ZmqPolicyPublisher:
+    """Publishes policy updates via ZMQ."""
 
-    def __init__(self, endpoint: str = "tcp://127.0.0.1:5557"):
+    def __init__(self, endpoint: str):
         self.ctx = zmq.Context()
-        self.socket = self.ctx.socket(zmq.SUB)
-        self.socket.setsockopt(zmq.LINGER, 0)
-        # Prevent blocking on close
-        self.socket.setsockopt(zmq.RCVTIMEO, 0)
+        self.socket = self.ctx.socket(zmq.PUB)
         try:
-            self.socket.connect(endpoint)
-            self.socket.subscribe(b"heartbeat")
-        except zmq.ZMQError:
-            pass  # Log or handle?
+            self.socket.bind(endpoint)
+            logging.getLogger(__name__).info(f"Policy PUB bound to {endpoint}")
+        except zmq.ZMQError as e:
+            logging.getLogger(__name__).error(f"Failed to bind Policy PUB: {e}")
 
-    def check_messages(self) -> Optional[Dict[str, Any]]:
+    def publish(self, payload: Dict[str, Any]):
         try:
-            # Non-blocking poll
-            if self.socket.poll(0):
-                topic, msg = self.socket.recv_multipart()
-                return json.loads(msg.decode("utf-8"))
-        except (zmq.ZMQError, ValueError, json.JSONDecodeError):
+            msg = json.dumps(payload).encode("utf-8")
+            self.socket.send_multipart([b"policy", msg])
+        except Exception:
             pass
-        return None
 
     def close(self):
         self.socket.close()
@@ -164,9 +159,15 @@ class SupervisorApp:
         process_specs: Dict[str, ProcessSpec],
         project_root: Path,
         logger: Optional[logging.Logger] = None,
+        telemetry_port: int = 5557,
+        policy_port: int = 5558,
+        expected_bot_id: str = "ai_scalper_bot",
     ) -> None:
         self.paths = paths
         self.config = config
+        self.telemetry_port = telemetry_port
+        self.policy_port = policy_port
+        self.expected_bot_id = expected_bot_id
         self.risk_config = risk_config
         self.llm_config = llm_config
         self.trend_config = trend_config
@@ -352,7 +353,13 @@ class SupervisorApp:
                 self.lockbot_policy_runner = LockbotPolicyRunner(self.lockbot_policy_cfg, self.lockbot_client, self.logger)
 
         # Initialize ZMQ Heartbeat Subscriber
-        self.heartbeat_subscriber = ZmqHeartbeatSubscriber()
+        self.heartbeat_subscriber = ZmqHeartbeatSubscriber(
+            endpoint=f"tcp://127.0.0.1:{self.telemetry_port}",
+            expected_id=self.expected_id
+        )
+
+        # Initialize ZMQ Policy Publisher
+        self.zmq_policy_publisher = ZmqPolicyPublisher(f"tcp://*:{self.policy_port}")
 
     def _build_tsdb_writer(self, tsdb_config: TsdbConfig) -> Optional[TsdbWriter]:
         self.tsdb_backend = "none"
@@ -712,12 +719,49 @@ class SupervisorApp:
                 if hasattr(self, "heartbeat_subscriber"):
                     hb_payload = self.heartbeat_subscriber.check_messages()
                     if hb_payload:
+                        # Normalize payload fields
+                        if "source" in hb_payload:
+                            hb_payload["service_id"] = hb_payload["source"]
+                        if "status" in hb_payload:
+                            hb_payload["state"] = hb_payload["status"]
+
                         valid_keys = HeartbeatPayload.__dataclass_fields__.keys()
                         filtered = {k: v for k, v in hb_payload.items() if k in valid_keys}
                         self.update_heartbeat(HeartbeatPayload(**filtered))
 
                 self.process_manager.tick()
                 self.telemetry.update_process_state(self.process_manager.get_status_payload())
+
+                # --- RISK & POLICY LOGIC (Stage 3) ---
+                # 1. Dead Bot Check
+                hb_state = self.heartbeat_server.get_state()
+                if hb_state.last_heartbeat_time:
+                    elapsed = (datetime.now(timezone.utc) - hb_state.last_heartbeat_time).total_seconds()
+                    if elapsed > 5.0:
+                        self.logger.warning(f"Bot Dead? No heartbeat for {elapsed:.1f}s")
+                        # Mark bot_status = DEAD (logic only, process might be running)
+
+                # 2. Risk Check & Policy Publish
+                risk_state = self.risk_engine.get_state()
+                allow_trading = True
+                reason = "OK"
+
+                if risk_state.equity_start is not None and risk_state.equity_now is not None:
+                    daily_loss = risk_state.equity_start - risk_state.equity_now
+                    # Use max_daily_loss from config (assuming absolute value or handle pct)
+                    limit = self.risk_config.max_daily_loss_abs
+                    if limit and daily_loss > limit:
+                        allow_trading = False
+                        reason = "RISK_LIMIT"
+
+                policy_payload = {
+                    "allow_trading": allow_trading,
+                    "reason": reason,
+                    "timestamp": time.time()
+                }
+                self.zmq_policy_publisher.publish(policy_payload)
+                # -------------------------------------
+
                 if time.time() >= next_policy_publish_at:
                     self._publish_policy()
                     next_policy_publish_at = time.time() + self.policy_publish_interval_s
@@ -840,6 +884,8 @@ class SupervisorApp:
                 self.lockbot_policy_runner.stop()
             if hasattr(self, "heartbeat_subscriber"):
                 self.heartbeat_subscriber.close()
+            if hasattr(self, "zmq_policy_publisher"):
+                self.zmq_policy_publisher.close()
             self.process_manager.stop_all()
 
     def risk_status(self) -> None:
@@ -1955,6 +2001,26 @@ def build_app(
     regime_cfg = load_regime_config(control_policy_path)
     guard_cfg = load_guard_config(control_policy_path)
     directives_cfg = load_directives_config(control_policy_path)
+
+    # Load services config
+    services_path = project_root / "config" / "services.yaml"
+    expected_bot_id = "ai_scalper_bot"
+    telemetry_port = 5557
+    policy_port = 5558
+
+    if services_path.exists():
+         try:
+             import yaml
+             with open(services_path) as f:
+                 data = yaml.safe_load(f)
+                 bot_cfg = data.get("services", {}).get("bot", {})
+                 expected_bot_id = bot_cfg.get("id", expected_bot_id)
+                 zmq = bot_cfg.get("zmq", {})
+                 telemetry_port = int(zmq.get("telemetry_port", telemetry_port))
+                 policy_port = int(zmq.get("policy_port", policy_port))
+         except Exception:
+             pass
+
     return SupervisorApp(
         paths_config,
         supervisor_config,
@@ -1977,6 +2043,9 @@ def build_app(
         process_specs,
         project_root,
         logging.getLogger(__name__),
+        telemetry_port=telemetry_port,
+        policy_port=policy_port,
+        expected_bot_id=expected_bot_id,
     )
 
 

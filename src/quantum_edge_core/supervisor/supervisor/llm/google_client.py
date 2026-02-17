@@ -1,7 +1,9 @@
 """Google AI Client for concise risk assessment queries."""
 import logging
 import os
+import asyncio
 from typing import Dict, Any, Optional
+import google.generativeai as genai
 
 logger = logging.getLogger(__name__)
 
@@ -12,6 +14,31 @@ class GoogleClient:
     def __init__(self, api_key_env: str = "GOOGLE_API_KEY", logger: Optional[logging.Logger] = None):
         self.api_key_env = api_key_env
         self.logger = logger or logging.getLogger(__name__)
+        self.api_key = os.getenv(api_key_env)
+        if self.api_key:
+            genai.configure(api_key=self.api_key)
+        else:
+            self.logger.warning(f"Google API Key ({api_key_env}) not set.")
+
+    async def generate_content_async(self, prompt: str, model_name: str = "gemini-2.0-flash") -> Optional[str]:
+        """
+        Asynchronously generates content using Google AI.
+        Non-blocking wrapper around synchronous API.
+        """
+        if not self.api_key:
+            self.logger.error("API key not configured.")
+            return None
+
+        def _call():
+            try:
+                model = genai.GenerativeModel(model_name)
+                response = model.generate_content(prompt)
+                return response.text
+            except Exception as e:
+                self.logger.error(f"Google AI request failed: {e}")
+                return None
+
+        return await asyncio.to_thread(_call)
 
     def generate_risk_query(self, context: Dict[str, Any]) -> str:
         """
