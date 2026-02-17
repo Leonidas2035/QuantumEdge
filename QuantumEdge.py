@@ -107,8 +107,21 @@ class ProcessManager:
         # We use absolute paths to avoid sys.path issues.
         try:
             with open(log_path, "a") as log_file:
+                if name == 'supervisor':
+                    # Supervisor needs specific command and config
+                    cmd = [sys.executable, abs_script_path, "run-foreground", "--config", "config/config.yaml"]
+                elif name == 'hub':
+                    # Hub usually runs without args or has internal defaults
+                    cmd = [sys.executable, abs_script_path]
+                elif name == 'bot':
+                    # Bot usually needs config
+                    cmd = [sys.executable, abs_script_path, "--config", "config/config.yaml"]
+                else:
+                    # Fallback
+                    cmd = [sys.executable, abs_script_path]
+
                 proc = subprocess.Popen(
-                    [sys.executable, abs_script_path],
+                    cmd,
                     stdout=log_file,
                     stderr=log_file,
                     cwd=project_root,
