@@ -10,6 +10,7 @@ import time
 import signal
 from pathlib import Path
 
+
 class ProcessManager:
     def __init__(self, config_path, logging_config_path):
         self.config_path = Path(config_path)
@@ -27,18 +28,18 @@ class ProcessManager:
         if not path.exists():
             print(f"Error: Configuration file {path} not found.")
             sys.exit(1)
-        with open(path, 'r') as f:
+        with open(path, "r") as f:
             return yaml.safe_load(f)
 
     def _setup_logging(self, path):
         if path.exists():
-            with open(path, 'r') as f:
+            with open(path, "r") as f:
                 config = yaml.safe_load(f)
                 logging.config.dictConfig(config)
         else:
             logging.basicConfig(
                 level=logging.INFO,
-                format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+                format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
             )
 
     def _get_pid_path(self, name):
@@ -64,7 +65,9 @@ class ProcessManager:
             try:
                 pid = int(pid_path.read_text().strip())
                 if self._is_running(pid):
-                    self.logger.info(f"Service '{name}' is already running (PID: {pid})")
+                    self.logger.info(
+                        f"Service '{name}' is already running (PID: {pid})"
+                    )
                     return
             except ValueError:
                 pass
@@ -107,13 +110,37 @@ class ProcessManager:
         # We use absolute paths to avoid sys.path issues.
         try:
             with open(log_path, "a") as log_file:
+                if name == "supervisor":
+                    # Supervisor needs specific command and config
+                    cmd = [
+                        sys.executable,
+                        abs_script_path,
+                        "run-foreground",
+                        "--config",
+                        "config/config.yaml",
+                    ]
+                elif name == "hub":
+                    # Hub usually runs without args or has internal defaults
+                    cmd = [sys.executable, abs_script_path]
+                elif name == "bot":
+                    # Bot usually needs config
+                    cmd = [
+                        sys.executable,
+                        abs_script_path,
+                        "--config",
+                        "config/config.yaml",
+                    ]
+                else:
+                    # Fallback
+                    cmd = [sys.executable, abs_script_path]
+
                 proc = subprocess.Popen(
-                    [sys.executable, abs_script_path],
+                    cmd,
                     stdout=log_file,
                     stderr=log_file,
                     cwd=project_root,
                     env=env,
-                    start_new_session=True
+                    start_new_session=True,
                 )
                 pid_path.write_text(str(proc.pid))
                 self.logger.info(f"Service '{name}' started with PID: {proc.pid}")
@@ -163,7 +190,7 @@ class ProcessManager:
         services = {
             "supervisor": self.config.get("supervisor_path"),
             "hub": self.config.get("hub_path"),
-            "bot": self.config.get("bot_path")
+            "bot": self.config.get("bot_path"),
         }
         for name, script_path in services.items():
             if not script_path:
@@ -196,22 +223,19 @@ class ProcessManager:
         self.stop_service("hub")
         self.stop_service("supervisor")
 
+
 def main():
     parser = argparse.ArgumentParser(description="QuantumEdge Orchestrator")
     parser.add_argument(
         "command",
         choices=["start", "stop", "status", "restart"],
-        help="Action to perform"
+        help="Action to perform",
     )
     parser.add_argument(
-        "--config",
-        default="config/system_config.yaml",
-        help="Path to system config"
+        "--config", default="config/system_config.yaml", help="Path to system config"
     )
     parser.add_argument(
-        "--logging",
-        default="config/logging.yaml",
-        help="Path to logging config"
+        "--logging", default="config/logging.yaml", help="Path to logging config"
     )
 
     args = parser.parse_args()
@@ -229,7 +253,9 @@ def main():
         time.sleep(2)
         pm.start_all()
 
+
 if __name__ == "__main__":
     import contextlib
+
     with contextlib.suppress(KeyboardInterrupt):
         main()

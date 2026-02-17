@@ -10,8 +10,8 @@ defaults:
 
 processes:
   hub:
-    enabled: true
-    cwd: "../market_data"
+    enabled: false
+    cwd: "market_data"
     cmd: ["python", "-m", "market_data.hub"]
     env:
       HUB_LOG_LEVEL: "INFO"
@@ -21,8 +21,8 @@ processes:
       timeout_s: 2
     ports: [8700, 5555]
   bot_qe_1:
-    enabled: true
-    cwd: ".."
+    enabled: false
+    cwd: "../.."
     cmd: ["python", "QuantumEdge.py", "run", "--profile", "qe1"]
     env:
       QE_MODE: "scalp"

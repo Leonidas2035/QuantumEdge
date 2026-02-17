@@ -1,10 +1,18 @@
-"""Hard Risk Engine: Pure logic for critical risk limits."""
+"""Hard Risk Engine: Stateful implementation for supervisor."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional, Dict
+from typing import Optional, Dict, Any, Union
+from datetime import date
+import logging
+
+# Circular import prevention if needed, but RiskStateSnapshot is in supervisor.state
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from supervisor.state import RiskStateSnapshot
 
 
 class RiskAction(str, Enum):
@@ -37,73 +45,146 @@ class OrderRequest:
 
 
 @dataclass
-class RiskLimits:
-    max_daily_loss: Optional[float] = None
-    max_drawdown: Optional[float] = None
-    max_exposure: Optional[float] = None
-
-
-@dataclass
 class RiskDecision:
-    action: RiskAction
+    allowed: bool
+    code: str
     reason: str
+    action: RiskAction
 
 
 class HardRiskEngine:
-    """
-    Pure logic risk engine.
-    Design Principle: O(1) execution, no I/O, no side effects.
-    """
+    def __init__(
+        self, risk_config, risk_state, logger, event_logger, trust_policy: bool
+    ):
+        self.config = risk_config
+        self.state = risk_state
+        self.logger = logger
+        self.event_logger = event_logger
+        self.trust_policy = trust_policy
 
-    @staticmethod
-    def check(state: Dict[str, float], limits: RiskLimits) -> RiskDecision:
-        """
-        Evaluates risk based on current state and limits.
-        
-        state expected keys:
-          - equity_start: float
-          - equity_current: float
-          - max_equity_intraday: float
-          - current_exposure: float
-        """
-        
-        equity_start = state.get("equity_start")
-        equity_current = state.get("equity_current")
-        max_equity = state.get("max_equity_intraday")
-        current_exposure = state.get("current_exposure", 0.0)
+    def update_from_heartbeat(self, payload: Any):
+        """Update internal state from heartbeat payload."""
+        if not payload:
+            return
 
-        # Safety checks for missing data
-        if equity_start is None or equity_current is None:
-            # If we don't know our equity, we probably shouldn't kill just yet, 
-            # OR we should decide what the safe default is. 
-            # Assuming "ALLOW" until data arrives, or "REDUCE_ONLY" if paranoic.
-            # For this implementation, we allow if data is missing, assuming initialization phase.
-            return RiskDecision(RiskAction.ALLOW, "Initializing data")
+        equity = None
+        realized_pnl = None
 
-        # 1. Check Max Daily Loss
-        if limits.max_daily_loss is not None:
-            daily_loss = equity_start - equity_current
-            if daily_loss > limits.max_daily_loss:
-                return RiskDecision(
-                    RiskAction.KILL_BOT,
-                    f"Max Daily Loss exceeded: {daily_loss:.2f} > {limits.max_daily_loss:.2f}"
+        if hasattr(payload, "equity"):
+            equity = payload.equity
+        elif isinstance(payload, dict):
+            equity = payload.get("equity")
+
+        if hasattr(payload, "realized_pnl_today"):
+            realized_pnl = payload.realized_pnl_today
+        elif isinstance(payload, dict):
+            realized_pnl = payload.get("realized_pnl_today")
+
+        if equity is not None:
+            self.state.equity_now = float(equity)
+            if self.state.equity_start is None:
+                self.state.equity_start = self.state.equity_now
+
+            if (
+                self.state.max_equity_intraday is None
+                or self.state.equity_now > self.state.max_equity_intraday
+            ):
+                self.state.max_equity_intraday = self.state.equity_now
+
+            if (
+                self.state.min_equity_intraday is None
+                or self.state.equity_now < self.state.min_equity_intraday
+            ):
+                self.state.min_equity_intraday = self.state.equity_now
+
+        if realized_pnl is not None:
+            self.state.realized_pnl_today = float(realized_pnl)
+
+        self.check_limits()
+
+    def check_limits(self):
+        """Check limits and halt if necessary."""
+        if self.state.halted:
+            return
+
+        if self.state.equity_start and self.state.equity_now is not None:
+            # Daily Loss
+            daily_loss = self.state.equity_start - self.state.equity_now
+            if (
+                hasattr(self.config, "max_daily_loss_abs")
+                and self.config.max_daily_loss_abs is not None
+                and daily_loss > self.config.max_daily_loss_abs
+            ):
+                self.halt(
+                    f"Max Daily Loss Abs exceeded: {daily_loss} > {self.config.max_daily_loss_abs}"
                 )
+                return
 
-        # 2. Check Max Drawdown
-        if limits.max_drawdown is not None and max_equity is not None:
-            drawdown = max_equity - equity_current
-            if drawdown > limits.max_drawdown:
-                return RiskDecision(
-                    RiskAction.KILL_BOT,
-                    f"Max Drawdown exceeded: {drawdown:.2f} > {limits.max_drawdown:.2f}"
+            if (
+                hasattr(self.config, "max_daily_loss_pct")
+                and self.config.max_daily_loss_pct is not None
+                and self.state.equity_start > 0
+            ):
+                loss_pct = daily_loss / self.state.equity_start
+                if loss_pct > self.config.max_daily_loss_pct:
+                    self.halt(
+                        f"Max Daily Loss Pct exceeded: {loss_pct:.2%} > {self.config.max_daily_loss_pct:.2%}"
+                    )
+                    return
+
+        if self.state.max_equity_intraday and self.state.equity_now is not None:
+            # Drawdown
+            drawdown = self.state.max_equity_intraday - self.state.equity_now
+            if (
+                hasattr(self.config, "max_drawdown_abs")
+                and self.config.max_drawdown_abs is not None
+                and drawdown > self.config.max_drawdown_abs
+            ):
+                self.halt(
+                    f"Max Drawdown Abs exceeded: {drawdown} > {self.config.max_drawdown_abs}"
                 )
+                return
 
-        # 3. Check Exposure
-        if limits.max_exposure is not None:
-            if current_exposure > limits.max_exposure:
-                return RiskDecision(
-                    RiskAction.REDUCE_ONLY,
-                    f"Max Exposure exceeded: {current_exposure:.2f} > {limits.max_exposure:.2f}"
-                )
+            if (
+                hasattr(self.config, "max_drawdown_pct")
+                and self.config.max_drawdown_pct is not None
+                and self.state.max_equity_intraday > 0
+            ):
+                dd_pct = drawdown / self.state.max_equity_intraday
+                if dd_pct > self.config.max_drawdown_pct:
+                    self.halt(
+                        f"Max Drawdown Pct exceeded: {dd_pct:.2%} > {self.config.max_drawdown_pct:.2%}"
+                    )
+                    return
 
-        return RiskDecision(RiskAction.ALLOW, "OK")
+    def halt(self, reason: str):
+        self.state.halted = True
+        self.state.halt_reason = reason
+        if self.logger:
+            self.logger.critical(f"RISK ENGINE HALT: {reason}")
+
+    def evaluate_order(self, order: OrderRequest) -> RiskDecision:
+        if self.state.halted:
+            return RiskDecision(
+                False,
+                "HALTED",
+                f"System Halted: {self.state.halt_reason}",
+                RiskAction.KILL_BOT,
+            )
+
+        # Simple check for now
+        return RiskDecision(True, "ALLOWED", "OK", RiskAction.ALLOW)
+
+    def persist(self, state_dir):
+        from supervisor.state import save_risk_state
+
+        save_risk_state(state_dir, self.state)
+
+    def get_state(self):
+        return self.state
+
+    def apply_llm_advice(self, advice):
+        if hasattr(advice, "risk_multiplier"):
+            self.state.llm_risk_multiplier = advice.risk_multiplier
+        if hasattr(advice, "action"):
+            self.state.llm_last_action = str(advice.action)
