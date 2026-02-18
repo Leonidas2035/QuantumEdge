@@ -4,11 +4,11 @@ import asyncio
 
 import pandas as pd
 
-from bot.engine.decision_engine import DecisionEngine
-from bot.engine.decision_types import DecisionAction
-from bot.ml.ensemble import EnsembleSignalModel
-from bot.ml.signal_model.model import SignalOutput
-from bot.ml.signal_model.online_features import OnlineFeatureBuilder
+from quantum_edge_core.strategies.scalper_v1.bot.engine.decision_engine import DecisionEngine
+from quantum_edge_core.strategies.scalper_v1.bot.engine.decision_types import DecisionAction
+from quantum_edge_core.strategies.scalper_v1.bot.ml.ensemble import EnsembleSignalModel
+from quantum_edge_core.strategies.scalper_v1.bot.ml.signal_model.model import SignalOutput
+from quantum_edge_core.strategies.scalper_v1.bot.ml.signal_model.online_features import OnlineFeatureBuilder
 from bot.trading.paper_trader import PaperTrader
 
 DEFAULT_TICKS = Path("data") / "ticks" / "BTCUSDT_synthetic.csv"

@@ -7,8 +7,8 @@ from typing import Any, Dict, Optional
 
 import msgspec
 
-from market_data.lockbot.schema import LockbotMarketEvent
-from market_data.models.events import Priority
+from quantum_edge_core.market_data.lockbot.schema import LockbotMarketEvent
+from quantum_edge_core.market_data.models.events import Priority
 from supervisor.contracts.lockbot_control_v1 import build_command, validate_command
 from supervisor.lockbot.policy_runner import LockbotPolicyRunner
 
