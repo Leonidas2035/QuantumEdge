@@ -266,9 +266,7 @@ class SupervisorApp:
             if hasattr(cfg, "model") and "gpt" in cfg.model.lower():
                 cfg.model = "gemini-2.0-flash"
 
-        self.llm_client = GoogleClient(
-            logger=self.logger
-        )
+        self.llm_client = GoogleClient(logger=self.logger)
         self.llm_supervisor = LlmSupervisor(
             llm_config,
             risk_config,
@@ -492,7 +490,8 @@ class SupervisorApp:
                 )
         except Exception as exc:  # pylint: disable=broad-except
             self.logger.warning(
-                "TSDB backend init failed; continuing in Memory-Only mode without TSDB: %s", exc
+                "TSDB backend init failed; continuing in Memory-Only mode without TSDB: %s",
+                exc,
             )
             store = None
         if store is None:
