@@ -3,7 +3,7 @@
 import logging
 import os
 import asyncio
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List, Mapping
 import google.generativeai as genai
 
 logger = logging.getLogger(__name__)
@@ -48,6 +48,35 @@ class GoogleClient:
                 return None
 
         return await asyncio.to_thread(_call)
+
+    def complete(
+        self,
+        model: str,
+        messages: List[Mapping[str, str]],
+        temperature: float,
+        timeout_seconds: float,
+    ) -> str:
+        """Synchronous wrapper for Google AI (ChatCompletionsClient compatible)."""
+        if not self.api_key:
+            raise RuntimeError(f"Google API Key ({self.api_key_env}) not configured.")
+
+        # Convert chat messages to a single prompt string
+        prompt_parts = []
+        for msg in messages:
+            role = msg.get("role", "user").upper()
+            content = msg.get("content", "")
+            prompt_parts.append(f"{role}: {content}")
+
+        full_prompt = "\n".join(prompt_parts)
+
+        try:
+            gen_model = genai.GenerativeModel(model)
+            config = genai.types.GenerationConfig(temperature=temperature)
+            response = gen_model.generate_content(full_prompt, generation_config=config)
+            return response.text if response and response.text else ""
+        except Exception as exc:
+            self.logger.error(f"Google AI request failed: {exc}")
+            raise RuntimeError(f"Google AI request failed: {exc}") from exc
 
     def generate_risk_query(self, context: Dict[str, Any]) -> str:
         """
