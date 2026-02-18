@@ -8,18 +8,35 @@ class Config:
         # --- BINANCE CREDENTIALS ---
         self.binance_api_key = os.getenv("BINANCE_API_KEY", "")
         self.binance_secret = os.getenv("BINANCE_API_SECRET", "")
-        self.use_testnet = os.getenv("BINANCE_TESTNET", "1") in {"1", "true", "True"}
+
+        # Default to True, but will be checked against YAML and Env
+        self.use_testnet = True
 
         # --- SYSTEM PORTS ---
         self.market_data_port = int(os.getenv("MARKET_DATA_ZMQ_PORT", "5555"))
 
-        # Load from Env or Services YAML
-        self.service_id = os.getenv("QE_BOT_ID", "ai_scalper_bot")
-        self.telemetry_port = int(os.getenv("QE_BOT_TELEMETRY_PORT", "5557"))
-        self.policy_port = int(os.getenv("QE_BOT_POLICY_PORT", "5558"))
+        # Initialize defaults
+        self.service_id = "ai_scalper_bot"
+        self.telemetry_port = 5557
+        self.policy_port = 5558
 
-        if "QE_BOT_ID" not in os.environ:
-            self._load_from_services_yaml()
+        # Always try to load from services.yaml to get testnet setting and defaults
+        self._load_from_services_yaml()
+
+        # Override with Environment Variables (Precedence: Env > YAML)
+        if "QE_BOT_ID" in os.environ:
+            self.service_id = os.environ["QE_BOT_ID"]
+
+        if "QE_BOT_TELEMETRY_PORT" in os.environ:
+            self.telemetry_port = int(os.environ["QE_BOT_TELEMETRY_PORT"])
+
+        if "QE_BOT_POLICY_PORT" in os.environ:
+            self.policy_port = int(os.environ["QE_BOT_POLICY_PORT"])
+
+        # Specific Logic for Testnet: Env Var > YAML > Default
+        env_testnet = os.getenv("BINANCE_TESTNET")
+        if env_testnet is not None:
+            self.use_testnet = env_testnet.lower() in {"1", "true", "yes", "on"}
 
         self.supervisor_port = self.telemetry_port  # Legacy support
 
@@ -48,6 +65,11 @@ class Config:
                     data = yaml.safe_load(f)
                     bot_cfg = data.get("services", {}).get("bot", {})
                     self.service_id = bot_cfg.get("id", self.service_id)
+
+                    # Load testnet setting if present
+                    if "testnet" in bot_cfg:
+                        self.use_testnet = bot_cfg["testnet"]
+
                     zmq = bot_cfg.get("zmq", {})
                     self.telemetry_port = int(
                         zmq.get("telemetry_port", self.telemetry_port)

@@ -4,6 +4,8 @@ Assembles Data, Logic, and Execution layers into an AsyncIO High-Frequency Loop.
 Target Exchange: BingX (Integration Phase)
 """
 
+print("DEBUG: STARTING RUN_BOT.PY")
+
 import asyncio
 import logging
 import time
