@@ -73,6 +73,7 @@ from supervisor.audit_report import (
 )
 from supervisor.llm_supervisor import LlmSupervisor
 from supervisor.llm.chat_client import ChatCompletionsClient
+from supervisor.llm.google_client import GoogleClient
 from supervisor.llm.trend_evaluator import TrendEvaluator
 from supervisor.llm.market_risk_monitor import MarketRiskMonitor
 from supervisor.llm.trading_behavior_analyzer import TradingBehaviorAnalyzer
@@ -259,8 +260,14 @@ class SupervisorApp:
             processes=process_specs,
             run_id=self.run_id,
         )
-        self.llm_client = ChatCompletionsClient(
-            llm_config.api_url, llm_config.api_key_env, self.logger
+
+        # Enforce Google Gemini as default if legacy GPT models are configured
+        for cfg in [llm_config, trend_config, market_risk_config, behavior_config]:
+            if hasattr(cfg, "model") and "gpt" in cfg.model.lower():
+                cfg.model = "gemini-2.0-flash"
+
+        self.llm_client = GoogleClient(
+            logger=self.logger
         )
         self.llm_supervisor = LlmSupervisor(
             llm_config,
@@ -442,6 +449,8 @@ class SupervisorApp:
                     self.lockbot_policy_cfg, self.lockbot_client, self.logger
                 )
 
+        self.expected_id = expected_bot_id
+
         # Initialize ZMQ Heartbeat Subscriber
         self.heartbeat_subscriber = ZmqHeartbeatSubscriber(
             endpoint=f"tcp://127.0.0.1:{self.telemetry_port}",
@@ -483,7 +492,7 @@ class SupervisorApp:
                 )
         except Exception as exc:  # pylint: disable=broad-except
             self.logger.warning(
-                "TSDB backend init failed; continuing without TSDB: %s", exc
+                "TSDB backend init failed; continuing in Memory-Only mode without TSDB: %s", exc
             )
             store = None
         if store is None:
