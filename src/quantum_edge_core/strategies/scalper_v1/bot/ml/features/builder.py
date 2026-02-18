@@ -9,7 +9,11 @@ from typing import Dict, List, Optional
 import numpy as np
 import pandas as pd
 
-from bot.ml.feature_schema import FEATURE_NAMES, MICROSTRUCTURE_FEATURES, REGIME_ENUM
+from quantum_edge_core.strategies.scalper_v1.bot.ml.feature_schema import (
+    FEATURE_NAMES,
+    MICROSTRUCTURE_FEATURES,
+    REGIME_ENUM,
+)
 
 FEATURE_SCHEMA_VERSION = "v2"
 
@@ -64,7 +68,7 @@ def build_feature_frame(
     df["ts"] = pd.to_datetime(df["timestamp"], unit="ms")
     df = df.set_index("ts")
 
-    bars = df.resample("1S").agg(
+    bars = df.resample("1s").agg(
         price=("price", "last"),
         qty=("qty", "sum"),
         side_sign=("side_sign", "sum"),
