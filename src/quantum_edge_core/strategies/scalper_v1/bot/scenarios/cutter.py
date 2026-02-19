@@ -7,7 +7,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional, Tuple
 
-from bot.ml.features import builder as feature_builder
+from quantum_edge_core.strategies.scalper_v1.bot.ml.features import (
+    builder as feature_builder,
+)
 
 from .features_proxy import compute_metrics
 from .io import Tick

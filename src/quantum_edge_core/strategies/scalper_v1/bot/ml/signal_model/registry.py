@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from bot.ml.features.builder import schema_hash
+from quantum_edge_core.strategies.scalper_v1.bot.ml.features.builder import schema_hash
 
 
 def feature_schema_hash() -> str:

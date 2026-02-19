@@ -8,11 +8,17 @@ import time
 
 import yaml
 
-from bot.core.config_loader import config
-from bot.engine.decision_engine import Decision
-from bot.exchanges.bingx_swap import BingXClient, BingXSwapExchange, OrderRequest
-from bot.exchanges.bingx_swap.client import BingXAPIError
-from bot.exchanges.bingx_swap.mapper import (
+from quantum_edge_core.strategies.scalper_v1.bot.core.config_loader import config
+from quantum_edge_core.strategies.scalper_v1.bot.engine.decision_engine import Decision
+from quantum_edge_core.strategies.scalper_v1.bot.exchanges.bingx_swap import (
+    BingXClient,
+    BingXSwapExchange,
+    OrderRequest,
+)
+from quantum_edge_core.strategies.scalper_v1.bot.exchanges.bingx_swap.client import (
+    BingXAPIError,
+)
+from quantum_edge_core.strategies.scalper_v1.bot.exchanges.bingx_swap.mapper import (
     normalize_symbol,
     round_price_to_tick,
     round_qty_to_step,

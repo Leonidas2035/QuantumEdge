@@ -12,11 +12,13 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Optional, Tuple
 
-from bot.ml.features.builder import (
+from quantum_edge_core.strategies.scalper_v1.bot.ml.features.builder import (
     feature_names as _feature_names,
     schema_version as _schema_version,
 )
-from bot.ml.signal_model.model import SignalModel
+from quantum_edge_core.strategies.scalper_v1.bot.ml.signal_model.model import (
+    SignalModel,
+)
 
 MANIFEST_VERSION = "model.v1"
 _LOG = logging.getLogger("runtime_models")

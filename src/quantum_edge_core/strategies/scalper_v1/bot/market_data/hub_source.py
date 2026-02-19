@@ -11,7 +11,7 @@ import msgspec
 import zmq
 import zmq.asyncio
 
-from bot.core.config_loader import config
+from quantum_edge_core.strategies.scalper_v1.bot.core.config_loader import config
 from market_data.models import (
     Bar1sEvent,
     L1Event,

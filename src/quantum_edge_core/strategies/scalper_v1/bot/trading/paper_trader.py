@@ -4,7 +4,7 @@ import time
 from dataclasses import dataclass
 from typing import List, Optional
 
-from bot.engine.decision_engine import Decision
+from quantum_edge_core.strategies.scalper_v1.bot.engine.decision_engine import Decision
 
 
 @dataclass

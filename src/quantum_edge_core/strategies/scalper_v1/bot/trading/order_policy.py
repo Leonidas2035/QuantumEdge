@@ -23,7 +23,9 @@ from quantumedge.execution.types import (
     SmartMakerConfig,
 )
 
-from bot.trading.smart_executor_adapter import TraderExecutionAdapter
+from quantum_edge_core.strategies.scalper_v1.bot.trading.smart_executor_adapter import (
+    TraderExecutionAdapter,
+)
 
 
 class OrderPolicy:

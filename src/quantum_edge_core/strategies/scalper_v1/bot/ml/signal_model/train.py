@@ -18,7 +18,11 @@ import numpy as np
 import pandas as pd
 import xgboost as xgb
 
-from bot.ml.features.builder import feature_names, schema_hash, schema_version
+from quantum_edge_core.strategies.scalper_v1.bot.ml.features.builder import (
+    feature_names,
+    schema_hash,
+    schema_version,
+)
 
 
 @dataclass

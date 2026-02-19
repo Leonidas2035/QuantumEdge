@@ -4,8 +4,11 @@ from typing import Dict, List, Optional, Tuple
 
 import numpy as np
 
-from bot.core.config_loader import config
-from bot.ml.signal_model.model import SignalModel, SignalOutput
+from quantum_edge_core.strategies.scalper_v1.bot.core.config_loader import config
+from quantum_edge_core.strategies.scalper_v1.bot.ml.signal_model.model import (
+    SignalModel,
+    SignalOutput,
+)
 
 
 @dataclass

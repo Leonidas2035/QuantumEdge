@@ -1,7 +1,11 @@
 from typing import Tuple, Optional
 
-from bot.exchanges.bingx_swap.client import BingXClient
-from bot.exchanges.bingx_swap.mapper import to_bingx_symbol
+from quantum_edge_core.strategies.scalper_v1.bot.exchanges.bingx_swap.client import (
+    BingXClient,
+)
+from quantum_edge_core.strategies.scalper_v1.bot.exchanges.bingx_swap.mapper import (
+    to_bingx_symbol,
+)
 
 
 class BingXMarketData:

@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
-from bot.ml.features.builder import feature_names, schema_hash, schema_version
+from quantum_edge_core.strategies.scalper_v1.bot.ml.features.builder import (
+    feature_names,
+    schema_hash,
+    schema_version,
+)
 
 
 def main() -> int:

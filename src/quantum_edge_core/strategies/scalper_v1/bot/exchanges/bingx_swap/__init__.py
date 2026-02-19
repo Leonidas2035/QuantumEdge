@@ -1,11 +1,21 @@
-from bot.exchanges.bingx_swap.client import BingXClient, BingXAPIError
-from bot.exchanges.bingx_swap.execution import (
+from quantum_edge_core.strategies.scalper_v1.bot.exchanges.bingx_swap.client import (
+    BingXClient,
+    BingXAPIError,
+)
+from quantum_edge_core.strategies.scalper_v1.bot.exchanges.bingx_swap.execution import (
     BingXExecution,
     ExchangeInfoCache,
     SymbolFilters,
 )
-from bot.exchanges.bingx_swap.marketdata import BingXMarketData
-from bot.exchanges.bingx_swap.models import OrderRequest, OrderResult, Position, Balance
+from quantum_edge_core.strategies.scalper_v1.bot.exchanges.bingx_swap.marketdata import (
+    BingXMarketData,
+)
+from quantum_edge_core.strategies.scalper_v1.bot.exchanges.bingx_swap.models import (
+    OrderRequest,
+    OrderResult,
+    Position,
+    Balance,
+)
 
 
 class BingXSwapExchange:

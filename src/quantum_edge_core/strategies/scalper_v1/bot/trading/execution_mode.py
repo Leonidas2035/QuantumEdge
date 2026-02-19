@@ -10,10 +10,12 @@ import logging
 from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
-from bot.engine.decision_types import DecisionAction
-from bot.risk.scalp_guards import ScalpGuard
-from bot.trading.order_policy import OrderPolicy
-from bot.core.config_loader import config
+from quantum_edge_core.strategies.scalper_v1.bot.engine.decision_types import (
+    DecisionAction,
+)
+from quantum_edge_core.strategies.scalper_v1.bot.risk.scalp_guards import ScalpGuard
+from quantum_edge_core.strategies.scalper_v1.bot.trading.order_policy import OrderPolicy
+from quantum_edge_core.strategies.scalper_v1.bot.core.config_loader import config
 
 
 @dataclass

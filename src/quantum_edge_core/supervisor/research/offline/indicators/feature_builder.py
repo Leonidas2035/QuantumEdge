@@ -3,9 +3,9 @@ import numpy as np
 import pandas as pd
 from pathlib import Path
 
-from bot.indicators.ohlcv_indicators import ema, rsi, atr, vwap
-from bot.indicators.orderflow import calc_delta, orderbook_imbalance
-from bot.indicators.volatility import realized_volatility, std_vol
+from quantum_edge_core.strategies.scalper_v1.bot.indicators.ohlcv_indicators import ema, rsi, atr, vwap
+from quantum_edge_core.strategies.scalper_v1.bot.indicators.orderflow import calc_delta, orderbook_imbalance
+from quantum_edge_core.strategies.scalper_v1.bot.indicators.volatility import realized_volatility, std_vol
 
 
 class FeatureBuilder:

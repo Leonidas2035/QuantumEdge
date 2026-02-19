@@ -3,8 +3,10 @@ import time
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
-from bot.exchanges.bingx_swap.client import BingXClient
-from bot.exchanges.bingx_swap.mapper import (
+from quantum_edge_core.strategies.scalper_v1.bot.exchanges.bingx_swap.client import (
+    BingXClient,
+)
+from quantum_edge_core.strategies.scalper_v1.bot.exchanges.bingx_swap.mapper import (
     from_bingx_symbol,
     map_position_side,
     map_side,
@@ -12,7 +14,12 @@ from bot.exchanges.bingx_swap.mapper import (
     round_qty_to_step,
     to_bingx_symbol,
 )
-from bot.exchanges.bingx_swap.models import OrderRequest, OrderResult, Position, Balance
+from quantum_edge_core.strategies.scalper_v1.bot.exchanges.bingx_swap.models import (
+    OrderRequest,
+    OrderResult,
+    Position,
+    Balance,
+)
 
 
 @dataclass

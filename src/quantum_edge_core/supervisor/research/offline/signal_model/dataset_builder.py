@@ -4,8 +4,8 @@ from typing import List, Tuple, Optional
 
 import pandas as pd
 
-from bot.ml.feature_schema import FEATURE_NAMES
-from bot.ml.features.builder import build_feature_frame, schema_version
+from quantum_edge_core.strategies.scalper_v1.bot.ml.feature_schema import FEATURE_NAMES
+from quantum_edge_core.strategies.scalper_v1.bot.ml.features.builder import build_feature_frame, schema_version
 
 
 class DatasetBuilder:

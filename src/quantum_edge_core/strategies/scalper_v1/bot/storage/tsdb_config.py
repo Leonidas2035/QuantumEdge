@@ -6,7 +6,7 @@ from typing import Any, Dict
 
 import yaml
 
-from bot.core.config_loader import config
+from quantum_edge_core.strategies.scalper_v1.bot.core.config_loader import config
 
 
 @dataclass

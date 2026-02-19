@@ -11,8 +11,11 @@ from typing import Dict, List, Optional
 import pandas as pd
 import xgboost as xgb
 
-from bot.ml.eval.metrics import compute_metrics
-from bot.ml.features.builder import feature_names, schema_hash
+from quantum_edge_core.strategies.scalper_v1.bot.ml.eval.metrics import compute_metrics
+from quantum_edge_core.strategies.scalper_v1.bot.ml.features.builder import (
+    feature_names,
+    schema_hash,
+)
 
 
 def _load_dataset(path: Path) -> pd.DataFrame:

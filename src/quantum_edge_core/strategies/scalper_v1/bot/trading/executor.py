@@ -10,8 +10,8 @@ from binance import AsyncClient
 from binance.base_client import BaseClient
 from binance.exceptions import BinanceAPIException, BinanceRequestException
 
-from bot.core.config_loader import config
-from bot.engine.decision_engine import Decision
+from quantum_edge_core.strategies.scalper_v1.bot.core.config_loader import config
+from quantum_edge_core.strategies.scalper_v1.bot.engine.decision_engine import Decision
 
 
 @dataclass

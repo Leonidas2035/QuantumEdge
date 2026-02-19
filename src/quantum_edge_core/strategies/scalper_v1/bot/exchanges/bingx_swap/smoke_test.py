@@ -3,8 +3,12 @@ import os
 import sys
 import time
 
-from bot.exchanges.bingx_swap import BingXClient, BingXSwapExchange, OrderRequest
-from bot.exchanges.bingx_swap.mapper import (
+from quantum_edge_core.strategies.scalper_v1.bot.exchanges.bingx_swap import (
+    BingXClient,
+    BingXSwapExchange,
+    OrderRequest,
+)
+from quantum_edge_core.strategies.scalper_v1.bot.exchanges.bingx_swap.mapper import (
     normalize_symbol,
     round_price_to_tick,
     round_qty_to_step,

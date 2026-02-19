@@ -1,5 +1,5 @@
 from .dataset import SignalDataset
-from bot.ml.signal_model.model import SignalModel
+from quantum_edge_core.strategies.scalper_v1.bot.ml.signal_model.model import SignalModel
 
 # adjust path if needed
 ds = SignalDataset(data_path="../../data")

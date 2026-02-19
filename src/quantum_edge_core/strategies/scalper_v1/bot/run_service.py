@@ -10,9 +10,14 @@ import signal
 from pathlib import Path
 from typing import Optional
 
-from bot.core.config_loader import Config, config as global_config
-from bot.core.logging_setup import setup_logging
-from bot.ops.status_writer import BotStatusWriter
+from quantum_edge_core.strategies.scalper_v1.bot.core.config_loader import (
+    Config,
+    config as global_config,
+)
+from quantum_edge_core.strategies.scalper_v1.bot.core.logging_setup import setup_logging
+from quantum_edge_core.strategies.scalper_v1.bot.ops.status_writer import (
+    BotStatusWriter,
+)
 from bot import run_bot as bot_main
 
 

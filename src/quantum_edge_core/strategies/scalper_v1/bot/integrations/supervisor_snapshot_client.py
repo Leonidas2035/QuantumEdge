@@ -10,7 +10,9 @@ from datetime import datetime
 from typing import Any, Optional
 from urllib import error, request
 
-from bot.core.config_loader import SupervisorSnapshotsSettings
+from quantum_edge_core.strategies.scalper_v1.bot.core.config_loader import (
+    SupervisorSnapshotsSettings,
+)
 
 
 @dataclass

@@ -6,7 +6,7 @@ from dataclasses import dataclass
 
 import yaml
 
-from bot.core.secret_store import (
+from quantum_edge_core.strategies.scalper_v1.bot.core.secret_store import (
     SecretsFileNotFound,
     SecretsIntegrityError,
     SecretsNotAvailableError,
