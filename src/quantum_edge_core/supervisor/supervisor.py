@@ -47,10 +47,16 @@ from quantum_edge_core.supervisor.supervisor.config import (
     TsdbRetentionConfig,
     AutopilotConfig,
 )
-from quantum_edge_core.supervisor.supervisor.heartbeat import HeartbeatServer, HeartbeatPayload
+from quantum_edge_core.supervisor.supervisor.heartbeat import (
+    HeartbeatServer,
+    HeartbeatPayload,
+)
 from quantum_edge_core.supervisor.supervisor.logging_setup import setup_logging
 from quantum_edge_core.supervisor.supervisor.config_loader import load_processes_spec
-from quantum_edge_core.supervisor.supervisor.process_manager import ProcessManager, ProcessInfo
+from quantum_edge_core.supervisor.supervisor.process_manager import (
+    ProcessManager,
+    ProcessInfo,
+)
 from quantum_edge_core.supervisor.supervisor.risk_engine import (
     HardRiskEngine,
     RiskDecision,
@@ -72,25 +78,45 @@ from quantum_edge_core.supervisor.supervisor.audit_report import (
     render_markdown_report,
 )
 from quantum_edge_core.supervisor.supervisor.llm_supervisor import LlmSupervisor
-from quantum_edge_core.supervisor.supervisor.llm.chat_client import ChatCompletionsClient
+from quantum_edge_core.supervisor.supervisor.llm.chat_client import (
+    ChatCompletionsClient,
+)
 from quantum_edge_core.supervisor.supervisor.llm.google_client import GoogleClient
 from quantum_edge_core.supervisor.supervisor.llm.trend_evaluator import TrendEvaluator
-from quantum_edge_core.supervisor.supervisor.llm.market_risk_monitor import MarketRiskMonitor
-from quantum_edge_core.supervisor.supervisor.llm.trading_behavior_analyzer import TradingBehaviorAnalyzer
-from quantum_edge_core.supervisor.supervisor.meta_supervisor import MetaSupervisorRunner, MetaSupervisorContext
-from quantum_edge_core.supervisor.supervisor.api_server import ApiServer, ApiServerConfig
+from quantum_edge_core.supervisor.supervisor.llm.market_risk_monitor import (
+    MarketRiskMonitor,
+)
+from quantum_edge_core.supervisor.supervisor.llm.trading_behavior_analyzer import (
+    TradingBehaviorAnalyzer,
+)
+from quantum_edge_core.supervisor.supervisor.meta_supervisor import (
+    MetaSupervisorRunner,
+    MetaSupervisorContext,
+)
+from quantum_edge_core.supervisor.supervisor.api_server import (
+    ApiServer,
+    ApiServerConfig,
+)
 from quantum_edge_core.supervisor.supervisor.snapshot_models import SnapshotReport
-from quantum_edge_core.supervisor.supervisor.tasks.snapshot_scheduler import SnapshotScheduler
+from quantum_edge_core.supervisor.supervisor.tasks.snapshot_scheduler import (
+    SnapshotScheduler,
+)
 from quantum_edge_core.supervisor.supervisor.dashboard.service import DashboardService
-from quantum_edge_core.supervisor.supervisor.dashboard.audit_log import DashboardAuditLogger
-from quantum_edge_core.supervisor.supervisor.dashboard.state_store import DashboardStateStore
+from quantum_edge_core.supervisor.supervisor.dashboard.audit_log import (
+    DashboardAuditLogger,
+)
+from quantum_edge_core.supervisor.supervisor.dashboard.state_store import (
+    DashboardStateStore,
+)
 from quantum_edge_core.supervisor.supervisor.tsdb import (
     NoopTimeseriesStore,
     ClickHouseTimeseriesStore,
     QuestDbTimeseriesStore,
     TsdbWriter,
 )
-from quantum_edge_core.supervisor.supervisor.tsdb.maintenance import apply_retention_and_rollups
+from quantum_edge_core.supervisor.supervisor.tsdb.maintenance import (
+    apply_retention_and_rollups,
+)
 from quantum_edge_core.supervisor.supervisor.tsdb.query import (
     build_timeseries_query,
     derive_questdb_query_url,
@@ -98,12 +124,25 @@ from quantum_edge_core.supervisor.supervisor.tsdb.query import (
     sanitize_symbol,
 )
 from quantum_edge_core.supervisor.supervisor.ingest.pipeline import IngestPipeline
-from quantum_edge_core.supervisor.supervisor.ingest.parsers import parse_metrics_file, parse_event_line
-from quantum_edge_core.supervisor.policy.policy_contract import policy_fingerprint, POLICY_VERSION
+from quantum_edge_core.supervisor.supervisor.ingest.parsers import (
+    parse_metrics_file,
+    parse_event_line,
+)
+from quantum_edge_core.supervisor.policy.policy_contract import (
+    policy_fingerprint,
+    POLICY_VERSION,
+)
 from quantum_edge_core.supervisor.policy.policy_publisher import PolicyPublisher
-from quantum_edge_core.supervisor.policy.policy_engine import PolicyEngine, PolicyEngineConfig, HysteresisConfig
+from quantum_edge_core.supervisor.policy.policy_engine import (
+    PolicyEngine,
+    PolicyEngineConfig,
+    HysteresisConfig,
+)
 from quantum_edge_core.supervisor.policy.heuristics import HeuristicThresholds
-from quantum_edge_core.supervisor.monitoring.api import TelemetryManager, TelemetryConfig
+from quantum_edge_core.supervisor.monitoring.api import (
+    TelemetryManager,
+    TelemetryConfig,
+)
 from quantum_edge_core.supervisor.supervisor.stats import StatsAggregator
 from quantum_edge_core.supervisor.supervisor.run_context import RunContext
 from quantum_edge_core.supervisor.supervisor.regime_sm import (
@@ -120,7 +159,9 @@ from quantum_edge_core.supervisor.supervisor.guards import (
     load_guard_config,
 )
 from quantum_edge_core.supervisor.supervisor.action_ledger import ActionLedger
-from quantum_edge_core.supervisor.supervisor.policy_store import resolve_active_policy_path
+from quantum_edge_core.supervisor.supervisor.policy_store import (
+    resolve_active_policy_path,
+)
 from quantum_edge_core.supervisor.supervisor.autopilot.cli import (
     build_controller,
     autopilot_enable,
@@ -130,15 +171,30 @@ from quantum_edge_core.supervisor.supervisor.autopilot.cli import (
     policy_rollout,
     policy_rollback,
 )
-from quantum_edge_core.supervisor.supervisor.autopilot.policy_manager import PolicyManager
+from quantum_edge_core.supervisor.supervisor.autopilot.policy_manager import (
+    PolicyManager,
+)
 from quantum_edge_core.supervisor.supervisor.alerts.rules import load_alert_rules
 from quantum_edge_core.supervisor.supervisor.alerts.storage import AlertStorage
-from quantum_edge_core.supervisor.supervisor.alerts.engine import AlertEngine, AlertResult
-from quantum_edge_core.supervisor.supervisor.security import is_path_allowed, validate_kill_switch_challenge
+from quantum_edge_core.supervisor.supervisor.alerts.engine import (
+    AlertEngine,
+    AlertResult,
+)
+from quantum_edge_core.supervisor.supervisor.security import (
+    is_path_allowed,
+    validate_kill_switch_challenge,
+)
 from quantum_edge_core.supervisor.supervisor.process_spec import ProcessSpec
-from quantum_edge_core.supervisor.supervisor.lockbot.control_client import LockbotControlClient
-from quantum_edge_core.supervisor.supervisor.lockbot.models import PolicyRunnerConfig, load_lockbot_policy_config
-from quantum_edge_core.supervisor.supervisor.lockbot.policy_runner import LockbotPolicyRunner
+from quantum_edge_core.supervisor.supervisor.lockbot.control_client import (
+    LockbotControlClient,
+)
+from quantum_edge_core.supervisor.supervisor.lockbot.models import (
+    PolicyRunnerConfig,
+    load_lockbot_policy_config,
+)
+from quantum_edge_core.supervisor.supervisor.lockbot.policy_runner import (
+    LockbotPolicyRunner,
+)
 from quantum_edge_core.supervisor.monitor import ZmqHeartbeatSubscriber
 
 try:
@@ -266,9 +322,7 @@ class SupervisorApp:
             if hasattr(cfg, "model") and "gpt" in cfg.model.lower():
                 cfg.model = "gemini-2.0-flash"
 
-        self.llm_client = GoogleClient(
-            logger=self.logger
-        )
+        self.llm_client = GoogleClient(logger=self.logger)
         self.llm_supervisor = LlmSupervisor(
             llm_config,
             risk_config,
@@ -492,7 +546,8 @@ class SupervisorApp:
                 )
         except Exception as exc:  # pylint: disable=broad-except
             self.logger.warning(
-                "TSDB backend init failed; continuing in Memory-Only mode without TSDB: %s", exc
+                "TSDB backend init failed; continuing in Memory-Only mode without TSDB: %s",
+                exc,
             )
             store = None
         if store is None:
@@ -2498,7 +2553,9 @@ def main(argv: Optional[list[str]] = None) -> None:
         elif args.command == "tsdb-status":
             print(json.dumps(app.get_tsdb_status(), indent=2))
         elif args.command == "tsdb-migrate":
-            from quantum_edge_core.supervisor.supervisor.tsdb.migrations import run_tsdb_migrations
+            from quantum_edge_core.supervisor.supervisor.tsdb.migrations import (
+                run_tsdb_migrations,
+            )
 
             ok = run_tsdb_migrations(
                 project_root,
@@ -2518,7 +2575,10 @@ def main(argv: Optional[list[str]] = None) -> None:
                         file=sys.stderr,
                     )
                     sys.exit(1)
-                from quantum_edge_core.supervisor.supervisor.ingest.backfill import parse_range, run_backfill
+                from quantum_edge_core.supervisor.supervisor.ingest.backfill import (
+                    parse_range,
+                    run_backfill,
+                )
 
                 writer = app.tsdb_writer or TsdbWriter(NoopTimeseriesStore())
                 writer.start()
@@ -2537,7 +2597,9 @@ def main(argv: Optional[list[str]] = None) -> None:
                 writer.flush()
                 sys.exit(0)
             days = args.days or app.tsdb_config.backfill_from_days
-            from quantum_edge_core.supervisor.supervisor.tsdb.backfill import run_backfill
+            from quantum_edge_core.supervisor.supervisor.tsdb.backfill import (
+                run_backfill,
+            )
 
             store = app.tsdb_writer.store if app.tsdb_writer else None
             if store is None:
@@ -2629,7 +2691,10 @@ def main(argv: Optional[list[str]] = None) -> None:
             report = build_report(client, last=args.last, bucket=args.bucket)
             print(json.dumps(report, indent=2))
         elif args.command == "ml":
-            from quantum_edge_core.supervisor.supervisor.mlops.cli import parse_ml_args, run_ml_command
+            from quantum_edge_core.supervisor.supervisor.mlops.cli import (
+                parse_ml_args,
+                run_ml_command,
+            )
 
             ml_args = parse_ml_args(args.ml_args)
             code = run_ml_command(ml_args)
@@ -2650,7 +2715,10 @@ def main(argv: Optional[list[str]] = None) -> None:
                     run_research_command,
                 )
             except ModuleNotFoundError:
-                from quantum_edge_core.research.cli import parse_research_args, run_research_command
+                from quantum_edge_core.research.cli import (
+                    parse_research_args,
+                    run_research_command,
+                )
 
             research_args = parse_research_args(args.ml_args)
             code = run_research_command(research_args)
@@ -2675,8 +2743,12 @@ def main(argv: Optional[list[str]] = None) -> None:
                 collect_metrics,
                 propose_tuning,
             )
-            from quantum_edge_core.supervisor.supervisor.ops.config import load_ops_config
-            from quantum_edge_core.supervisor.supervisor.ops.regression_gates import run_regression_gates
+            from quantum_edge_core.supervisor.supervisor.ops.config import (
+                load_ops_config,
+            )
+            from quantum_edge_core.supervisor.supervisor.ops.regression_gates import (
+                run_regression_gates,
+            )
 
             runtime_dir = app.paths.runtime_dir
             runs_dir = Path(args.runs_path) if args.runs_path else runtime_dir / "runs"
@@ -2819,8 +2891,12 @@ def main(argv: Optional[list[str]] = None) -> None:
                     ctx, start_ts, {"status": "completed"}, finalize_only=True
                 )
         elif args.command == "ops-regression-gate":
-            from quantum_edge_core.supervisor.supervisor.policy_store import load_active_policy
-            from quantum_edge_core.supervisor.supervisor.ops.regression_gates import run_regression_gates
+            from quantum_edge_core.supervisor.supervisor.policy_store import (
+                load_active_policy,
+            )
+            from quantum_edge_core.supervisor.supervisor.ops.regression_gates import (
+                run_regression_gates,
+            )
 
             runtime_dir = app.paths.runtime_dir
             candidate_path = Path(args.policy_path) if args.policy_path else None
@@ -2858,7 +2934,9 @@ def main(argv: Optional[list[str]] = None) -> None:
             print(json.dumps(result, indent=2))
             sys.exit(0 if result.get("passed") else 1)
         elif args.command == "ops-daily-report":
-            from quantum_edge_core.supervisor.supervisor.ops.daily_report import generate_daily_report
+            from quantum_edge_core.supervisor.supervisor.ops.daily_report import (
+                generate_daily_report,
+            )
 
             target_date = date.today()
             if args.date:
