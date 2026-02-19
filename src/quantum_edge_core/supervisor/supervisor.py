@@ -2691,7 +2691,7 @@ def main(argv: Optional[list[str]] = None) -> None:
             report = build_report(client, last=args.last, bucket=args.bucket)
             print(json.dumps(report, indent=2))
         elif args.command == "ml":
-            from quantum_edge_core.supervisor.supervisor.mlops.cli import (
+            from quantum_edge_core.supervisor.mlops.cli import (
                 parse_ml_args,
                 run_ml_command,
             )
@@ -2700,7 +2700,7 @@ def main(argv: Optional[list[str]] = None) -> None:
             code = run_ml_command(ml_args)
             sys.exit(code)
         elif args.command == "telemetry":
-            from quantum_edge_core.supervisor.supervisor.monitoring.cli import (
+            from quantum_edge_core.supervisor.monitoring.cli import (
                 parse_telemetry_args,
                 run_telemetry_command,
             )
@@ -2710,7 +2710,7 @@ def main(argv: Optional[list[str]] = None) -> None:
             sys.exit(code)
         elif args.command == "research":
             try:
-                from quantum_edge_core.supervisor.supervisor.research.cli import (
+                from quantum_edge_core.supervisor.research.cli import (
                     parse_research_args,
                     run_research_command,
                 )
@@ -2724,7 +2724,7 @@ def main(argv: Optional[list[str]] = None) -> None:
             code = run_research_command(research_args)
             sys.exit(code)
         elif args.command in {"episodes-cut", "episodes-run", "episodes-report"}:
-            from quantum_edge_core.supervisor.supervisor.episodes.cli import (
+            from quantum_edge_core.supervisor.episodes.cli import (
                 parse_episodes_args,
                 run_episodes_command,
             )

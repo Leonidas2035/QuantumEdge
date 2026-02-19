@@ -21,7 +21,7 @@ def test_lockbot_replay_smoke(tmp_path: Path) -> None:
     events = generate_scenario(cfg)
     out_dir = tmp_path / "smoke"
     policy_cfg = load_policy_config(
-        Path("SupervisorAgent/configs/lockbot_btc_policy.yaml")
+        Path("src/quantum_edge_core/supervisor/configs/lockbot_btc_policy.yaml")
     )
     policy_cfg.enabled = True
     policy_cfg.execution_enabled = True
