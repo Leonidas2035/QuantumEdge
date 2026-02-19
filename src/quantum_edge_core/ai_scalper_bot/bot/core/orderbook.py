@@ -4,10 +4,12 @@ Maintains rolling window of market ticks and current market state.
 """
 
 from collections import deque
-from typing import Optional, Dict, Any
+from typing import Any, Dict, Optional
+
 import numpy as np
 
-from quantum_edge_core.ai_scalper_bot.bot.core.models import MarketState, MarketTick
+from quantum_edge_core.ai_scalper_bot.bot.core.models import (MarketState,
+                                                              MarketTick)
 
 
 class OrderBookCache:

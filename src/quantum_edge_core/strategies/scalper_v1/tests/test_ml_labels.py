@@ -1,6 +1,5 @@
 import numpy as np
 import pandas as pd
-
 from bot.ml.labels.builder import LabelConfig, build_labels
 
 

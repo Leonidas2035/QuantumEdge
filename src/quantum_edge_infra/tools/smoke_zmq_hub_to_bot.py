@@ -4,12 +4,11 @@ import asyncio
 import time
 from typing import Iterable
 
+from bot.market_data.hub_source import HubMarketDataSource
 from market_data.config import HubConfig
 from market_data.ipc.publisher import ZmqPublisher
 from market_data.ipc.snapshot_server import SnapshotCache, SnapshotServer
 from market_data.models import L1Event, Priority
-
-from bot.market_data.hub_source import HubMarketDataSource
 
 
 async def _publish_events(

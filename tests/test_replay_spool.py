@@ -6,8 +6,8 @@ import json
 from pathlib import Path
 
 import pytest
-
 from market_data.models import L2Envelope, encode_l2
+
 from tools import replay_spool
 
 

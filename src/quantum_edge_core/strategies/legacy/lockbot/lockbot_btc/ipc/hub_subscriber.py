@@ -9,7 +9,6 @@ from typing import AsyncIterator, Iterable, Optional, Tuple
 import msgspec
 import zmq
 import zmq.asyncio
-
 from market_data.lockbot.schema import LockbotMarketEvent
 
 

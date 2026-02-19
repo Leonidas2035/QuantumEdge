@@ -11,14 +11,12 @@ from typing import Dict, List, Optional
 
 import pandas as pd
 
-from bot.ml.features.builder import (
-    build_feature_frame,
-    feature_names,
-    schema_hash,
-    schema_version,
-)
-from bot.ml.labels.builder import LabelConfig, build_labels, parse_horizons
-from bot.ml.datasets.io import normalize_ticks, read_episode, write_frame
+from quantum_edge_core.strategies.scalper_v1.bot.ml.datasets.io import (
+    normalize_ticks, read_episode, write_frame)
+from quantum_edge_core.strategies.scalper_v1.bot.ml.features.builder import (
+    build_feature_frame, feature_names, schema_hash, schema_version)
+from quantum_edge_core.strategies.scalper_v1.bot.ml.labels.builder import (
+    LabelConfig, build_labels, parse_horizons)
 
 
 def _load_splits(scenarios_root: Path) -> Dict[str, List[Dict[str, object]]]:

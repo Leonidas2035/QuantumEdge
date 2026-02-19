@@ -12,18 +12,9 @@ import requests
 
 from quantum_edge_core.market_data.config import AccountConfig
 from quantum_edge_core.market_data.models.account_snapshot import (
-    AccountSnapshot,
-    MarketBlock,
-    MarketPriceEntry,
-    SpotBlock,
-    UsdmBlock,
-    BalanceEntry,
-    OpenOrderEntry,
-    UsdmAccountTotals,
-    UsdmAssetEntry,
-    UsdmPositionEntry,
-    UsdmMarkEntry,
-)
+    AccountSnapshot, BalanceEntry, MarketBlock, MarketPriceEntry,
+    OpenOrderEntry, SpotBlock, UsdmAccountTotals, UsdmAssetEntry, UsdmBlock,
+    UsdmMarkEntry, UsdmPositionEntry)
 
 
 def _mask_key(key: str) -> str:

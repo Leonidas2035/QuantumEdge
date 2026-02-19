@@ -1,12 +1,12 @@
-﻿import numpy as np
-import time
+﻿import time
 
+import numpy as np
 from bot.engine.decision_engine import DecisionEngine
-from bot.ml.ensemble import EnsembleOutput
-from bot.ml.signal_model.model import SignalOutput
-from bot.ml.feature_schema import FEATURE_NAMES
-from bot.trading.trade_stats import TradeStats
 from bot.engine.decision_types import DecisionAction
+from bot.ml.ensemble import EnsembleOutput
+from bot.ml.feature_schema import FEATURE_NAMES
+from bot.ml.signal_model.model import SignalOutput
+from bot.trading.trade_stats import TradeStats
 
 
 def test_risk_limits_block_after_losses():

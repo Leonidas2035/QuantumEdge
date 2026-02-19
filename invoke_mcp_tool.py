@@ -1,5 +1,3 @@
-import sys
-import os
 from quantum_edge_infra.tools import mcp_server
 
 if __name__ == "__main__":

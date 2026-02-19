@@ -5,9 +5,11 @@ Calculates real-time derivative features using Numpy.
 
 from __future__ import annotations
 
-import numpy as np
 import logging
 from typing import Dict
+
+import numpy as np
+
 from quantum_edge_core.supervisor.context.accumulator import MarketAccumulator
 
 logger = logging.getLogger(__name__)

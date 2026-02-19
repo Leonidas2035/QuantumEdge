@@ -1,11 +1,9 @@
 from bot.exchanges.bingx_swap.client import build_query_string, sign_query
-from bot.exchanges.bingx_swap.mapper import (
-    normalize_symbol,
-    to_bingx_symbol,
-    from_bingx_symbol,
-    round_price_to_tick,
-    round_qty_to_step,
-)
+from bot.exchanges.bingx_swap.mapper import (from_bingx_symbol,
+                                             normalize_symbol,
+                                             round_price_to_tick,
+                                             round_qty_to_step,
+                                             to_bingx_symbol)
 
 
 def test_signature_deterministic():

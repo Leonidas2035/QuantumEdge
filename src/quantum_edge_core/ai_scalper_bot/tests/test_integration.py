@@ -1,19 +1,19 @@
-import pytest
-from unittest.mock import MagicMock, AsyncMock
 import os
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
 
 # Set Env for tests
 os.environ["BINANCE_API_KEY"] = "test"
 os.environ["BINANCE_SECRET_KEY"] = "test"
 
-from quantum_edge_core.ai_scalper_bot.bot.infrastructure.exchange import (
-    BinanceExecutionGateway,
-)
-from quantum_edge_core.ai_scalper_bot.bot.infrastructure.reporter import (
-    SupervisorReporter,
-)
+from quantum_edge_core.ai_scalper_bot.bot.execution.strategy_core import \
+    TradeAction
+from quantum_edge_core.ai_scalper_bot.bot.infrastructure.exchange import \
+    BinanceExecutionGateway
+from quantum_edge_core.ai_scalper_bot.bot.infrastructure.reporter import \
+    SupervisorReporter
 from quantum_edge_core.ai_scalper_bot.run_bot import BotEngine
-from quantum_edge_core.ai_scalper_bot.bot.execution.strategy_core import TradeAction
 
 
 @pytest.mark.asyncio
@@ -81,7 +81,8 @@ async def test_reporter_heartbeat():
     # Mock socket
     reporter.socket = AsyncMock()
 
-    from quantum_edge_core.ai_scalper_bot.bot.execution.strategy_core import BotState
+    from quantum_edge_core.ai_scalper_bot.bot.execution.strategy_core import \
+        BotState
 
     await reporter.send_heartbeat(BotState.IDLE, 100.0, 0.5)
 

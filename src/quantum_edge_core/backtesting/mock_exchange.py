@@ -3,10 +3,10 @@ Mock Exchange for Backtesting.
 Simulates order fills, fees, and positions.
 """
 
-from dataclasses import dataclass
-from typing import Dict, Any, List, Optional
-import uuid
 import logging
+import uuid
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional
 
 logger = logging.getLogger(__name__)
 

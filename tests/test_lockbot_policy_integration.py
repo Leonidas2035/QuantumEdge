@@ -11,7 +11,6 @@ import msgspec
 import pytest
 import zmq
 import zmq.asyncio
-
 from LockBotBTC.lockbot_btc.config import LockbotConfig
 from LockBotBTC.lockbot_btc.main import LockBotService
 from market_data.lockbot.schema import LockbotMarketEvent

@@ -3,7 +3,6 @@ from __future__ import annotations
 import ast
 
 import pytest
-
 from model_router.context.cache import ContextCache
 from model_router.context.formatter import ContextFormatter
 from model_router.context.models import ContextPackV1

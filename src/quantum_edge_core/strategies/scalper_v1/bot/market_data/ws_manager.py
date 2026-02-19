@@ -5,8 +5,10 @@ from typing import Any, Dict, Optional
 
 import websockets
 
-from bot.core.config_loader import config
-from bot.market_data.data_manager import DataManager
+from quantum_edge_core.strategies.scalper_v1.bot.core.config_loader import \
+    config
+from quantum_edge_core.strategies.scalper_v1.bot.market_data.data_manager import \
+    DataManager
 
 
 class WSManager:

@@ -10,19 +10,13 @@ from typing import Any, AsyncIterator, Dict, Iterable, List, Optional, Tuple
 import msgspec
 import zmq
 import zmq.asyncio
-
-from bot.core.config_loader import config
-from market_data.models import (
-    Bar1sEvent,
-    L1Event,
-    MarketEvent,
-    MicrostructureEvent,
-    SnapshotRequest,
-    SnapshotResponse,
-    TradeEvent,
-    decode_event,
-)
+from market_data.models import (Bar1sEvent, L1Event, MarketEvent,
+                                MicrostructureEvent, SnapshotRequest,
+                                SnapshotResponse, TradeEvent, decode_event)
 from market_data.models.orderbook import DEPTH_EVENT_TYPE, DepthL2Event
+
+from quantum_edge_core.strategies.scalper_v1.bot.core.config_loader import \
+    config
 
 
 class HubSourceConfig:

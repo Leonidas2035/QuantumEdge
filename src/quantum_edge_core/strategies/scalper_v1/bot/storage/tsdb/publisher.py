@@ -3,8 +3,10 @@ from __future__ import annotations
 import time
 from typing import Optional
 
-from bot.storage.event_bus import EventPriority
-from bot.storage.tsdb.sink import get_tsdb_sink
+from quantum_edge_core.strategies.scalper_v1.bot.storage.event_bus import \
+    EventPriority
+from quantum_edge_core.strategies.scalper_v1.bot.storage.tsdb.sink import \
+    get_tsdb_sink
 
 
 def _ts_ms(value: Optional[int | float]) -> int:

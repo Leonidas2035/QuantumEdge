@@ -6,9 +6,9 @@ import asyncio
 import json
 import logging
 import os
-import time
-import websockets
 from typing import Any, Dict
+
+import websockets
 
 from quantum_edge_core.market_data.bus.event_bus import EventBus
 from quantum_edge_core.market_data.config import HubConfig

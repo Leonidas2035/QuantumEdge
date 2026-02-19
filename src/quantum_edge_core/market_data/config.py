@@ -1,7 +1,7 @@
 """Configuration helpers for the MarketDataHub service."""
 
-from dataclasses import dataclass, field
 import os
+from dataclasses import dataclass, field
 from typing import Dict, List
 
 

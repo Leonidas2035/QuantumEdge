@@ -3,8 +3,8 @@
 from __future__ import annotations
 
 import importlib.util
-import sys
 import subprocess
+import sys
 import tempfile
 import time
 from dataclasses import replace
@@ -54,22 +54,19 @@ def _git_info() -> Tuple[str, str]:
 
 def _build_test_app(tmp_root: Path):
     SupervisorApp = _load_supervisor_app_class()
-    from supervisor.config import (
-        load_autopilot_config,
-        load_dashboard_config,
-        load_llm_supervisor_config,
-        load_market_risk_config,
-        load_meta_supervisor_config,
-        load_lockbot_config,
-        load_paths_config,
-        load_risk_config,
-        load_snapshot_scheduler_config,
-        load_supervisor_config,
-        load_trading_behavior_config,
-        load_trend_evaluator_config,
-        load_tsdb_config,
-        load_tsdb_retention_config,
-    )
+    from supervisor.config import (load_autopilot_config,
+                                   load_dashboard_config,
+                                   load_llm_supervisor_config,
+                                   load_lockbot_config,
+                                   load_market_risk_config,
+                                   load_meta_supervisor_config,
+                                   load_paths_config, load_risk_config,
+                                   load_snapshot_scheduler_config,
+                                   load_supervisor_config,
+                                   load_trading_behavior_config,
+                                   load_trend_evaluator_config,
+                                   load_tsdb_config,
+                                   load_tsdb_retention_config)
     from supervisor.config_loader import load_processes_spec
     from supervisor.guards import load_guard_config
     from supervisor.policy_store import resolve_active_policy_path

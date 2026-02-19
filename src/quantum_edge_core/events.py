@@ -6,6 +6,7 @@ Defines the core data structures for the trading system.
 """
 
 from typing import List, Union
+
 import msgspec
 
 

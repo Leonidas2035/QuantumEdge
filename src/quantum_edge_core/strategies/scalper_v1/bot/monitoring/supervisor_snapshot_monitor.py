@@ -7,11 +7,10 @@ import logging
 from pathlib import Path
 from typing import Optional
 
-from bot.integrations.supervisor_snapshot_client import (
-    SupervisorSnapshotClient,
-    SupervisorSnapshot,
-)
-from bot.core.config_loader import SupervisorSnapshotsSettings
+from quantum_edge_core.strategies.scalper_v1.bot.core.config_loader import \
+    SupervisorSnapshotsSettings
+from quantum_edge_core.strategies.scalper_v1.bot.integrations.supervisor_snapshot_client import (
+    SupervisorSnapshot, SupervisorSnapshotClient)
 
 
 async def run_supervisor_snapshot_monitor(

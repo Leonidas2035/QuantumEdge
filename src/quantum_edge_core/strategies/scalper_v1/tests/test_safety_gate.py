@@ -1,4 +1,4 @@
-from bot.risk.safety_gate import SafetyGate, DataFreshnessMonitor
+from bot.risk.safety_gate import DataFreshnessMonitor, SafetyGate
 
 
 def test_safety_gate_blocks_notional():

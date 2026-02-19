@@ -8,13 +8,10 @@ from typing import Optional
 
 from binance.client import Client
 from binance.exceptions import BinanceAPIException, BinanceRequestException
-
-from LockBotBTC.lockbot_btc.execution.base import (
-    CancelAllResult,
-    CancelResult,
-    ExecutionConfig,
-    SubmitResult,
-)
+from LockBotBTC.lockbot_btc.execution.base import (CancelAllResult,
+                                                   CancelResult,
+                                                   ExecutionConfig,
+                                                   SubmitResult)
 
 
 class BinanceFuturesExecutor:

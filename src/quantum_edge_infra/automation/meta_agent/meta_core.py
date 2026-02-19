@@ -6,34 +6,23 @@ from datetime import datetime, timezone
 from hashlib import sha256
 from typing import Dict, List, Optional
 
-from llm_client import LLMClient
+import yaml
 from file_manager import ChangeSet, FileChange, build_change_set_from_response
 from gate_runner import GateResults, run_gates
+from llm_client import LLMClient
 from logger import configure_logger
 from project_scanner import ProjectScanner
-from prompt_builder import PromptBuilder
 from projects_config import load_project_registry, resolve_project_root
+from prompt_builder import PromptBuilder
 from run_lock import RunLock, describe_existing_lock, resolve_lock_path
-from safety_policy import SAFETY_POLICY_PATH, evaluate_change_set, load_safety_policy
+from safety_policy import (SAFETY_POLICY_PATH, evaluate_change_set,
+                           load_safety_policy)
 from shadow_workspace import cleanup_shadow, create_shadow
-from task_contract import (
-    Report,
-    ReportArtifacts,
-    ReportChanges,
-    ReportSafety,
-    ReportCLI,
-    ReportDurations,
-    ReportGateStep,
-    ReportGates,
-    ReportShadow,
-    PatchInfo,
-    TaskSpec,
-    TaskValidationError,
-    load_task_spec,
-)
+from task_contract import (PatchInfo, Report, ReportArtifacts, ReportChanges,
+                           ReportCLI, ReportDurations, ReportGates,
+                           ReportGateStep, ReportSafety, ReportShadow,
+                           TaskSpec, TaskValidationError, load_task_spec)
 from write_engine import apply_change_set_with_policy
-
-import yaml
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 CONFIG_PATH = os.path.join("src", "quantum_edge_core", "config", "meta_agent.yaml")

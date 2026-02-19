@@ -12,18 +12,11 @@ except Exception:  # pragma: no cover - fallback
     ZoneInfo = None
 
 from approval_engine import approve_apply
+from offmarket_scheduler import evaluate_windows
 from projects_registry import ProjectEntry, load_projects_registry
 from schedule_contract import ScheduleValidationError, load_schedule_file
-from offmarket_scheduler import evaluate_windows
-from task_contract import (
-    TaskConstraints,
-    TaskContext,
-    TaskExecution,
-    TaskGates,
-    TaskLLM,
-    TaskSpec,
-    GateStep,
-)
+from task_contract import (GateStep, TaskConstraints, TaskContext,
+                           TaskExecution, TaskGates, TaskLLM, TaskSpec)
 
 
 def _resolve_base_dir() -> str:

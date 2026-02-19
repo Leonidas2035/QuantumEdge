@@ -3,10 +3,11 @@ ZMQ Adapter for Market Data Ingestion.
 Optimized for high-throughput, low-latency tick streams using ujson.
 """
 
-import zmq
-import ujson
 import logging
-from typing import Optional, Dict, Any
+from typing import Any, Dict, Optional
+
+import ujson
+import zmq
 
 logger = logging.getLogger(__name__)
 

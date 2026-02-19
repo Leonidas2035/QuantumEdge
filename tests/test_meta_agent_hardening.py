@@ -3,6 +3,7 @@ import pytest
 pytest.skip("Legacy test broken by src-layout migration", allow_module_level=True)
 import sys
 from pathlib import Path
+
 import yaml
 
 ROOT_DIR = Path(__file__).resolve().parents[1]

@@ -1,23 +1,17 @@
-from dataclasses import replace
 import importlib.util
+from dataclasses import replace
 from pathlib import Path
 
-from supervisor.config import (
-    load_autopilot_config,
-    load_dashboard_config,
-    load_llm_supervisor_config,
-    load_market_risk_config,
-    load_meta_supervisor_config,
-    load_lockbot_config,
-    load_paths_config,
-    load_risk_config,
-    load_snapshot_scheduler_config,
-    load_supervisor_config,
-    load_trading_behavior_config,
-    load_trend_evaluator_config,
-    load_tsdb_config,
-    load_tsdb_retention_config,
-)
+from supervisor.config import (load_autopilot_config, load_dashboard_config,
+                               load_llm_supervisor_config, load_lockbot_config,
+                               load_market_risk_config,
+                               load_meta_supervisor_config, load_paths_config,
+                               load_risk_config,
+                               load_snapshot_scheduler_config,
+                               load_supervisor_config,
+                               load_trading_behavior_config,
+                               load_trend_evaluator_config, load_tsdb_config,
+                               load_tsdb_retention_config)
 from supervisor.config_loader import load_processes_spec
 from supervisor.guards import load_guard_config
 from supervisor.policy_store import resolve_active_policy_path

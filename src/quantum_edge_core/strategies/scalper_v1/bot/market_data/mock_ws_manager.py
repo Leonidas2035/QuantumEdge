@@ -1,7 +1,7 @@
 import asyncio
 import random
 import time
-from typing import AsyncIterator, List, Dict
+from typing import AsyncIterator, Dict, List
 
 
 class MockWSManager:

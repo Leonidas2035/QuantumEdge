@@ -1,10 +1,15 @@
 ﻿import asyncio
 
-from bot.trading.paper_trader import PaperTrader
-from bot.trading.executor import BinanceDemoExecutor
-from bot.trading.trade_stats import TradeStats
-from bot.engine.decision_engine import DecisionEngine
-from bot.engine.decision_types import DecisionAction
+from quantum_edge_core.strategies.scalper_v1.bot.engine.decision_engine import \
+    DecisionEngine
+from quantum_edge_core.strategies.scalper_v1.bot.engine.decision_types import \
+    DecisionAction
+from quantum_edge_core.strategies.scalper_v1.bot.trading.executor import \
+    BinanceDemoExecutor
+from quantum_edge_core.strategies.scalper_v1.bot.trading.paper_trader import \
+    PaperTrader
+from quantum_edge_core.strategies.scalper_v1.bot.trading.trade_stats import \
+    TradeStats
 
 
 def test_paper_trader_bracket_close():

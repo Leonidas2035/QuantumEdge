@@ -10,9 +10,9 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Optional, Tuple
 
+from supervisor import state as state_utils
 from supervisor.config import MetaSupervisorConfig, PathsConfig
 from supervisor.events import EventLogger
-from supervisor import state as state_utils
 
 
 @dataclass

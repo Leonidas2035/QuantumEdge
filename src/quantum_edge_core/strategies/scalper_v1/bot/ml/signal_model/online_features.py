@@ -4,7 +4,8 @@ from typing import Dict, Optional
 
 import numpy as np
 
-from bot.ml.features.builder import FeatureBuilder
+from quantum_edge_core.strategies.scalper_v1.bot.ml.features.builder import \
+    FeatureBuilder
 
 
 class OnlineFeatureBuilder:

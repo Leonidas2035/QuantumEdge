@@ -12,15 +12,11 @@ META_AGENT_DIR = ROOT_DIR / "meta_agent"
 if str(META_AGENT_DIR) not in sys.path:
     sys.path.insert(0, str(META_AGENT_DIR))
 
-import meta_agent as meta_agent_mod
 import watch as watch_mod
-from task_contract import (
-    Report,
-    ReportArtifacts,
-    ReportChanges,
-    ReportSafety,
-    PatchInfo,
-)
+from task_contract import (PatchInfo, Report, ReportArtifacts, ReportChanges,
+                           ReportSafety)
+
+import meta_agent as meta_agent_mod
 
 
 class DummyLogger:

@@ -5,12 +5,9 @@ Pure domain logic for enforcing safety limits.
 
 from __future__ import annotations
 
-from quantum_edge_core.supervisor.domain.models import (
-    RiskConfig,
-    PortfolioState,
-    RiskVerdict,
-    RiskLevel,
-)
+from quantum_edge_core.supervisor.domain.models import (PortfolioState,
+                                                        RiskConfig, RiskLevel,
+                                                        RiskVerdict)
 
 
 class HardRiskEngine:

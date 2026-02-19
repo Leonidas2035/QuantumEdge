@@ -11,9 +11,9 @@ from typing import Any, Dict, List, Optional
 
 from supervisor.autopilot.audit import AuditLogger
 from supervisor.autopilot.collector import MetricsCollector, MetricsSnapshot
-from supervisor.autopilot.quality import QualityMonitor, QualityIssue
-from supervisor.autopilot.remediation import RemediationManager
 from supervisor.autopilot.policy_manager import PolicyManager
+from supervisor.autopilot.quality import QualityIssue, QualityMonitor
+from supervisor.autopilot.remediation import RemediationManager
 
 STATES = {"OFF", "SHADOW", "LIVE_DEMO", "LIVE", "DEGRADED", "HALTED"}
 

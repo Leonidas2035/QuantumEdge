@@ -9,14 +9,11 @@ from typing import Any, Dict, Optional
 
 import msgspec
 import zmq
-
 from supervisor.config import LockbotControlConfig
-from supervisor.contracts.lockbot_control_v1 import (
-    AckEnvelope,
-    StatusEnvelope,
-    build_command,
-    validate_command,
-)
+from supervisor.contracts.lockbot_control_v1 import (AckEnvelope,
+                                                     StatusEnvelope,
+                                                     build_command,
+                                                     validate_command)
 from supervisor.contracts.lockbot_exec_v1 import ExecEnvelope
 
 

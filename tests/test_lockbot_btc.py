@@ -5,7 +5,6 @@ import time
 import uuid
 
 import msgspec
-
 from LockBotBTC.lockbot.contracts.lockbot_control_v1 import build_command
 from LockBotBTC.lockbot_btc.config import LockbotConfig
 from LockBotBTC.lockbot_btc.main import LockBotService

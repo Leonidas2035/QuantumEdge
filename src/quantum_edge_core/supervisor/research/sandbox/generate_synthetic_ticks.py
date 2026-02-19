@@ -1,6 +1,7 @@
+from pathlib import Path
+
 import numpy as np
 import pandas as pd
-from pathlib import Path
 
 OUTPUT_DIR = Path("data") / "ticks"
 DEFAULT_FILE = OUTPUT_DIR / "BTCUSDT_synthetic.csv"

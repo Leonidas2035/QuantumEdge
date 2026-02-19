@@ -14,12 +14,8 @@ META_AGENT_DIR = ROOT_DIR / "meta_agent"
 if str(META_AGENT_DIR) not in sys.path:
     sys.path.insert(0, str(META_AGENT_DIR))
 
-from offmarket_scheduler import (
-    _calc_backoff,
-    enqueue_task,
-    evaluate_windows,
-    tick,
-)
+from offmarket_scheduler import (_calc_backoff, enqueue_task, evaluate_windows,
+                                 tick)
 from schedule_contract import ScheduleSpec, ScheduleTrigger, ScheduleWindow
 
 

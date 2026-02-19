@@ -3,7 +3,7 @@ Prompts and JSON Schema for the Supervisor AI.
 Defines the "Persona" and the "Contract".
 """
 
-from typing import List, Dict, Any
+from typing import Any, Dict, List
 
 SYSTEM_PROMPT = """
 You are a Senior Risk Manager at a High-Frequency Trading desk.

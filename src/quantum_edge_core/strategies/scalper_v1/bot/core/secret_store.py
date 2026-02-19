@@ -175,7 +175,8 @@ def get_runtime_password(supervisor_mode: bool) -> str:
         sys.exit(1)
 
     try:
-        from bot.core.gui_password_prompt import prompt_password
+        from quantum_edge_core.strategies.scalper_v1.bot.core.gui_password_prompt import \
+            prompt_password
     except Exception as exc:  # pragma: no cover - GUI import failure path
         print(f"[ERROR] Unable to start password prompt GUI: {exc}")
         sys.exit(1)

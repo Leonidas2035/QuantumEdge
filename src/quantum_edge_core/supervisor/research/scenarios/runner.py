@@ -9,7 +9,6 @@ from typing import Optional
 from ..backtest.engine import BacktestConfig, BacktestEngine
 from ..backtest.report import write_backtest_reports
 from ..replay.adapters import load_events
-
 from .definitions import get_scenario
 from .injector import inject_scenario
 

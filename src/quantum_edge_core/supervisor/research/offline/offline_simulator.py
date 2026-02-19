@@ -1,7 +1,7 @@
+import argparse
+import json
 import os
 import time
-import json
-import argparse
 from dataclasses import dataclass
 from typing import Iterator
 

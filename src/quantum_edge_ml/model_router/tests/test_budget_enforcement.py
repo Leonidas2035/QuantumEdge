@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-
 from model_router.router.router import Router
 
 

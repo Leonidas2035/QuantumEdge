@@ -16,7 +16,8 @@ except Exception:  # pragma: no cover - fallback
 
 from inbox_processor import process_inbox_once
 from logger import configure_logger
-from schedule_contract import ScheduleSpec, ScheduleValidationError, load_schedule_file
+from schedule_contract import (ScheduleSpec, ScheduleValidationError,
+                               load_schedule_file)
 
 try:
     from tools.qe_config import get_qe_paths

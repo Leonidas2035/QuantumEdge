@@ -6,10 +6,14 @@ from typing import List, Optional, Tuple
 import numpy as np
 import xgboost as xgb
 
-from bot.ml.feature_schema import FEATURE_NAMES
-from bot.ml.features.builder import schema_version, feature_names
+from quantum_edge_core.strategies.scalper_v1.bot.ml.feature_schema import \
+    FEATURE_NAMES
+from quantum_edge_core.strategies.scalper_v1.bot.ml.features.builder import (
+    feature_names, schema_version)
+from quantum_edge_core.strategies.scalper_v1.bot.ml.signal_model.registry import \
+    update_registry
+
 from .dataset_builder import DatasetBuilder
-from bot.ml.signal_model.registry import update_registry
 
 
 def _metrics(y_true: np.ndarray, probs: np.ndarray) -> dict:

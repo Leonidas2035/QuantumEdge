@@ -5,9 +5,9 @@ pytest.skip("Legacy test broken by src-layout migration", allow_module_level=Tru
 Tests for Smart Executor Logic.
 """
 
-import unittest
-from unittest.mock import MagicMock, AsyncMock
 import sys
+import unittest
+from unittest.mock import AsyncMock, MagicMock
 
 # Mock binance before importing smart_executor
 mock_binance = MagicMock()
@@ -16,9 +16,8 @@ mock_exceptions.BinanceAPIException = Exception
 sys.modules["binance"] = mock_binance
 sys.modules["binance.exceptions"] = mock_exceptions
 
-from quantum_edge_core.strategies.scalper_v1.bot.trading.smart_executor import (
-    SmartExecutor,
-)
+from quantum_edge_core.strategies.scalper_v1.bot.trading.smart_executor import \
+    SmartExecutor
 
 
 class TestSmartExecutor(unittest.IsolatedAsyncioTestCase):

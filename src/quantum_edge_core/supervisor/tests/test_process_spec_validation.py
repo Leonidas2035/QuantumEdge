@@ -2,7 +2,6 @@ import textwrap
 from pathlib import Path
 
 import pytest
-
 from supervisor.config_loader import load_processes_spec
 
 

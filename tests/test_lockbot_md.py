@@ -8,19 +8,17 @@ from market_data.bus.event_bus import EventBus
 from market_data.lockbot.engine import LockbotDerivedEngine
 from market_data.lockbot.publisher import LockbotPublisher
 from market_data.lockbot.schema import event_to_dict
-from market_data.models.lockbot_md_contract import (
-    TOPIC_AVWAP,
-    TOPIC_FORCE_ORDER,
-    TOPIC_FUNDING_RATE,
-    TOPIC_LIQ_HEATMAP,
-    TOPIC_MARK_PRICE_1S,
-    TOPIC_OHLCV_1M,
-    TOPIC_TRADES_AGG,
-    TOPIC_VWAP_BANDS_D,
-    TOPIC_VWAP_D,
-    validate_envelope,
-    validate_payload,
-)
+from market_data.models.lockbot_md_contract import (TOPIC_AVWAP,
+                                                    TOPIC_FORCE_ORDER,
+                                                    TOPIC_FUNDING_RATE,
+                                                    TOPIC_LIQ_HEATMAP,
+                                                    TOPIC_MARK_PRICE_1S,
+                                                    TOPIC_OHLCV_1M,
+                                                    TOPIC_TRADES_AGG,
+                                                    TOPIC_VWAP_BANDS_D,
+                                                    TOPIC_VWAP_D,
+                                                    validate_envelope,
+                                                    validate_payload)
 
 
 class StubPublisher:

@@ -1,17 +1,18 @@
 import time
 from typing import Dict, List
 
-from bot.core.config_loader import config
-from bot.engine.decision_types import (
-    Decision,
-    DecisionAction,
-    DecisionDirection,
-    HorizonDecision,
-)
-from bot.engine.regime_policy import RegimePolicy
-from bot.ml.ensemble import EnsembleOutput
-from bot.ml.signal_model.model import SignalOutput
-from bot.trading.trade_stats import TradeStats
+from quantum_edge_core.strategies.scalper_v1.bot.core.config_loader import \
+    config
+from quantum_edge_core.strategies.scalper_v1.bot.engine.decision_types import (
+    Decision, DecisionAction, DecisionDirection, HorizonDecision)
+from quantum_edge_core.strategies.scalper_v1.bot.engine.regime_policy import \
+    RegimePolicy
+from quantum_edge_core.strategies.scalper_v1.bot.ml.ensemble import \
+    EnsembleOutput
+from quantum_edge_core.strategies.scalper_v1.bot.ml.signal_model.model import \
+    SignalOutput
+from quantum_edge_core.strategies.scalper_v1.bot.trading.trade_stats import \
+    TradeStats
 
 
 class DecisionEngine:

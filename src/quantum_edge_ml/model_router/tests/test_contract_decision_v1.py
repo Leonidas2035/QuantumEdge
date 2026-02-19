@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import pytest
-
 from model_router.contracts.decision_v1 import ValidationError, decode_decision
 
 

@@ -2,20 +2,10 @@ import pytest
 
 pytest.skip("Legacy test broken by src-layout migration", allow_module_level=True)
 import pytest
-
-from bot.spot_scalper import (
-    BookTop,
-    ExecutionEngine,
-    FeatureComputer,
-    OrderIntent,
-    RegimeDetector,
-    RiskManager,
-    Signal,
-    SignalEngine,
-    SpotScalperEngine,
-    TopFeatures,
-    _volume_imbalance,
-)
+from bot.spot_scalper import (BookTop, ExecutionEngine, FeatureComputer,
+                              OrderIntent, RegimeDetector, RiskManager, Signal,
+                              SignalEngine, SpotScalperEngine, TopFeatures,
+                              _volume_imbalance)
 
 
 def test_booktop_mid_spread() -> None:

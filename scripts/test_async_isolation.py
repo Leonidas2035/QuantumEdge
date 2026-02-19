@@ -2,12 +2,11 @@
 
 import asyncio
 import logging
-import time
-from unittest.mock import AsyncMock
-
+import os
 # Add src to path
 import sys
-import os
+import time
+from unittest.mock import AsyncMock
 
 sys.path.append(os.path.abspath("src"))
 

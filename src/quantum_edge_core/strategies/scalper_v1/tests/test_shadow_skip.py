@@ -1,4 +1,5 @@
-from bot.engine.decision_types import Decision, DecisionAction, DecisionDirection
+from bot.engine.decision_types import (Decision, DecisionAction,
+                                       DecisionDirection)
 from bot.run_bot import _shadow_skip
 
 

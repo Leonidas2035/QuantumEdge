@@ -6,9 +6,9 @@ Usage: python scripts/run_backtest.py --symbol BTCUSDT --days 7
 
 import argparse
 import logging
-from datetime import datetime, timedelta
-import sys
 import os
+import sys
+from datetime import datetime, timedelta
 
 # Add src to pythonpath
 sys.path.append(os.path.abspath("src"))

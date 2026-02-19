@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 from typing import Iterable
 
-from .engine import BacktestResult, TradeFill, EquityPoint
+from .engine import BacktestResult, EquityPoint, TradeFill
 
 
 def _write_trades(trades: Iterable[TradeFill], path: Path) -> None:

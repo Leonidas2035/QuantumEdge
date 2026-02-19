@@ -1,7 +1,8 @@
 import os
 import platform
-import psutil
 import subprocess
+
+import psutil
 
 
 def get_cpu_info():

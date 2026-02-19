@@ -8,10 +8,10 @@ from collections import deque
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 
-from tools.qe_paths import get_paths
-from tools.qe_config_loader import load_yaml
-
 from supervisor.ops.config import get_nested
+
+from tools.qe_config_loader import load_yaml
+from tools.qe_paths import get_paths
 
 
 def load_policy_bundle(active_policy: Dict[str, Any]) -> Dict[str, Any]:

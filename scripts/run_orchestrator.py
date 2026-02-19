@@ -16,12 +16,13 @@ from typing import Iterable, Optional
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
+import structlog
+
+from quantum_edge_core.logging_setup import setup_logging
 from quantum_edge_infra.tools.qe_config import load_config_file
 from quantum_edge_infra.tools.qe_doctor import run_doctor
 from quantum_edge_infra.tools.qe_paths import ensure_dirs, get_paths
 from quantum_edge_infra.tools.secure_env import decrypt_env
-from quantum_edge_core.logging_setup import setup_logging
-import structlog
 
 logger = structlog.get_logger()
 

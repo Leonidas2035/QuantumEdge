@@ -5,6 +5,7 @@ Ref: Cont, Kukanov, Stoikov (2014).
 """
 
 from typing import Optional
+
 from quantum_edge_core.ai_scalper_bot.bot.core.models import MarketState
 
 

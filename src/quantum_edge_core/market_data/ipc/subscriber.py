@@ -4,10 +4,11 @@ src/quantum_edge_core/market_data/ipc/subscriber.py
 Reusable ZMQ Subscriber for IPC.
 """
 
+from typing import Optional
+
+import structlog
 import zmq
 import zmq.asyncio
-import structlog
-from typing import Optional
 
 from quantum_edge_core.events import BaseEvent, EventCodec
 

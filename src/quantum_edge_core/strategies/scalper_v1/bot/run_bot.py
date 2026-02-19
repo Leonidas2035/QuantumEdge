@@ -1,71 +1,98 @@
 import asyncio
-import time
-import logging
 import json
+import logging
 import os
+import time
 from collections import deque
-from pathlib import Path
 from datetime import datetime, timezone
-from typing import Optional, Dict, Any, List
+from pathlib import Path
+from typing import Any, Dict, List, Optional
 
 import yaml
+from telemetry.emitter import TelemetryConfig, TelemetryEmitter
 
-from bot.ai.risk_moderator import LLMRiskModerator
-from bot.core.config_loader import (
-    config,
-    load_supervisor_settings,
-    load_supervisor_snapshot_settings,
-)
-from bot.core.cpu_affinity import (
-    apply_cpu_affinity,
-    load_cpu_affinity_config,
-    load_worker_limits,
-)
-from bot.engine.decision_engine import DecisionEngine
-from bot.engine.decision_types import DecisionAction
-from bot.market_data.mock_ws_manager import MockWSManager
-from bot.market_data.ws_manager import WSManager
-from bot.ml.ensemble import EnsembleOutput
-from bot.ml.signal_model.model import SignalOutput, EnsembleSignalModel
-from bot.ml.signal_model.online_features import OnlineFeatureBuilder
-from bot.ml.runtime_models import resolve_models_root
-from bot.ml.runtime.policy_loader import (
-    load_policy,
-    load_policy_override,
-    resolve_policy_path,
-)
-from bot.ml.features.builder import (
-    schema_hash as ml_schema_hash,
-    schema_version as ml_schema_version,
-    feature_names as ml_feature_names,
-)
-from bot.ml.drift_monitor import DriftMonitor
-from bot.ml.runtime.model_manager import ModelManager
-from bot.ml.runtime.aggregator import MultiHorizonAggregator, build_ensemble_output
-from bot.trading.executor import BinanceDemoExecutor
-from bot.trading.bingx_executor import BingXDemoExecutor
-from bot.trading.paper_trader import PaperTrader
-from bot.trading.execution_mode import NormalExecutionMode, ScalpExecutionMode
-from bot.trading.deal_events import DealEventEmitter, ScalpDealTracker
-from bot.trading.order_policy import OrderPolicy
-from bot.trading.trade_stats import TradeStats
-from bot.market_data.data_manager import DataManager
-from bot.market_data.microstructure_cache import MicrostructureCache
-from bot.supervisor_client import SupervisorClient, SupervisorClientConfig
-from bot.integrations.supervisor_snapshot_client import SupervisorSnapshotClient
-from bot.monitoring.supervisor_snapshot_monitor import run_supervisor_snapshot_monitor
-from bot.risk.scalp_guards import ScalpGuard
-from bot.risk.safety_gate import SafetyGate, DataFreshnessMonitor
-from bot.risk.circuit_breakers import CircuitBreakerManager
-from bot.ops.status_writer import BotStatusWriter
-from bot.ops.metrics import MetricsTracker
-from bot.state.store import StateStore, OrderRecord
-from bot.state.recovery import recover_state
-from bot.policy.policy_client import PolicyClient
-from bot.policy.policy_gate import policy_allows_entry
-from bot.telemetry.event_writer import EventWriter
-from bot.storage.tsdb.publisher import TsdbPublisher
-from telemetry.emitter import TelemetryEmitter, TelemetryConfig
+from quantum_edge_core.strategies.scalper_v1.bot.ai.risk_moderator import \
+    LLMRiskModerator
+from quantum_edge_core.strategies.scalper_v1.bot.core.config_loader import (
+    config, load_supervisor_settings, load_supervisor_snapshot_settings)
+from quantum_edge_core.strategies.scalper_v1.bot.core.cpu_affinity import (
+    apply_cpu_affinity, load_cpu_affinity_config, load_worker_limits)
+from quantum_edge_core.strategies.scalper_v1.bot.engine.decision_engine import \
+    DecisionEngine
+from quantum_edge_core.strategies.scalper_v1.bot.engine.decision_types import \
+    DecisionAction
+from quantum_edge_core.strategies.scalper_v1.bot.integrations.supervisor_snapshot_client import \
+    SupervisorSnapshotClient
+from quantum_edge_core.strategies.scalper_v1.bot.market_data.data_manager import \
+    DataManager
+from quantum_edge_core.strategies.scalper_v1.bot.market_data.microstructure_cache import \
+    MicrostructureCache
+from quantum_edge_core.strategies.scalper_v1.bot.market_data.mock_ws_manager import \
+    MockWSManager
+from quantum_edge_core.strategies.scalper_v1.bot.market_data.ws_manager import \
+    WSManager
+from quantum_edge_core.strategies.scalper_v1.bot.ml.drift_monitor import \
+    DriftMonitor
+from quantum_edge_core.strategies.scalper_v1.bot.ml.ensemble import \
+    EnsembleOutput
+from quantum_edge_core.strategies.scalper_v1.bot.ml.features.builder import \
+    feature_names as ml_feature_names
+from quantum_edge_core.strategies.scalper_v1.bot.ml.features.builder import \
+    schema_hash as ml_schema_hash
+from quantum_edge_core.strategies.scalper_v1.bot.ml.features.builder import \
+    schema_version as ml_schema_version
+from quantum_edge_core.strategies.scalper_v1.bot.ml.runtime.aggregator import (
+    MultiHorizonAggregator, build_ensemble_output)
+from quantum_edge_core.strategies.scalper_v1.bot.ml.runtime.model_manager import \
+    ModelManager
+from quantum_edge_core.strategies.scalper_v1.bot.ml.runtime.policy_loader import (
+    load_policy, load_policy_override, resolve_policy_path)
+from quantum_edge_core.strategies.scalper_v1.bot.ml.runtime_models import \
+    resolve_models_root
+from quantum_edge_core.strategies.scalper_v1.bot.ml.signal_model.model import (
+    EnsembleSignalModel, SignalOutput)
+from quantum_edge_core.strategies.scalper_v1.bot.ml.signal_model.online_features import \
+    OnlineFeatureBuilder
+from quantum_edge_core.strategies.scalper_v1.bot.monitoring.supervisor_snapshot_monitor import \
+    run_supervisor_snapshot_monitor
+from quantum_edge_core.strategies.scalper_v1.bot.ops.metrics import \
+    MetricsTracker
+from quantum_edge_core.strategies.scalper_v1.bot.ops.status_writer import \
+    BotStatusWriter
+from quantum_edge_core.strategies.scalper_v1.bot.policy.policy_client import \
+    PolicyClient
+from quantum_edge_core.strategies.scalper_v1.bot.policy.policy_gate import \
+    policy_allows_entry
+from quantum_edge_core.strategies.scalper_v1.bot.risk.circuit_breakers import \
+    CircuitBreakerManager
+from quantum_edge_core.strategies.scalper_v1.bot.risk.safety_gate import (
+    DataFreshnessMonitor, SafetyGate)
+from quantum_edge_core.strategies.scalper_v1.bot.risk.scalp_guards import \
+    ScalpGuard
+from quantum_edge_core.strategies.scalper_v1.bot.state.recovery import \
+    recover_state
+from quantum_edge_core.strategies.scalper_v1.bot.state.store import (
+    OrderRecord, StateStore)
+from quantum_edge_core.strategies.scalper_v1.bot.storage.tsdb.publisher import \
+    TsdbPublisher
+from quantum_edge_core.strategies.scalper_v1.bot.supervisor_client import (
+    SupervisorClient, SupervisorClientConfig)
+from quantum_edge_core.strategies.scalper_v1.bot.telemetry.event_writer import \
+    EventWriter
+from quantum_edge_core.strategies.scalper_v1.bot.trading.bingx_executor import \
+    BingXDemoExecutor
+from quantum_edge_core.strategies.scalper_v1.bot.trading.deal_events import (
+    DealEventEmitter, ScalpDealTracker)
+from quantum_edge_core.strategies.scalper_v1.bot.trading.execution_mode import (
+    NormalExecutionMode, ScalpExecutionMode)
+from quantum_edge_core.strategies.scalper_v1.bot.trading.executor import \
+    BinanceDemoExecutor
+from quantum_edge_core.strategies.scalper_v1.bot.trading.order_policy import \
+    OrderPolicy
+from quantum_edge_core.strategies.scalper_v1.bot.trading.paper_trader import \
+    PaperTrader
+from quantum_edge_core.strategies.scalper_v1.bot.trading.trade_stats import \
+    TradeStats
 
 _kill_cache = {"ts": 0.0, "active": False, "reason": None}
 
@@ -189,7 +216,8 @@ async def _event_stream(symbols):
 
     if data_source == "hub":
         try:
-            from bot.market_data.hub_source import HubMarketDataSource
+            from quantum_edge_core.strategies.scalper_v1.bot.market_data.hub_source import \
+                HubMarketDataSource
 
             print("[INFO] Market data source: MarketDataHub (ZMQ).")
             hub_cfg = config.get("market_data", {}) or {}
@@ -251,7 +279,8 @@ async def main(
         )
     spot_cfg = config.get("spot_scalper", {}) or {}
     if isinstance(spot_cfg, dict) and bool(spot_cfg.get("enabled", False)):
-        from bot.spot_scalper import run_spot_scalper
+        from quantum_edge_core.strategies.scalper_v1.bot.spot_scalper import \
+            run_spot_scalper
 
         await run_spot_scalper(config, logger=logger)
         return

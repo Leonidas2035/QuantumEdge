@@ -5,12 +5,8 @@ from dataclasses import dataclass
 from typing import Dict, List
 
 from model_router.context.cache import ContextCache
-from model_router.context.formatter import (
-    ContextFormatter,
-    pct_change,
-    realized_vol,
-    utc_now,
-)
+from model_router.context.formatter import (ContextFormatter, pct_change,
+                                            realized_vol, utc_now)
 from model_router.context.models import ContextPackV1
 from model_router.context.sql_templates import QuestDBConfig, build_ohlcv_query
 

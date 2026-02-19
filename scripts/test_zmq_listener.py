@@ -6,8 +6,10 @@ Connects to tcp://127.0.0.1:5555 and decodes all events.
 """
 
 import asyncio
+
 import zmq
 import zmq.asyncio
+
 from quantum_edge_core.events import EventCodec
 
 

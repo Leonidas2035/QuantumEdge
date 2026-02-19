@@ -12,10 +12,8 @@ from supervisor.autopilot.collector import MetricsCollector
 from supervisor.autopilot.policy_manager import PolicyManager
 from supervisor.autopilot.quality import QualityMonitor
 from supervisor.autopilot.remediation import RemediationManager
-from supervisor.autopilot.state_machine import (
-    AutopilotController,
-    AutopilotStateMachine,
-)
+from supervisor.autopilot.state_machine import (AutopilotController,
+                                                AutopilotStateMachine)
 from supervisor.config import AutopilotConfig, PathsConfig
 
 

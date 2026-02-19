@@ -7,10 +7,11 @@ from __future__ import annotations
 
 import json
 import logging
+from dataclasses import dataclass, field
+from typing import Any, Dict, Optional
+
 import zmq
 import zmq.asyncio
-from dataclasses import dataclass, field
-from typing import Dict, Any, Optional
 
 logger = logging.getLogger(__name__)
 

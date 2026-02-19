@@ -6,10 +6,11 @@ Wraps Google GenAI API calls to prevent blocking the event loop and handle failu
 """
 
 import time
-import structlog
-import httpx
 from enum import Enum
 from typing import Optional
+
+import httpx
+import structlog
 
 logger = structlog.get_logger()
 

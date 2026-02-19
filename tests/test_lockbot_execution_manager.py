@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 import pytest
 
 pytest.skip("Legacy test broken by src-layout migration", allow_module_level=True)
@@ -11,17 +12,13 @@ from pathlib import Path
 from LockBotBTC.lockbot.contracts.lockbot_exec_v1 import EVENT_TYPES
 from LockBotBTC.lockbot_btc.ddn.config import DDNConfig
 from LockBotBTC.lockbot_btc.ddn.engine import OrderPlan
-from LockBotBTC.lockbot_btc.execution.base import (
-    CancelAllResult,
-    CancelResult,
-    ExecutionConfig,
-    SubmitResult,
-)
+from LockBotBTC.lockbot_btc.execution.base import (CancelAllResult,
+                                                   CancelResult,
+                                                   ExecutionConfig,
+                                                   SubmitResult)
 from LockBotBTC.lockbot_btc.execution.ledger import ExecutionLedger
-from LockBotBTC.lockbot_btc.execution.manager import (
-    ExecutionManager,
-    make_client_order_id,
-)
+from LockBotBTC.lockbot_btc.execution.manager import (ExecutionManager,
+                                                      make_client_order_id)
 from LockBotBTC.lockbot_btc.state.order_tracker import OrderTracker
 
 

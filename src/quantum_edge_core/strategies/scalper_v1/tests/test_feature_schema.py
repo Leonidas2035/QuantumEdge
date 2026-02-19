@@ -1,4 +1,4 @@
-from bot.ml.features.builder import schema_hash, feature_names
+from bot.ml.features.builder import feature_names, schema_hash
 from bot.ml.signal_model.registry import feature_schema_hash
 
 

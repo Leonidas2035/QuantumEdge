@@ -9,10 +9,11 @@ from pathlib import Path
 from typing import Optional
 
 from .circuit_breaker import CircuitBreaker
-from .heuristics import HeuristicDecision, HeuristicThresholds, apply_heuristics
+from .heuristics import (HeuristicDecision, HeuristicThresholds,
+                         apply_heuristics)
 from .llm_moderator import LlmModerator
+from .policy_contract import POLICY_VERSION, Policy
 from .signals import Signals, collect_signals
-from .policy_contract import Policy, POLICY_VERSION
 
 
 @dataclass

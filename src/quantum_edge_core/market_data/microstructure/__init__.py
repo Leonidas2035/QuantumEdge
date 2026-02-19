@@ -1,7 +1,7 @@
 """Microstructure analytics modules."""
 
 from .ofi import MicrostructureAnalyzer, MicrostructureSnapshot
-from .schema import MicrostructureEvent, MICROSTRUCTURE_EVENT_TYPE
+from .schema import MICROSTRUCTURE_EVENT_TYPE, MicrostructureEvent
 
 __all__ = [
     "MICROSTRUCTURE_EVENT_TYPE",

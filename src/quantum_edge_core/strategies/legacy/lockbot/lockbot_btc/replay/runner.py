@@ -4,38 +4,35 @@ from __future__ import annotations
 
 import json
 import subprocess
+import sys
 from dataclasses import asdict
 from pathlib import Path
-import sys
 from typing import Any, Dict, Iterable, List, Optional
 
 import msgspec
 import yaml
-
-from LockBotBTC.lockbot.contracts.lockbot_control_v1 import (
-    ACK_TOPIC,
-    CMD_TOPIC,
-    STATUS_TOPIC,
-)
+from LockBotBTC.lockbot.contracts.lockbot_control_v1 import (ACK_TOPIC,
+                                                             CMD_TOPIC,
+                                                             STATUS_TOPIC)
 from LockBotBTC.lockbot_btc.config import LockbotConfig
 from LockBotBTC.lockbot_btc.ddn.config import DDNConfig, DDNProfile
 from LockBotBTC.lockbot_btc.main import LockBotService
 from LockBotBTC.lockbot_btc.replay.bot_adapter import ReplayBotAdapter
 from LockBotBTC.lockbot_btc.replay.bus import ReplayBus
 from LockBotBTC.lockbot_btc.replay.clock import ReplayClock
-from LockBotBTC.lockbot_btc.replay.metrics import MetricsCollector, ReplayFillConfig
+from LockBotBTC.lockbot_btc.replay.metrics import (MetricsCollector,
+                                                   ReplayFillConfig)
 
 ROOT = Path(__file__).resolve().parents[3]
 SUPERVISOR_DIR = ROOT / "SupervisorAgent"
 if SUPERVISOR_DIR.exists() and str(SUPERVISOR_DIR) not in sys.path:
     sys.path.insert(0, str(SUPERVISOR_DIR))
 
-from supervisor.lockbot.models import PolicyRunnerConfig, load_lockbot_policy_config
+from supervisor.lockbot.models import (PolicyRunnerConfig,
+                                       load_lockbot_policy_config)
 from supervisor.lockbot.policy_runner import LockbotPolicyRunner
-from supervisor.lockbot.replay.policy_adapter import (
-    PolicyReplayAdapter,
-    ReplayControlClient,
-)
+from supervisor.lockbot.replay.policy_adapter import (PolicyReplayAdapter,
+                                                      ReplayControlClient)
 
 
 def load_dataset(

@@ -5,13 +5,13 @@ from __future__ import annotations
 import platform
 import sys
 import time
+from importlib import metadata as importlib_metadata
 from pathlib import Path
 from typing import Dict, List, Optional
 
 from supervisor.mlops.manifest import ModelManifest
 from supervisor.mlops.registry import sha256_file
 from supervisor.research.offline.signal_model.train import train_model
-from importlib import metadata as importlib_metadata
 
 
 def _version_tag() -> str:

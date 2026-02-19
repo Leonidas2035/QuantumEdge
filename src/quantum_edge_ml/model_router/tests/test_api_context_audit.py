@@ -7,8 +7,8 @@ import pytest
 TestClient = pytest.importorskip("fastapi.testclient").TestClient
 
 import model_router.api.app as app_module
-from model_router.contracts.decision_v1 import fallback_decision
 from model_router.context.models import ContextPackV1
+from model_router.contracts.decision_v1 import fallback_decision
 
 
 class FakeRouter:

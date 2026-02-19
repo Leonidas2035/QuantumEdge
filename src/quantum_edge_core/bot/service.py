@@ -8,9 +8,10 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from typing import Optional
+
 import zmq
 import zmq.asyncio
-from typing import Optional
 
 from quantum_edge_core.bot.config_manager import DynamicConfig
 

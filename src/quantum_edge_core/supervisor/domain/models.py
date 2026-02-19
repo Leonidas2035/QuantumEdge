@@ -4,9 +4,10 @@ Defines the strict contracts for Risk and Policy.
 """
 
 from __future__ import annotations
+
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import Dict, Any
+from typing import Any, Dict
 
 # --- Enums ---
 

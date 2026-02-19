@@ -7,10 +7,11 @@ import json
 from pathlib import Path
 from typing import List, Optional
 
-from bot.ml.features import builder as feature_builder
+from quantum_edge_core.strategies.scalper_v1.bot.ml.features import \
+    builder as feature_builder
 
-from .specs import build_scenarios
 from .build import _load_config, _select_thresholds
+from .specs import build_scenarios
 
 
 def validate_scenarios(symbol: str, root: Path) -> int:

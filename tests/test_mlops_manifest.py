@@ -3,9 +3,10 @@ import pytest
 pytest.skip("Legacy test broken by src-layout migration", allow_module_level=True)
 from pathlib import Path
 
-from supervisor.mlops.manifest import ModelManifest, MANIFEST_VERSION, validate_manifest
-from supervisor.mlops.registry import sha256_file
+from supervisor.mlops.manifest import (MANIFEST_VERSION, ModelManifest,
+                                       validate_manifest)
 from supervisor.mlops.publisher import publish_model
+from supervisor.mlops.registry import sha256_file
 
 
 def test_manifest_roundtrip(tmp_path: Path):

@@ -10,24 +10,18 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 
 import msgspec
-
-from LockBotBTC.lockbot.contracts.lockbot_control_v1 import (
-    ACK_TOPIC,
-    CMD_TOPIC,
-    STATUS_TOPIC,
-    AckEnvelope,
-    StatusEnvelope,
-    validate_command,
-)
-from LockBotBTC.lockbot.contracts.lockbot_exec_v1 import EXEC_TOPIC, ExecEnvelope
+from LockBotBTC.lockbot.contracts.lockbot_control_v1 import (ACK_TOPIC,
+                                                             CMD_TOPIC,
+                                                             STATUS_TOPIC,
+                                                             AckEnvelope,
+                                                             StatusEnvelope,
+                                                             validate_command)
+from LockBotBTC.lockbot.contracts.lockbot_exec_v1 import (EXEC_TOPIC,
+                                                          ExecEnvelope)
 from LockBotBTC.lockbot_btc.config import LockbotConfig
-from LockBotBTC.lockbot_btc.ddn.engine import (
-    DDNContext,
-    DDNEngine,
-    DDNIntent,
-    DDNMarketSnapshot,
-    DDNPositionSnapshot,
-)
+from LockBotBTC.lockbot_btc.ddn.engine import (DDNContext, DDNEngine,
+                                               DDNIntent, DDNMarketSnapshot,
+                                               DDNPositionSnapshot)
 from LockBotBTC.lockbot_btc.execution.ledger import ExecutionLedger
 from LockBotBTC.lockbot_btc.execution.manager import ExecutionManager
 from LockBotBTC.lockbot_btc.ipc.control_subscriber import ControlSubscriber

@@ -4,9 +4,9 @@ from __future__ import annotations
 
 import json
 import time
+import uuid
 from collections import deque
 from dataclasses import dataclass
-import uuid
 from pathlib import Path
 from typing import Deque, Optional
 

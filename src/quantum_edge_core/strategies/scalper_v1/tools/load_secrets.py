@@ -13,13 +13,9 @@ import json
 import sys
 from pathlib import Path
 
-from bot.core.secret_store import (
-    SecretsFileNotFound,
-    SecretsIntegrityError,
-    get_runtime_password,
-    is_supervisor_mode,
-    load_secrets,
-)
+from bot.core.secret_store import (SecretsFileNotFound, SecretsIntegrityError,
+                                   get_runtime_password, is_supervisor_mode,
+                                   load_secrets)
 
 
 def main() -> None:

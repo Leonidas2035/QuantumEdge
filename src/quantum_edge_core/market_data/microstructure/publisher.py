@@ -8,8 +8,10 @@ from typing import Optional
 
 from quantum_edge_core.market_data.bus.event_bus import EventBus
 from quantum_edge_core.market_data.ipc.publisher import ZmqPublisher
-from quantum_edge_core.market_data.microstructure.ofi import MicrostructureSnapshot
-from quantum_edge_core.market_data.microstructure.schema import MicrostructureEvent
+from quantum_edge_core.market_data.microstructure.ofi import \
+    MicrostructureSnapshot
+from quantum_edge_core.market_data.microstructure.schema import \
+    MicrostructureEvent
 from quantum_edge_core.market_data.models import Priority
 from quantum_edge_core.market_data.tsdb.quest_writer import QuestILPWriter
 

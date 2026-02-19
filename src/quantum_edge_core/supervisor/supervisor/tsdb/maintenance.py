@@ -7,7 +7,7 @@ import urllib.request
 from pathlib import Path
 from typing import Optional
 
-from supervisor.config import TsdbRetentionConfig, TsdbConfig
+from supervisor.config import TsdbConfig, TsdbRetentionConfig
 from supervisor.tsdb.query import derive_questdb_query_url, questdb_exec
 
 

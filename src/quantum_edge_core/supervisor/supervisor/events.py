@@ -10,7 +10,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, Iterable, Mapping, Optional, TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Dict, Iterable, Mapping, Optional
 
 if TYPE_CHECKING:
     from supervisor.process_manager import ProcessInfo
@@ -117,7 +117,8 @@ class EventLogger:
         if self.tsdb_writer:
             try:
                 # Lazy import to avoid circular dependency during module import time
-                from supervisor.tsdb import mappers as tsdb_mappers  # type: ignore
+                from supervisor.tsdb import \
+                    mappers as tsdb_mappers  # type: ignore
 
                 points = tsdb_mappers.event_to_points(event)
                 if points:

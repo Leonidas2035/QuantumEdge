@@ -60,11 +60,8 @@ def _threshold_metrics(
     y_true: np.ndarray, y_prob: np.ndarray, threshold: float
 ) -> Dict[str, Optional[float]]:
     try:
-        from sklearn.metrics import (
-            confusion_matrix,
-            precision_recall_fscore_support,
-            accuracy_score,
-        )
+        from sklearn.metrics import (accuracy_score, confusion_matrix,
+                                     precision_recall_fscore_support)
 
         preds = (y_prob >= threshold).astype(int)
         precision, recall, f1, _ = precision_recall_fscore_support(

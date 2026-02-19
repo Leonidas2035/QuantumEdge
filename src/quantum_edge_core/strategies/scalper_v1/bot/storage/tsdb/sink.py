@@ -3,10 +3,13 @@ from __future__ import annotations
 import asyncio
 from typing import Optional
 
-from bot.storage.event_bus import EventBus, EventPriority
-from bot.storage.spooler import Spooler
-from bot.storage.tsdb.questdb_ilp_writer import QuestDbIlpWriter
-from bot.storage.tsdb_config import TsdbConfig, load_tsdb_config
+from quantum_edge_core.strategies.scalper_v1.bot.storage.event_bus import (
+    EventBus, EventPriority)
+from quantum_edge_core.strategies.scalper_v1.bot.storage.spooler import Spooler
+from quantum_edge_core.strategies.scalper_v1.bot.storage.tsdb.questdb_ilp_writer import \
+    QuestDbIlpWriter
+from quantum_edge_core.strategies.scalper_v1.bot.storage.tsdb_config import (
+    TsdbConfig, load_tsdb_config)
 
 
 class TsdbSink:

@@ -1,5 +1,7 @@
 import logging
+
 import structlog
+
 from quantum_edge_core.logging_setup import setup_logging
 
 

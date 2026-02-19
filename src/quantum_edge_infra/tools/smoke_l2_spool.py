@@ -1,8 +1,8 @@
 """Smoke utility for L2 spooler."""
 
 import gzip
-from pathlib import Path
 import time
+from pathlib import Path
 
 from market_data.config import L2Config
 from market_data.models import L2Envelope

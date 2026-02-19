@@ -3,9 +3,12 @@ import time
 from dataclasses import dataclass
 from typing import Dict, Optional
 
-from bot.storage.event_bus import EventPriority
-from bot.storage.tsdb.sink import get_tsdb_sink
-from bot.storage.tsdb_config import load_tsdb_config
+from quantum_edge_core.strategies.scalper_v1.bot.storage.event_bus import \
+    EventPriority
+from quantum_edge_core.strategies.scalper_v1.bot.storage.tsdb.sink import \
+    get_tsdb_sink
+from quantum_edge_core.strategies.scalper_v1.bot.storage.tsdb_config import \
+    load_tsdb_config
 
 
 class DataManager:

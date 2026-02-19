@@ -5,7 +5,7 @@ from __future__ import annotations
 import time
 from typing import Optional
 
-from .policy_contract import Policy, POLICY_VERSION
+from .policy_contract import POLICY_VERSION, Policy
 
 
 class PolicyStore:

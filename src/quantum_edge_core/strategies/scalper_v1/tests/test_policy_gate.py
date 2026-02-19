@@ -1,6 +1,6 @@
 import time
 
-from policy.policy_contract import Policy, POLICY_VERSION
+from policy.policy_contract import POLICY_VERSION, Policy
 from policy.policy_gate import policy_allows_entry
 
 

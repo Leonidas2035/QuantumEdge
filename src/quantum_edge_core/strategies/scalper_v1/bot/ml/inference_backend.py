@@ -10,7 +10,8 @@ from typing import Optional
 import numpy as np
 import xgboost as xgb
 
-from bot.ml.feature_schema import FEATURE_NAMES
+from quantum_edge_core.strategies.scalper_v1.bot.ml.feature_schema import \
+    FEATURE_NAMES
 
 _LOG = logging.getLogger("inference_backend")
 

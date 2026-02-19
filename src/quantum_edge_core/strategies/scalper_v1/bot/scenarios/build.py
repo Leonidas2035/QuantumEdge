@@ -10,14 +10,8 @@ from typing import Dict, List, Optional
 
 import yaml
 
-from .cutter import (
-    CutterConfig,
-    Episode,
-    build_manifest,
-    build_schema_payload,
-    build_stats,
-    cut_scenarios,
-)
+from .cutter import (CutterConfig, Episode, build_manifest,
+                     build_schema_payload, build_stats, cut_scenarios)
 from .io import Tick, attach_depth, load_depth_snapshots, load_ticks
 from .specs import build_scenarios
 

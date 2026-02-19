@@ -3,12 +3,13 @@ Test script to simulate Bot Heartbeats using the fixed protocol.
 This verifies if the Supervisor (once fixed) can receive heartbeats on ZMQ port 5557.
 """
 
-import zmq
-import time
 import json
 import logging
 import sys
+import time
 from datetime import datetime, timezone
+
+import zmq
 
 # Configure logging
 logging.basicConfig(level=logging.INFO, format="%(asctime)s - %(message)s")

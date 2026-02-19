@@ -1,5 +1,4 @@
 import numpy as np
-
 from bot.ml.eval.calibrate import _apply_calibrator, _fit_calibrator
 
 

@@ -8,9 +8,9 @@ from pathlib import Path
 from typing import List
 
 import yaml
-
 from LockBotBTC.lockbot_btc.ddn.config import DDNConfig, DDNProfile
-from LockBotBTC.lockbot_btc.execution.base import ExecutionConfig, ExecutionMode
+from LockBotBTC.lockbot_btc.execution.base import (ExecutionConfig,
+                                                   ExecutionMode)
 
 
 @dataclass

@@ -4,14 +4,10 @@ pytest.skip("Legacy test broken by src-layout migration", allow_module_level=Tru
 import random
 
 from LockBotBTC.lockbot_btc.ddn.config import DDNConfig, DDNProfile
-from LockBotBTC.lockbot_btc.ddn.engine import (
-    DDNContext,
-    DDNEngine,
-    DDNIntent,
-    DDNMarketSnapshot,
-    DDNPositionSnapshot,
-    _apply_delta,
-)
+from LockBotBTC.lockbot_btc.ddn.engine import (DDNContext, DDNEngine,
+                                               DDNIntent, DDNMarketSnapshot,
+                                               DDNPositionSnapshot,
+                                               _apply_delta)
 
 
 def _context(

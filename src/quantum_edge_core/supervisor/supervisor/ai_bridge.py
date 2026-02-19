@@ -6,7 +6,7 @@ Ensures responses strictly adhere to the defined Schema.
 from __future__ import annotations
 
 import logging
-from typing import Dict, Any
+from typing import Any, Dict
 
 from quantum_edge_core.supervisor.supervisor.prompts import JSON_SCHEMA
 

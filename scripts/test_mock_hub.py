@@ -1,10 +1,12 @@
 import asyncio
 import signal
+
 import zmq
 import zmq.asyncio
-from quantum_edge_core.market_data.hub import MarketDataHubService
-from quantum_edge_core.logging_setup import setup_logging
+
 from quantum_edge_core.events import EventCodec
+from quantum_edge_core.logging_setup import setup_logging
+from quantum_edge_core.market_data.hub import MarketDataHubService
 
 
 async def zmq_subscriber(stop_event):

@@ -1,5 +1,6 @@
 import json
 import os
+import shutil
 import socket
 import subprocess
 import sys
@@ -10,7 +11,6 @@ from typing import Optional
 from urllib import request
 
 import yaml
-import shutil
 
 
 def _repo_root() -> Path:

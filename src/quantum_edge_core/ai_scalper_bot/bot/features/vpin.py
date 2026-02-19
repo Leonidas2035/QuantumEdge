@@ -4,7 +4,8 @@ Updates on volume buckets to measure flow toxicity.
 """
 
 from collections import deque
-from typing import Optional, Deque
+from typing import Deque, Optional
+
 from quantum_edge_core.ai_scalper_bot.bot.core.models import MarketTick
 
 

@@ -2,7 +2,6 @@ import json
 from pathlib import Path
 
 import pandas as pd
-
 from bot.ml.datasets.build_from_scenarios import build_from_scenarios
 from bot.ml.signal_model.train import TrainConfig, train_models
 

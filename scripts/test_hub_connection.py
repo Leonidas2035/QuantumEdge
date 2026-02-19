@@ -1,9 +1,11 @@
 import asyncio
 import signal
+
 import uvloop
+
 from quantum_edge_core.core.service import BaseService
-from quantum_edge_core.market_data.feeds.binance_feed import BinanceFeed
 from quantum_edge_core.logging_setup import setup_logging
+from quantum_edge_core.market_data.feeds.binance_feed import BinanceFeed
 
 
 class MockHub(BaseService):

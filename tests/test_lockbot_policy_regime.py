@@ -9,12 +9,8 @@ SUPERVISOR_DIR = ROOT / "SupervisorAgent"
 if str(SUPERVISOR_DIR) not in sys.path:
     sys.path.insert(0, str(SUPERVISOR_DIR))
 
-from supervisor.lockbot.models import (
-    LiqHeatmapSummary,
-    MarketSnapshot,
-    OhlcvBar,
-    RegimeDetectorConfig,
-)
+from supervisor.lockbot.models import (LiqHeatmapSummary, MarketSnapshot,
+                                       OhlcvBar, RegimeDetectorConfig)
 from supervisor.lockbot.regime_detector import RegimeDetector, RegimeHysteresis
 
 

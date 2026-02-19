@@ -1,4 +1,5 @@
-from bot.engine.decision_types import Decision, DecisionAction, DecisionDirection
+from bot.engine.decision_types import (Decision, DecisionAction,
+                                       DecisionDirection)
 from bot.risk.scalp_guards import ScalpGuard
 from bot.trading.execution_mode import ScalpExecutionMode
 

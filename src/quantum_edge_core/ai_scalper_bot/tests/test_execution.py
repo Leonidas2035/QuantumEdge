@@ -1,14 +1,13 @@
 import pytest
 
 from quantum_edge_core.ai_scalper_bot.bot.core.models import MarketState
-from quantum_edge_core.ai_scalper_bot.bot.features.facade import FeatureVector
-from quantum_edge_core.ai_scalper_bot.bot.execution.volatility import OnlineVolatility
-from quantum_edge_core.ai_scalper_bot.bot.execution.position import PositionManager
+from quantum_edge_core.ai_scalper_bot.bot.execution.position import \
+    PositionManager
 from quantum_edge_core.ai_scalper_bot.bot.execution.strategy_core import (
-    AdaptiveGridStrategy,
-    BotState,
-    TradeAction,
-)
+    AdaptiveGridStrategy, BotState, TradeAction)
+from quantum_edge_core.ai_scalper_bot.bot.execution.volatility import \
+    OnlineVolatility
+from quantum_edge_core.ai_scalper_bot.bot.features.facade import FeatureVector
 
 
 # --- 1. Volatility Tests ---

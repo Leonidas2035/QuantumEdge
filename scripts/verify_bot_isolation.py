@@ -1,9 +1,10 @@
 import asyncio
-import zmq
-import zmq.asyncio
-import ujson
 import random
 import time
+
+import ujson
+import zmq
+import zmq.asyncio
 
 # --- CONFIG ---
 MOCK_MARKET_PUB_PORT = 5555  # Порт, де бот слухає дані

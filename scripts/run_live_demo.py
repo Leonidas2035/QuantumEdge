@@ -4,11 +4,11 @@ QuantumEdge Live Demo Runner.
 Orchestrates Real-Time BingX Data Feed and AI Scalper Bot.
 """
 
-import subprocess
-import time
 import os
+import subprocess
 import sys
 import threading
+import time
 from typing import IO
 
 # ANSI Colors

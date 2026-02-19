@@ -6,7 +6,8 @@ Centralizes the calculation of all microstructure alpha indicators.
 import logging
 from dataclasses import dataclass
 
-from quantum_edge_core.ai_scalper_bot.bot.core.models import MarketState, MarketTick
+from quantum_edge_core.ai_scalper_bot.bot.core.models import (MarketState,
+                                                              MarketTick)
 from quantum_edge_core.ai_scalper_bot.bot.features.ofi import OfiCalculator
 from quantum_edge_core.ai_scalper_bot.bot.features.vpin import VpinCalculator
 

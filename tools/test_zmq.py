@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
-import zmq
 import json
 import time
+
+import zmq
 
 
 def main():

@@ -6,9 +6,9 @@ Handles uvloop installation and graceful shutdown signals.
 """
 
 import asyncio
-import sys
 import logging
-from typing import Coroutine, Any
+import sys
+from typing import Any, Coroutine
 
 logger = logging.getLogger(__name__)
 

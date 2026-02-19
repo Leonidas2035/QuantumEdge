@@ -1,7 +1,8 @@
-from mcp.server.fastmcp import FastMCP
-import subprocess
 import os
+import subprocess
 from typing import Dict
+
+from mcp.server.fastmcp import FastMCP
 
 # Ініціалізація сервера
 mcp = FastMCP("QuantumEdge Orchestrator")

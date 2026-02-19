@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from supervisor.tsdb.base import TimeseriesStore, Point
+from supervisor.tsdb.base import Point, TimeseriesStore
 
 
 class NoopTimeseriesStore(TimeseriesStore):

@@ -12,45 +12,40 @@ from contextlib import suppress
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-
 from quantum_edge_core.core.service import BaseService
-from quantum_edge_core.logging_setup import setup_logging
-from quantum_edge_core.utils.async_runner import run_service
 from quantum_edge_core.events import MarketTrade
-
+from quantum_edge_core.logging_setup import setup_logging
 from quantum_edge_core.market_data.account.account_state import (
-    AccountState,
-    FINAL_ORDER_STATUSES,
-)
-from quantum_edge_core.market_data.account.binance_spot_userstream import (
-    BinanceSpotUserStream,
-)
-from quantum_edge_core.market_data.account.binance_usdm_userstream import (
-    BinanceUsdmUserStream,
-)
+    FINAL_ORDER_STATUSES, AccountState)
+from quantum_edge_core.market_data.account.binance_spot_userstream import \
+    BinanceSpotUserStream
+from quantum_edge_core.market_data.account.binance_usdm_userstream import \
+    BinanceUsdmUserStream
 from quantum_edge_core.market_data.account.publisher import AccountPublisher
+from quantum_edge_core.market_data.analytics.alpha_engine import AlphaEngine
 from quantum_edge_core.market_data.bus.event_bus import EventBus
 from quantum_edge_core.market_data.config import HubConfig
-from quantum_edge_core.market_data.feeds.mock_feed import MockLiveFeed
-from quantum_edge_core.market_data.feeds.binance_futures import BinanceFuturesFeed
+from quantum_edge_core.market_data.feeds.binance_futures import \
+    BinanceFuturesFeed
 from quantum_edge_core.market_data.feeds.liquidations import LiquidationFeed
-from quantum_edge_core.market_data.analytics.alpha_engine import AlphaEngine
+from quantum_edge_core.market_data.feeds.mock_feed import MockLiveFeed
 from quantum_edge_core.market_data.ipc.publisher import ZmqPublisher
-from quantum_edge_core.market_data.ipc.snapshot_server import (
-    SnapshotCache,
-    SnapshotServer,
-)
-from quantum_edge_core.market_data.models import HeartbeatEvent, Priority, TradeEvent
-from quantum_edge_core.market_data.models.account_snapshot import AccountSnapshot
-from quantum_edge_core.market_data.models.account_delta import AccountDelta
-from quantum_edge_core.market_data.orderbook.aggregator import OrderBookAggregator
-from quantum_edge_core.market_data.microstructure.publisher import (
-    MicrostructurePublisher,
-)
+from quantum_edge_core.market_data.ipc.snapshot_server import (SnapshotCache,
+                                                               SnapshotServer)
 from quantum_edge_core.market_data.lockbot.engine import LockbotDerivedEngine
 from quantum_edge_core.market_data.lockbot.publisher import LockbotPublisher
+from quantum_edge_core.market_data.microstructure.publisher import \
+    MicrostructurePublisher
+from quantum_edge_core.market_data.models import (HeartbeatEvent, Priority,
+                                                  TradeEvent)
+from quantum_edge_core.market_data.models.account_delta import AccountDelta
+from quantum_edge_core.market_data.models.account_snapshot import \
+    AccountSnapshot
+from quantum_edge_core.market_data.orderbook.aggregator import \
+    OrderBookAggregator
 from quantum_edge_core.market_data.spool.status import summarize_spool
 from quantum_edge_core.market_data.tsdb.quest_writer import QuestILPWriter
+from quantum_edge_core.utils.async_runner import run_service
 
 # Forward references for type hinting (Legacy components)
 MicrostructureAnalyzer = Any

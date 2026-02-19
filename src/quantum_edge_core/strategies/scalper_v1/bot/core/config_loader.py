@@ -1,19 +1,14 @@
 import os
 import sys
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, Optional
-from dataclasses import dataclass
 
 import yaml
 
-from bot.core.secret_store import (
-    SecretsFileNotFound,
-    SecretsIntegrityError,
-    SecretsNotAvailableError,
-    get_runtime_password,
-    is_supervisor_mode,
-    load_secrets,
-)
+from quantum_edge_core.strategies.scalper_v1.bot.core.secret_store import (
+    SecretsFileNotFound, SecretsIntegrityError, SecretsNotAvailableError,
+    get_runtime_password, is_supervisor_mode, load_secrets)
 
 try:
     from tools.qe_config import get_qe_config, get_qe_paths

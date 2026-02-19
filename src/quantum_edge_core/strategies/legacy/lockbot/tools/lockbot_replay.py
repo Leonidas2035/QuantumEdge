@@ -8,17 +8,11 @@ from pathlib import Path
 from typing import Optional
 
 from LockBotBTC.lockbot_btc.config import LockbotConfig
-from LockBotBTC.lockbot_btc.replay import (
-    load_dataset,
-    load_ddn_config,
-    load_policy_config,
-    run_replay,
-)
-from LockBotBTC.lockbot_btc.replay.scenarios import (
-    SCENARIO_NAMES,
-    ScenarioConfig,
-    generate_scenario,
-)
+from LockBotBTC.lockbot_btc.replay import (load_dataset, load_ddn_config,
+                                           load_policy_config, run_replay)
+from LockBotBTC.lockbot_btc.replay.scenarios import (SCENARIO_NAMES,
+                                                     ScenarioConfig,
+                                                     generate_scenario)
 
 
 def _default_out_dir() -> Path:

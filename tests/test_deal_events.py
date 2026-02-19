@@ -1,7 +1,8 @@
 import pytest
 
 pytest.skip("Legacy test broken by src-layout migration", allow_module_level=True)
-from bot.trading.deal_events import DealEventEmitter, DcaDealTracker, ScalpDealTracker
+from bot.trading.deal_events import (DcaDealTracker, DealEventEmitter,
+                                     ScalpDealTracker)
 
 
 def test_dca_deal_closed_idempotent() -> None:

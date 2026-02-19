@@ -1,5 +1,6 @@
-import zmq
 import datetime
+
+import zmq
 
 
 def listen():

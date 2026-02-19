@@ -3,12 +3,9 @@ from __future__ import annotations
 import json
 
 import httpx
-
 from model_router.backends.openai_chat import OpenAIChatBackend
 from model_router.backends.openai_responses import (
-    OpenAIResponsesBackend,
-    extract_text_from_responses,
-)
+    OpenAIResponsesBackend, extract_text_from_responses)
 
 
 def test_openai_responses_payload(monkeypatch):

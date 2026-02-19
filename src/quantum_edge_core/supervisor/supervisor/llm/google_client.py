@@ -1,9 +1,10 @@
 """Google AI Client for concise risk assessment queries."""
 
+import asyncio
 import logging
 import os
-import asyncio
-from typing import Dict, Any, Optional, List, Mapping
+from typing import Any, Dict, List, Mapping, Optional
+
 import google.generativeai as genai
 
 logger = logging.getLogger(__name__)

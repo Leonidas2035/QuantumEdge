@@ -10,10 +10,14 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Deque, Dict, Optional
 
-from bot.market_data.hub_source import HubMarketDataSource
-from bot.ops.status_writer import BotStatusWriter
-from bot.telemetry.event_writer import EventWriter
-from bot.trading.executor import BinanceDemoExecutor
+from quantum_edge_core.strategies.scalper_v1.bot.market_data.hub_source import \
+    HubMarketDataSource
+from quantum_edge_core.strategies.scalper_v1.bot.ops.status_writer import \
+    BotStatusWriter
+from quantum_edge_core.strategies.scalper_v1.bot.telemetry.event_writer import \
+    EventWriter
+from quantum_edge_core.strategies.scalper_v1.bot.trading.executor import \
+    BinanceDemoExecutor
 
 
 @dataclass(frozen=True)

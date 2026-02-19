@@ -5,7 +5,6 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List
 
-
 from meta_core import run_task
 from projects_config import ProjectRegistry, resolve_project_root
 from task_manager import create_task

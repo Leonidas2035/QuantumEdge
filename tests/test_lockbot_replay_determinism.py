@@ -1,4 +1,5 @@
 from __future__ import annotations
+
 import pytest
 
 pytest.skip("Legacy test broken by src-layout migration", allow_module_level=True)
@@ -12,7 +13,8 @@ from pathlib import Path
 
 from LockBotBTC.lockbot_btc.config import LockbotConfig
 from LockBotBTC.lockbot_btc.replay.runner import load_policy_config, run_replay
-from LockBotBTC.lockbot_btc.replay.scenarios import ScenarioConfig, generate_scenario
+from LockBotBTC.lockbot_btc.replay.scenarios import (ScenarioConfig,
+                                                     generate_scenario)
 
 
 def _hash_file(path: Path) -> str:
@@ -35,7 +37,7 @@ def _run(tmp_path: Path, run_id: str) -> Path:
     events = generate_scenario(cfg)
     out_dir = tmp_path / run_id
     policy_cfg = load_policy_config(
-        Path("SupervisorAgent/configs/lockbot_btc_policy.yaml")
+        Path("src/quantum_edge_core/supervisor/configs/lockbot_btc_policy.yaml")
     )
     policy_cfg.enabled = True
     policy_cfg.execution_enabled = True

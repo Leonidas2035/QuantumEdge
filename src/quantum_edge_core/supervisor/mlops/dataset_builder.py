@@ -7,8 +7,8 @@ from pathlib import Path
 from typing import Dict, Optional, Tuple
 
 import pandas as pd
-
-from supervisor.research.offline.signal_model.dataset_builder import DatasetBuilder
+from supervisor.research.offline.signal_model.dataset_builder import \
+    DatasetBuilder
 
 
 def _timestamp_range(df: pd.DataFrame) -> Tuple[Optional[int], Optional[int]]:

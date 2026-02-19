@@ -1,23 +1,17 @@
 import json
 import os
 import secrets
-from typing import Optional
 from http import HTTPStatus
 from http.server import BaseHTTPRequestHandler, HTTPServer
 from socketserver import ThreadingMixIn
-from urllib.parse import parse_qs, urlparse, unquote
+from typing import Optional
+from urllib.parse import parse_qs, unquote, urlparse
 
 from approval_engine import ApprovalError
-from control_center import (
-    approve_apply_run,
-    create_task_inbox,
-    ensure_active_project,
-    get_run_detail,
-    list_inbox,
-    list_runs,
-    list_schedules_with_state,
-    set_active_project,
-)
+from control_center import (approve_apply_run, create_task_inbox,
+                            ensure_active_project, get_run_detail, list_inbox,
+                            list_runs, list_schedules_with_state,
+                            set_active_project)
 from logger import configure_logger
 from projects_registry import load_projects_registry
 

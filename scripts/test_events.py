@@ -1,5 +1,6 @@
 import time
-from quantum_edge_core.events import EventCodec, MarketTrade, BaseEvent
+
+from quantum_edge_core.events import BaseEvent, EventCodec, MarketTrade
 
 
 def main():

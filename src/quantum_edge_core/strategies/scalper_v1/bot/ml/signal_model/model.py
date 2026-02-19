@@ -1,13 +1,16 @@
-from dataclasses import dataclass
 import logging
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
 import numpy as np
 
-from bot.ml.feature_schema import FEATURE_NAMES
-from bot.ml.calibration import apply_calibration
-from bot.ml.inference_backend import InferenceBackend, create_backend
+from quantum_edge_core.strategies.scalper_v1.bot.ml.calibration import \
+    apply_calibration
+from quantum_edge_core.strategies.scalper_v1.bot.ml.feature_schema import \
+    FEATURE_NAMES
+from quantum_edge_core.strategies.scalper_v1.bot.ml.inference_backend import (
+    InferenceBackend, create_backend)
 
 
 @dataclass

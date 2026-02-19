@@ -9,14 +9,16 @@ import asyncio
 import json
 import logging
 import time
+from dataclasses import dataclass
+from typing import Any, Dict
+
 import zmq
 import zmq.asyncio
-from typing import Dict, Any
-from dataclasses import dataclass
 
 # Attempt import from domain, else define local fallback or fail
 try:
-    from quantum_edge_core.supervisor.domain.models import PolicyContract, TradingMode
+    from quantum_edge_core.supervisor.domain.models import (PolicyContract,
+                                                            TradingMode)
 except ImportError:
     # Fallback definition if import fails (e.g. strict isolation)
     # Ideally should share code. For now assuming import works as they are in same repo/package structure.

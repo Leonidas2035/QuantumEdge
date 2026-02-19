@@ -1,6 +1,9 @@
-import ccxt.async_support as ccxt
 import logging
-from quantum_edge_core.ai_scalper_bot.bot.execution.strategy_core import TradeAction
+
+import ccxt.async_support as ccxt
+
+from quantum_edge_core.ai_scalper_bot.bot.execution.strategy_core import \
+    TradeAction
 
 
 class BinanceExecutionGateway:

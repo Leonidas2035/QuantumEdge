@@ -2,8 +2,10 @@
 Backtest Metrics Calculator.
 """
 
+from typing import Any, Dict, List
+
 import numpy as np
-from typing import List, Dict, Any
+
 from quantum_edge_core.backtesting.mock_exchange import Trade
 
 

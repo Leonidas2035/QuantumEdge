@@ -3,12 +3,13 @@ QuestDB Data Loader for Backtesting.
 Fetches historical data via HTTP API.
 """
 
-import requests
 import csv
-import logging
-from typing import Iterator, Dict, Any, List
-from datetime import datetime
 import io
+import logging
+from datetime import datetime
+from typing import Any, Dict, Iterator, List
+
+import requests
 
 logger = logging.getLogger(__name__)
 
@@ -52,9 +53,9 @@ class QuestDataLoader:
 
         # 1. Fetch Trades
         query_trades = f"""
-        SELECT timestamp, price, amount as quantity, side, 'trade' as type 
-        FROM trades 
-        WHERE symbol = '{symbol}' 
+        SELECT timestamp, price, amount as quantity, side, 'trade' as type
+        FROM trades
+        WHERE symbol = '{symbol}'
         AND timestamp BETWEEN '{t_start}' AND '{t_end}'
         """
         logger.info(f"Fetching trades for {symbol}...")

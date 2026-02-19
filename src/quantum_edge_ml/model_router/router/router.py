@@ -8,11 +8,8 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Dict, Optional
 
-from model_router.contracts.decision_v1 import (
-    DecisionV1,
-    decode_decision,
-    fallback_decision,
-)
+from model_router.contracts.decision_v1 import (DecisionV1, decode_decision,
+                                                fallback_decision)
 from model_router.decoding.enforce import enforce_decision
 from model_router.router.budgets import BudgetConfig, TeacherBudgets
 from model_router.router.cache import RouterCache

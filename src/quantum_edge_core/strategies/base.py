@@ -5,8 +5,10 @@ Abstract Base Class for Strategies.
 """
 
 import abc
-import msgspec
 from typing import Optional
+
+import msgspec
+
 from quantum_edge_core.events import MarketTrade
 
 

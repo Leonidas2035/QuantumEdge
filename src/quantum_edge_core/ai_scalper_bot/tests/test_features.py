@@ -1,7 +1,8 @@
-from quantum_edge_core.ai_scalper_bot.bot.core.models import MarketState, MarketTick
+from quantum_edge_core.ai_scalper_bot.bot.core.models import (MarketState,
+                                                              MarketTick)
+from quantum_edge_core.ai_scalper_bot.bot.features.facade import FeatureEngine
 from quantum_edge_core.ai_scalper_bot.bot.features.ofi import OfiCalculator
 from quantum_edge_core.ai_scalper_bot.bot.features.vpin import VpinCalculator
-from quantum_edge_core.ai_scalper_bot.bot.features.facade import FeatureEngine
 
 
 def create_state(bid_p, bid_q, ask_p, ask_q):

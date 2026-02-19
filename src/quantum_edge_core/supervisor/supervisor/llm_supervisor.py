@@ -9,9 +9,10 @@ from datetime import date
 from enum import Enum
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
+
 from supervisor.audit_report import load_events_for_date
 from supervisor.config import LlmSupervisorConfig, RiskConfig
-from supervisor.events import BaseEvent, EventType, EventLogger
+from supervisor.events import BaseEvent, EventLogger, EventType
 from supervisor.llm.chat_client import ChatCompletionsClient
 from supervisor.state import RiskStateSnapshot
 

@@ -1,7 +1,7 @@
-import sys
 import importlib.util
-from pathlib import Path
+import sys
 import tempfile
+from pathlib import Path
 
 
 def check_step(name, status, message=""):
@@ -29,8 +29,9 @@ def check_logging():
         if str(src_path) not in sys.path:
             sys.path.insert(0, str(src_path))
 
-        from quantum_edge_core.logging_setup import setup_logging
         import structlog
+
+        from quantum_edge_core.logging_setup import setup_logging
 
         # Create temp file
         with tempfile.NamedTemporaryFile(delete=False) as tmp:

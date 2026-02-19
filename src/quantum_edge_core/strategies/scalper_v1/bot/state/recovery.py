@@ -5,7 +5,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any, Dict
 
-from bot.state.store import StateStore
+from quantum_edge_core.strategies.scalper_v1.bot.state.store import StateStore
 
 
 def recover_state(base_dir: Path) -> Dict[str, Dict[str, Any]]:

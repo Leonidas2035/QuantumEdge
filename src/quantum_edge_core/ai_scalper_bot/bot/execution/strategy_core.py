@@ -3,13 +3,14 @@ Adaptive Grid Strategy Core.
 Decides trade actions based on Market State, Alpha Features, and Position Risk.
 """
 
-from enum import Enum, auto
 from dataclasses import dataclass
-from typing import Optional, Dict, Any
+from enum import Enum, auto
+from typing import Any, Dict, Optional
 
 from quantum_edge_core.ai_scalper_bot.bot.core.models import MarketState
+from quantum_edge_core.ai_scalper_bot.bot.execution.position import \
+    PositionManager
 from quantum_edge_core.ai_scalper_bot.bot.features.facade import FeatureVector
-from quantum_edge_core.ai_scalper_bot.bot.execution.position import PositionManager
 
 
 class BotState(Enum):

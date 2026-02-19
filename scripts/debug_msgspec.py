@@ -1,6 +1,6 @@
-import msgspec
-
 from typing import Union
+
+import msgspec
 
 
 class Base(msgspec.Struct, tag=True):

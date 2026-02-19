@@ -9,7 +9,6 @@ from pathlib import Path
 from typing import List, Optional
 
 from ..replay.adapters import MarketEvent
-
 from .metrics import compute_metrics
 
 
@@ -252,8 +251,10 @@ class SimpleSignalProvider:
 
 class BotStrategy:
     def __init__(self, symbol: str, models_dir: Optional[Path], ml_mode: str) -> None:
-        from bot.engine.decision_engine import DecisionEngine
-        from bot.ml.signal_model.online_features import OnlineFeatureBuilder
+        from quantum_edge_core.strategies.scalper_v1.bot.engine.decision_engine import \
+            DecisionEngine
+        from quantum_edge_core.strategies.scalper_v1.bot.ml.signal_model.online_features import \
+            OnlineFeatureBuilder
 
         self.symbol = symbol
         self.engine = DecisionEngine()
@@ -266,8 +267,10 @@ class BotStrategy:
         if ml_mode not in {"auto", "runtime"}:
             return
         try:
-            from bot.ml.ensemble import EnsembleSignalModel
-            from bot.ml.runtime_models import load_runtime_models, resolve_models_root
+            from quantum_edge_core.strategies.scalper_v1.bot.ml.ensemble import \
+                EnsembleSignalModel
+            from quantum_edge_core.strategies.scalper_v1.bot.ml.runtime_models import (
+                load_runtime_models, resolve_models_root)
         except Exception:
             return
 

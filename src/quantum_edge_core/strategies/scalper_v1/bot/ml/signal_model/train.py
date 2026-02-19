@@ -6,9 +6,9 @@ import argparse
 import hashlib
 import json
 import os
-import sys
 import shutil
 import subprocess
+import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
@@ -18,7 +18,8 @@ import numpy as np
 import pandas as pd
 import xgboost as xgb
 
-from bot.ml.features.builder import feature_names, schema_hash, schema_version
+from quantum_edge_core.strategies.scalper_v1.bot.ml.features.builder import (
+    feature_names, schema_hash, schema_version)
 
 
 @dataclass
@@ -157,11 +158,9 @@ def _evaluate_thresholds(y_true: np.ndarray, y_prob: np.ndarray) -> Dict[str, fl
 def _metrics(y_true: np.ndarray, y_prob: np.ndarray) -> Dict[str, object]:
     metrics: Dict[str, object] = {}
     try:
-        from sklearn.metrics import (
-            roc_auc_score,
-            confusion_matrix,
-            precision_recall_fscore_support,
-        )
+        from sklearn.metrics import (confusion_matrix,
+                                     precision_recall_fscore_support,
+                                     roc_auc_score)
 
         if len(np.unique(y_true)) > 1:
             metrics["auc"] = float(roc_auc_score(y_true, y_prob))

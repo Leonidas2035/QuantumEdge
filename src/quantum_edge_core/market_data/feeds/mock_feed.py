@@ -6,15 +6,15 @@ Simulates high-frequency market data.
 """
 
 import asyncio
-import time
-import random
 import logging
+import random
+import time
 from typing import List
 
-from quantum_edge_core.market_data.feeds.base import BaseFeed
+from quantum_edge_core.events import MarketTrade
 from quantum_edge_core.market_data.bus.event_bus import EventBus
 from quantum_edge_core.market_data.config import HubConfig
-from quantum_edge_core.events import MarketTrade
+from quantum_edge_core.market_data.feeds.base import BaseFeed
 
 
 class MockLiveFeed(BaseFeed):

@@ -5,8 +5,9 @@ from __future__ import annotations
 import msgspec
 
 from quantum_edge_core.market_data.ipc.publisher import ZmqPublisher
-from quantum_edge_core.market_data.models.account_snapshot import AccountSnapshot
 from quantum_edge_core.market_data.models.account_delta import AccountDelta
+from quantum_edge_core.market_data.models.account_snapshot import \
+    AccountSnapshot
 
 
 class AccountPublisher:

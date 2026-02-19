@@ -1,3 +1,3 @@
 """Policy contract and publishing helpers for SupervisorAgent."""
 
-from .policy_contract import Policy, POLICY_VERSION  # noqa: F401
+from .policy_contract import POLICY_VERSION, Policy  # noqa: F401

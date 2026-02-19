@@ -5,7 +5,6 @@ from __future__ import annotations
 from typing import Dict, Iterable, List
 
 import msgspec
-
 from market_data.lockbot.schema import LockbotMarketEvent
 
 LOCKBOT_TOPICS: List[str] = [

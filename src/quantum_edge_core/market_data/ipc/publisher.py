@@ -4,9 +4,10 @@ src/quantum_edge_core/market_data/ipc/publisher.py
 ZeroMQ Publisher using msgspec serialization.
 """
 
+import structlog
 import zmq
 import zmq.asyncio
-import structlog
+
 from quantum_edge_core.events import BaseEvent, EventCodec
 
 logger = structlog.get_logger()

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import msgspec
 import zmq
-
-from LockBotBTC.lockbot.contracts.lockbot_control_v1 import AckEnvelope, StatusEnvelope
+from LockBotBTC.lockbot.contracts.lockbot_control_v1 import (AckEnvelope,
+                                                             StatusEnvelope)
 from LockBotBTC.lockbot.contracts.lockbot_exec_v1 import ExecEnvelope
 
 

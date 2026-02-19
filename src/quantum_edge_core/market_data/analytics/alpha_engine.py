@@ -4,13 +4,15 @@ src/quantum_edge_core/market_data/analytics/alpha_engine.py
 Alpha Engine: Comprehensive Market Analytics & Regime Switching.
 """
 
-import time
 import collections
 import statistics
-import structlog
-from typing import Optional, Deque
+import time
+from typing import Deque, Optional
 
-from quantum_edge_core.events import MarketTrade, LargeBlockEvent, MarketMetrics
+import structlog
+
+from quantum_edge_core.events import (LargeBlockEvent, MarketMetrics,
+                                      MarketTrade)
 
 logger = structlog.get_logger()
 

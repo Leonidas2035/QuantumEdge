@@ -1,26 +1,23 @@
 from __future__ import annotations
 
 import os
-
 import time
 
 from fastapi import FastAPI
 from fastapi.responses import Response
-from pydantic import BaseModel, Field
-
 from model_router.audit.events import AuditEvent
 from model_router.audit.questdb_ilp import QuestDBAuditWriter
+from model_router.backends.google_gemini import GoogleGeminiBackend
 from model_router.backends.openai_chat import OpenAIChatBackend
 from model_router.backends.openai_responses import OpenAIResponsesBackend
 from model_router.backends.trtllm_openai_compat import OpenAICompatBackend
-from model_router.contracts.decision_v1 import fallback_decision
-from model_router.decoding.enforce import enforce_decision
 from model_router.context.fetcher import build_fetcher_from_env
 from model_router.context.formatter import ContextFormatter
+from model_router.contracts.decision_v1 import fallback_decision
+from model_router.decoding.enforce import enforce_decision
 from model_router.router.redaction import hash_prompt
 from model_router.router.router import Router
-
-from model_router.backends.google_gemini import GoogleGeminiBackend
+from pydantic import BaseModel, Field
 
 app = FastAPI(title="supervisor-llm", version="0.1.0")
 

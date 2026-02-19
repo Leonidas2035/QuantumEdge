@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
-import sys
-import os
-import subprocess
-import yaml
+import argparse
 import logging
 import logging.config
-import argparse
-import time
+import os
 import signal
+import subprocess
+import sys
+import time
 from pathlib import Path
+
+import yaml
 
 
 class ProcessManager:

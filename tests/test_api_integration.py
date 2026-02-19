@@ -5,12 +5,13 @@ pytest.skip("Legacy test broken by src-layout migration", allow_module_level=Tru
 Integration Test for API and Logging.
 """
 
-import sys
 import os
-import unittest
-import requests
+import sys
 import time
+import unittest
 from pathlib import Path
+
+import requests
 
 # Add src to path
 sys.path.append(os.path.abspath("src"))
@@ -84,7 +85,7 @@ class TestApiIntegration(unittest.TestCase):
         self.assertEqual(last["output"]["action"], "CONTINUE")
 
 
-from unittest.mock import MagicMock, AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 if __name__ == "__main__":
     unittest.main()

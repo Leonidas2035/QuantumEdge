@@ -4,29 +4,27 @@ Orchestrates the event-driven simulation.
 """
 
 import logging
-from typing import List
 from datetime import datetime
+from typing import List
+
 import numpy as np
 
 from quantum_edge_core.backtesting.loader import QuestDataLoader
-from quantum_edge_core.backtesting.mock_exchange import MockExchange
 from quantum_edge_core.backtesting.metrics import BacktestMetrics
-
+from quantum_edge_core.backtesting.mock_exchange import MockExchange
+from quantum_edge_core.strategies.scalper_v1.bot.engine.decision_engine import \
+    DecisionEngine
+# ML Mocking
+from quantum_edge_core.strategies.scalper_v1.bot.ml.ensemble import \
+    EnsembleOutput
+from quantum_edge_core.strategies.scalper_v1.bot.ml.signal_model.model import \
+    SignalOutput
+from quantum_edge_core.strategies.scalper_v1.bot.trading.order_manager import \
+    OrderManager
 from quantum_edge_core.supervisor.context.accumulator import MarketAccumulator
 from quantum_edge_core.supervisor.context.features import FeatureEngine
-from quantum_edge_core.strategies.scalper_v1.bot.engine.decision_engine import (
-    DecisionEngine,
-)
-from quantum_edge_core.strategies.scalper_v1.bot.trading.order_manager import (
-    OrderManager,
-)
-from quantum_edge_core.supervisor.domain.models import PolicyContract, TradingMode
-
-# ML Mocking
-from quantum_edge_core.strategies.scalper_v1.bot.ml.ensemble import EnsembleOutput
-from quantum_edge_core.strategies.scalper_v1.bot.ml.signal_model.model import (
-    SignalOutput,
-)
+from quantum_edge_core.supervisor.domain.models import (PolicyContract,
+                                                        TradingMode)
 
 logger = logging.getLogger(__name__)
 

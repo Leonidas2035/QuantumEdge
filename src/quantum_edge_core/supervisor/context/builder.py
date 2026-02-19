@@ -6,7 +6,8 @@ Orchestrates data accumulation and feature engineering for the LLM.
 from __future__ import annotations
 
 import logging
-from typing import Dict, Any
+from typing import Any, Dict
+
 from quantum_edge_core.supervisor.context.accumulator import MarketAccumulator
 from quantum_edge_core.supervisor.context.features import FeatureEngine
 from quantum_edge_core.supervisor.context.heatmap import LiquidationHeatmap

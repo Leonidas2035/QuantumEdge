@@ -10,7 +10,7 @@ from collections import deque
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Deque, Dict, Optional
-from urllib import request, error
+from urllib import error, request
 
 EVENT_VERSION = "telemetry.v1"
 

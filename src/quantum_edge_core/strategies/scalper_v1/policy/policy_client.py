@@ -10,7 +10,7 @@ from typing import Optional
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-from .policy_contract import Policy, policy_fingerprint, POLICY_VERSION
+from .policy_contract import POLICY_VERSION, Policy, policy_fingerprint
 
 
 class PolicyClient:

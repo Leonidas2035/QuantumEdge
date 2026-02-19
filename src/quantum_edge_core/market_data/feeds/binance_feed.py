@@ -6,6 +6,7 @@ Async Binance WebSocket Feed with robust reconnection logic.
 
 import asyncio
 import json
+
 import websockets
 
 from quantum_edge_core.core.service import BaseService

@@ -13,7 +13,7 @@ from typing import Dict, Optional
 
 import yaml
 
-from .io import Tick, iter_tick_files, iter_ticks, guess_format
+from .io import Tick, guess_format, iter_tick_files, iter_ticks
 
 
 @dataclass

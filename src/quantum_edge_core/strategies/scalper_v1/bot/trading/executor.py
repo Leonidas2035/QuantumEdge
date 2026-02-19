@@ -1,17 +1,19 @@
+import asyncio
+import random
+import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict, Optional, Set, Any
-import asyncio
-import time
-import random
+from typing import Any, Dict, Optional, Set
 
 import yaml
 from binance import AsyncClient
 from binance.base_client import BaseClient
 from binance.exceptions import BinanceAPIException, BinanceRequestException
 
-from bot.core.config_loader import config
-from bot.engine.decision_engine import Decision
+from quantum_edge_core.strategies.scalper_v1.bot.core.config_loader import \
+    config
+from quantum_edge_core.strategies.scalper_v1.bot.engine.decision_engine import \
+    Decision
 
 
 @dataclass

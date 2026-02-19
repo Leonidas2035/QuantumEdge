@@ -35,7 +35,7 @@ jobs:
           python -m pytest -q
       - name: Offline smoke (research backtest)
         run: |
-          python SupervisorAgent/supervisor.py research backtest --data_file tests/data/ticks_small.csv --limit_rows 200 --no_equity_curve --no_trades
+          python src/quantum_edge_core/supervisor/supervisor.py research backtest --data_file tests/data/ticks_small.csv --limit_rows 200 --no_equity_curve --no_trades
       - name: TSDB benchmark (noop)
         run: |
           python src/quantum_edge_infra/tools/load/run_ingestion_benchmark.py --duration-sec 5 --writer-mode noop --trades-per-sec 5 --l1-per-sec 5 --no-spool

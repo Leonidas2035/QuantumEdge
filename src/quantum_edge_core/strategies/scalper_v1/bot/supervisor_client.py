@@ -8,7 +8,7 @@ import logging
 import time
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, Optional
-from urllib import request, error
+from urllib import error, request
 
 
 @dataclass

@@ -6,16 +6,12 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-from model_router.contracts.decision_v1 import (
-    ValidationError,
-    decode_decision,
-    fallback_decision,
-)
-from model_router.decoding.repair_prompts import (
-    SYSTEM_PROMPT,
-    make_repair_prompt,
-    make_user_prompt,
-)
+from model_router.contracts.decision_v1 import (ValidationError,
+                                                decode_decision,
+                                                fallback_decision)
+from model_router.decoding.repair_prompts import (SYSTEM_PROMPT,
+                                                  make_repair_prompt,
+                                                  make_user_prompt)
 
 
 @dataclass

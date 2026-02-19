@@ -1,12 +1,13 @@
 from __future__ import annotations
+
 import pytest
 
 pytest.skip("Legacy test broken by src-layout migration", allow_module_level=True)
 
+import importlib.util
 import os
 from pathlib import Path
 
-import importlib.util
 import pytest
 
 SHELL_SCRIPTS = [

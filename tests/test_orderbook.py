@@ -2,11 +2,10 @@ import pytest
 
 pytest.skip("Legacy test broken by src-layout migration", allow_module_level=True)
 import pytest
-
 from market_data.config import OrderbookConfig
 from market_data.models.orderbook import DepthLevel
-from market_data.orderbook.book import OrderBook
 from market_data.orderbook.aggregator import OrderBookAggregator
+from market_data.orderbook.book import OrderBook
 
 
 class DummyPublisher:

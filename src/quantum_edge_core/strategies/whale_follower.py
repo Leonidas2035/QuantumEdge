@@ -5,11 +5,12 @@ Whale Follower Strategy.
 """
 
 import time
-import structlog
-from typing import Optional, Any
+from typing import Any, Optional
 
-from quantum_edge_core.strategies.base import BaseStrategy, TradeSignal
+import structlog
+
 from quantum_edge_core.events import LargeBlockEvent
+from quantum_edge_core.strategies.base import BaseStrategy, TradeSignal
 
 logger = structlog.get_logger()
 

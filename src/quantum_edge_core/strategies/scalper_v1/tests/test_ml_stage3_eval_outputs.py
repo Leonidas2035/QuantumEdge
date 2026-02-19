@@ -4,7 +4,6 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 import xgboost as xgb
-
 from bot.ml.eval.run import evaluate
 from bot.ml.features.builder import feature_names
 

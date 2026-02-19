@@ -4,10 +4,11 @@ import asyncio
 import time
 import urllib.request
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Sequence, Callable
+from typing import Any, Callable, Dict, List, Optional, Sequence
 
-from bot.storage.event_bus import EventBus
-from bot.storage.spooler import Spooler
+from quantum_edge_core.strategies.scalper_v1.bot.storage.event_bus import \
+    EventBus
+from quantum_edge_core.strategies.scalper_v1.bot.storage.spooler import Spooler
 
 TABLE_SCHEMAS = {
     "market_trades_raw": {

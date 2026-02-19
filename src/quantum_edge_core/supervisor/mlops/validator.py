@@ -6,7 +6,6 @@ from pathlib import Path
 from typing import Dict, Tuple
 
 import pandas as pd
-
 from supervisor.mlops.manifest import ModelManifest
 
 

@@ -5,25 +5,14 @@ from __future__ import annotations
 import time
 from typing import Any, Dict, List, Optional, Tuple
 
-from quantum_edge_core.market_data.account.rest_snapshot import (
-    BinanceAccountRestSnapshotBuilder,
-)
+from quantum_edge_core.market_data.account.rest_snapshot import \
+    BinanceAccountRestSnapshotBuilder
 from quantum_edge_core.market_data.config import AccountConfig
 from quantum_edge_core.market_data.models.account_delta import (
-    AccountDelta,
-    AccountTotalsPatch,
-    AssetPatch,
-    BalancePatch,
-    DeltaPatch,
-    OrderPatch,
-    PositionPatch,
-    SpotPatch,
-    UsdmPatch,
-)
+    AccountDelta, AccountTotalsPatch, AssetPatch, BalancePatch, DeltaPatch,
+    OrderPatch, PositionPatch, SpotPatch, UsdmPatch)
 from quantum_edge_core.market_data.models.account_snapshot import (
-    AccountSnapshot,
-    OpenOrderEntry,
-)
+    AccountSnapshot, OpenOrderEntry)
 
 FINAL_ORDER_STATUSES = {"CANCELED", "FILLED", "EXPIRED", "REJECTED"}
 

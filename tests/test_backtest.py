@@ -6,11 +6,11 @@ Integration Test for Backtesting Engine.
 Runs the full runner with mocked data loader.
 """
 
-import unittest
-from unittest.mock import MagicMock, patch
-from datetime import datetime, timedelta
-import sys
 import os
+import sys
+import unittest
+from datetime import datetime, timedelta
+from unittest.mock import MagicMock, patch
 
 # Legacy Bot Import Support
 sys.path.append(os.path.abspath("src/quantum_edge_core/strategies/scalper_v1"))
@@ -44,10 +44,10 @@ mock_exceptions.BinanceAPIException = Exception
 sys.modules["binance"] = mock_binance
 sys.modules["binance.exceptions"] = mock_exceptions
 
+from quantum_edge_core.backtesting.metrics import BacktestMetrics
 # Legacy Bot Import Support
 # Ensure this is after mocks if any modules were already imported (unlikely here)
 from quantum_edge_core.backtesting.runner import BacktestRunner
-from quantum_edge_core.backtesting.metrics import BacktestMetrics
 
 
 class TestBacktestEngine(unittest.TestCase):

@@ -2,9 +2,11 @@ import pytest
 
 pytest.skip("Legacy test broken by src-layout migration", allow_module_level=True)
 import os
+
 import pytest
 from cryptography.fernet import Fernet
-from tools.secure_env import encrypt_env, decrypt_env
+
+from tools.secure_env import decrypt_env, encrypt_env
 
 
 @pytest.fixture

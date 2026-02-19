@@ -1,5 +1,6 @@
+from unittest.mock import AsyncMock, MagicMock
+
 import pytest
-from unittest.mock import MagicMock, AsyncMock
 from model_router.backends.google_gemini import GoogleGeminiBackend
 from model_router.router.router import Router
 

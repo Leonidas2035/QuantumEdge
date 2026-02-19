@@ -53,7 +53,9 @@ def update_agents_md():
     print("\nОновлюю AGENTS.md...")
     rule_text = """
 ## 7. DOCUMENTATION MAINTENANCE RULE
-Strict Rule: Any code modification, module refactoring, or architectural change MUST be accompanied by an update to the corresponding documentation. If a module changes, its specific documentation in `docs/Documentation` must be revised. The `FULL_SYSTEM_CONTEXT` file must be kept in sync with the file structure.
+Strict Rule: Any code modification, module refactoring, or architectural change MUST be accompanied by an update to the corresponding documentation.
+If a module changes, its specific documentation in `docs/Documentation` must be revised.
+The `FULL_SYSTEM_CONTEXT` file must be kept in sync with the file structure.
 """
     if os.path.exists("AGENTS.md"):
         with open("AGENTS.md", "a", encoding="utf-8") as f:

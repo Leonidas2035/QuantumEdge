@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+
 from model_router.audit.events import AuditEvent
 from model_router.audit.questdb_ilp import QuestDBAuditWriter
 

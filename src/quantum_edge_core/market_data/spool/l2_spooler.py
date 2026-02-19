@@ -11,7 +11,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Callable, Optional
 
-
 from quantum_edge_core.market_data.config import L2Config
 from quantum_edge_core.market_data.models import L2Envelope, encode_l2
 

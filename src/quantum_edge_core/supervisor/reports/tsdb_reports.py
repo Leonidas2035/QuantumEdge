@@ -4,15 +4,10 @@ import re
 from datetime import datetime, timedelta, timezone
 from typing import Any, Dict, Optional
 
+from reports.sql_templates import (equity_curve_sql, fill_counts_sql,
+                                   latency_stats_sql, order_counts_sql,
+                                   pnl_per_symbol_sql, risk_events_counts_sql)
 from tsdb.questdb_client import QuestDbClient
-from reports.sql_templates import (
-    equity_curve_sql,
-    pnl_per_symbol_sql,
-    order_counts_sql,
-    fill_counts_sql,
-    risk_events_counts_sql,
-    latency_stats_sql,
-)
 
 _DURATION_RE = re.compile(r"^(?P<value>\\d+)(?P<unit>[smhd])$")
 

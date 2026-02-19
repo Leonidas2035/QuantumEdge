@@ -2,44 +2,36 @@ import argparse
 import json
 import os
 import shutil
+import subprocess
 import sys
 import time
 from datetime import datetime, timezone
 from pathlib import Path
-import subprocess
-from typing import Dict, Tuple, Optional
+from typing import Dict, Optional, Tuple
 
 import yaml
-
-from llm_client import LLMClient
+from approval_engine import ApprovalError, approve_apply
+from control_center_server import run_server
 from file_manager import build_change_set_from_response
+from llm_client import LLMClient
 from logger import configure_logger
 from meta_core import run_task
-from offmarket_scheduler import main as scheduler_main, status as scheduler_status
-from schedule_contract import ScheduleValidationError
-from approval_engine import approve_apply, ApprovalError
-from control_center_server import run_server
-from version import __version__
-from paths import (
-    BASE_DIR,
-    OUTPUT_DIR,
-    PATCHES_DIR,
-    PROMPTS_ARCHIVE_DIR,
-    PROMPTS_DIR,
-    REPORTS_DIR,
-    STAGES_PATH,
-    TASKS_DIR,
-)
+from offmarket_scheduler import main as scheduler_main
+from offmarket_scheduler import status as scheduler_status
+from paths import (BASE_DIR, OUTPUT_DIR, PATCHES_DIR, PROMPTS_ARCHIVE_DIR,
+                   PROMPTS_DIR, REPORTS_DIR, STAGES_PATH, TASKS_DIR)
 from project_scanner import ProjectScanner
 from projects_config import load_project_registry, resolve_project_root
 from prompt_builder import PromptBuilder
+from report_schema import Report, write_json_report, write_md_report
+from run_lock import RunLock, describe_existing_lock, resolve_lock_path
+from safety_policy import load_safety_policy
+from schedule_contract import ScheduleValidationError
 from secret_masking import mask_secrets
 from task_contract import TaskConstraints, TaskContext, TaskLLM, TaskSpec
+from version import __version__
 from watch import process_inbox_once
-from report_schema import Report, write_json_report, write_md_report
-from safety_policy import load_safety_policy
 from write_engine import apply_change_set_with_policy
-from run_lock import RunLock, describe_existing_lock, resolve_lock_path
 
 try:
     from supervisor_runner import run_supervisor_cycle

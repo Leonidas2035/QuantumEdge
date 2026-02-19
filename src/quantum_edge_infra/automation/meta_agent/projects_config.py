@@ -4,7 +4,6 @@ from pathlib import Path
 from typing import Dict, Optional
 
 import yaml
-
 from paths import BASE_DIR
 
 try:

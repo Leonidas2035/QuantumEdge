@@ -8,7 +8,8 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence
 
-from supervisor.dashboard.models import DashboardEvent, HealthStatus, OverviewData
+from supervisor.dashboard.models import (DashboardEvent, HealthStatus,
+                                         OverviewData)
 from supervisor.events import BaseEvent, EventType
 from supervisor.heartbeat import HeartbeatServer
 from supervisor.snapshot_models import SnapshotReport

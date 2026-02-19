@@ -7,8 +7,7 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, Optional, Tuple
 
-from supervisor.alerts.engine import AlertResult
-from supervisor.alerts.engine import AlertEngine
+from supervisor.alerts.engine import AlertEngine, AlertResult
 from supervisor.dashboard.audit_log import DashboardAuditLogger
 
 StrategyKey = Tuple[str, str]

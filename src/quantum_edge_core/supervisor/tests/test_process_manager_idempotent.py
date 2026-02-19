@@ -2,7 +2,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from supervisor.config import PathsConfig, SupervisorConfig
-from supervisor.process_manager import ProcessManager, ProcessInfo
+from supervisor.process_manager import ProcessInfo, ProcessManager
 from supervisor.process_spec import ProcessSpec
 
 

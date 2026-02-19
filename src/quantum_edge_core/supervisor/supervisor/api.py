@@ -7,8 +7,9 @@ from __future__ import annotations
 
 import logging
 import threading
-import uvicorn
 from typing import Optional
+
+import uvicorn
 from fastapi import FastAPI
 
 # We will need access to Supervisor state.

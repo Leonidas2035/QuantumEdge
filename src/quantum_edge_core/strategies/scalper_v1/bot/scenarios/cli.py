@@ -3,12 +3,12 @@
 from __future__ import annotations
 
 import argparse
+from pathlib import Path
 from typing import List, Optional
 
 from .build import build_scenarios_pipeline
 from .report import build_report
 from .validate import validate_scenarios
-from pathlib import Path
 
 
 def parse_args(argv: Optional[List[str]] = None) -> argparse.Namespace:

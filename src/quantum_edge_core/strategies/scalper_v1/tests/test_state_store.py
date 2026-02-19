@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from bot.state.store import StateStore, OrderRecord
+from bot.state.store import OrderRecord, StateStore
 
 
 def test_state_store_idempotency_and_persistence(tmp_path: Path):

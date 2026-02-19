@@ -3,10 +3,10 @@ Thread-Safe State Manager for Supervisor.
 Protects shared state between Asyncio Main Loop (Writer) and API Thread (Reader).
 """
 
-import threading
 import copy
+import threading
 import time
-from typing import Dict, Any
+from typing import Any, Dict
 
 
 class ThreadSafeStateManager:

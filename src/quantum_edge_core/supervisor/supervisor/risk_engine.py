@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-from enum import Enum
-from typing import Optional, Dict, Any, Union
-from datetime import date
 import logging
-
+from dataclasses import dataclass
+from datetime import date
+from enum import Enum
 # Circular import prevention if needed, but RiskStateSnapshot is in supervisor.state
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, Dict, Optional, Union
 
 if TYPE_CHECKING:
     from supervisor.state import RiskStateSnapshot

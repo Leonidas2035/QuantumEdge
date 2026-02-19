@@ -1,10 +1,11 @@
-import aiohttp
 import asyncio
-import zmq
-import zmq.asyncio
-import ujson
 import gzip
 import io
+
+import aiohttp
+import ujson
+import zmq
+import zmq.asyncio
 
 WS_URL = "wss://open-api-swap.bingx.com/swap-market"
 ZMQ_PORT = 5555

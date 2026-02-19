@@ -1,8 +1,9 @@
-import aiohttp
 import asyncio
+
+import aiohttp
+import ujson
 import zmq
 import zmq.asyncio
-import ujson
 
 # COINBASE WS (Працює в США)
 WS_URL = "wss://ws-feed.exchange.coinbase.com"

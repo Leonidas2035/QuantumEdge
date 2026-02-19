@@ -9,7 +9,6 @@ from typing import AsyncIterator, Optional
 import msgspec
 import zmq
 import zmq.asyncio
-
 from LockBotBTC.lockbot.contracts.lockbot_control_v1 import CommandEnvelope
 
 

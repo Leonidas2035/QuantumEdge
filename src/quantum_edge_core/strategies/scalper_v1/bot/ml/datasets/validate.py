@@ -9,7 +9,8 @@ from typing import Dict, List, Optional
 
 import pandas as pd
 
-from bot.ml.features.builder import feature_names, schema_hash
+from quantum_edge_core.strategies.scalper_v1.bot.ml.features.builder import (
+    feature_names, schema_hash)
 
 
 def _load_json(path: Path) -> Dict[str, object]:

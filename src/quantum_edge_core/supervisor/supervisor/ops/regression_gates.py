@@ -7,10 +7,10 @@ import random
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from supervisor.episodes.runner import EpisodeRunConfig, run_episode_set
-from supervisor.episodes.report import generate_report
 from supervisor.episodes.cutter import load_scenarios
-from supervisor.ops.config import load_ops_config, get_nested
+from supervisor.episodes.report import generate_report
+from supervisor.episodes.runner import EpisodeRunConfig, run_episode_set
+from supervisor.ops.config import get_nested, load_ops_config
 
 CRITICAL_REASONS = {
     "MAX_MARGIN_USED_PCT",

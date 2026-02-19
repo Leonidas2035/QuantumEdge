@@ -4,7 +4,6 @@ import tkinter as tk
 from tkinter import messagebox, scrolledtext, ttk
 
 import yaml
-
 from paths import BASE_DIR, PROMPTS_DIR, STAGES_PATH
 from projects_config import load_project_registry
 

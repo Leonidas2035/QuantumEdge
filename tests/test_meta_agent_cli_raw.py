@@ -1,10 +1,11 @@
 import pytest
 
 pytest.skip("Legacy test broken by src-layout migration", allow_module_level=True)
-import sys
 import os
-import pytest
+import sys
 from pathlib import Path
+
+import pytest
 import yaml
 
 # Determine repo root
@@ -17,7 +18,7 @@ if str(META_AGENT_DIR) not in sys.path:
 
 # Now we can import from meta_core
 try:
-    from meta_core import run_task, _exit_code_for
+    from meta_core import _exit_code_for, run_task
 except ImportError:
     # Fallback for if meta_agent is not in path correctly
     print(f"Failed to import meta_core from {META_AGENT_DIR}")

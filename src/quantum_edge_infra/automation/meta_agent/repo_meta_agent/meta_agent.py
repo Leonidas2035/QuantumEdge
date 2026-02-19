@@ -1,8 +1,8 @@
 import yaml
 from codex_client import CodexClient
-from prompt_builder import PromptBuilder
 from file_manager import FileManager
 from project_scanner import ProjectScanner
+from prompt_builder import PromptBuilder
 
 
 class MetaAgent:

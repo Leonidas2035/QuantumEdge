@@ -13,17 +13,11 @@ import zmq
 import zmq.asyncio
 
 from quantum_edge_core.market_data.config import HubConfig
-from quantum_edge_core.market_data.models import (
-    Bar1sEvent,
-    DepthL2Event,
-    L1Event,
-    MarketEvent,
-    SnapshotRequest,
-    SnapshotResponse,
-    TradeEvent,
-    WallsEvent,
-    encode_event,
-)
+from quantum_edge_core.market_data.models import (Bar1sEvent, DepthL2Event,
+                                                  L1Event, MarketEvent,
+                                                  SnapshotRequest,
+                                                  SnapshotResponse, TradeEvent,
+                                                  WallsEvent, encode_event)
 
 
 class SnapshotCache:

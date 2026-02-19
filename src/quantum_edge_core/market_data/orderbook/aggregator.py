@@ -4,30 +4,26 @@ from __future__ import annotations
 
 import asyncio
 import random
-from contextlib import suppress
 import time
+from contextlib import suppress
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
 from quantum_edge_core.market_data.bus.event_bus import EventBus
 from quantum_edge_core.market_data.config import OrderbookConfig
 from quantum_edge_core.market_data.ipc.publisher import ZmqPublisher
-from quantum_edge_core.market_data.models import (
-    DepthL2Event,
-    DEPTH_EVENT_TYPE,
-    Priority,
-    WallLevel,
-    WALLS_EVENT_TYPE,
-    WallsEvent,
-    WallsSummary,
-)
+from quantum_edge_core.market_data.ipc.snapshot_server import SnapshotCache
+from quantum_edge_core.market_data.microstructure.ofi import \
+    MicrostructureAnalyzer
+from quantum_edge_core.market_data.microstructure.publisher import \
+    MicrostructurePublisher
+from quantum_edge_core.market_data.models import (DEPTH_EVENT_TYPE,
+                                                  WALLS_EVENT_TYPE,
+                                                  DepthL2Event, Priority,
+                                                  WallLevel, WallsEvent,
+                                                  WallsSummary)
 from quantum_edge_core.market_data.models.orderbook import DepthLevel
 from quantum_edge_core.market_data.orderbook.book import OrderBook
-from quantum_edge_core.market_data.ipc.snapshot_server import SnapshotCache
-from quantum_edge_core.market_data.microstructure.ofi import MicrostructureAnalyzer
-from quantum_edge_core.market_data.microstructure.publisher import (
-    MicrostructurePublisher,
-)
 
 
 @dataclass

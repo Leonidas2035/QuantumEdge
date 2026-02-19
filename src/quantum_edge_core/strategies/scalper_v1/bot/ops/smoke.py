@@ -32,7 +32,8 @@ def _write_temp_config(mode: str) -> Path:
 
 
 async def _run(minutes: float) -> int:
-    from bot.run_bot import main as run_bot
+    from quantum_edge_core.strategies.scalper_v1.bot.run_bot import \
+        main as run_bot
 
     stop_event = asyncio.Event()
     duration = max(minutes, 0.1) * 60.0

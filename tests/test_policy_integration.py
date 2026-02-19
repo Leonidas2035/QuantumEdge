@@ -5,16 +5,16 @@ pytest.skip("Legacy test broken by src-layout migration", allow_module_level=Tru
 Integration Test for Policy Propagation (Supervisor -> Bot).
 """
 
-import sys
-import os
 import asyncio
+import os
+import sys
 import unittest
 
 # Add src to path
 sys.path.append(os.path.abspath("src"))
 
-from quantum_edge_core.supervisor.supervisor.ipc import PolicyPublisher
 from quantum_edge_core.bot.service import BotService
+from quantum_edge_core.supervisor.supervisor.ipc import PolicyPublisher
 
 # import zmq
 

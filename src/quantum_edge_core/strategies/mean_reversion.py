@@ -4,14 +4,15 @@ src/quantum_edge_core/strategies/mean_reversion.py
 Simple Mean Reversion Strategy.
 """
 
-import time
-import structlog
 import collections
 import statistics
-from typing import Optional, Deque
+import time
+from typing import Deque, Optional
 
-from quantum_edge_core.strategies.base import BaseStrategy, TradeSignal
+import structlog
+
 from quantum_edge_core.events import MarketTrade
+from quantum_edge_core.strategies.base import BaseStrategy, TradeSignal
 
 logger = structlog.get_logger()
 

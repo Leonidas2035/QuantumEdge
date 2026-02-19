@@ -6,8 +6,10 @@ import json
 from pathlib import Path
 from typing import Dict, Iterable, List
 
-from bot.storage.tsdb.questdb_ilp_writer import QuestDbIlpWriter
-from bot.storage.tsdb_config import load_tsdb_config
+from quantum_edge_core.strategies.scalper_v1.bot.storage.tsdb.questdb_ilp_writer import \
+    QuestDbIlpWriter
+from quantum_edge_core.strategies.scalper_v1.bot.storage.tsdb_config import \
+    load_tsdb_config
 
 
 def iter_spool_files(base_dir: Path) -> Iterable[Path]:

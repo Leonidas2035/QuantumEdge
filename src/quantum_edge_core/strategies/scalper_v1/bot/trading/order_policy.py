@@ -16,14 +16,11 @@ from typing import Any, Dict, Optional
 
 from quantumedge.execution.policies import Market, OrderSide
 from quantumedge.execution.smart_executor import SmartMakerExecutor
-from quantumedge.execution.types import (
-    BookState,
-    ExecutionReport,
-    OrderRequest,
-    SmartMakerConfig,
-)
+from quantumedge.execution.types import (BookState, ExecutionReport,
+                                         OrderRequest, SmartMakerConfig)
 
-from bot.trading.smart_executor_adapter import TraderExecutionAdapter
+from quantum_edge_core.strategies.scalper_v1.bot.trading.smart_executor_adapter import \
+    TraderExecutionAdapter
 
 
 class OrderPolicy:

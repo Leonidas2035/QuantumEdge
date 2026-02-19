@@ -11,7 +11,8 @@ from quantum_edge_core.market_data.bus.event_bus import EventBus
 from quantum_edge_core.market_data.ipc.publisher import ZmqPublisher
 from quantum_edge_core.market_data.lockbot.schema import LockbotMarketEvent
 from quantum_edge_core.market_data.models import Priority
-from quantum_edge_core.market_data.models.lockbot_md_contract import SCHEMA_VERSION
+from quantum_edge_core.market_data.models.lockbot_md_contract import \
+    SCHEMA_VERSION
 from quantum_edge_core.market_data.tsdb.quest_writer import QuestILPWriter
 
 

@@ -5,7 +5,7 @@ Handles Limit Order Chasing and Maker/Taker optimisations.
 
 import asyncio
 import logging
-from typing import Dict, Any, Optional
+from typing import Any, Dict, Optional
 
 # Assuming we can import binance exceptions or similar
 

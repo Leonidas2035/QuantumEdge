@@ -7,7 +7,6 @@ import random
 from typing import Iterable, List, Tuple
 
 from ..replay.adapters import MarketEvent
-
 from .definitions import ScenarioSpec
 
 

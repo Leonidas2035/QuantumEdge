@@ -1,5 +1,4 @@
 import pytest
-
 from supervisor.tsdb.query import build_timeseries_query
 
 

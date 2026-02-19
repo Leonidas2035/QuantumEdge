@@ -7,16 +7,17 @@ import json
 import logging
 import os
 import sys
-from importlib import metadata as importlib_metadata
 from dataclasses import dataclass
+from importlib import metadata as importlib_metadata
 from pathlib import Path
 from typing import Dict, Optional, Tuple
 
-from bot.ml.features.builder import (
-    feature_names as _feature_names,
-    schema_version as _schema_version,
-)
-from bot.ml.signal_model.model import SignalModel
+from quantum_edge_core.strategies.scalper_v1.bot.ml.features.builder import \
+    feature_names as _feature_names
+from quantum_edge_core.strategies.scalper_v1.bot.ml.features.builder import \
+    schema_version as _schema_version
+from quantum_edge_core.strategies.scalper_v1.bot.ml.signal_model.model import \
+    SignalModel
 
 MANIFEST_VERSION = "model.v1"
 _LOG = logging.getLogger("runtime_models")

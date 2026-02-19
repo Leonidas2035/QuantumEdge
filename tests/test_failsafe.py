@@ -5,12 +5,12 @@ pytest.skip("Legacy test broken by src-layout migration", allow_module_level=Tru
 Tests for Fail-Safe Logic in Supervisor Service.
 """
 
-import sys
-import os
 import asyncio
-import unittest
+import os
+import sys
 import time
-from unittest.mock import MagicMock, AsyncMock
+import unittest
+from unittest.mock import AsyncMock, MagicMock
 
 # Add src to path
 sys.path.append(os.path.abspath("src"))

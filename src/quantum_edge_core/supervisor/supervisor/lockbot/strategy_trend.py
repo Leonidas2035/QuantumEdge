@@ -4,13 +4,9 @@ from __future__ import annotations
 
 from typing import Optional
 
-from supervisor.lockbot.models import (
-    BotStatusSnapshot,
-    MarketSnapshot,
-    PolicyIntent,
-    StrategyDecision,
-    TrendPolicyConfig,
-)
+from quantum_edge_core.supervisor.supervisor.lockbot.models import (
+    BotStatusSnapshot, MarketSnapshot, PolicyIntent, StrategyDecision,
+    TrendPolicyConfig)
 
 
 def evaluate_trend(

@@ -10,19 +10,19 @@ import time
 
 from quantum_edge_core.ai_scalper_bot.bot.core.config import Config
 from quantum_edge_core.ai_scalper_bot.bot.core.orderbook import OrderBookCache
+from quantum_edge_core.ai_scalper_bot.bot.execution.position import \
+    PositionManager
+from quantum_edge_core.ai_scalper_bot.bot.execution.strategy_core import \
+    AdaptiveGridStrategy
+from quantum_edge_core.ai_scalper_bot.bot.execution.volatility import \
+    OnlineVolatility
 from quantum_edge_core.ai_scalper_bot.bot.features.facade import FeatureEngine
-from quantum_edge_core.ai_scalper_bot.bot.execution.strategy_core import (
-    AdaptiveGridStrategy,
-)
-from quantum_edge_core.ai_scalper_bot.bot.execution.volatility import OnlineVolatility
-from quantum_edge_core.ai_scalper_bot.bot.execution.position import PositionManager
-from quantum_edge_core.ai_scalper_bot.bot.infrastructure.zmq_adapter import ZmqSubStream
-from quantum_edge_core.ai_scalper_bot.bot.infrastructure.exchange import (
-    BinanceExecutionGateway,
-)
-from quantum_edge_core.ai_scalper_bot.bot.infrastructure.reporter import (
-    SupervisorReporter,
-)
+from quantum_edge_core.ai_scalper_bot.bot.infrastructure.exchange import \
+    BinanceExecutionGateway
+from quantum_edge_core.ai_scalper_bot.bot.infrastructure.reporter import \
+    SupervisorReporter
+from quantum_edge_core.ai_scalper_bot.bot.infrastructure.zmq_adapter import \
+    ZmqSubStream
 
 # Configure Logging
 logging.basicConfig(
@@ -116,9 +116,8 @@ class BotEngine:
 
                     if market_state:  # Ensure we have initial state
                         # Re-parse for Feature usage
-                        from quantum_edge_core.ai_scalper_bot.bot.core.models import (
-                            MarketTick,
-                        )
+                        from quantum_edge_core.ai_scalper_bot.bot.core.models import \
+                            MarketTick
 
                         tick_obj = MarketTick(
                             price=price,

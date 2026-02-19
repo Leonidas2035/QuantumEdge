@@ -6,10 +6,10 @@ Uses a time-based sliding window (default 15m) to keep data relevant.
 
 from __future__ import annotations
 
-import time
-from collections import deque, defaultdict
-from typing import Dict, List, Any, Deque, Tuple
 import logging
+import time
+from collections import defaultdict, deque
+from typing import Any, Deque, Dict, List, Tuple
 
 logger = logging.getLogger(__name__)
 

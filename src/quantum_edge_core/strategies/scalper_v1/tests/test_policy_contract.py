@@ -1,8 +1,7 @@
 import time
 
 import pytest
-
-from bot.policy.policy_contract import Policy, POLICY_VERSION
+from bot.policy.policy_contract import POLICY_VERSION, Policy
 
 
 def test_policy_contract_valid():

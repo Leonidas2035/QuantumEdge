@@ -23,7 +23,7 @@ fi
 export QE_ROOT="$ROOT_DIR"
 
 if [ "$#" -eq 0 ]; then
-  exec "$PYTHON_BIN" "$ROOT_DIR/SupervisorAgent/supervisor.py" run-foreground
+  exec "$PYTHON_BIN" "$ROOT_DIR/src/quantum_edge_core/supervisor/supervisor.py" run-foreground
 fi
 
-exec "$PYTHON_BIN" "$ROOT_DIR/SupervisorAgent/supervisor.py" "$@"
+exec "$PYTHON_BIN" "$ROOT_DIR/src/quantum_edge_core/supervisor/supervisor.py" "$@"

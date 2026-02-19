@@ -4,11 +4,12 @@ Verifies the integration of Context Builder, Risk Engine, Policy Manager, and IP
 """
 
 import time
-import pytest
 from unittest.mock import MagicMock, patch
 
-from quantum_edge_core.supervisor.service import AsyncSupervisor
+import pytest
+
 from quantum_edge_core.supervisor.domain.models import RiskLevel
+from quantum_edge_core.supervisor.service import AsyncSupervisor
 
 
 # Mock Zmq

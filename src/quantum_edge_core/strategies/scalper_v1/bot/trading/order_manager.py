@@ -4,12 +4,14 @@ Handles sizing, validation, and execution logic closer to the exchange.
 """
 
 from __future__ import annotations
+
 import logging
-from typing import Dict, Any, Optional
-from quantum_edge_core.supervisor.domain.models import PolicyContract, TradingMode
-from quantum_edge_core.strategies.scalper_v1.bot.trading.smart_executor import (
-    SmartExecutor,
-)
+from typing import Any, Dict, Optional
+
+from quantum_edge_core.strategies.scalper_v1.bot.trading.smart_executor import \
+    SmartExecutor
+from quantum_edge_core.supervisor.domain.models import (PolicyContract,
+                                                        TradingMode)
 
 logger = logging.getLogger(__name__)
 

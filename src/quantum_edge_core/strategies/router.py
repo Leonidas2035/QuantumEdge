@@ -4,13 +4,14 @@ src/quantum_edge_core/strategies/router.py
 Strategy Router: Regime Switching Logic.
 """
 
-import structlog
-from typing import Optional, Any
+from typing import Any, Optional
 
+import structlog
+
+from quantum_edge_core.events import MarketMetrics
 from quantum_edge_core.strategies.base import BaseStrategy, TradeSignal
 from quantum_edge_core.strategies.mean_reversion import MeanReversionStrategy
 from quantum_edge_core.strategies.whale_follower import WhaleFollowerStrategy
-from quantum_edge_core.events import MarketMetrics
 
 logger = structlog.get_logger()
 

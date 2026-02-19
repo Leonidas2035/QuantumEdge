@@ -6,8 +6,8 @@ from pathlib import Path
 from typing import Dict
 
 import yaml
-
-from supervisor.process_spec import HealthCheckSpec, ProcessSpec, RestartPolicySpec
+from supervisor.process_spec import (HealthCheckSpec, ProcessSpec,
+                                     RestartPolicySpec)
 
 
 def load_processes_spec(path: Path, base_dir: Path) -> Dict[str, ProcessSpec]:

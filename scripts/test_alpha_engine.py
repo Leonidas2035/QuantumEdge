@@ -1,12 +1,13 @@
 import asyncio
 import multiprocessing
-import time
-import structlog
 import os
+import time
 from unittest.mock import MagicMock, patch
 
-from quantum_edge_core.market_data.hub import MarketDataHubService
+import structlog
+
 from quantum_edge_core.bot.service import TradingBot
+from quantum_edge_core.market_data.hub import MarketDataHubService
 from quantum_edge_core.utils.async_runner import run_service
 
 
@@ -52,6 +53,7 @@ def run_bot(queue):
 # 3. Snoop Process (Main)
 async def snoop_metrics():
     import zmq.asyncio
+
     from quantum_edge_core.events import EventCodec, MarketMetrics
 
     ctx = zmq.asyncio.Context()

@@ -11,17 +11,12 @@ if str(SUPERVISOR_ROOT) not in sys.path:
     sys.path.insert(0, str(SUPERVISOR_ROOT))
 
 from supervisor.policy.circuit_breaker import CircuitBreaker
-from supervisor.policy.heuristics import (
-    HeuristicDecision,
-    HeuristicThresholds,
-    apply_heuristics,
-)
-from supervisor.policy.policy_engine import (
-    PolicyEngine,
-    PolicyEngineConfig,
-    HysteresisConfig,
-    PolicyHysteresis,
-)
+from supervisor.policy.heuristics import (HeuristicDecision,
+                                          HeuristicThresholds,
+                                          apply_heuristics)
+from supervisor.policy.policy_engine import (HysteresisConfig, PolicyEngine,
+                                             PolicyEngineConfig,
+                                             PolicyHysteresis)
 from supervisor.policy.signals import Signals
 
 
