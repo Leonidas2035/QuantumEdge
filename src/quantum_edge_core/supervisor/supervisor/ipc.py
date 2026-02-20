@@ -34,6 +34,8 @@ class PolicyPublisher:
         """Start the publisher."""
         try:
             self.socket = self.ctx.socket(zmq.PUB)
+            self.socket.setsockopt(zmq.RCVTIMEO, 2000)
+            self.socket.setsockopt(zmq.SNDTIMEO, 2000)
             self.socket.bind(f"tcp://0.0.0.0:{self.pub_port}")
             logger.info(f"PolicyPublisher bound to tcp://0.0.0.0:{self.pub_port}")
         except zmq.ZMQError as e:

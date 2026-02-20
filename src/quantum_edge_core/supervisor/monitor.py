@@ -18,6 +18,8 @@ class ZmqHeartbeatSubscriber:
         self.ctx = zmq.Context()
         self.expected_id = expected_id
         self.socket = self.ctx.socket(zmq.SUB)
+        self.socket.setsockopt(zmq.RCVTIMEO, 2000)
+        self.socket.setsockopt(zmq.SNDTIMEO, 2000)
         self.socket.setsockopt(zmq.LINGER, 0)
         # Prevent blocking on close
         self.socket.setsockopt(zmq.RCVTIMEO, 0)

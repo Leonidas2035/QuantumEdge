@@ -29,14 +29,14 @@ class ExchangeInfoCache:
         self.ttl_seconds = ttl_seconds
         self._cache: Dict[str, tuple[float, SymbolFilters]] = {}
 
-    def get(self, symbol: str) -> SymbolFilters:
+    async def get(self, symbol: str) -> SymbolFilters:
         sym = to_bingx_symbol(symbol)
         now = time.monotonic()
         cached = self._cache.get(sym)
         if cached and cached[0] > now:
             return cached[1]
 
-        payload = self.client.request(
+        payload = await self.client.request(
             "GET",
             "/openApi/swap/v2/quote/contracts",
             params={"symbol": sym},
@@ -79,7 +79,7 @@ class BingXExecution:
         self.info_cache = info_cache or ExchangeInfoCache(client)
         self.logger = logging.getLogger(__name__)
 
-    def place_order(self, req: OrderRequest) -> OrderResult:
+    async def place_order(self, req: OrderRequest) -> OrderResult:
         symbol = to_bingx_symbol(req.symbol)
         filters = self.info_cache.get(symbol)
         qty = (
@@ -118,7 +118,7 @@ class BingXExecution:
         if req.client_order_id:
             params["clientOrderId"] = req.client_order_id
 
-        data = self.client.request(
+        data = await self.client.request(
             "POST", "/openApi/swap/v2/trade/order", params=params, signed=True
         )
         order_data = data.get("order") if isinstance(data, dict) else data
@@ -142,7 +142,7 @@ class BingXExecution:
             raw=order_data or data,
         )
 
-    def cancel_order(
+    async def cancel_order(
         self,
         symbol: str,
         order_id: Optional[str] = None,
@@ -155,11 +155,11 @@ class BingXExecution:
             params["orderId"] = order_id
         if client_order_id:
             params["clientOrderId"] = client_order_id
-        return self.client.request(
+        return await self.client.request(
             "DELETE", "/openApi/swap/v2/trade/order", params=params, signed=True
         )
 
-    def get_order(
+    async def get_order(
         self,
         symbol: str,
         order_id: Optional[str] = None,
@@ -172,7 +172,7 @@ class BingXExecution:
             params["orderId"] = order_id
         if client_order_id:
             params["clientOrderId"] = client_order_id
-        data = self.client.request(
+        data = await self.client.request(
             "GET", "/openApi/swap/v2/trade/order", params=params, signed=True
         )
         order_data = data.get("order") if isinstance(data, dict) else data
@@ -187,9 +187,9 @@ class BingXExecution:
             raw=order_data or data,
         )
 
-    def get_open_orders(self, symbol: str) -> List[OrderResult]:
+    async def get_open_orders(self, symbol: str) -> List[OrderResult]:
         params = {"symbol": to_bingx_symbol(symbol)} if symbol else {}
-        data = self.client.request(
+        data = await self.client.request(
             "GET", "/openApi/swap/v2/trade/openOrders", params=params, signed=True
         )
         orders = data.get("orders") if isinstance(data, dict) else data
@@ -211,9 +211,9 @@ class BingXExecution:
             )
         return results
 
-    def get_positions(self, symbol: Optional[str] = None) -> List[Position]:
+    async def get_positions(self, symbol: Optional[str] = None) -> List[Position]:
         params = {"symbol": to_bingx_symbol(symbol)} if symbol else {}
-        data = self.client.request(
+        data = await self.client.request(
             "GET", "/openApi/swap/v2/user/positions", params=params, signed=True
         )
         items = data.get("positions") if isinstance(data, dict) else data
@@ -252,8 +252,8 @@ class BingXExecution:
             )
         return results
 
-    def get_balances(self) -> List[Balance]:
-        data = self.client.request(
+    async def get_balances(self) -> List[Balance]:
+        data = await self.client.request(
             "GET", "/openApi/swap/v2/user/balance", params={}, signed=True
         )
         items = data.get("balances") if isinstance(data, dict) else data
@@ -281,7 +281,7 @@ class BingXExecution:
             )
         return results
 
-    def set_leverage(
+    async def set_leverage(
         self, symbol: str, leverage: int, position_side: str
     ) -> Optional[Any]:
         params = {
@@ -290,7 +290,7 @@ class BingXExecution:
             "positionSide": map_position_side(position_side),
         }
         try:
-            return self.client.request(
+            return await self.client.request(
                 "POST", "/openApi/swap/v2/trade/leverage", params=params, signed=True
             )
         except Exception as exc:

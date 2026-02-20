@@ -23,6 +23,8 @@ class ZmqPublisher:
 
         self.ctx = zmq.asyncio.Context()
         self.socket = self.ctx.socket(zmq.PUB)
+        self.socket.setsockopt(zmq.RCVTIMEO, 2000)
+        self.socket.setsockopt(zmq.SNDTIMEO, 2000)
 
         # Don't wait for unsent messages on shutdown
         self.socket.setsockopt(zmq.LINGER, 0)

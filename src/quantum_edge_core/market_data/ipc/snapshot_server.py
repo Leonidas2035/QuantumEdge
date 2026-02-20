@@ -66,6 +66,8 @@ class SnapshotServer:
         self._cache = cache
         self._ctx = zmq.asyncio.Context.instance()
         self._socket = self._ctx.socket(zmq.REP)
+        self._socket.setsockopt(zmq.RCVTIMEO, 2000)
+        self._socket.setsockopt(zmq.SNDTIMEO, 2000)
         self._socket.setsockopt(zmq.LINGER, 0)
         self._socket.bind(self._config.snapshot.endpoint)
         self._task: asyncio.Task | None = None

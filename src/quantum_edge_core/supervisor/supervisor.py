@@ -153,6 +153,8 @@ class ZmqPolicyPublisher:
     def __init__(self, endpoint: str):
         self.ctx = zmq.Context()
         self.socket = self.ctx.socket(zmq.PUB)
+        self.socket.setsockopt(zmq.RCVTIMEO, 2000)
+        self.socket.setsockopt(zmq.SNDTIMEO, 2000)
         try:
             self.socket.bind(endpoint)
             logging.getLogger(__name__).info(f"Policy PUB bound to {endpoint}")

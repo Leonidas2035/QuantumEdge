@@ -91,6 +91,8 @@ class ZmqListener:
     async def start(self):
         """Start listening."""
         self.socket = self.ctx.socket(zmq.SUB)
+        self.socket.setsockopt(zmq.RCVTIMEO, 2000)
+        self.socket.setsockopt(zmq.SNDTIMEO, 2000)
         self.socket.connect(self.sub_address)
 
         # Topics to subscribe to

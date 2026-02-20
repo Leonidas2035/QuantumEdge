@@ -115,6 +115,8 @@ class LockbotHubSubscriber:
         if self._thread:
             return
         self._socket = self._ctx.socket(zmq.SUB)
+        self._socket.setsockopt(zmq.RCVTIMEO, 2000)
+        self._socket.setsockopt(zmq.SNDTIMEO, 2000)
         self._socket.setsockopt(zmq.LINGER, 0)
         self._socket.setsockopt(zmq.RCVHWM, self._rcv_hwm)
         for topic in self._topics:

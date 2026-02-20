@@ -24,6 +24,8 @@ class ZmqSubscriber:
         self.endpoint = f"tcp://{host}:{port}"
         self.ctx = zmq.asyncio.Context()
         self.socket = self.ctx.socket(zmq.SUB)
+        self.socket.setsockopt(zmq.RCVTIMEO, 2000)
+        self.socket.setsockopt(zmq.SNDTIMEO, 2000)
         self.logger = logger.bind(component="ZmqSubscriber", endpoint=self.endpoint)
         self.connected = False
 

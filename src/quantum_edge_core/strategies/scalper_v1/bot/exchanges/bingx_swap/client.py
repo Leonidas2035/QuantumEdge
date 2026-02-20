@@ -8,7 +8,8 @@ from dataclasses import dataclass
 from typing import Any, Dict, Optional
 from urllib.parse import urlencode
 
-import requests
+import asyncio
+import aiohttp
 
 
 def _format_number(value: float) -> str:
@@ -75,16 +76,16 @@ class BingXClient:
         self.timeout = float(timeout or 10.0)
         self._min_interval_s = 0.12
         self._next_allowed_ts = 0.0
-        self._lock = threading.Lock()
+        self._lock = asyncio.Lock()
         self.logger = logging.getLogger(__name__)
 
-    def _throttle(self) -> None:
+    async def _throttle(self) -> None:
         if self._min_interval_s <= 0:
             return
-        with self._lock:
+        async with self._lock:
             now = time.monotonic()
             if now < self._next_allowed_ts:
-                time.sleep(self._next_allowed_ts - now)
+                await asyncio.sleep(self._next_allowed_ts - now)
             self._next_allowed_ts = time.monotonic() + self._min_interval_s
 
     def _build_signed_url(self, path: str, params: Dict[str, Any]) -> str:
@@ -101,10 +102,10 @@ class BingXClient:
         query = build_query_string(params)
         return f"{self.base_url}{path}?{query}"
 
-    def _handle_response(self, response: requests.Response, endpoint: str) -> Any:
-        status = response.status_code
+    async def _handle_response(self, response: aiohttp.ClientResponse, endpoint: str) -> Any:
+        status = response.status
         try:
-            payload = response.json()
+            payload = await response.json()
         except ValueError:
             detail = BingXErrorDetail(
                 status, None, f"Non-JSON response (status={status})", endpoint
@@ -148,7 +149,7 @@ class BingXClient:
             return payload.get("data")
         return payload
 
-    def request(
+    async def request(
         self,
         method: str,
         path: str,
@@ -174,26 +175,27 @@ class BingXClient:
 
         max_attempts = 3
         backoff = 0.5
-        for attempt in range(max_attempts):
-            self._throttle()
-            try:
-                response = requests.request(
-                    method, url, headers=headers, timeout=self.timeout
-                )
-            except requests.RequestException as exc:
-                if attempt < max_attempts - 1:
-                    time.sleep(backoff + random.random() * 0.1)
-                    backoff = min(backoff * 2, 4.0)
-                    continue
-                detail = BingXErrorDetail(None, None, f"Request failed: {exc}", path)
-                raise BingXAPIError(detail) from exc
-
-            if response.status_code == 429 or response.status_code >= 500:
-                if attempt < max_attempts - 1:
-                    time.sleep(backoff + random.random() * 0.1)
-                    backoff = min(backoff * 2, 4.0)
-                    continue
-            return self._handle_response(response, path)
+        
+        async with aiohttp.ClientSession() as session:
+            for attempt in range(max_attempts):
+                await self._throttle()
+                try:
+                    async with session.request(
+                        method, url, headers=headers, timeout=self.timeout
+                    ) as response:
+                        if response.status == 429 or response.status >= 500:
+                            if attempt < max_attempts - 1:
+                                await asyncio.sleep(backoff + random.random() * 0.1)
+                                backoff = min(backoff * 2, 4.0)
+                                continue
+                        return await self._handle_response(response, path)
+                except aiohttp.ClientError as exc:
+                    if attempt < max_attempts - 1:
+                        await asyncio.sleep(backoff + random.random() * 0.1)
+                        backoff = min(backoff * 2, 4.0)
+                        continue
+                    detail = BingXErrorDetail(None, None, f"Request failed: {exc}", path)
+                    raise BingXAPIError(detail) from exc
 
         detail = BingXErrorDetail(None, None, "Request failed after retries.", path)
         raise BingXAPIError(detail)

@@ -8,8 +8,8 @@ class BingXMarketData:
     def __init__(self, client: BingXClient) -> None:
         self.client = client
 
-    def get_mark_price(self, symbol: str) -> float:
-        payload = self.client.request(
+    async def get_mark_price(self, symbol: str) -> float:
+        payload = await self.client.request(
             "GET",
             "/openApi/swap/v2/quote/premiumIndex",
             params={"symbol": to_bingx_symbol(symbol)},
@@ -19,8 +19,8 @@ class BingXMarketData:
             return float(payload.get("markPrice") or 0.0)
         return float(payload or 0.0)
 
-    def get_last_price(self, symbol: str) -> float:
-        payload = self.client.request(
+    async def get_last_price(self, symbol: str) -> float:
+        payload = await self.client.request(
             "GET",
             "/openApi/swap/v2/quote/price",
             params={"symbol": to_bingx_symbol(symbol)},
@@ -30,8 +30,8 @@ class BingXMarketData:
             return float(payload.get("price") or 0.0)
         return float(payload or 0.0)
 
-    def get_best_bid_ask(self, symbol: str) -> Optional[Tuple[float, float]]:
-        payload = self.client.request(
+    async def get_best_bid_ask(self, symbol: str) -> Optional[Tuple[float, float]]:
+        payload = await self.client.request(
             "GET",
             "/openApi/swap/v2/quote/bookTicker",
             params={"symbol": to_bingx_symbol(symbol)},

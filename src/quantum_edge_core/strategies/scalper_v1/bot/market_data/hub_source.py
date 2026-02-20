@@ -56,6 +56,8 @@ class HubSnapshotClient:
     ) -> None:
         self._ctx = zmq.asyncio.Context.instance()
         self._socket = self._ctx.socket(zmq.REQ)
+        self._socket.setsockopt(zmq.RCVTIMEO, 2000)
+        self._socket.setsockopt(zmq.SNDTIMEO, 2000)
         self._socket.setsockopt(zmq.LINGER, 0)
         self._socket.setsockopt(zmq.RCVTIMEO, timeout_ms)
         if connect:
@@ -99,6 +101,8 @@ class HubMarketDataSource:
         }
         self._ctx = zmq.asyncio.Context.instance()
         self._sub = self._ctx.socket(zmq.SUB)
+        self._sub.setsockopt(zmq.RCVTIMEO, 2000)
+        self._sub.setsockopt(zmq.SNDTIMEO, 2000)
         self._sub.setsockopt(zmq.RCVHWM, self._config.rcvhwm)
         self._sub.setsockopt(zmq.LINGER, 0)
         if self._config.conflate_l1:

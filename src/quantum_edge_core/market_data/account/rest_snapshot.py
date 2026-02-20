@@ -8,7 +8,8 @@ import time
 from typing import List, Optional
 from urllib.parse import urlencode
 
-import requests
+import asyncio
+import aiohttp
 
 from quantum_edge_core.market_data.config import AccountConfig
 from quantum_edge_core.market_data.models.account_snapshot import (
@@ -40,13 +41,13 @@ class BinanceAccountRestSnapshotBuilder:
     """Build normalized account snapshot data from Binance REST."""
 
     def __init__(
-        self, config: AccountConfig, session: Optional[requests.Session] = None
+        self, config: AccountConfig, session: Optional[aiohttp.ClientSession] = None
     ):
         self._config = config
-        self._session = session or requests.Session()
+        self._session = session
         self._timeout = 10.0
 
-    def build_full_account_snapshot(
+    async def build_full_account_snapshot(
         self,
         symbols: List[str],
         include_market: bool = True,
@@ -54,12 +55,12 @@ class BinanceAccountRestSnapshotBuilder:
     ) -> AccountSnapshot:
         ts_ms = int(time.time() * 1000)
         market_block = (
-            self.build_market_snapshot(symbols)
+            await self.build_market_snapshot(symbols)
             if include_market
             else MarketBlock([], [])
         )
-        spot_block = self.build_spot_snapshot(symbols)
-        usdm_block = self.build_usdm_snapshot(symbols)
+        spot_block = await self.build_spot_snapshot(symbols)
+        usdm_block = await self.build_usdm_snapshot(symbols)
         snapshot_account_ref = account_ref or _mask_key(self._config.spot_api_key)
         return AccountSnapshot(
             ts_ms=ts_ms,
@@ -70,8 +71,8 @@ class BinanceAccountRestSnapshotBuilder:
             usdm=usdm_block,
         )
 
-    def build_spot_snapshot(self, symbols: List[str]) -> SpotBlock:
-        account = self._signed_get(
+    async def build_spot_snapshot(self, symbols: List[str]) -> SpotBlock:
+        account = await self._signed_get(
             self._config.base_url,
             "/api/v3/account",
             {"omitZeroBalances": "true"},
@@ -88,7 +89,7 @@ class BinanceAccountRestSnapshotBuilder:
         ]
         open_orders = []
         for symbol in symbols:
-            data = self._signed_get(
+            data = await self._signed_get(
                 self._config.base_url,
                 "/api/v3/openOrders",
                 {"symbol": symbol},
@@ -99,15 +100,15 @@ class BinanceAccountRestSnapshotBuilder:
                 open_orders.append(self._normalize_order(order))
         return SpotBlock(balances=balances, open_orders=open_orders)
 
-    def build_usdm_snapshot(self, symbols: List[str]) -> UsdmBlock:
-        account = self._signed_get(
+    async def build_usdm_snapshot(self, symbols: List[str]) -> UsdmBlock:
+        account = await self._signed_get(
             self._config.fapi_url,
             "/fapi/v3/account",
             {},
             self._config.usdm_api_key,
             self._config.usdm_api_secret,
         )
-        positions = self._signed_get(
+        positions = await self._signed_get(
             self._config.fapi_url,
             "/fapi/v3/positionRisk",
             {},
@@ -116,7 +117,7 @@ class BinanceAccountRestSnapshotBuilder:
         )
         open_orders = []
         for symbol in symbols:
-            data = self._signed_get(
+            data = await self._signed_get(
                 self._config.fapi_url,
                 "/fapi/v1/openOrders",
                 {"symbol": symbol},
@@ -165,11 +166,11 @@ class BinanceAccountRestSnapshotBuilder:
             open_orders=open_orders,
         )
 
-    def build_market_snapshot(self, symbols: List[str]) -> MarketBlock:
+    async def build_market_snapshot(self, symbols: List[str]) -> MarketBlock:
         spot_last = []
         usdm_mark = []
         for symbol in symbols:
-            ticker = self._get(
+            ticker = await self._get(
                 self._config.base_url, "/api/v3/ticker/price", {"symbol": symbol}
             )
             spot_last.append(
@@ -180,7 +181,7 @@ class BinanceAccountRestSnapshotBuilder:
                     src="spot_rest_ticker_price",
                 )
             )
-            premium = self._get(
+            premium = await self._get(
                 self._config.fapi_url, "/fapi/v1/premiumIndex", {"symbol": symbol}
             )
             if isinstance(premium, list) and premium:
@@ -215,12 +216,17 @@ class BinanceAccountRestSnapshotBuilder:
             transactTime=order.get("transactTime"),
         )
 
-    def _get(self, base: str, path: str, params: dict) -> dict:
-        resp = self._session.get(f"{base}{path}", params=params, timeout=self._timeout)
-        resp.raise_for_status()
-        return resp.json()
+    async def _get(self, base: str, path: str, params: dict) -> dict:
+        session = self._session or aiohttp.ClientSession()
+        try:
+            async with session.get(f"{base}{path}", params=params, timeout=self._timeout) as resp:
+                resp.raise_for_status()
+                return await resp.json()
+        finally:
+            if not self._session:
+                await session.close()
 
-    def _signed_get(
+    async def _signed_get(
         self, base: str, path: str, params: dict, api_key: str, api_secret: str
     ) -> dict:
         params = {
@@ -234,8 +240,13 @@ class BinanceAccountRestSnapshotBuilder:
         ).hexdigest()
         params["signature"] = signature
         headers = {"X-MBX-APIKEY": api_key}
-        resp = self._session.get(
-            f"{base}{path}", params=params, headers=headers, timeout=self._timeout
-        )
-        resp.raise_for_status()
-        return resp.json()
+        session = self._session or aiohttp.ClientSession()
+        try:
+            async with session.get(
+                f"{base}{path}", params=params, headers=headers, timeout=self._timeout
+            ) as resp:
+                resp.raise_for_status()
+                return await resp.json()
+        finally:
+            if not self._session:
+                await session.close()
