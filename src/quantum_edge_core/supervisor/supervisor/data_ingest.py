@@ -14,7 +14,6 @@ from typing import Dict, Any, Optional
 
 logger = logging.getLogger(__name__)
 
-
 @dataclass
 class DataStore:
     """
@@ -66,7 +65,6 @@ class DataStore:
             self.futures_positions[symbol]["unrealizedProfit"] = float(
                 data["unrealizedProfit"]
             )
-
 
 class ZmqListener:
     """
@@ -143,7 +141,7 @@ class ZmqListener:
 
     def _process_message(self, topic: str, payload: Dict[str, Any]):
         """Internal message processor/dispatcher."""
-        current_ver = self.store._versions.get(topic, -1)
+        # current_ver = self.store._versions.get(topic, -1)
         msg_ver = payload.get("version", 0)
 
         # Simple version check - strict ordering

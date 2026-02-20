@@ -35,7 +35,6 @@ pyparsing==3.3.2
 python-dotenv==1.2.1
 PyYAML==6.0.3
 pyzmq==27.1.0
-quantum-edge==0.1.0
 questdb==4.1.0
 requests==2.32.5
 rsa==4.9.1

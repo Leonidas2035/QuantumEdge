@@ -2,10 +2,9 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import date, datetime, timezone
 from typing import Any, List, Mapping, Optional
-
 
 @dataclass
 class HeartbeatPayload:
@@ -31,7 +30,6 @@ class HeartbeatPayload:
     base_currency: Optional[str] = None
     trading_day: Optional[date] = None
 
-
 @dataclass
 class HeartbeatState:
     """Represents the latest heartbeat status."""
@@ -51,7 +49,6 @@ class HeartbeatState:
         if delta.total_seconds() <= self.heartbeat_timeout_s:
             return "HEALTHY"
         return "STALE"
-
 
 class HeartbeatServer:
     """In-memory heartbeat aggregator."""
@@ -149,7 +146,6 @@ class HeartbeatServer:
         """Return the latest heartbeat state."""
 
         return self._state
-
 
 def heartbeat_to_risk_summary(state: HeartbeatState) -> Optional[Mapping[str, Any]]:
     """Convert heartbeat state into a compact risk summary."""

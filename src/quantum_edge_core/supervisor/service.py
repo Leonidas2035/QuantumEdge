@@ -154,7 +154,7 @@ class AsyncSupervisor:
             # ZmqListener.store still exists and gets account updates.
             # We bridge them here.
 
-            risk_info = {
+            # risk_info = {
                 "total_exposure": 0.0,  # Placeholder or calc from store
                 "total_unrealized_pnl": 0.0,
             }

@@ -432,7 +432,7 @@ class BinanceDemoExecutor:
         if self.position == 0:
             return
         sym = (symbol or self.symbol).upper()
-        side = "SELL" if self.position > 0 else "BUY"
+        # side = "SELL" if self.position > 0 else "BUY"
         qty = abs(self.position)
         result = await self.submit_order(sym, side, qty, reduce_only=True)
         if result:
@@ -547,7 +547,7 @@ class BinanceDemoExecutor:
                 )
                 return
 
-            side = "BUY" if decision.action == "buy" else "SELL"
+            # side = "BUY" if decision.action == "buy" else "SELL"
             self._log(f"[DEMO] Placing MARKET {side} {sym} qty={qty} (testnet).")
             client_id = self._client_order_id(sym, decision.action)
             result = await self.submit_order(
@@ -570,7 +570,7 @@ class BinanceDemoExecutor:
                 self._log("[DEMO] No open position to close.")
                 return
 
-            side = "SELL" if self.position > 0 else "BUY"
+            # side = "SELL" if self.position > 0 else "BUY"
             qty = await self._normalize_qty(sym, abs(self.position))
             if qty <= 0:
                 self._log(
@@ -706,7 +706,7 @@ class BinanceDemoExecutor:
     async def check_brackets(self, price: float, timestamp: int) -> None:
         if not self._bracket or self.position == 0:
             return False
-        side = self._bracket.get("side", "BUY")
+        # side = self._bracket.get("side", "BUY")
         tp = self._bracket.get("tp")
         sl = self._bracket.get("sl")
         hit = None
@@ -720,7 +720,7 @@ class BinanceDemoExecutor:
             hit = hit or "sl"
         if not hit:
             return False
-        close_side = "SELL" if self.position > 0 else "BUY"
+        close_# side = "SELL" if self.position > 0 else "BUY"
         qty = abs(self.position)
         client_id = self._client_order_id(self.symbol, f"bracket-{hit}")
         self._log(

@@ -1,7 +1,7 @@
 import os
 import sys
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Dict
 from dataclasses import dataclass
 
 import yaml
@@ -20,7 +20,6 @@ try:
 except Exception:  # pragma: no cover - fallback for legacy runs
     get_qe_config = None
     get_qe_paths = None
-
 
 class Config:
     def __init__(self, config_path: str = "config/settings.yaml"):
@@ -160,9 +159,7 @@ class Config:
             return self.secrets.get(key)
         return os.getenv(key)
 
-
 config = Config()
-
 
 @dataclass
 class SupervisorSettings:
@@ -176,7 +173,6 @@ class SupervisorSettings:
     risk_on_error: str
     risk_log_level: str
 
-
 @dataclass
 class SupervisorSnapshotsSettings:
     enabled: bool
@@ -187,7 +183,6 @@ class SupervisorSnapshotsSettings:
     log_to_console: bool
     log_to_file: bool
     log_file: str
-
 
 def load_supervisor_settings(cfg: Config) -> SupervisorSettings:
     data = cfg.get("supervisor", {}) or {}
@@ -221,7 +216,6 @@ def load_supervisor_settings(cfg: Config) -> SupervisorSettings:
         risk_on_error=str(data.get("risk_on_error", "bypass")),
         risk_log_level=str(data.get("risk_log_level", "info")),
     )
-
 
 def load_supervisor_snapshot_settings(cfg: Config) -> SupervisorSnapshotsSettings:
     data = cfg.get("supervisor_snapshots", {}) or {}

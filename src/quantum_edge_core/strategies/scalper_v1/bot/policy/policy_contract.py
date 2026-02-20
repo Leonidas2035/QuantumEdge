@@ -1,7 +1,7 @@
 import json
 import time
 from pathlib import Path
-from typing import Dict, Any, Optional
+from typing import Dict, Any
 
 class PolicyContract:
     def __init__(self, policy_path: str):

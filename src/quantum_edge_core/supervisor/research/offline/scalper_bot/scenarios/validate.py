@@ -64,7 +64,7 @@ def validate_scenarios(symbol: str, root: Path) -> int:
             warnings += 1
             continue
 
-        episodes_dir = scenario_dir / "episodes"
+        # episodes_dir = scenario_dir / "episodes"
         episodes = manifest.get("episodes", [])
         if not episodes:
             print(f"[FAIL] No episodes listed for {spec.scenario_id}")

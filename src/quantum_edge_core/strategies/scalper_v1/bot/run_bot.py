@@ -358,7 +358,7 @@ async def main(
     ml_required = bool(
         ml_cfg.get("ml_required", ml_cfg.get("required", require_models))
     )
-    ml_compat_strict = bool(ml_cfg.get("ml_compat_strict", False))
+    # ml_compat_strict = bool(ml_cfg.get("ml_compat_strict", False))
     ml_fail_mode = str(ml_cfg.get("fail_mode", "disable")).lower()
     ml_snapshot_interval = float(ml_cfg.get("snapshot_interval_sec", 30))
     if ml_snapshot_interval <= 0:
@@ -468,7 +468,7 @@ async def main(
             f"Symbol={symbol}, max_notional_per_trade={demo_cfg.get('max_notional_per_trade', 50)}"
         )
     app_risk = config.get("app.risk", {}) or {}
-    min_edge = app_risk.get("llm_require_edge", 0.0)
+    # min_edge = app_risk.get("llm_require_edge", 0.0)
     data_manager = DataManager()
     micro_cfg = config.get("microstructure", {}) or {}
     micro_enabled = bool(micro_cfg.get("enabled", True))
