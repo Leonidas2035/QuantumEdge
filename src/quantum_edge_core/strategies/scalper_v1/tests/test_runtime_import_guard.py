@@ -24,12 +24,12 @@ def test_runtime_import_guard():
 
     # Offline/backtest modules should stay out of runtime imports.
     forbidden_modules = [
-        "bot.sandbox.offline_loop",
-        "bot.sandbox.generate_synthetic_ticks",
-        "bot.backtester.backtest_model",
-        "bot.backtester.metrics",
-        "bot.backtester.simulator",
-        "bot.backtester.tick_replay",
+        "quantum_edge_core.supervisor.research.offline.scalper_bot.sandbox.offline_loop",
+        "quantum_edge_core.supervisor.research.offline.scalper_bot.sandbox.generate_synthetic_ticks",
+        "quantum_edge_core.supervisor.research.offline.scalper_bot.backtester.backtest_model",
+        "quantum_edge_core.supervisor.research.offline.scalper_bot.backtester.metrics",
+        "quantum_edge_core.supervisor.research.offline.scalper_bot.backtester.simulator",
+        "quantum_edge_core.supervisor.research.offline.scalper_bot.backtester.tick_replay",
         "bot.ml.signal_model.dataset",
         "bot.ml.signal_model.dataset_builder",
         "bot.ml.signal_model.train",

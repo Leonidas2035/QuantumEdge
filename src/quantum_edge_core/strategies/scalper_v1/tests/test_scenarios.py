@@ -1,8 +1,8 @@
 import json
 from pathlib import Path
 
-from bot.scenarios.build import build_scenarios_pipeline
-from bot.scenarios.validate import validate_scenarios
+from quantum_edge_core.supervisor.research.offline.scalper_bot.scenarios.build import build_scenarios_pipeline
+from quantum_edge_core.supervisor.research.offline.scalper_bot.scenarios.validate import validate_scenarios
 
 
 def _write_ticks_csv(path: Path, count: int = 3000) -> None:

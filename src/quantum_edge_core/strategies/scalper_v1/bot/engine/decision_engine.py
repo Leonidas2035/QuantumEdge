@@ -11,15 +11,17 @@ from bot.engine.decision_types import (
 from bot.engine.regime_policy import RegimePolicy
 from bot.ml.ensemble import EnsembleOutput
 from bot.ml.signal_model.model import SignalOutput
+from bot.policy.policy_contract import PolicyContract
 from bot.trading.trade_stats import TradeStats
 
 
 class DecisionEngine:
     """Layer 2: signal filtering, horizon agreement, confidence gating, loss-streak/over-trading, regime-aware."""
 
-    def __init__(self):
+    def __init__(self, policy_path: str = "policy.json"):
         self.cfg = config.get("decision", {}) or {}
         filters = self.cfg.get("filters", {}) or {}
+        self.policy_contract = PolicyContract(policy_path)
         self.min_confidence = filters.get("min_confidence", 0.55)
         self.min_edge = filters.get("min_edge", 0.02)
         self.hz_cfg = self.cfg.get("horizons", {}) or {"primary": [1, 5], "anchor": 15}
@@ -264,6 +266,16 @@ class DecisionEngine:
             action = DecisionAction.EXIT
         else:
             action = DecisionAction.HOLD
+
+        # --- POLICY FAIL-SAFE ENFORCEMENT ---
+        policy = self.policy_contract.read_policy()
+        safe_mode = not policy.get("allow_trading", False)
+        
+        if safe_mode:
+            reasons.append("SAFE_MODE_ACTIVE")
+            if action == DecisionAction.ENTER:
+                reasons.append("SAFE_MODE_BLOCKS_ENTER")
+                action = DecisionAction.NO_TRADE
 
         return Decision(
             action=action,

@@ -1,6 +1,6 @@
 import numpy as np
 
-from bot.ml.eval.calibrate import _apply_calibrator, _fit_calibrator
+from quantum_edge_core.supervisor.research.offline.scalper_bot.ml.eval.calibrate import _apply_calibrator, _fit_calibrator
 
 
 def test_platt_calibration_changes_brier():

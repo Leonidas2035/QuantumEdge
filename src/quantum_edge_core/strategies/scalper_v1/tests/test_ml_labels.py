@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 
-from bot.ml.labels.builder import LabelConfig, build_labels
+from quantum_edge_core.supervisor.research.offline.scalper_bot.ml.labels.builder import LabelConfig, build_labels
 
 
 def test_label_alignment_future_return():
