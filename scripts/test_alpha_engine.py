@@ -43,7 +43,8 @@ def run_bot(queue):
         # We can't easily capture logs from subprocess without complex setup or analyzing stdout.
         # So we will rely on stdout analysis in the main process if we capture it,
         # OR we just let it run and simple-check connection.
-        # Actually, let's just run the bot and let it print. The main process will inspect success criteria via ZMQ Snoop or just trust the components if they don't crash.
+        # Actually, let's just run the bot and let it print. The main process will inspect success
+        # criteria via ZMQ Snoop or just trust the components if they don't crash.
         # A better way: The Bot logs "Market Metrics Received". We can grep that.
 
         bot = TradingBot()

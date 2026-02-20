@@ -133,7 +133,8 @@ class BotEngine:
                         # 3. Decision
                         # DEBUG LOGGING for UAT
                         logger.info(
-                            f"DEBUG: Price={market_state.last_price:.2f}, OFI={feat_vec.ofi:.4f}, ATR={atr_val:.4f}, B={market_state.best_bid_qty}, A={market_state.best_ask_qty}"
+                            f"DEBUG: Price={market_state.last_price:.2f}, OFI={feat_vec.ofi:.4f}, "
+                            f"ATR={atr_val:.4f}, B={market_state.best_bid_qty}, A={market_state.best_ask_qty}"
                         )
 
                         action = self.strategy.decide(
