@@ -1,4 +1,4 @@
-from secret_masking import mask_secrets
+from .secret_masking import mask_secrets
 
 
 class PromptBuilder:

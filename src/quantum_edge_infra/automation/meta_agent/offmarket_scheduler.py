@@ -14,12 +14,12 @@ try:
 except Exception:  # pragma: no cover - fallback
     ZoneInfo = None
 
-from inbox_processor import process_inbox_once
-from logger import configure_logger
-from schedule_contract import ScheduleSpec, ScheduleValidationError, load_schedule_file
+from .inbox_processor import process_inbox_once
+from .logger import configure_logger
+from .schedule_contract import ScheduleSpec, ScheduleValidationError, load_schedule_file
 
 try:
-    from tools.qe_config import get_qe_paths
+    from quantum_edge_infra.tools.qe_config import get_qe_paths
 except Exception:  # pragma: no cover - fallback for legacy runs
     get_qe_paths = None
 

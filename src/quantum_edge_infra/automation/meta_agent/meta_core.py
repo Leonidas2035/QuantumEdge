@@ -6,17 +6,17 @@ from datetime import datetime, timezone
 from hashlib import sha256
 from typing import Dict, List, Optional
 
-from llm_client import LLMClient
-from file_manager import ChangeSet, FileChange, build_change_set_from_response
-from gate_runner import GateResults, run_gates
-from logger import configure_logger
-from project_scanner import ProjectScanner
-from prompt_builder import PromptBuilder
-from projects_config import load_project_registry, resolve_project_root
-from run_lock import RunLock, describe_existing_lock, resolve_lock_path
-from safety_policy import SAFETY_POLICY_PATH, evaluate_change_set, load_safety_policy
-from shadow_workspace import cleanup_shadow, create_shadow
-from task_contract import (
+from .llm_client import LLMClient
+from .file_manager import ChangeSet, FileChange, build_change_set_from_response
+from .gate_runner import GateResults, run_gates
+from .logger import configure_logger
+from .project_scanner import ProjectScanner
+from .prompt_builder import PromptBuilder
+from .projects_config import load_project_registry, resolve_project_root
+from .run_lock import RunLock, describe_existing_lock, resolve_lock_path
+from .safety_policy import SAFETY_POLICY_PATH, evaluate_change_set, load_safety_policy
+from .shadow_workspace import cleanup_shadow, create_shadow
+from .task_contract import (
     Report,
     ReportArtifacts,
     ReportChanges,
@@ -31,7 +31,7 @@ from task_contract import (
     TaskValidationError,
     load_task_spec,
 )
-from write_engine import apply_change_set_with_policy
+from .write_engine import apply_change_set_with_policy
 
 import yaml
 
@@ -40,7 +40,7 @@ CONFIG_PATH = os.path.join("src", "quantum_edge_core", "config", "meta_agent.yam
 TASKS_DIR = os.path.join(BASE_DIR, "tasks")
 
 try:
-    from tools.qe_config import get_qe_paths
+    from quantum_edge_infra.tools.qe_config import get_qe_paths
 except Exception:  # pragma: no cover - fallback for legacy runs
     get_qe_paths = None
 

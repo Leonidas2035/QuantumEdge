@@ -3,14 +3,14 @@ import os
 from datetime import datetime, timezone
 from typing import Optional
 
-from file_manager import ChangeSet, FileChange
-from gate_runner import run_gates
-from logger import configure_logger
-from run_lock import RunLock, describe_existing_lock, resolve_lock_path
-from safety_policy import load_safety_policy
-from shadow_workspace import cleanup_shadow, create_shadow
-from task_contract import TaskSpec, TaskValidationError, load_task_spec
-from write_engine import apply_change_set_with_policy
+from .file_manager import ChangeSet, FileChange
+from .gate_runner import run_gates
+from .logger import configure_logger
+from .run_lock import RunLock, describe_existing_lock, resolve_lock_path
+from .safety_policy import load_safety_policy
+from .shadow_workspace import cleanup_shadow, create_shadow
+from .task_contract import TaskSpec, TaskValidationError, load_task_spec
+from .write_engine import apply_change_set_with_policy
 
 
 class ApprovalError(Exception):

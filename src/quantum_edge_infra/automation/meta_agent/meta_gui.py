@@ -1,12 +1,16 @@
 import os
 import subprocess
-import tkinter as tk
-from tkinter import messagebox, scrolledtext, ttk
+try:
+    import tkinter as tk
+    from tkinter import messagebox, scrolledtext, ttk
+    GUI_AVAILABLE = True
+except ImportError:
+    GUI_AVAILABLE = False
 
 import yaml
 
-from paths import BASE_DIR, PROMPTS_DIR, STAGES_PATH
-from projects_config import load_project_registry
+from .paths import BASE_DIR, PROMPTS_DIR, STAGES_PATH
+from .projects_config import load_project_registry
 
 
 def slugify(text: str) -> str:
@@ -96,6 +100,11 @@ def on_run_meta_agent():
 
 
 def main():
+    if not GUI_AVAILABLE:
+        print("[ERROR] Tkinter не знайдено. Сервер працює в headless-режимі. Будь ласка, використовуйте CLI-версію агента (meta_core.py / meta_agent.py --task-id ...)")
+        import sys
+        sys.exit(1)
+
     global entry_name, text_prompt, project_var
 
     root = tk.Tk()

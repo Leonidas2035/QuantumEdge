@@ -2,7 +2,7 @@ import os
 from datetime import datetime
 from typing import List, Optional
 
-from task_schema import Task, TaskParseError, parse_task_file
+from .task_schema import Task, TaskParseError, parse_task_file
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 TASKS_DIR = os.path.join(BASE_DIR, "tasks")

@@ -3,9 +3,9 @@ import os
 from dataclasses import dataclass, field
 from typing import Any, Dict, List
 
-from llm_client import LLMClient
-from report_schema import REPORTS_DIR
-from task_manager import create_task
+from .llm_client import LLMClient
+from .report_schema import REPORTS_DIR
+from .task_manager import create_task
 
 BASE_DIR = os.path.abspath(os.path.dirname(__file__))
 SUPERVISOR_REPORT_DIR = os.path.join(REPORTS_DIR, "supervisor")

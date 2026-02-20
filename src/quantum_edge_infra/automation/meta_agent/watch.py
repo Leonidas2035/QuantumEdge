@@ -1,6 +1,6 @@
 from typing import Optional
 
-from inbox_processor import process_inbox_once as _process_inbox_once
+from .inbox_processor import process_inbox_once as _process_inbox_once
 
 
 def process_inbox_once(

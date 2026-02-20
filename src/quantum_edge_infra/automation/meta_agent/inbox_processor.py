@@ -4,7 +4,7 @@ import shutil
 from datetime import datetime, timezone
 from typing import Callable, Optional
 
-from meta_core import run_task
+from .meta_core import run_task
 
 
 def _timestamp_prefix() -> str:

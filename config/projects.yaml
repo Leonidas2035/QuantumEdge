@@ -1,11 +1,11 @@
 default: ai_scalper_bot
 projects:
   ai_scalper_bot:
-    path: ai_scalper_bot
+    path: src/quantum_edge_core/strategies/scalper_v1
     description: QuantumEdge trading engine
   supervisor_agent:
-    path: SupervisorAgent
+    path: src/quantum_edge_core/supervisor
     description: Supervisor control plane
   meta_agent:
-    path: meta_agent
+    path: src/quantum_edge_infra/automation/meta_agent
     description: Meta-Agent orchestrator

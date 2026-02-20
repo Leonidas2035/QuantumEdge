@@ -6,7 +6,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterable, List, Optional, Set
 
-from secret_masking import mask_secrets
+from .secret_masking import mask_secrets
 
 # Default settings for context collection
 DEFAULT_INCLUDE_EXTS: Set[str] = {

@@ -4,7 +4,7 @@ import shutil
 import subprocess
 from typing import Iterable, Optional
 
-from task_contract import DEFAULT_DENY_GLOBS
+from .task_contract import DEFAULT_DENY_GLOBS
 
 DEFAULT_IGNORE = DEFAULT_DENY_GLOBS + [
     ".git",

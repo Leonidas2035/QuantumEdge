@@ -5,7 +5,7 @@ from typing import List, Optional
 import yaml
 
 try:
-    from tools.qe_config import get_qe_paths
+    from quantum_edge_infra.tools.qe_config import get_qe_paths
 except Exception:  # pragma: no cover - fallback
     get_qe_paths = None
 

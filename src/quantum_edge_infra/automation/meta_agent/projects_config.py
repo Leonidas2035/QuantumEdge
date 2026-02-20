@@ -5,10 +5,10 @@ from typing import Dict, Optional
 
 import yaml
 
-from paths import BASE_DIR
+from .paths import BASE_DIR
 
 try:
-    from tools.qe_config import get_qe_paths
+    from quantum_edge_infra.tools.qe_config import get_qe_paths
 except Exception:  # pragma: no cover - fallback for legacy runs
     get_qe_paths = None
 

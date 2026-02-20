@@ -11,16 +11,16 @@ from typing import Dict, Tuple, Optional
 
 import yaml
 
-from llm_client import LLMClient
-from file_manager import build_change_set_from_response
-from logger import configure_logger
-from meta_core import run_task
-from offmarket_scheduler import main as scheduler_main, status as scheduler_status
-from schedule_contract import ScheduleValidationError
-from approval_engine import approve_apply, ApprovalError
-from control_center_server import run_server
-from version import __version__
-from paths import (
+from .llm_client import LLMClient
+from .file_manager import build_change_set_from_response
+from .logger import configure_logger
+from .meta_core import run_task
+from .offmarket_scheduler import main as scheduler_main, status as scheduler_status
+from .schedule_contract import ScheduleValidationError
+from .approval_engine import approve_apply, ApprovalError
+from .control_center_server import run_server
+from .version import __version__
+from .paths import (
     BASE_DIR,
     OUTPUT_DIR,
     PATCHES_DIR,
@@ -30,23 +30,23 @@ from paths import (
     STAGES_PATH,
     TASKS_DIR,
 )
-from project_scanner import ProjectScanner
-from projects_config import load_project_registry, resolve_project_root
-from prompt_builder import PromptBuilder
-from secret_masking import mask_secrets
-from task_contract import TaskConstraints, TaskContext, TaskLLM, TaskSpec
-from watch import process_inbox_once
-from report_schema import Report, write_json_report, write_md_report
-from safety_policy import load_safety_policy
-from write_engine import apply_change_set_with_policy
-from run_lock import RunLock, describe_existing_lock, resolve_lock_path
+from .project_scanner import ProjectScanner
+from .projects_config import load_project_registry, resolve_project_root
+from .prompt_builder import PromptBuilder
+from .secret_masking import mask_secrets
+from .task_contract import TaskConstraints, TaskContext, TaskLLM, TaskSpec
+from .watch import process_inbox_once
+from .report_schema import Report, write_json_report, write_md_report
+from .safety_policy import load_safety_policy
+from .write_engine import apply_change_set_with_policy
+from .run_lock import RunLock, describe_existing_lock, resolve_lock_path
 
 try:
     from supervisor_runner import run_supervisor_cycle
 except Exception:
     run_supervisor_cycle = None
-from task_archiver import archive_task_file
-from task_manager import list_tasks
+from .task_archiver import archive_task_file
+from .task_manager import list_tasks
 
 FRONT_MATTER_DELIMITER = "---"
 ALLOWED_MODES = {"readonly", "write_dev", "write_prod"}
@@ -54,7 +54,7 @@ DEFAULT_TASK_FILE = os.path.join(TASKS_DIR, "task_current.md")
 MAX_CONTEXT_CHARS = 250_000
 
 try:
-    from tools.qe_config import get_qe_paths
+    from quantum_edge_infra.tools.qe_config import get_qe_paths
 except Exception:  # pragma: no cover - fallback for legacy runs
     get_qe_paths = None
 

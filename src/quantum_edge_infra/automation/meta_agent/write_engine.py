@@ -1,12 +1,12 @@
 from dataclasses import dataclass
 from typing import List, Optional
 
-from file_manager import (
+from .file_manager import (
     ChangeSet,
     apply_change_set_direct,
     write_change_set_as_patches,
 )
-from safety_policy import (
+from .safety_policy import (
     SafetyEvaluation,
     SafetyPolicy,
     evaluate_change_set,

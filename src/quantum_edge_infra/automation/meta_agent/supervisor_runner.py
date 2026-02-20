@@ -6,9 +6,9 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 
-from meta_core import run_task
-from projects_config import ProjectRegistry, resolve_project_root
-from task_manager import create_task
+from .meta_core import run_task
+from .projects_config import ProjectRegistry, resolve_project_root
+from .task_manager import create_task
 
 REPORTS_SUPERVISOR_DIR = Path("reports") / "supervisor"
 
