@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import msgspec
+import json
 
 from quantum_edge_core.market_data.ipc.publisher import ZmqPublisher
 from quantum_edge_core.market_data.models.account_snapshot import AccountSnapshot
@@ -17,9 +18,18 @@ class AccountPublisher:
 
     def publish_snapshot(self, snapshot: AccountSnapshot) -> None:
         payload = msgspec.msgpack.encode(snapshot)
-        self._publisher.publish_payload("account:snapshot", payload)
+        # Wrap payload into a dict with explicit type or just send directly to topic
+        # To strictly follow event schema we structure it:
+        wrapper = {
+            "type": "hub.account_snapshot.v1",
+            "data": json.loads(msgspec.json.encode(snapshot).decode("utf-8"))
+        }
+        self._publisher.publish_payload("account:snapshot", msgspec.json.encode(wrapper))
 
     def publish_delta(self, delta: AccountDelta) -> None:
-        payload = msgspec.msgpack.encode(delta)
+        wrapper = {
+            "type": "hub.account_delta.v1",
+            "data": json.loads(msgspec.json.encode(delta).decode("utf-8"))
+        }
         topic = f"account:delta:{delta.src}"
-        self._publisher.publish_payload(topic, payload)
+        self._publisher.publish_payload(topic, msgspec.json.encode(wrapper))

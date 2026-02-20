@@ -203,7 +203,6 @@ class MarketDataHubService(BaseService):
         )
         self._account_streams: List[Any] = []
         self._account_stream_tasks: List[asyncio.Task] = []
-        self._repair_timer_task: Optional[asyncio.Task] = None
         self._account_lock = asyncio.Lock()
 
     async def run(self) -> None:
@@ -223,9 +222,6 @@ class MarketDataHubService(BaseService):
         # self._start_account_streams()
         for feed in self.feeds:
             await feed.start()
-        if self.config.account_runtime.repair_interval_sec > 0:
-            self._repair_timer_task = asyncio.create_task(self._account_repair_timer())
-            self._tasks.append(self._repair_timer_task)
         self._tasks.extend(
             [
                 asyncio.create_task(self._dispatcher_loop()),
@@ -256,10 +252,6 @@ class MarketDataHubService(BaseService):
             task.cancel()
             with suppress(asyncio.CancelledError):
                 await task
-        if self._repair_timer_task:
-            self._repair_timer_task.cancel()
-            with suppress(asyncio.CancelledError):
-                await self._repair_timer_task
         await self._account_repair_manager.stop()
         for task in self._tasks:
             task.cancel()
@@ -561,12 +553,6 @@ class MarketDataHubService(BaseService):
 
     async def _handle_account_reconnect(self) -> None:
         await self._account_repair_manager.request_repair()
-
-    async def _account_repair_timer(self) -> None:
-        interval = self.config.account_runtime.repair_interval_sec
-        while not self._stop_event.is_set():
-            await asyncio.sleep(interval)
-            await self._account_repair_manager.request_repair()
 
 
 async def run() -> None:
