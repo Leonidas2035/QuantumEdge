@@ -88,7 +88,11 @@ class SnapshotServer:
     async def _loop(self) -> None:
         while self._running:
             try:
-                raw = await self._socket.recv()
+                try:
+                    raw = await self._socket.recv()
+                except zmq.error.Again:
+                    await asyncio.sleep(0.001)
+                    continue
                 request = msgspec.msgpack.decode(raw, type=SnapshotRequest)
                 response = self._handle_request(request)
                 await self._socket.send(msgspec.msgpack.encode(response))

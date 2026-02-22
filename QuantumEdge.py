@@ -9,6 +9,15 @@ import argparse
 import time
 import signal
 from pathlib import Path
+from dotenv import load_dotenv
+
+# Load environment variables from .env
+load_dotenv()
+
+# Automatically set PYTHONPATH to include the src/ directory so subprocesses don't get ModuleNotFoundError
+project_root = Path(__file__).parent.absolute()
+src_path = project_root / "src"
+os.environ["PYTHONPATH"] = f"{src_path}{os.pathsep}{os.environ.get('PYTHONPATH', '')}"
 
 
 class ProcessManager:

@@ -69,6 +69,12 @@ def collect_signals(
     evidence: Dict[str, Any] = {}
     status = process_manager.get_status_payload()
     bot_running = status.get("state") == "RUNNING"
+    
+    # STARTUP_GRACE_PERIOD: Give the bot 15 seconds to bind its ZMQ ports and fully initialize
+    info = process_manager.get_info()
+    if info and info.uptime_seconds is not None and info.uptime_seconds < 15.0:
+        bot_running = True
+        
     restarts = int(status.get("restarts") or 0)
     last_exit_ts = _parse_last_exit_time(status) if isinstance(status, dict) else None
     restart_rate = None

@@ -1,33 +1,17 @@
 version: '3.8'
 
 services:
-  market-hub:
-    image: market-hub:latest # Assuming existing
-    # ... existing config ...
-    healthcheck:
-      test: [ "CMD", "curl", "-f", "http://localhost:8080/health" ]
-      interval: 10s
-      timeout: 5s
-      retries: 3
-
-  supervisor:
-    build:
-      context: .
-      dockerfile: Dockerfile
-    container_name: quantum_supervisor
-    restart: unless-stopped
-    depends_on:
-      market-hub:
-        condition: service_healthy
-    environment:
-      - MODE=paper
-      - LOG_LEVEL=INFO
+  questdb:
+    image: questdb/questdb:latest
+    container_name: questdb
+    restart: always
+    ports:
+      - "9000:9000"
+      - "9009:9009"
+      - "8812:8812"
+      - "9003:9003"
     volumes:
-      - ./config:/app/config:ro
-      - ./logs:/app/logs
-    networks:
-      - quantum_net
+      - questdb_data:/root/.questdb/db
 
-networks:
-  quantum_net:
-    driver: bridge
+volumes:
+  questdb_data:

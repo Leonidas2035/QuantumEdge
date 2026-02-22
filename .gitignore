@@ -33,3 +33,5 @@ output/
 patches/
 config/config.yaml
 tools/update_config.py
+.venv/
+venv/

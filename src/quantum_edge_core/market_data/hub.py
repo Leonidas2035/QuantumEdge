@@ -321,30 +321,35 @@ class MarketDataHubService(BaseService):
         # Map event to ILP structure
         # Support both legacy TradeEvent and new MarketTrade
         # new: symbol, price, quantity/size, side
-        symbol = getattr(event, "symbol", "unknown")
-        side = getattr(event, "side", getattr(event, "taker_side", "unknown"))
-        price = getattr(event, "price", 0.0)
-        qty = getattr(event, "quantity", getattr(event, "size", 0.0))
+        symbol = str(getattr(event, "symbol", "unknown"))
+        side = str(getattr(event, "side", getattr(event, "taker_side", "unknown")))
+        price = float(getattr(event, "price", 0.0))
+        qty = float(getattr(event, "quantity", getattr(event, "size", 0.0)))
+        
+        # Pull nanoseconds timestamp if it exists to keep precise time
+        ts_ns_val = getattr(event, "ts_ns", None)
+        ts_ns = int(float(ts_ns_val)) if ts_ns_val else None
 
         self.writer.enqueue(
             table="trades",
             symbols={"symbol": symbol, "side": side},
             columns={"price": price, "qty": qty},
+            timestamp_ns=ts_ns,
         )
 
     def _persist_liquidation(self, event: Dict[str, Any]) -> None:
         # Map liquidation event to ILP
         # { "symbol": "BTCUSDT", "side": "SELL", "price": ..., "qty": ..., "usd_size": ..., "timestamp": ... }
-        symbol = event.get("symbol", "unknown")
-        side = event.get("side", "unknown")
-        price = event.get("price", 0.0)
-        qty = event.get("qty", 0.0)
-        usd_size = event.get("usd_size", 0.0)
+        symbol = str(event.get("symbol", "unknown"))
+        side = str(event.get("side", "unknown"))
+        price = float(event.get("price", 0.0))
+        qty = float(event.get("qty", 0.0))
+        usd_size = float(event.get("usd_size", 0.0))
         timestamp_ms = event.get("timestamp", 0)  # ms
 
         # Convert ms to ns for ILP
         # We need to pass this timestamp to enqueue
-        ts_ns = timestamp_ms * 1_000_000 if timestamp_ms else None
+        ts_ns = int(float(timestamp_ms) * 1_000_000) if timestamp_ms else None
 
         self.writer.enqueue(
             table="liquidations",
