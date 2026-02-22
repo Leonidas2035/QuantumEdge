@@ -9,7 +9,7 @@ from typing import Iterable, Optional
 import msgspec
 import zmq
 
-from market_data.lockbot.schema import LockbotMarketEvent
+from quantum_edge_core.market_data.lockbot.schema import LockbotMarketEvent
 from supervisor.lockbot.models import LiqHeatmapSummary, MarketSnapshot, OhlcvBar
 
 
