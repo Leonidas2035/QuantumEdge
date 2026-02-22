@@ -184,10 +184,6 @@ src/quantum_edge_core/strategies/scalper_v1/bot/ml/execution_model/__init__.py
 src/quantum_edge_core/strategies/scalper_v1/bot/ml/features/__init__.py
 src/quantum_edge_core/strategies/scalper_v1/bot/ml/features/builder.py
 src/quantum_edge_core/strategies/scalper_v1/bot/ml/features/diag_schema.py
-src/quantum_edge_core/strategies/scalper_v1/bot/ml/runtime/__init__.py
-src/quantum_edge_core/strategies/scalper_v1/bot/ml/runtime/aggregator.py
-src/quantum_edge_core/strategies/scalper_v1/bot/ml/runtime/model_manager.py
-src/quantum_edge_core/strategies/scalper_v1/bot/ml/runtime/policy_loader.py
 src/quantum_edge_core/strategies/scalper_v1/bot/ml/signal_model/dataset.py
 src/quantum_edge_core/strategies/scalper_v1/bot/ml/signal_model/dataset_builder.py
 src/quantum_edge_core/strategies/scalper_v1/bot/ml/signal_model/model.py
