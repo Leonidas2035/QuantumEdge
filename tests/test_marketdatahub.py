@@ -4,8 +4,8 @@ pytest.skip("Legacy test broken by src-layout migration", allow_module_level=Tru
 
 import pytest
 
-from market_data.bus.event_bus import EventBus
-from market_data.models import L1Event, Priority, TradeEvent, encode_event, decode_event
+from quantum_edge_core.market_data.bus.event_bus import EventBus
+from quantum_edge_core.market_data.models import L1Event, Priority, TradeEvent, encode_event, decode_event
 
 
 def test_msgpack_roundtrip_trade_event() -> None:

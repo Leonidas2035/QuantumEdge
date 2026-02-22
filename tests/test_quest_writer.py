@@ -2,9 +2,9 @@ import pytest
 
 pytest.skip("Legacy test broken by src-layout migration", allow_module_level=True)
 import asyncio
-from market_data.config import L2Config, TsdbConfig
-from market_data.models import Bar1sEvent, L1Event, Priority
-from market_data.tsdb.quest_writer import QuestILPWriter
+from quantum_edge_core.market_data.config import L2Config, TsdbConfig
+from quantum_edge_core.market_data.models import Bar1sEvent, L1Event, Priority
+from quantum_edge_core.market_data.tsdb.quest_writer import QuestILPWriter
 
 
 def test_format_lines_for_l1_and_bar() -> None:

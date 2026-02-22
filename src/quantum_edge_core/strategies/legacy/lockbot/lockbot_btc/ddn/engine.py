@@ -8,7 +8,7 @@ from collections import deque
 from dataclasses import dataclass
 from typing import Deque, Dict, List, Optional
 
-from LockBotBTC.lockbot_btc.ddn.config import DDNConfig, DDNProfile
+from quantum_edge_core.strategies.legacy.lockbot.lockbot_btc.ddn.config import DDNConfig, DDNProfile
 
 
 @dataclass
@@ -98,11 +98,13 @@ class DDNEngine:
             if intent.action not in {"PANIC_LOCK", "PAUSE"}:
                 return self._reject(now_ms, ["STALE_DATA"])
 
+        volatility = ctx.market.volatility_bps or 0.0
         if (
             _is_liq_risk(
                 ctx.position.distance_to_liq_bps, self._cfg.min_distance_to_liq_bps
             )
             or intent.action == "PANIC_LOCK"
+            or (volatility > self._cfg.max_volatility_bps_atr and ctx.position.net_delta() != 0)
         ):
             return self._panic_decision(ctx, now_ms)
 
@@ -140,6 +142,10 @@ class DDNEngine:
         if intent.action in {"SET_REGIME", "SET_DELTA_TARGET"}:
             return self._accept_profile_change(ctx)
 
+        dynamic_target = self._dynamic_target_from_vwap(ctx)
+        if dynamic_target is not None:
+            ctx.profile.target = dynamic_target
+
         step_qty = self._compute_step_qty(ctx)
         if step_qty is None:
             return self._reject(now_ms, ["MISSING_MARK_PRICE"])
@@ -170,7 +176,29 @@ class DDNEngine:
             order_plans=[order_plan] if order_plan else [],
             reasons=reasons or ["OK"],
             expected_cost_bps=cost_bps,
+            adjusted_target=ctx.profile.target,
+            adjusted_band_low=ctx.profile.band_low,
+            adjusted_band_high=ctx.profile.band_high,
         )
+
+    def _dynamic_target_from_vwap(self, ctx: DDNContext) -> Optional[float]:
+        mark = ctx.market.mark_price
+        vwap = ctx.market.vwap_d
+        band_u = ctx.market.bands.get("band_2u")
+        band_l = ctx.market.bands.get("band_2l")
+        if not mark or not vwap or not band_u or not band_l:
+            return None
+        if band_u <= vwap or band_l >= vwap:
+            return None
+            
+        if mark > vwap:
+            pos = (mark - vwap) / (band_u - vwap)
+        else:
+            pos = (mark - vwap) / (vwap - band_l)
+            
+        fade_target = -pos * ctx.max_band_abs * 0.5 
+        fade_target = max(min(fade_target, ctx.profile.band_high), ctx.profile.band_low)
+        return fade_target
 
     def _panic_decision(self, ctx: DDNContext, now_ms: int) -> DDNDecision:
         delta = ctx.position.net_delta()

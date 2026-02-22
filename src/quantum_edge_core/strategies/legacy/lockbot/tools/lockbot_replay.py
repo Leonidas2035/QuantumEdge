@@ -7,14 +7,14 @@ import time
 from pathlib import Path
 from typing import Optional
 
-from LockBotBTC.lockbot_btc.config import LockbotConfig
-from LockBotBTC.lockbot_btc.replay import (
+from quantum_edge_core.strategies.legacy.lockbot.lockbot_btc.config import LockbotConfig
+from quantum_edge_core.strategies.legacy.lockbot.lockbot_btc.replay import (
     load_dataset,
     load_ddn_config,
     load_policy_config,
     run_replay,
 )
-from LockBotBTC.lockbot_btc.replay.scenarios import (
+from quantum_edge_core.strategies.legacy.lockbot.lockbot_btc.replay.scenarios import (
     SCENARIO_NAMES,
     ScenarioConfig,
     generate_scenario,

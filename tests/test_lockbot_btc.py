@@ -6,9 +6,9 @@ import uuid
 
 import msgspec
 
-from LockBotBTC.lockbot.contracts.lockbot_control_v1 import build_command
-from LockBotBTC.lockbot_btc.config import LockbotConfig
-from LockBotBTC.lockbot_btc.main import LockBotService
+from quantum_edge_core.strategies.legacy.lockbot.lockbot.contracts.lockbot_control_v1 import build_command
+from quantum_edge_core.strategies.legacy.lockbot.lockbot_btc.config import LockbotConfig
+from quantum_edge_core.strategies.legacy.lockbot.lockbot_btc.main import LockBotService
 
 
 def _config() -> LockbotConfig:

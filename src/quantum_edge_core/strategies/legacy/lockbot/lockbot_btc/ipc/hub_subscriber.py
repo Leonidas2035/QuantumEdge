@@ -1,4 +1,4 @@
-"""MarketDataHub subscriber for LockBotBTC."""
+"""MarketDataHub subscriber for quantum_edge_core.strategies.legacy.lockbot."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ import msgspec
 import zmq
 import zmq.asyncio
 
-from market_data.lockbot.schema import LockbotMarketEvent
+from quantum_edge_core.market_data.lockbot.schema import LockbotMarketEvent
 
 
 class HubSubscriber:

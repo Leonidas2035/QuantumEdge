@@ -4,11 +4,11 @@ pytest.skip("Legacy test broken by src-layout migration", allow_module_level=Tru
 import math
 from datetime import datetime, timezone
 
-from market_data.bus.event_bus import EventBus
-from market_data.lockbot.engine import LockbotDerivedEngine
-from market_data.lockbot.publisher import LockbotPublisher
-from market_data.lockbot.schema import event_to_dict
-from market_data.models.lockbot_md_contract import (
+from quantum_edge_core.market_data.bus.event_bus import EventBus
+from quantum_edge_core.market_data.lockbot.engine import LockbotDerivedEngine
+from quantum_edge_core.market_data.lockbot.publisher import LockbotPublisher
+from quantum_edge_core.market_data.lockbot.schema import event_to_dict
+from quantum_edge_core.market_data.models.lockbot_md_contract import (
     TOPIC_AVWAP,
     TOPIC_FORCE_ORDER,
     TOPIC_FUNDING_RATE,

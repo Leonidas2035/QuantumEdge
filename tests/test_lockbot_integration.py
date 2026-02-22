@@ -12,10 +12,10 @@ import pytest
 import zmq
 import zmq.asyncio
 
-from LockBotBTC.lockbot_btc.config import LockbotConfig
-from LockBotBTC.lockbot_btc.main import LockBotService
-from market_data.lockbot.schema import LockbotMarketEvent
-from market_data.models import Priority
+from quantum_edge_core.strategies.legacy.lockbot.lockbot_btc.config import LockbotConfig
+from quantum_edge_core.strategies.legacy.lockbot.lockbot_btc.main import LockBotService
+from quantum_edge_core.market_data.lockbot.schema import LockbotMarketEvent
+from quantum_edge_core.market_data.models import Priority
 
 ROOT = Path(__file__).resolve().parents[1]
 SUPERVISOR_DIR = ROOT / "SupervisorAgent"

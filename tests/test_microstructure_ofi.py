@@ -1,7 +1,7 @@
 import pytest
 
 pytest.skip("Legacy test broken by src-layout migration", allow_module_level=True)
-from market_data.microstructure.ofi import MicrostructureAnalyzer
+from quantum_edge_core.market_data.microstructure.ofi import MicrostructureAnalyzer
 
 
 def test_ofi_qty_change_same_price():

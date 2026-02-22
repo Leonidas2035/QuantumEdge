@@ -1,4 +1,4 @@
-"""Bot state container for LockBotBTC."""
+"""Bot state container for quantum_edge_core.strategies.legacy.lockbot."""
 
 from __future__ import annotations
 

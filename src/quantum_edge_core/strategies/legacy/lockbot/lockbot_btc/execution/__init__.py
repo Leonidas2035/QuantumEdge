@@ -1,6 +1,6 @@
-"""Execution adapters for LockBotBTC."""
+"""Execution adapters for quantum_edge_core.strategies.legacy.lockbot."""
 
-from LockBotBTC.lockbot_btc.execution.base import (
+from quantum_edge_core.strategies.legacy.lockbot.lockbot_btc.execution.base import (
     CancelAllResult,
     CancelResult,
     ExecutionConfig,
@@ -8,7 +8,7 @@ from LockBotBTC.lockbot_btc.execution.base import (
     ExecutionMode,
     SubmitResult,
 )
-from LockBotBTC.lockbot_btc.execution.manager import ExecutionManager
+from quantum_edge_core.strategies.legacy.lockbot.lockbot_btc.execution.manager import ExecutionManager
 
 __all__ = [
     "CancelAllResult",

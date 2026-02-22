@@ -5,9 +5,9 @@ import gzip
 import json
 from pathlib import Path
 
-from market_data.config import L2Config
-from market_data.models import L2Envelope
-from market_data.spool.l2_spooler import L2Spooler
+from quantum_edge_core.market_data.config import L2Config
+from quantum_edge_core.market_data.models import L2Envelope
+from quantum_edge_core.market_data.spool.l2_spooler import L2Spooler
 
 
 class MockClock:

@@ -4,14 +4,16 @@ from __future__ import annotations
 
 import argparse
 import asyncio
-import logging
 import time
 from pathlib import Path
 from typing import Any, Dict, Optional
 
 import msgspec
+import structlog
 
-from LockBotBTC.lockbot.contracts.lockbot_control_v1 import (
+logger = structlog.get_logger()
+
+from quantum_edge_core.strategies.legacy.lockbot.lockbot.contracts.lockbot_control_v1 import (
     ACK_TOPIC,
     CMD_TOPIC,
     STATUS_TOPIC,
@@ -19,25 +21,25 @@ from LockBotBTC.lockbot.contracts.lockbot_control_v1 import (
     StatusEnvelope,
     validate_command,
 )
-from LockBotBTC.lockbot.contracts.lockbot_exec_v1 import EXEC_TOPIC, ExecEnvelope
-from LockBotBTC.lockbot_btc.config import LockbotConfig
-from LockBotBTC.lockbot_btc.ddn.engine import (
+from quantum_edge_core.strategies.legacy.lockbot.lockbot.contracts.lockbot_exec_v1 import EXEC_TOPIC, ExecEnvelope
+from quantum_edge_core.strategies.legacy.lockbot.lockbot_btc.config import LockbotConfig
+from quantum_edge_core.strategies.legacy.lockbot.lockbot_btc.ddn.engine import (
     DDNContext,
     DDNEngine,
     DDNIntent,
     DDNMarketSnapshot,
     DDNPositionSnapshot,
 )
-from LockBotBTC.lockbot_btc.execution.ledger import ExecutionLedger
-from LockBotBTC.lockbot_btc.execution.manager import ExecutionManager
-from LockBotBTC.lockbot_btc.ipc.control_subscriber import ControlSubscriber
-from LockBotBTC.lockbot_btc.ipc.hub_subscriber import HubSubscriber
-from LockBotBTC.lockbot_btc.ipc.publisher import BotPublisher
-from LockBotBTC.lockbot_btc.ipc.raw_subscriber import RawSubscriber
-from LockBotBTC.lockbot_btc.state.account_state import AccountState
-from LockBotBTC.lockbot_btc.state.bot_state import BotState
-from LockBotBTC.lockbot_btc.state.market_state import MarketState
-from LockBotBTC.lockbot_btc.state.order_tracker import OrderTracker
+from quantum_edge_core.strategies.legacy.lockbot.lockbot_btc.execution.ledger import ExecutionLedger
+from quantum_edge_core.strategies.legacy.lockbot.lockbot_btc.execution.manager import ExecutionManager
+from quantum_edge_core.strategies.legacy.lockbot.lockbot_btc.ipc.control_subscriber import ControlSubscriber
+from quantum_edge_core.strategies.legacy.lockbot.lockbot_btc.ipc.hub_subscriber import HubSubscriber
+from quantum_edge_core.strategies.legacy.lockbot.lockbot_btc.ipc.publisher import BotPublisher
+from quantum_edge_core.strategies.legacy.lockbot.lockbot_btc.ipc.raw_subscriber import RawSubscriber
+from quantum_edge_core.strategies.legacy.lockbot.lockbot_btc.state.account_state import AccountState
+from quantum_edge_core.strategies.legacy.lockbot.lockbot_btc.state.bot_state import BotState
+from quantum_edge_core.strategies.legacy.lockbot.lockbot_btc.state.market_state import MarketState
+from quantum_edge_core.strategies.legacy.lockbot.lockbot_btc.state.order_tracker import OrderTracker
 
 
 class LockBotService:
@@ -50,7 +52,7 @@ class LockBotService:
         self._ddn = DDNEngine(cfg.ddn)
         self._order_tracker = OrderTracker()
         self._exec_ledger = ExecutionLedger(
-            cfg.execution.ledger_path, logging.getLogger(__name__)
+            cfg.execution.ledger_path, logger
         )
         self._ipc_enabled = ipc_enabled
         self._publisher = (
@@ -64,7 +66,7 @@ class LockBotService:
             order_tracker=self._order_tracker,
             ledger=self._exec_ledger,
             emit=self._emit_exec_event,
-            logger=logging.getLogger(__name__),
+            logger=logger,
         )
         self._hub_sub = (
             HubSubscriber(cfg.hub_sub_endpoint, cfg.market_topics)
@@ -708,14 +710,12 @@ class _NullPublisher:
 async def _run(config_path: Optional[Path]) -> None:
     cfg = LockbotConfig.load(config_path)
     log_path = Path(cfg.log_path)
-    log_path.parent.mkdir(parents=True, exist_ok=True)
-    logging.basicConfig(
-        level=cfg.log_level,
-        format="%(asctime)s %(levelname)s %(name)s %(message)s",
-        handlers=[
-            logging.FileHandler(log_path, encoding="utf-8"),
-            logging.StreamHandler(),
-        ],
+    structlog.configure(
+        processors=[
+            structlog.processors.add_log_level,
+            structlog.processors.TimeStamper(fmt="iso"),
+            structlog.dev.ConsoleRenderer()
+        ]
     )
     service = LockBotService(cfg)
     await service.start()
@@ -723,14 +723,15 @@ async def _run(config_path: Optional[Path]) -> None:
         while True:
             await asyncio.sleep(1)
     except KeyboardInterrupt:
-        pass
+        logger.info("Graceful shutdown initiated. Canceling all orders.")
+        service._exec_manager.cancel_all("graceful_shutdown", "ALL", int(time.time() * 1000))
     finally:
         await service.stop()
 
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--config", type=Path, default=Path("config/lockbot_btc.yaml"))
+    parser.add_argument("--config", type=Path, default=Path("config/lockbot.yaml"))
     args = parser.parse_args()
     asyncio.run(_run(args.config))
 

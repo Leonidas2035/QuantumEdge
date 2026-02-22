@@ -1,4 +1,4 @@
-"""Synthetic replay scenario generators for LockBotBTC."""
+"""Synthetic replay scenario generators for quantum_edge_core.strategies.legacy.lockbot."""
 
 from __future__ import annotations
 

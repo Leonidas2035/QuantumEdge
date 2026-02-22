@@ -1,4 +1,4 @@
-"""Config loader for LockBotBTC."""
+"""Config loader for quantum_edge_core.strategies.legacy.lockbot."""
 
 from __future__ import annotations
 
@@ -9,8 +9,8 @@ from typing import List
 
 import yaml
 
-from LockBotBTC.lockbot_btc.ddn.config import DDNConfig, DDNProfile
-from LockBotBTC.lockbot_btc.execution.base import ExecutionConfig, ExecutionMode
+from quantum_edge_core.strategies.legacy.lockbot.lockbot_btc.ddn.config import DDNConfig, DDNProfile
+from quantum_edge_core.strategies.legacy.lockbot.lockbot_btc.execution.base import ExecutionConfig, ExecutionMode
 
 
 @dataclass
@@ -122,6 +122,9 @@ class LockbotConfig:
                 ),
                 step_volatility_scale=float(
                     ddn_cfg.get("step_volatility_scale", cfg.ddn.step_volatility_scale)
+                ),
+                max_volatility_bps_atr=float(
+                    ddn_cfg.get("max_volatility_bps_atr", cfg.ddn.max_volatility_bps_atr)
                 ),
             )
         exec_cfg = data.get("execution", {}) if isinstance(data, dict) else {}

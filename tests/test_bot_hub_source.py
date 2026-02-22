@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Optional
 
 import pytest
-from market_data.models import L1Event, SnapshotResponse, encode_event
+from quantum_edge_core.market_data.models import L1Event, SnapshotResponse, encode_event
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 BOT_ROOT = REPO_ROOT / "ai_scalper_bot"

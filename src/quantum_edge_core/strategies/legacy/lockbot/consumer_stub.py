@@ -6,7 +6,7 @@ from typing import Dict, Iterable, List
 
 import msgspec
 
-from market_data.lockbot.schema import LockbotMarketEvent
+from quantum_edge_core.market_data.lockbot.schema import LockbotMarketEvent
 
 LOCKBOT_TOPICS: List[str] = [
     "BTCUSDT:mark_price_1s",

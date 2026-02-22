@@ -1,4 +1,4 @@
-"""Market snapshot state for LockBotBTC."""
+"""Market snapshot state for quantum_edge_core.strategies.legacy.lockbot."""
 
 from __future__ import annotations
 

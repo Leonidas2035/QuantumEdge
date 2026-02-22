@@ -9,7 +9,7 @@ from typing import Optional
 from binance.client import Client
 from binance.exceptions import BinanceAPIException, BinanceRequestException
 
-from LockBotBTC.lockbot_btc.execution.base import (
+from quantum_edge_core.strategies.legacy.lockbot.lockbot_btc.execution.base import (
     CancelAllResult,
     CancelResult,
     ExecutionConfig,
@@ -29,9 +29,9 @@ class BinanceFuturesExecutor:
         api_secret = os.getenv(self._cfg.api_secret_env)
         if not api_key or not api_secret:
             return None
-        client = Client(api_key, api_secret)
-        client.FUTURES_URL = self._cfg.base_url.rstrip("/") + "/fapi"
-        client.FUTURES_TESTNET_URL = self._cfg.base_url.rstrip("/") + "/fapi"
+        client = Client(api_key, api_secret, testnet=True)
+        client.FUTURES_URL = "https://testnet.binancefuture.com/fapi"
+        client.FUTURES_TESTNET_URL = "https://testnet.binancefuture.com/fapi"
         self._client = client
         return client
 

@@ -1,8 +1,8 @@
-"""Replay/backtest utilities for LockBotBTC."""
+"""Replay/backtest utilities for quantum_edge_core.strategies.legacy.lockbot."""
 
-from LockBotBTC.lockbot_btc.replay.bus import ReplayBus
-from LockBotBTC.lockbot_btc.replay.clock import ReplayClock
-from LockBotBTC.lockbot_btc.replay.runner import (
+from quantum_edge_core.strategies.legacy.lockbot.lockbot_btc.replay.bus import ReplayBus
+from quantum_edge_core.strategies.legacy.lockbot.lockbot_btc.replay.clock import ReplayClock
+from quantum_edge_core.strategies.legacy.lockbot.lockbot_btc.replay.runner import (
     load_dataset,
     load_ddn_config,
     load_policy_config,

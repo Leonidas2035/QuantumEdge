@@ -4,14 +4,14 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
-from LockBotBTC.lockbot.contracts.lockbot_control_v1 import (
+from quantum_edge_core.strategies.legacy.lockbot.lockbot.contracts.lockbot_control_v1 import (
     ACK_TOPIC,
     CMD_TOPIC,
     STATUS_TOPIC,
 )
-from LockBotBTC.lockbot_btc.main import LockBotService
-from LockBotBTC.lockbot_btc.replay.bus import ReplayBus
-from LockBotBTC.lockbot_btc.replay.clock import ReplayClock
+from quantum_edge_core.strategies.legacy.lockbot.lockbot_btc.main import LockBotService
+from quantum_edge_core.strategies.legacy.lockbot.lockbot_btc.replay.bus import ReplayBus
+from quantum_edge_core.strategies.legacy.lockbot.lockbot_btc.replay.clock import ReplayClock
 
 
 class ReplayBotAdapter:

@@ -9,9 +9,9 @@ pytest.skip("Legacy test broken by src-layout migration", allow_module_level=Tru
 import json
 from pathlib import Path
 
-from LockBotBTC.lockbot_btc.config import LockbotConfig
-from LockBotBTC.lockbot_btc.replay.runner import load_policy_config, run_replay
-from LockBotBTC.lockbot_btc.replay.scenarios import ScenarioConfig, generate_scenario
+from quantum_edge_core.strategies.legacy.lockbot.lockbot_btc.config import LockbotConfig
+from quantum_edge_core.strategies.legacy.lockbot.lockbot_btc.replay.runner import load_policy_config, run_replay
+from quantum_edge_core.strategies.legacy.lockbot.lockbot_btc.replay.scenarios import ScenarioConfig, generate_scenario
 
 
 def test_lockbot_replay_safety_invariants(tmp_path: Path) -> None:

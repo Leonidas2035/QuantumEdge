@@ -9,18 +9,18 @@ from typing import Callable, Dict, Iterable, Optional
 
 import msgspec
 
-from LockBotBTC.lockbot.contracts.lockbot_exec_v1 import EVENT_TYPES, ExecEnvelope
-from LockBotBTC.lockbot_btc.ddn.config import DDNConfig
-from LockBotBTC.lockbot_btc.ddn.engine import OrderPlan
-from LockBotBTC.lockbot_btc.execution.base import (
+from quantum_edge_core.strategies.legacy.lockbot.lockbot.contracts.lockbot_exec_v1 import EVENT_TYPES, ExecEnvelope
+from quantum_edge_core.strategies.legacy.lockbot.lockbot_btc.ddn.config import DDNConfig
+from quantum_edge_core.strategies.legacy.lockbot.lockbot_btc.ddn.engine import OrderPlan
+from quantum_edge_core.strategies.legacy.lockbot.lockbot_btc.execution.base import (
     ExecutionConfig,
     ExecutionGate,
     ExecutionMode,
     SubmitResult,
 )
-from LockBotBTC.lockbot_btc.execution.binance_futures import BinanceFuturesExecutor
-from LockBotBTC.lockbot_btc.execution.ledger import ExecutionLedger
-from LockBotBTC.lockbot_btc.state.order_tracker import OrderTracker
+from quantum_edge_core.strategies.legacy.lockbot.lockbot_btc.execution.binance_futures import BinanceFuturesExecutor
+from quantum_edge_core.strategies.legacy.lockbot.lockbot_btc.execution.ledger import ExecutionLedger
+from quantum_edge_core.strategies.legacy.lockbot.lockbot_btc.state.order_tracker import OrderTracker
 
 
 class ExecutionManager:

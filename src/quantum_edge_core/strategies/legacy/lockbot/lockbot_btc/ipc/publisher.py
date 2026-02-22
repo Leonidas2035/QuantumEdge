@@ -1,12 +1,12 @@
-"""Publish acknowledgements and status for LockBotBTC."""
+"""Publish acknowledgements and status for quantum_edge_core.strategies.legacy.lockbot."""
 
 from __future__ import annotations
 
 import msgspec
 import zmq
 
-from LockBotBTC.lockbot.contracts.lockbot_control_v1 import AckEnvelope, StatusEnvelope
-from LockBotBTC.lockbot.contracts.lockbot_exec_v1 import ExecEnvelope
+from quantum_edge_core.strategies.legacy.lockbot.lockbot.contracts.lockbot_control_v1 import AckEnvelope, StatusEnvelope
+from quantum_edge_core.strategies.legacy.lockbot.lockbot.contracts.lockbot_exec_v1 import ExecEnvelope
 
 
 class BotPublisher:

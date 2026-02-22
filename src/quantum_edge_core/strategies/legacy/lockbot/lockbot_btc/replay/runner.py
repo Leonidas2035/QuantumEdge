@@ -12,18 +12,18 @@ from typing import Any, Dict, Iterable, List, Optional
 import msgspec
 import yaml
 
-from LockBotBTC.lockbot.contracts.lockbot_control_v1 import (
+from quantum_edge_core.strategies.legacy.lockbot.lockbot.contracts.lockbot_control_v1 import (
     ACK_TOPIC,
     CMD_TOPIC,
     STATUS_TOPIC,
 )
-from LockBotBTC.lockbot_btc.config import LockbotConfig
-from LockBotBTC.lockbot_btc.ddn.config import DDNConfig, DDNProfile
-from LockBotBTC.lockbot_btc.main import LockBotService
-from LockBotBTC.lockbot_btc.replay.bot_adapter import ReplayBotAdapter
-from LockBotBTC.lockbot_btc.replay.bus import ReplayBus
-from LockBotBTC.lockbot_btc.replay.clock import ReplayClock
-from LockBotBTC.lockbot_btc.replay.metrics import MetricsCollector, ReplayFillConfig
+from quantum_edge_core.strategies.legacy.lockbot.lockbot_btc.config import LockbotConfig
+from quantum_edge_core.strategies.legacy.lockbot.lockbot_btc.ddn.config import DDNConfig, DDNProfile
+from quantum_edge_core.strategies.legacy.lockbot.lockbot_btc.main import LockBotService
+from quantum_edge_core.strategies.legacy.lockbot.lockbot_btc.replay.bot_adapter import ReplayBotAdapter
+from quantum_edge_core.strategies.legacy.lockbot.lockbot_btc.replay.bus import ReplayBus
+from quantum_edge_core.strategies.legacy.lockbot.lockbot_btc.replay.clock import ReplayClock
+from quantum_edge_core.strategies.legacy.lockbot.lockbot_btc.replay.metrics import MetricsCollector, ReplayFillConfig
 
 ROOT = Path(__file__).resolve().parents[3]
 SUPERVISOR_DIR = ROOT / "SupervisorAgent"

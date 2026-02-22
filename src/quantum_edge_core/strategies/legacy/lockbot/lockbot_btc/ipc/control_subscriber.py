@@ -1,4 +1,4 @@
-"""Supervisor control subscriber for LockBotBTC."""
+"""Supervisor control subscriber for quantum_edge_core.strategies.legacy.lockbot."""
 
 from __future__ import annotations
 
@@ -10,7 +10,7 @@ import msgspec
 import zmq
 import zmq.asyncio
 
-from LockBotBTC.lockbot.contracts.lockbot_control_v1 import CommandEnvelope
+from quantum_edge_core.strategies.legacy.lockbot.lockbot.contracts.lockbot_control_v1 import CommandEnvelope
 
 
 class ControlSubscriber:

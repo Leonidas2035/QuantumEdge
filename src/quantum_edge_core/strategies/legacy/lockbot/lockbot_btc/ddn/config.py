@@ -34,6 +34,7 @@ class DDNConfig:
     max_cost_bps_per_step: float = 20.0
     volatility_window: int = 30
     step_volatility_scale: float = 1.0
+    max_volatility_bps_atr: float = 150.0
 
     @staticmethod
     def default() -> "DDNConfig":
