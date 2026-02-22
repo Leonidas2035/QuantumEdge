@@ -11,7 +11,7 @@ defaults:
 processes:
   hub:
     enabled: false
-    cwd: "src/quantum_edge_core/market_data"
+    cwd: "market_data"
     cmd: ["python", "-m", "hub"]
     env:
       HUB_LOG_LEVEL: "INFO"
@@ -22,7 +22,7 @@ processes:
     ports: [8700, 5555]
   ai_scalper_bot:
     enabled: true
-    cwd: "."
+    cwd: ".."
     cmd: ["python", "QuantumEdge.py", "run", "--profile", "qe1"]
     env:
       QE_MODE: "scalp"
