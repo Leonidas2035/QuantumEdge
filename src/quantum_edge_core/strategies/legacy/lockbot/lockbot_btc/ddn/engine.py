@@ -8,7 +8,10 @@ from collections import deque
 from dataclasses import dataclass
 from typing import Deque, Dict, List, Optional
 
-from quantum_edge_core.strategies.legacy.lockbot.lockbot_btc.ddn.config import DDNConfig, DDNProfile
+from quantum_edge_core.strategies.legacy.lockbot.lockbot_btc.ddn.config import (
+    DDNConfig,
+    DDNProfile,
+)
 
 
 @dataclass
@@ -104,7 +107,10 @@ class DDNEngine:
                 ctx.position.distance_to_liq_bps, self._cfg.min_distance_to_liq_bps
             )
             or intent.action == "PANIC_LOCK"
-            or (volatility > self._cfg.max_volatility_bps_atr and ctx.position.net_delta() != 0)
+            or (
+                volatility > self._cfg.max_volatility_bps_atr
+                and ctx.position.net_delta() != 0
+            )
         ):
             return self._panic_decision(ctx, now_ms)
 
@@ -190,13 +196,13 @@ class DDNEngine:
             return None
         if band_u <= vwap or band_l >= vwap:
             return None
-            
+
         if mark > vwap:
             pos = (mark - vwap) / (band_u - vwap)
         else:
             pos = (mark - vwap) / (vwap - band_l)
-            
-        fade_target = -pos * ctx.max_band_abs * 0.5 
+
+        fade_target = -pos * ctx.max_band_abs * 0.5
         fade_target = max(min(fade_target, ctx.profile.band_high), ctx.profile.band_low)
         return fade_target
 

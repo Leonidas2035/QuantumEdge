@@ -7,6 +7,7 @@ os.environ["GOOGLE_API_KEY"] = "dummy"
 
 from quantum_edge_core.supervisor.supervisor.llm.google_client import GoogleClient
 
+
 class TestGoogleClient(unittest.TestCase):
     @patch("google.generativeai.GenerativeModel")
     @patch("google.generativeai.configure")
@@ -24,6 +25,7 @@ class TestGoogleClient(unittest.TestCase):
 
         self.assertEqual(prompt, expected)
         print(f"Prompt verified: {prompt}")
+
 
 if __name__ == "__main__":
     unittest.main()

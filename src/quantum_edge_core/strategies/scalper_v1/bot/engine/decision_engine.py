@@ -270,7 +270,7 @@ class DecisionEngine:
         # --- POLICY FAIL-SAFE ENFORCEMENT ---
         policy = self.policy_contract.read_policy()
         safe_mode = not policy.get("allow_trading", False)
-        
+
         if safe_mode:
             reasons.append("SAFE_MODE_ACTIVE")
             if action == DecisionAction.ENTER:

@@ -21,7 +21,10 @@ from quantum_edge_core.strategies.legacy.lockbot.lockbot.contracts.lockbot_contr
     StatusEnvelope,
     validate_command,
 )
-from quantum_edge_core.strategies.legacy.lockbot.lockbot.contracts.lockbot_exec_v1 import EXEC_TOPIC, ExecEnvelope
+from quantum_edge_core.strategies.legacy.lockbot.lockbot.contracts.lockbot_exec_v1 import (
+    EXEC_TOPIC,
+    ExecEnvelope,
+)
 from quantum_edge_core.strategies.legacy.lockbot.lockbot_btc.config import LockbotConfig
 from quantum_edge_core.strategies.legacy.lockbot.lockbot_btc.ddn.engine import (
     DDNContext,
@@ -30,16 +33,36 @@ from quantum_edge_core.strategies.legacy.lockbot.lockbot_btc.ddn.engine import (
     DDNMarketSnapshot,
     DDNPositionSnapshot,
 )
-from quantum_edge_core.strategies.legacy.lockbot.lockbot_btc.execution.ledger import ExecutionLedger
-from quantum_edge_core.strategies.legacy.lockbot.lockbot_btc.execution.manager import ExecutionManager
-from quantum_edge_core.strategies.legacy.lockbot.lockbot_btc.ipc.control_subscriber import ControlSubscriber
-from quantum_edge_core.strategies.legacy.lockbot.lockbot_btc.ipc.hub_subscriber import HubSubscriber
-from quantum_edge_core.strategies.legacy.lockbot.lockbot_btc.ipc.publisher import BotPublisher
-from quantum_edge_core.strategies.legacy.lockbot.lockbot_btc.ipc.raw_subscriber import RawSubscriber
-from quantum_edge_core.strategies.legacy.lockbot.lockbot_btc.state.account_state import AccountState
-from quantum_edge_core.strategies.legacy.lockbot.lockbot_btc.state.bot_state import BotState
-from quantum_edge_core.strategies.legacy.lockbot.lockbot_btc.state.market_state import MarketState
-from quantum_edge_core.strategies.legacy.lockbot.lockbot_btc.state.order_tracker import OrderTracker
+from quantum_edge_core.strategies.legacy.lockbot.lockbot_btc.execution.ledger import (
+    ExecutionLedger,
+)
+from quantum_edge_core.strategies.legacy.lockbot.lockbot_btc.execution.manager import (
+    ExecutionManager,
+)
+from quantum_edge_core.strategies.legacy.lockbot.lockbot_btc.ipc.control_subscriber import (
+    ControlSubscriber,
+)
+from quantum_edge_core.strategies.legacy.lockbot.lockbot_btc.ipc.hub_subscriber import (
+    HubSubscriber,
+)
+from quantum_edge_core.strategies.legacy.lockbot.lockbot_btc.ipc.publisher import (
+    BotPublisher,
+)
+from quantum_edge_core.strategies.legacy.lockbot.lockbot_btc.ipc.raw_subscriber import (
+    RawSubscriber,
+)
+from quantum_edge_core.strategies.legacy.lockbot.lockbot_btc.state.account_state import (
+    AccountState,
+)
+from quantum_edge_core.strategies.legacy.lockbot.lockbot_btc.state.bot_state import (
+    BotState,
+)
+from quantum_edge_core.strategies.legacy.lockbot.lockbot_btc.state.market_state import (
+    MarketState,
+)
+from quantum_edge_core.strategies.legacy.lockbot.lockbot_btc.state.order_tracker import (
+    OrderTracker,
+)
 
 
 class LockBotService:
@@ -51,9 +74,7 @@ class LockBotService:
         self._account_state = AccountState()
         self._ddn = DDNEngine(cfg.ddn)
         self._order_tracker = OrderTracker()
-        self._exec_ledger = ExecutionLedger(
-            cfg.execution.ledger_path, logger
-        )
+        self._exec_ledger = ExecutionLedger(cfg.execution.ledger_path, logger)
         self._ipc_enabled = ipc_enabled
         self._publisher = (
             BotPublisher(cfg.bot_pub_endpoint) if ipc_enabled else _NullPublisher()
@@ -714,7 +735,7 @@ async def _run(config_path: Optional[Path]) -> None:
         processors=[
             structlog.processors.add_log_level,
             structlog.processors.TimeStamper(fmt="iso"),
-            structlog.dev.ConsoleRenderer()
+            structlog.dev.ConsoleRenderer(),
         ]
     )
     service = LockBotService(cfg)
@@ -724,7 +745,9 @@ async def _run(config_path: Optional[Path]) -> None:
             await asyncio.sleep(1)
     except KeyboardInterrupt:
         logger.info("Graceful shutdown initiated. Canceling all orders.")
-        service._exec_manager.cancel_all("graceful_shutdown", "ALL", int(time.time() * 1000))
+        service._exec_manager.cancel_all(
+            "graceful_shutdown", "ALL", int(time.time() * 1000)
+        )
     finally:
         await service.stop()
 

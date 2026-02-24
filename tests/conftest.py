@@ -21,6 +21,7 @@ if sys.platform.startswith("win") and hasattr(
 ):
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
+
 @pytest.fixture(autouse=True)
 def mock_offline_env(monkeypatch):
     """Automatically mock network calls if QE_OFFLINE is set."""
@@ -34,8 +35,14 @@ def mock_offline_env(monkeypatch):
         monkeypatch.setattr("google.generativeai.configure", MagicMock())
 
         # Mock requests
-        monkeypatch.setattr("requests.get", MagicMock(return_value=MagicMock(status_code=200, json=lambda: {})))
-        monkeypatch.setattr("requests.post", MagicMock(return_value=MagicMock(status_code=200, json=lambda: {})))
+        monkeypatch.setattr(
+            "requests.get",
+            MagicMock(return_value=MagicMock(status_code=200, json=lambda: {})),
+        )
+        monkeypatch.setattr(
+            "requests.post",
+            MagicMock(return_value=MagicMock(status_code=200, json=lambda: {})),
+        )
 
         # Mock ZMQ context to avoid binding real ports if not needed,
         # though integration tests might need loopback.

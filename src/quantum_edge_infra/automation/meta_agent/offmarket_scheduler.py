@@ -23,6 +23,7 @@ try:
 except Exception:  # pragma: no cover - fallback for legacy runs
     get_qe_paths = None
 
+
 def _resolve_base_dir() -> str:
     env_root = os.getenv("QE_ROOT")
     if env_root:
@@ -40,6 +41,7 @@ def _resolve_base_dir() -> str:
         return parent
     return base
 
+
 def _resolve_runtime_dir() -> str:
     base = _resolve_base_dir()
     base_abs = os.path.abspath(base)
@@ -53,6 +55,7 @@ def _resolve_runtime_dir() -> str:
             pass
     return os.path.abspath(os.path.join(base_abs, "runtime"))
 
+
 def _resolve_schedules_dir(schedules_dir: Optional[str]) -> str:
     base_abs = os.path.abspath(_resolve_base_dir())
     if schedules_dir:
@@ -65,8 +68,10 @@ def _resolve_schedules_dir(schedules_dir: Optional[str]) -> str:
         return candidate
     return os.path.abspath(os.path.join(base_abs, candidate))
 
+
 def _state_path(runtime_dir: str) -> str:
     return os.path.join(runtime_dir, "scheduler", "state.json")
+
 
 def _parse_iso(ts: Optional[str]) -> Optional[datetime]:
     if not ts:
@@ -76,10 +81,12 @@ def _parse_iso(ts: Optional[str]) -> Optional[datetime]:
     except Exception:
         return None
 
+
 def _format_iso(dt: Optional[datetime]) -> Optional[str]:
     if not dt:
         return None
     return dt.astimezone(timezone.utc).isoformat()
+
 
 def _load_state(path: str) -> dict:
     if not os.path.exists(path):
@@ -93,12 +100,14 @@ def _load_state(path: str) -> dict:
         data["schedules"] = {}
     return data
 
+
 def _save_state_atomic(path: str, state: dict) -> None:
     os.makedirs(os.path.dirname(path), exist_ok=True)
     temp_path = f"{path}.tmp"
     with open(temp_path, "w", encoding="utf-8") as handle:
         json.dump(state, handle, indent=2)
     os.replace(temp_path, path)
+
 
 def load_schedules(schedules_dir: str) -> List[ScheduleSpec]:
     specs: List[ScheduleSpec] = []
@@ -111,20 +120,24 @@ def load_schedules(schedules_dir: str) -> List[ScheduleSpec]:
         specs.extend(load_schedule_file(path))
     return specs
 
+
 def _tzinfo(tz_name: str):
     if ZoneInfo is None:
         raise ValueError("ZoneInfo unavailable; timezone support missing.")
     return ZoneInfo(tz_name)
 
+
 def _minute_of_day(value: str) -> int:
     hour, minute = value.split(":")
     return int(hour) * 60 + int(minute)
+
 
 def _day_matches(days: List[str], weekday: int) -> bool:
     if "*" in days:
         return True
     day_map = {"mon": 0, "tue": 1, "wed": 2, "thu": 3, "fri": 4, "sat": 5, "sun": 6}
     return any(day_map.get(day) == weekday for day in days)
+
 
 def evaluate_windows(now_local: datetime, windows) -> bool:
     if not windows:
@@ -147,6 +160,7 @@ def evaluate_windows(now_local: datetime, windows) -> bool:
                 return True
     return False
 
+
 def _window_end(now_local: datetime, window) -> datetime:
     start_min = _minute_of_day(window.start)
     end_min = _minute_of_day(window.end)
@@ -164,6 +178,7 @@ def _window_end(now_local: datetime, window) -> datetime:
         return end_time
     return end_time + timedelta(days=1)
 
+
 def _cron_match(value: str, current: int) -> bool:
     text = str(value or "*").strip()
     if text == "*":
@@ -172,6 +187,7 @@ def _cron_match(value: str, current: int) -> bool:
         step = int(text[2:])
         return current % step == 0
     return current == int(text)
+
 
 def compute_next_fire(
     schedule: ScheduleSpec, last_fire: Optional[datetime], now_local: datetime
@@ -192,6 +208,7 @@ def compute_next_fire(
             now_local += timedelta(minutes=1)
         return None
     return None
+
 
 def _trigger_due(
     schedule: ScheduleSpec, last_fire: Optional[datetime], now_local: datetime
@@ -217,10 +234,12 @@ def _trigger_due(
         return True
     return False
 
+
 def _schedule_task_name(schedule_id: str, now_local: datetime) -> str:
     stamp = now_local.strftime("%Y%m%d_%H%M%S")
     short = uuid.uuid4().hex[:6]
     return f"{schedule_id}__{stamp}__{short}.task.yaml"
+
 
 def _resolve_path_under_base(path: str, base_abs: str) -> str:
     candidate = path if os.path.isabs(path) else os.path.join(base_abs, path)
@@ -228,6 +247,7 @@ def _resolve_path_under_base(path: str, base_abs: str) -> str:
     if os.path.commonpath([candidate, base_abs]) != base_abs:
         raise ValueError("Path escapes repo root")
     return candidate
+
 
 def enqueue_task(
     schedule: ScheduleSpec, task_template: dict, inbox_dir: str, now_local: datetime
@@ -250,6 +270,7 @@ def enqueue_task(
     os.replace(temp_path, final_path)
     return task_name
 
+
 def _load_task_template(schedule: ScheduleSpec, base_abs: str) -> dict:
     if isinstance(schedule.task_template, dict):
         return schedule.task_template
@@ -260,6 +281,7 @@ def _load_task_template(schedule: ScheduleSpec, base_abs: str) -> dict:
             return yaml.safe_load(handle) or {}
     return {}
 
+
 def _task_status_locations(schedule: ScheduleSpec, base_abs: str) -> dict:
     return {
         "inbox": _resolve_path_under_base(schedule.inbox_dir, base_abs),
@@ -267,12 +289,14 @@ def _task_status_locations(schedule: ScheduleSpec, base_abs: str) -> dict:
         "failed": _resolve_path_under_base(schedule.failed_dir, base_abs),
     }
 
+
 def _find_task_file(task_name: str, locations: dict) -> Optional[str]:
     for path in locations.values():
         candidate = os.path.join(path, task_name)
         if os.path.exists(candidate):
             return candidate
     return None
+
 
 def _find_task_by_suffix(original_name: str, folder: str) -> Optional[str]:
     if not os.path.isdir(folder):
@@ -282,16 +306,19 @@ def _find_task_by_suffix(original_name: str, folder: str) -> Optional[str]:
             return os.path.join(folder, entry)
     return None
 
+
 def _extract_run_id(archived_name: str, original_name: str) -> Optional[str]:
     suffix = f"_{original_name}"
     if archived_name.endswith(suffix):
         return archived_name[: -len(suffix)]
     return None
 
+
 def _extract_schedule_id(task_name: str) -> Optional[str]:
     if "__" not in task_name:
         return None
     return task_name.split("__", 1)[0]
+
 
 def _calc_backoff(attempts: int, base: int, cap: int, jitter: bool) -> int:
     delay = min(base * (2 ** max(attempts - 1, 0)), cap)
@@ -301,18 +328,22 @@ def _calc_backoff(attempts: int, base: int, cap: int, jitter: bool) -> int:
             delay += random.randint(-spread, spread)
     return max(0, delay)
 
+
 def _is_transient(exit_code: int) -> bool:
     return exit_code in {30, 50}
+
 
 def _update_window_runs(state_entry: dict, now_local: datetime) -> None:
     day_key = now_local.strftime("%Y%m%d")
     window_runs = state_entry.setdefault("window_runs", {})
     window_runs[day_key] = int(window_runs.get(day_key, 0)) + 1
 
+
 def _should_skip_due_to_pending(task_name: Optional[str], locations: dict) -> bool:
     if not task_name:
         return False
     return _find_task_file(os.path.basename(task_name), locations) is not None
+
 
 def tick(
     schedules_dir: str,
@@ -483,6 +514,7 @@ def tick(
         "state_path": state_path,
     }
 
+
 def status(schedules_dir: str, runtime_dir: str) -> List[dict]:
     # base_abs = os.path.abspath(_resolve_base_dir())
     schedules = load_schedules(schedules_dir)
@@ -505,6 +537,7 @@ def status(schedules_dir: str, runtime_dir: str) -> List[dict]:
             }
         )
     return payload
+
 
 def main(
     schedules_dir: Optional[str] = None,

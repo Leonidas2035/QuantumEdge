@@ -13,7 +13,9 @@ import numpy as np
 import pandas as pd
 import xgboost as xgb
 
-from quantum_edge_core.supervisor.research.offline.scalper_bot.ml.eval.metrics import ece_score
+from quantum_edge_core.supervisor.research.offline.scalper_bot.ml.eval.metrics import (
+    ece_score,
+)
 from bot.ml.features.builder import feature_names, schema_hash
 
 

@@ -14,6 +14,7 @@ from typing import Dict, Any, Optional
 
 logger = logging.getLogger(__name__)
 
+
 @dataclass
 class DataStore:
     """
@@ -65,6 +66,7 @@ class DataStore:
             self.futures_positions[symbol]["unrealizedProfit"] = float(
                 data["unrealizedProfit"]
             )
+
 
 class ZmqListener:
     """

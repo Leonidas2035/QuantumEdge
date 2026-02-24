@@ -18,12 +18,14 @@ from bot.exchanges.bingx_swap.mapper import (
     round_qty_to_step,
 )
 
+
 @dataclass
 class SymbolMeta:
     step_size: float
     min_qty: float
     tick_size: float
     min_notional: float = 0.0
+
 
 class BingXDemoExecutor:
     """

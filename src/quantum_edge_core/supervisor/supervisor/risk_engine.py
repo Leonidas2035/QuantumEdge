@@ -13,19 +13,23 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     pass
 
+
 class RiskAction(str, Enum):
     ALLOW = "ALLOW"
     REDUCE_ONLY = "REDUCE_ONLY"
     KILL_BOT = "KILL_BOT"  # Hard stop
 
+
 class OrderSide(str, Enum):
     BUY = "BUY"
     SELL = "SELL"
+
 
 class OrderType(str, Enum):
     MARKET = "MARKET"
     LIMIT = "LIMIT"
     LIMIT_MAKER = "LIMIT_MAKER"
+
 
 @dataclass
 class OrderRequest:
@@ -38,12 +42,14 @@ class OrderRequest:
     leverage: Optional[float] = None
     is_reduce_only: bool = False
 
+
 @dataclass
 class RiskDecision:
     allowed: bool
     code: str
     reason: str
     action: RiskAction
+
 
 class HardRiskEngine:
     def __init__(

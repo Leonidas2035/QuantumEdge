@@ -12,12 +12,22 @@ from typing import Dict, Tuple, Optional
 import yaml
 
 from quantum_edge_infra.automation.meta_agent.llm_client import LLMClient
-from quantum_edge_infra.automation.meta_agent.file_manager import build_change_set_from_response
+from quantum_edge_infra.automation.meta_agent.file_manager import (
+    build_change_set_from_response,
+)
 from quantum_edge_infra.automation.meta_agent.logger import configure_logger
 from quantum_edge_infra.automation.meta_agent.meta_core import run_task
-from quantum_edge_infra.automation.meta_agent.offmarket_scheduler import main as scheduler_main, status as scheduler_status
-from quantum_edge_infra.automation.meta_agent.schedule_contract import ScheduleValidationError
-from quantum_edge_infra.automation.meta_agent.approval_engine import approve_apply, ApprovalError
+from quantum_edge_infra.automation.meta_agent.offmarket_scheduler import (
+    main as scheduler_main,
+    status as scheduler_status,
+)
+from quantum_edge_infra.automation.meta_agent.schedule_contract import (
+    ScheduleValidationError,
+)
+from quantum_edge_infra.automation.meta_agent.approval_engine import (
+    approve_apply,
+    ApprovalError,
+)
 from quantum_edge_infra.automation.meta_agent.control_center_server import run_server
 from quantum_edge_infra.automation.meta_agent.version import __version__
 from quantum_edge_infra.automation.meta_agent.paths import (
@@ -31,18 +41,38 @@ from quantum_edge_infra.automation.meta_agent.paths import (
     TASKS_DIR,
 )
 from quantum_edge_infra.automation.meta_agent.project_scanner import ProjectScanner
-from quantum_edge_infra.automation.meta_agent.projects_config import load_project_registry, resolve_project_root
+from quantum_edge_infra.automation.meta_agent.projects_config import (
+    load_project_registry,
+    resolve_project_root,
+)
 from quantum_edge_infra.automation.meta_agent.prompt_builder import PromptBuilder
 from quantum_edge_infra.automation.meta_agent.secret_masking import mask_secrets
-from quantum_edge_infra.automation.meta_agent.task_contract import TaskConstraints, TaskContext, TaskLLM, TaskSpec
+from quantum_edge_infra.automation.meta_agent.task_contract import (
+    TaskConstraints,
+    TaskContext,
+    TaskLLM,
+    TaskSpec,
+)
 from quantum_edge_infra.automation.meta_agent.watch import process_inbox_once
-from quantum_edge_infra.automation.meta_agent.report_schema import Report, write_json_report, write_md_report
+from quantum_edge_infra.automation.meta_agent.report_schema import (
+    Report,
+    write_json_report,
+    write_md_report,
+)
 from quantum_edge_infra.automation.meta_agent.safety_policy import load_safety_policy
-from quantum_edge_infra.automation.meta_agent.write_engine import apply_change_set_with_policy
-from quantum_edge_infra.automation.meta_agent.run_lock import RunLock, describe_existing_lock, resolve_lock_path
+from quantum_edge_infra.automation.meta_agent.write_engine import (
+    apply_change_set_with_policy,
+)
+from quantum_edge_infra.automation.meta_agent.run_lock import (
+    RunLock,
+    describe_existing_lock,
+    resolve_lock_path,
+)
 
 try:
-    from quantum_edge_infra.automation.meta_agent.supervisor_runner import run_supervisor_cycle
+    from quantum_edge_infra.automation.meta_agent.supervisor_runner import (
+        run_supervisor_cycle,
+    )
 except Exception:
     run_supervisor_cycle = None
 from quantum_edge_infra.automation.meta_agent.task_archiver import archive_task_file
@@ -57,6 +87,7 @@ try:
     from quantum_edge_infra.tools.qe_config import get_qe_paths
 except Exception:  # pragma: no cover - fallback for legacy runs
     get_qe_paths = None
+
 
 def _resolve_base_dir() -> str:
     env_root = os.getenv("QE_ROOT")
@@ -77,6 +108,7 @@ def _resolve_base_dir() -> str:
 
     return BASE_DIR
 
+
 def _resolve_runtime_dir() -> str:
     base = _resolve_base_dir()
     base_abs = os.path.abspath(base)
@@ -90,6 +122,7 @@ def _resolve_runtime_dir() -> str:
             pass
     return os.path.abspath(os.path.join(base_abs, "runtime"))
 
+
 def _resolve_meta_config_path(path: Optional[str]) -> str:
     base = _resolve_base_dir()
     env_override = os.getenv("META_AGENT_CONFIG")
@@ -97,6 +130,7 @@ def _resolve_meta_config_path(path: Optional[str]) -> str:
     if os.path.isabs(candidate):
         return candidate
     return os.path.abspath(os.path.join(base, candidate))
+
 
 def load_task_from_file(path: str) -> Tuple[Dict, str]:
     """
@@ -125,6 +159,7 @@ def load_task_from_file(path: str) -> Tuple[Dict, str]:
         raise yaml.YAMLError("Front matter must be a mapping.")
     body = "\n".join(lines[end_index + 1 :]).strip()
     return metadata, body
+
 
 def run_diag() -> int:
     results: list[tuple[str, bool, str]] = []
@@ -259,6 +294,7 @@ def run_diag() -> int:
     all_ok = all(ok for _, ok, _ in results)
     return 0 if all_ok else 1
 
+
 def _parse_global_args(argv: list[str]):
     parser = argparse.ArgumentParser(add_help=False)
     parser.add_argument("--runtime-dir", dest="runtime_dir")
@@ -267,17 +303,20 @@ def _parse_global_args(argv: list[str]):
     parser.add_argument("--quiet", action="store_true")
     return parser.parse_known_args(argv)
 
+
 def _apply_global_args(args) -> None:
     if args.runtime_dir:
         os.environ["META_AGENT_RUNTIME_DIR"] = args.runtime_dir
     if args.log_level:
         os.environ["META_AGENT_LOG_LEVEL"] = args.log_level
 
+
 def _sanitize_args(argv: list[str]) -> list[str]:
     sanitized: list[str] = []
     for arg in argv:
         sanitized.append(mask_secrets(arg))
     return sanitized
+
 
 def _format_run_summary_json(report) -> str:
     payload = {
@@ -289,6 +328,7 @@ def _format_run_summary_json(report) -> str:
     }
     return json.dumps(payload, ensure_ascii=True)
 
+
 def _emit_run_summary(report, json_mode: bool, quiet: bool) -> None:
     if json_mode:
         print(_format_run_summary_json(report))
@@ -299,6 +339,7 @@ def _emit_run_summary(report, json_mode: bool, quiet: bool) -> None:
     print(f"[INFO] verdict={report.verdict} exit_code={report.exit_code}")
     print(f"[INFO] report_path={report.artifacts.report_path}")
     print(f"[INFO] patches_dir={report.artifacts.patches_dir}")
+
 
 def _is_transient_error(report) -> bool:
     if report.exit_code not in {30}:
@@ -315,6 +356,7 @@ def _is_transient_error(report) -> bool:
         "503",
     ]
     return any(marker in text for marker in transient_markers)
+
 
 def _run_task_cli(
     task_path: str,
@@ -373,6 +415,7 @@ def _run_task_cli(
 
     _emit_run_summary(report, json_mode=json_mode, quiet=quiet)
     return report.exit_code
+
 
 class MetaAgent:
     def __init__(self, config_path: str = "config.json"):
@@ -655,6 +698,7 @@ class MetaAgent:
             print(f"[WARN] Failed to archive task file {task_path}: {exc}")
         return True
 
+
 def parse_args(argv: Optional[list[str]] = None):
     parser = argparse.ArgumentParser(description="Meta-Agent CLI")
     parser.add_argument(
@@ -710,6 +754,7 @@ def parse_args(argv: Optional[list[str]] = None):
     )
     return parser.parse_args(argv)
 
+
 def parse_run_task_args(argv: list[str]):
     parser = argparse.ArgumentParser(description="Run a TaskSpec")
     parser.add_argument(
@@ -723,12 +768,14 @@ def parse_run_task_args(argv: list[str]):
     parser.add_argument("--report-path", dest="report_path")
     return parser.parse_args(argv)
 
+
 def parse_create_task_args(argv: list[str]):
     parser = argparse.ArgumentParser(description="Create a TaskSpec skeleton")
     parser.add_argument("--project", required=True, help="Project id from registry")
     parser.add_argument("--objective", required=True, help="Short objective")
     parser.add_argument("--output", help="Destination path for task.yaml")
     return parser.parse_args(argv)
+
 
 def _create_task_spec_file(
     project_id: str, objective: str, output_path: Optional[str]
@@ -764,15 +811,18 @@ def _create_task_spec_file(
         yaml.safe_dump(spec.to_dict(), handle, allow_unicode=True, sort_keys=False)
     return dest
 
+
 def parse_status_args(argv: list[str]):
     parser = argparse.ArgumentParser(description="Show recent runs")
     parser.add_argument("--limit", type=int, default=5)
     parser.add_argument("--last", action="store_true")
     return parser.parse_args(argv)
 
+
 def parse_health_args(argv: list[str]):
     parser = argparse.ArgumentParser(description="Health check")
     return parser.parse_args(argv)
+
 
 def parse_scheduler_args(argv: list[str]):
     parser = argparse.ArgumentParser(description="Run off-market scheduler")
@@ -781,10 +831,12 @@ def parse_scheduler_args(argv: list[str]):
     parser.add_argument("--once", action="store_true")
     return parser.parse_args(argv)
 
+
 def parse_scheduler_status_args(argv: list[str]):
     parser = argparse.ArgumentParser(description="Scheduler status")
     parser.add_argument("--schedules-dir", dest="schedules_dir")
     return parser.parse_args(argv)
+
 
 def parse_watch_args(argv: list[str]):
     parser = argparse.ArgumentParser(description="Watch inbox for TaskSpecs")
@@ -794,6 +846,7 @@ def parse_watch_args(argv: list[str]):
     parser.add_argument("--failed", default="runtime/inbox_failed")
     return parser.parse_args(argv)
 
+
 def parse_ui_args(argv: list[str]):
     parser = argparse.ArgumentParser(description="Run Control Center UI")
     parser.add_argument("--port", type=int, default=8766)
@@ -801,15 +854,18 @@ def parse_ui_args(argv: list[str]):
     parser.add_argument("--token", dest="token")
     return parser.parse_args(argv)
 
+
 def parse_approve_args(argv: list[str]):
     parser = argparse.ArgumentParser(description="Approve and apply a warn run")
     parser.add_argument("--run-id", required=True)
     return parser.parse_args(argv)
 
+
 def parse_dump_run_args(argv: list[str]):
     parser = argparse.ArgumentParser(description="Dump run summary")
     parser.add_argument("--run-id", required=True)
     return parser.parse_args(argv)
+
 
 def _resolve_path_under_base(path: str) -> str:
     base = _resolve_base_dir()
@@ -819,6 +875,7 @@ def _resolve_path_under_base(path: str) -> str:
     if os.path.commonpath([candidate, base_abs]) != base_abs:
         raise ValueError("Path escapes repo root")
     return candidate
+
 
 def _status_cli(limit: int, show_last: bool, json_mode: bool, quiet: bool) -> int:
     runtime_dir = _resolve_runtime_dir()
@@ -880,6 +937,7 @@ def _status_cli(limit: int, show_last: bool, json_mode: bool, quiet: bool) -> in
             )
     return 0
 
+
 def _health_check(runtime_dir: str) -> tuple[bool, list[tuple[str, bool, str]]]:
     results: list[tuple[str, bool, str]] = []
 
@@ -901,7 +959,9 @@ def _health_check(runtime_dir: str) -> tuple[bool, list[tuple[str, bool, str]]]:
             record(f"runtime_{sub}", False, str(exc))
 
     try:
-        from quantum_edge_infra.automation.meta_agent.safety_policy import load_safety_policy
+        from quantum_edge_infra.automation.meta_agent.safety_policy import (
+            load_safety_policy,
+        )
 
         load_safety_policy()
         record("safety_policy", True, "loaded")
@@ -909,7 +969,9 @@ def _health_check(runtime_dir: str) -> tuple[bool, list[tuple[str, bool, str]]]:
         record("safety_policy", False, str(exc))
 
     try:
-        from quantum_edge_infra.automation.meta_agent.write_engine import apply_change_set_with_policy  # noqa: F401
+        from quantum_edge_infra.automation.meta_agent.write_engine import (
+            apply_change_set_with_policy,
+        )  # noqa: F401
 
         record("write_engine", True, "available")
     except Exception as exc:
@@ -917,6 +979,7 @@ def _health_check(runtime_dir: str) -> tuple[bool, list[tuple[str, bool, str]]]:
 
     ok = all(item[1] for item in results)
     return ok, results
+
 
 def _health_cli(json_mode: bool, quiet: bool) -> int:
     runtime_dir = _resolve_runtime_dir()
@@ -936,6 +999,7 @@ def _health_cli(json_mode: bool, quiet: bool) -> int:
             status = "PASS" if passed else "FAIL"
             print(f"{status} - {name}: {detail}")
     return 0 if ok else 1
+
 
 def _watch_cli(args, json_mode: bool, quiet: bool) -> int:
     runtime_dir = _resolve_runtime_dir()
@@ -966,6 +1030,7 @@ def _watch_cli(args, json_mode: bool, quiet: bool) -> int:
             time.sleep(args.poll_seconds)
             continue
         time.sleep(args.poll_seconds)
+
 
 def cleanup_after_successful_run(stages: list) -> None:
     """
@@ -1020,6 +1085,7 @@ def cleanup_after_successful_run(stages: list) -> None:
                     print(f"[INFO] Moved report: {dest}")
                 except Exception as exc:
                     print(f"[WARN] Failed to move report {src}: {exc}")
+
 
 def main() -> int:
     global_args, remaining = _parse_global_args(sys.argv[1:])
@@ -1261,6 +1327,7 @@ def main() -> int:
     if not success and getattr(agent, "lock_busy", False):
         return 2
     return 0 if success else 1
+
 
 if __name__ == "__main__":
     sys.exit(main())
