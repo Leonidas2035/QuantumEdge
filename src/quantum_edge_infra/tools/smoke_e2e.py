@@ -113,6 +113,12 @@ def main() -> int:
         env["QE_ROOT"] = str(repo_root)
         env["META_AGENT_RUNTIME_DIR"] = str(runtime_dir)
         env["META_AGENT_MOCK_LLM_RESPONSE"] = ""
+        env["QE_OFFLINE"] = "1"
+        env["BINANCE_API_KEY"] = "dummy_key"
+        env["BINANCE_API_SECRET"] = "dummy_secret"
+        env["BINGX_API_KEY"] = "dummy_key"
+        env["BINGX_API_SECRET"] = "dummy_secret"
+        env["GOOGLE_API_KEY"] = "dummy_key"
 
         if shutil.which("meta-agent"):
             _run(["meta-agent", "version"], env, "meta-agent version")

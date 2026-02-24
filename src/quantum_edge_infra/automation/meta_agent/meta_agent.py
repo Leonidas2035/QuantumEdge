@@ -12,15 +12,15 @@ from typing import Dict, Tuple, Optional
 import yaml
 
 from quantum_edge_infra.automation.meta_agent.llm_client import LLMClient
-from .file_manager import build_change_set_from_response
-from .logger import configure_logger
-from .meta_core import run_task
-from .offmarket_scheduler import main as scheduler_main, status as scheduler_status
-from .schedule_contract import ScheduleValidationError
-from .approval_engine import approve_apply, ApprovalError
-from .control_center_server import run_server
-from .version import __version__
-from .paths import (
+from quantum_edge_infra.automation.meta_agent.file_manager import build_change_set_from_response
+from quantum_edge_infra.automation.meta_agent.logger import configure_logger
+from quantum_edge_infra.automation.meta_agent.meta_core import run_task
+from quantum_edge_infra.automation.meta_agent.offmarket_scheduler import main as scheduler_main, status as scheduler_status
+from quantum_edge_infra.automation.meta_agent.schedule_contract import ScheduleValidationError
+from quantum_edge_infra.automation.meta_agent.approval_engine import approve_apply, ApprovalError
+from quantum_edge_infra.automation.meta_agent.control_center_server import run_server
+from quantum_edge_infra.automation.meta_agent.version import __version__
+from quantum_edge_infra.automation.meta_agent.paths import (
     BASE_DIR,
     OUTPUT_DIR,
     PATCHES_DIR,
@@ -30,23 +30,23 @@ from .paths import (
     STAGES_PATH,
     TASKS_DIR,
 )
-from .project_scanner import ProjectScanner
-from .projects_config import load_project_registry, resolve_project_root
-from .prompt_builder import PromptBuilder
-from .secret_masking import mask_secrets
-from .task_contract import TaskConstraints, TaskContext, TaskLLM, TaskSpec
-from .watch import process_inbox_once
-from .report_schema import Report, write_json_report, write_md_report
-from .safety_policy import load_safety_policy
-from .write_engine import apply_change_set_with_policy
-from .run_lock import RunLock, describe_existing_lock, resolve_lock_path
+from quantum_edge_infra.automation.meta_agent.project_scanner import ProjectScanner
+from quantum_edge_infra.automation.meta_agent.projects_config import load_project_registry, resolve_project_root
+from quantum_edge_infra.automation.meta_agent.prompt_builder import PromptBuilder
+from quantum_edge_infra.automation.meta_agent.secret_masking import mask_secrets
+from quantum_edge_infra.automation.meta_agent.task_contract import TaskConstraints, TaskContext, TaskLLM, TaskSpec
+from quantum_edge_infra.automation.meta_agent.watch import process_inbox_once
+from quantum_edge_infra.automation.meta_agent.report_schema import Report, write_json_report, write_md_report
+from quantum_edge_infra.automation.meta_agent.safety_policy import load_safety_policy
+from quantum_edge_infra.automation.meta_agent.write_engine import apply_change_set_with_policy
+from quantum_edge_infra.automation.meta_agent.run_lock import RunLock, describe_existing_lock, resolve_lock_path
 
 try:
-    from supervisor_runner import run_supervisor_cycle
+    from quantum_edge_infra.automation.meta_agent.supervisor_runner import run_supervisor_cycle
 except Exception:
     run_supervisor_cycle = None
-from .task_archiver import archive_task_file
-from .task_manager import list_tasks
+from quantum_edge_infra.automation.meta_agent.task_archiver import archive_task_file
+from quantum_edge_infra.automation.meta_agent.task_manager import list_tasks
 
 FRONT_MATTER_DELIMITER = "---"
 ALLOWED_MODES = {"readonly", "write_dev", "write_prod"}
@@ -901,7 +901,7 @@ def _health_check(runtime_dir: str) -> tuple[bool, list[tuple[str, bool, str]]]:
             record(f"runtime_{sub}", False, str(exc))
 
     try:
-        from safety_policy import load_safety_policy
+        from quantum_edge_infra.automation.meta_agent.safety_policy import load_safety_policy
 
         load_safety_policy()
         record("safety_policy", True, "loaded")
@@ -909,7 +909,7 @@ def _health_check(runtime_dir: str) -> tuple[bool, list[tuple[str, bool, str]]]:
         record("safety_policy", False, str(exc))
 
     try:
-        from write_engine import apply_change_set_with_policy  # noqa: F401
+        from quantum_edge_infra.automation.meta_agent.write_engine import apply_change_set_with_policy  # noqa: F401
 
         record("write_engine", True, "available")
     except Exception as exc:

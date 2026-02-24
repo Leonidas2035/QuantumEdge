@@ -67,7 +67,9 @@ class ProcessManager:
                     data = yaml.safe_load(f)
                     if data and "ports" in data:
                         self.zmq_ports = data["ports"]
-                        logger.info(f"Loaded ZMQ ports from {ports_cfg}: {self.zmq_ports}")
+                        logger.info(
+                            f"Loaded ZMQ ports from {ports_cfg}: {self.zmq_ports}"
+                        )
             except Exception as e:
                 logger.warning(f"Failed to load {ports_cfg}: {e}")
 
@@ -95,9 +97,9 @@ class ProcessManager:
         """
         logger.info(f"ZMQ Guard: Checking ports {ports}...")
         for port in ports:
-            for proc in psutil.process_iter(['pid', 'name']):
+            for proc in psutil.process_iter(["pid", "name"]):
                 try:
-                    for conn in proc.connections(kind='inet'):
+                    for conn in proc.connections(kind="inet"):
                         if conn.laddr.port == port:
                             logger.warning(
                                 f"Port {port} is held by PID {proc.info['pid']} ({proc.info['name']}). Terminating..."
@@ -106,9 +108,15 @@ class ProcessManager:
                             try:
                                 proc.wait(timeout=2)
                             except psutil.TimeoutExpired:
-                                logger.warning(f"PID {proc.info['pid']} did not terminate. Killing...")
+                                logger.warning(
+                                    f"PID {proc.info['pid']} did not terminate. Killing..."
+                                )
                                 proc.kill()
-                except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                except (
+                    psutil.NoSuchProcess,
+                    psutil.AccessDenied,
+                    psutil.ZombieProcess,
+                ):
                     continue
         logger.info("ZMQ Guard: All ports clear.")
 
@@ -118,7 +126,7 @@ class ProcessManager:
         """
         try:
             with pipe:
-                for line in iter(pipe.readline, ''):
+                for line in iter(pipe.readline, ""):
                     if not line:
                         break
                     # Strip newline and log
@@ -129,14 +137,10 @@ class ProcessManager:
     def _start_log_threads(self, process: subprocess.Popen, name: str):
         """Starts daemon threads to read stdout and stderr."""
         stdout_thread = threading.Thread(
-            target=self._stream_reader,
-            args=(process.stdout, name.upper()),
-            daemon=True
+            target=self._stream_reader, args=(process.stdout, name.upper()), daemon=True
         )
         stderr_thread = threading.Thread(
-            target=self._stream_reader,
-            args=(process.stderr, name.upper()),
-            daemon=True
+            target=self._stream_reader, args=(process.stderr, name.upper()), daemon=True
         )
         stdout_thread.start()
         stderr_thread.start()
@@ -168,7 +172,7 @@ class ProcessManager:
                 text=True,
                 bufsize=1,  # Line buffered
                 env=env,
-                cwd=Path(__file__).resolve().parent
+                cwd=Path(__file__).resolve().parent,
             )
 
             self.processes[name] = process
@@ -186,7 +190,9 @@ class ProcessManager:
                 # Basic check if process crashed immediately
                 time.sleep(1)
                 if process.poll() is not None:
-                    logger.error(f"{name} crashed immediately with exit code {process.returncode}.")
+                    logger.error(
+                        f"{name} crashed immediately with exit code {process.returncode}."
+                    )
                     self.stop_all()
                     sys.exit(1)
 
@@ -206,14 +212,18 @@ class ProcessManager:
         supervisor_script = repo_root / "src/quantum_edge_core/supervisor/supervisor.py"
 
         if not hub_script.exists() or not supervisor_script.exists():
-            logger.error(f"Critical Error: Source files not found at {hub_script} or {supervisor_script}")
+            logger.error(
+                f"Critical Error: Source files not found at {hub_script} or {supervisor_script}"
+            )
             sys.exit(1)
 
         # 2. Start MarketDataHub
         self.start_service(
             "Hub",
             [sys.executable, str(hub_script)],
-            readiness_check=lambda: self._wait_for_port(5555, timeout=15) # Hub binds ZMQ PUB to 5555
+            readiness_check=lambda: self._wait_for_port(
+                5555, timeout=15
+            ),  # Hub binds ZMQ PUB to 5555
         )
 
         # 3. Start SupervisorAgent
@@ -221,12 +231,20 @@ class ProcessManager:
         # We rely on defaults if config/config.yaml is missing, or user provides it.
         # Check if config exists, warn if not but proceed as instructed.
         if not Path("config/config.yaml").exists():
-            logger.warning("config/config.yaml does not exist. Supervisor may fail or use defaults.")
+            logger.warning(
+                "config/config.yaml does not exist. Supervisor may fail or use defaults."
+            )
 
         self.start_service(
             "Supervisor",
-            [sys.executable, str(supervisor_script), "run-foreground", "--config", "config/config.yaml"],
-            readiness_check=lambda: self._wait_for_supervisor_readiness()
+            [
+                sys.executable,
+                str(supervisor_script),
+                "run-foreground",
+                "--config",
+                "config/config.yaml",
+            ],
+            readiness_check=lambda: self._wait_for_supervisor_readiness(),
         )
 
     def _wait_for_supervisor_readiness(self, timeout: int = 30) -> bool:
@@ -245,7 +263,7 @@ class ProcessManager:
             # First check if process is still alive
             supervisor_proc = self.processes.get("Supervisor")
             if supervisor_proc and supervisor_proc.poll() is not None:
-                return False # Crashed
+                return False  # Crashed
 
             # Try ports
             for port in potential_ports:
@@ -283,6 +301,7 @@ class ProcessManager:
 
     def monitor_loop(self):
         """Monitors child processes and handles signals."""
+
         def signal_handler(sig, frame):
             logger.info(f"Received signal {sig}. Shutting down...")
             self.stop_event.set()
@@ -296,7 +315,9 @@ class ProcessManager:
             # Check health
             for name, proc in self.processes.items():
                 if proc.poll() is not None:
-                    logger.error(f"Critical: {name} died unexpectedly (Exit Code: {proc.returncode}). Emergency Stop.")
+                    logger.error(
+                        f"Critical: {name} died unexpectedly (Exit Code: {proc.returncode}). Emergency Stop."
+                    )
                     self.stop_event.set()
                     break
             time.sleep(1)
@@ -322,10 +343,12 @@ class ProcessManager:
 
 # --- CLI Functions ---
 
+
 def run_command(args):
     """Runs the orchestrator in the foreground."""
     pm = ProcessManager()
     pm.run_foreground()
+
 
 def start_command(args):
     """Starts the orchestrator in the background."""
@@ -349,9 +372,10 @@ def start_command(args):
         [sys.executable, __file__, "run"],
         start_new_session=True,
         stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL
+        stderr=subprocess.DEVNULL,
     )
     print("QuantumEdge started. Use 'python QuantumEdge.py status' to check.")
+
 
 def stop_command(args):
     """Stops the running orchestrator."""
@@ -383,6 +407,7 @@ def stop_command(args):
     except ValueError:
         print("Invalid PID file.")
         pid_file.unlink()
+
 
 def status_command(args):
     """Checks status."""
@@ -427,6 +452,7 @@ def main():
         stop_command(args)
     elif args.command == "status":
         status_command(args)
+
 
 if __name__ == "__main__":
     main()

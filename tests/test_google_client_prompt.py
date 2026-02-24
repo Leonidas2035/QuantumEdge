@@ -1,9 +1,16 @@
 import unittest
+from unittest.mock import MagicMock, patch
+import os
+
+# Set dummy key before import to pass validation
+os.environ["GOOGLE_API_KEY"] = "dummy"
+
 from quantum_edge_core.supervisor.supervisor.llm.google_client import GoogleClient
 
-
 class TestGoogleClient(unittest.TestCase):
-    def test_generate_risk_query(self):
+    @patch("google.generativeai.GenerativeModel")
+    @patch("google.generativeai.configure")
+    def test_generate_risk_query(self, mock_configure, mock_model):
         client = GoogleClient(api_key_env="TEST_KEY")
         context = {
             "mode": "SCALP",
@@ -15,13 +22,8 @@ class TestGoogleClient(unittest.TestCase):
         prompt = client.generate_risk_query(context)
         expected = "SYS:HFT_SUPERVISOR. MODE:SCALP. PNL:-1.2%. DD:0.5%. VOL:HIGH. SPREAD:25bps. Q: RISK_ASSESSMENT? OUTPUT: JSON {verdict: 'CONTINUE'|'REDUCE'|'HALT', reason: '...'}"
 
-        # Check if the prompt matches expected format (allowing for small differences if needed, but here exact match expected)
-        # However, f-string formatting might produce slightly different whitespace or float repr if not careful.
-        # But our implementation uses f"{pnl:.1f}%". -1.2 -> "-1.2%".
-
         self.assertEqual(prompt, expected)
         print(f"Prompt verified: {prompt}")
-
 
 if __name__ == "__main__":
     unittest.main()

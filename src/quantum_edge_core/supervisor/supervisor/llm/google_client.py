@@ -3,8 +3,12 @@
 import logging
 import os
 import asyncio
+import warnings
 from typing import Dict, Any, Optional, List, Mapping
 import google.generativeai as genai
+
+# Suppress Google Generative AI deprecation warning
+warnings.filterwarnings("ignore", category=FutureWarning, module="google.generativeai")
 
 logger = logging.getLogger(__name__)
 
