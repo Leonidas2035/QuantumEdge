@@ -14,7 +14,8 @@ from dotenv import load_dotenv
 # Load environment variables from .env
 load_dotenv()
 
-# Automatically set PYTHONPATH to include the src/ directory so subprocesses don't get ModuleNotFoundError
+# Automatically set PYTHONPATH to include the src/ directory so subprocesses
+# don't get ModuleNotFoundError
 project_root = Path(__file__).parent.absolute()
 src_path = project_root / "src"
 os.environ["PYTHONPATH"] = f"{src_path}{os.pathsep}{os.environ.get('PYTHONPATH', '')}"
@@ -39,7 +40,8 @@ class ProcessManager:
                 self.services_config = self._load_yaml(self.services_config_path)
             except Exception as e:
                 print(
-                    f"Warning: Failed to load services config from {self.services_config_path}: {e}"
+                    "Warning: Failed to load services config from "
+                    f"{self.services_config_path}: {e}"
                 )
 
         # Merge secrets if available
