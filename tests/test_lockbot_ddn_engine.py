@@ -3,7 +3,10 @@ import pytest
 pytest.skip("Legacy test broken by src-layout migration", allow_module_level=True)
 import random
 
-from quantum_edge_core.strategies.legacy.lockbot.lockbot_btc.ddn.config import DDNConfig, DDNProfile
+from quantum_edge_core.strategies.legacy.lockbot.lockbot_btc.ddn.config import (
+    DDNConfig,
+    DDNProfile,
+)
 from quantum_edge_core.strategies.legacy.lockbot.lockbot_btc.ddn.engine import (
     DDNContext,
     DDNEngine,

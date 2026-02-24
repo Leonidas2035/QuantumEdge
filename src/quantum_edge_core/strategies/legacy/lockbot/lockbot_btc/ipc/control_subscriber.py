@@ -10,7 +10,9 @@ import msgspec
 import zmq
 import zmq.asyncio
 
-from quantum_edge_core.strategies.legacy.lockbot.lockbot.contracts.lockbot_control_v1 import CommandEnvelope
+from quantum_edge_core.strategies.legacy.lockbot.lockbot.contracts.lockbot_control_v1 import (
+    CommandEnvelope,
+)
 
 
 class ControlSubscriber:

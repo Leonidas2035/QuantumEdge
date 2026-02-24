@@ -325,7 +325,7 @@ class MarketDataHubService(BaseService):
         side = str(getattr(event, "side", getattr(event, "taker_side", "unknown")))
         price = float(getattr(event, "price", 0.0))
         qty = float(getattr(event, "quantity", getattr(event, "size", 0.0)))
-        
+
         # Pull nanoseconds timestamp if it exists to keep precise time
         ts_ns_val = getattr(event, "ts_ns", None)
         ts_ns = int(float(ts_ns_val)) if ts_ns_val else None

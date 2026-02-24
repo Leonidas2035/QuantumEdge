@@ -11,7 +11,9 @@ from quantum_edge_core.strategies.legacy.lockbot.lockbot.contracts.lockbot_contr
 )
 from quantum_edge_core.strategies.legacy.lockbot.lockbot_btc.main import LockBotService
 from quantum_edge_core.strategies.legacy.lockbot.lockbot_btc.replay.bus import ReplayBus
-from quantum_edge_core.strategies.legacy.lockbot.lockbot_btc.replay.clock import ReplayClock
+from quantum_edge_core.strategies.legacy.lockbot.lockbot_btc.replay.clock import (
+    ReplayClock,
+)
 
 
 class ReplayBotAdapter:

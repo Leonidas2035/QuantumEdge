@@ -17,8 +17,12 @@ from quantum_edge_core.market_data.bus.event_bus import EventBus
 from quantum_edge_core.market_data.config import HubConfig
 from quantum_edge_core.market_data.ipc.publisher import ZmqPublisher
 from quantum_edge_core.market_data.microstructure.ofi import MicrostructureAnalyzer
-from quantum_edge_core.market_data.microstructure.publisher import MicrostructurePublisher
-from quantum_edge_core.market_data.microstructure.schema import MICROSTRUCTURE_EVENT_TYPE
+from quantum_edge_core.market_data.microstructure.publisher import (
+    MicrostructurePublisher,
+)
+from quantum_edge_core.market_data.microstructure.schema import (
+    MICROSTRUCTURE_EVENT_TYPE,
+)
 from bot.market_data.hub_source import HubMarketDataSource
 from bot.ml.features.builder import feature_names
 from bot.ml.signal_model.online_features import OnlineFeatureBuilder

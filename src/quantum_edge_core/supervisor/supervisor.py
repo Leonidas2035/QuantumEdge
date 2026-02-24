@@ -146,6 +146,7 @@ try:
 except Exception:  # pragma: no cover - fallback for legacy runs
     get_qe_paths = None
 
+
 class ZmqPolicyPublisher:
     """Publishes policy updates via ZMQ."""
 
@@ -170,6 +171,7 @@ class ZmqPolicyPublisher:
     def close(self):
         self.socket.close()
         self.ctx.term()
+
 
 class SupervisorApp:
     """High-level facade for supervisor commands."""
@@ -266,9 +268,7 @@ class SupervisorApp:
             if hasattr(cfg, "model") and "gpt" in cfg.model.lower():
                 cfg.model = "gemini-2.0-flash"
 
-        self.llm_client = GoogleClient(
-            logger=self.logger
-        )
+        self.llm_client = GoogleClient(logger=self.logger)
         self.llm_supervisor = LlmSupervisor(
             llm_config,
             risk_config,
@@ -492,7 +492,8 @@ class SupervisorApp:
                 )
         except Exception as exc:  # pylint: disable=broad-except
             self.logger.warning(
-                "TSDB backend init failed; continuing in Memory-Only mode without TSDB: %s", exc
+                "TSDB backend init failed; continuing in Memory-Only mode without TSDB: %s",
+                exc,
             )
             store = None
         if store is None:
@@ -2103,6 +2104,7 @@ class SupervisorApp:
         print(f"Summary: {len(results)} checks, {fail_count} FAIL, {warn_count} WARN")
         return 1 if fail_count else 0
 
+
 def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description="SupervisorAgent CLI")
     parser.add_argument(
@@ -2289,6 +2291,7 @@ def parse_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     )
     return parser.parse_args(argv)
 
+
 def build_app(
     project_root: Path,
     paths_config_path: Path,
@@ -2391,6 +2394,7 @@ def build_app(
         expected_bot_id=expected_bot_id,
     )
 
+
 def _compute_lag(value: Optional[str], now: float) -> Optional[int]:
     if not value:
         return None
@@ -2399,6 +2403,7 @@ def _compute_lag(value: Optional[str], now: float) -> Optional[int]:
     except ValueError:
         return None
     return max(0, int(now - ts))
+
 
 def main(argv: Optional[list[str]] = None) -> None:
     args = parse_args(argv)
@@ -2954,6 +2959,7 @@ def main(argv: Optional[list[str]] = None) -> None:
         )
         sys.exit(1)
 
+
 def _coerce_float(value: object) -> Optional[float]:
     if value is None:
         return None
@@ -2961,6 +2967,7 @@ def _coerce_float(value: object) -> Optional[float]:
         return float(value)
     except (TypeError, ValueError):
         return None
+
 
 def _init_ops_context(
     project_root: Path,
@@ -2978,6 +2985,7 @@ def _init_ops_context(
     ctx.log_event("RUN_START", {"command": note})
     ledger = ActionLedger(ctx.run_dir / "action_ledger.jsonl", ctx)
     return ctx, ledger, time.time()
+
 
 def _finalize_ops_context(
     ctx: RunContext,
@@ -3001,6 +3009,7 @@ def _finalize_ops_context(
     ctx.write_summary(summary)
     ctx.write_artifacts_manifest()
     ctx._ops_finalized = True
+
 
 def _last_run_has_critical_events(runs_dir: Path) -> bool:
     critical_types = {"ERROR", "KILL_SWITCH", "RISK_LIMIT_BREACH", "HALT"}
@@ -3034,6 +3043,7 @@ def _last_run_has_critical_events(runs_dir: Path) -> bool:
             break
     return False
 
+
 def _render_gate_report_md(result: Dict[str, Any]) -> str:
     lines = [
         "# Regression Gate Report",
@@ -3049,6 +3059,7 @@ def _render_gate_report_md(result: Dict[str, Any]) -> str:
             f"- [{status}] {check.get('name')}: actual={check.get('actual')} limit={check.get('limit')}"
         )
     return "\n".join(lines) + "\n"
+
 
 if __name__ == "__main__":
     main()

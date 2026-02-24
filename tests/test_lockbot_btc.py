@@ -6,7 +6,9 @@ import uuid
 
 import msgspec
 
-from quantum_edge_core.strategies.legacy.lockbot.lockbot.contracts.lockbot_control_v1 import build_command
+from quantum_edge_core.strategies.legacy.lockbot.lockbot.contracts.lockbot_control_v1 import (
+    build_command,
+)
 from quantum_edge_core.strategies.legacy.lockbot.lockbot_btc.config import LockbotConfig
 from quantum_edge_core.strategies.legacy.lockbot.lockbot_btc.main import LockBotService
 

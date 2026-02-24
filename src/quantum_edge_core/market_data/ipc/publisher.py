@@ -57,13 +57,15 @@ class ZmqPublisher:
         """
         try:
             topic_bytes = topic.encode("utf-8")
-            # AccountPublisher is synchronous but ZmqPublisher is asyncio based. 
+            # AccountPublisher is synchronous but ZmqPublisher is asyncio based.
             # We must use the underlying ZMQ non-blocking send or schedule it.
             # However ZmqPublisher.socket is AsyncSocket, so send_multipart expects await.
             # To fix sync/async bridge, we can either use send_multipart(..., flags=zmq.NOBLOCK)
             self.socket.send_multipart([topic_bytes, payload], flags=zmq.NOBLOCK)
         except Exception as e:
-            self.logger.error("Failed to publish raw payload", topic=topic, error=str(e))
+            self.logger.error(
+                "Failed to publish raw payload", topic=topic, error=str(e)
+            )
 
     async def stop(self):
         """

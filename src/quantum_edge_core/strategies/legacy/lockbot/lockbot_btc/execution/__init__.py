@@ -8,7 +8,9 @@ from quantum_edge_core.strategies.legacy.lockbot.lockbot_btc.execution.base impo
     ExecutionMode,
     SubmitResult,
 )
-from quantum_edge_core.strategies.legacy.lockbot.lockbot_btc.execution.manager import ExecutionManager
+from quantum_edge_core.strategies.legacy.lockbot.lockbot_btc.execution.manager import (
+    ExecutionManager,
+)
 
 __all__ = [
     "CancelAllResult",

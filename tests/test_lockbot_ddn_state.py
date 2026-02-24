@@ -1,7 +1,9 @@
 import pytest
 
 pytest.skip("Legacy test broken by src-layout migration", allow_module_level=True)
-from quantum_edge_core.strategies.legacy.lockbot.lockbot_btc.state.account_state import AccountState
+from quantum_edge_core.strategies.legacy.lockbot.lockbot_btc.state.account_state import (
+    AccountState,
+)
 
 
 def test_account_net_delta_est() -> None:

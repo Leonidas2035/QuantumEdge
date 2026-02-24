@@ -5,16 +5,16 @@ import sys
 
 def main() -> int:
     base = os.path.abspath(os.path.dirname(__file__))
-    target = os.path.join(
-        base, "src", "quantum_edge_infra", "automation", "meta_agent", "meta_agent.py"
-    )
-    if not os.path.exists(target):
-        print(f"[ERROR] meta_agent entrypoint not found: {target}")
+    sys.path.insert(0, os.path.join(base, "src"))
+    try:
+        runpy.run_module(
+            "quantum_edge_infra.automation.meta_agent.meta_agent",
+            run_name="__main__",
+            alter_sys=True,
+        )
+    except ImportError as e:
+        print(f"[ERROR] Failed to run meta_agent module: {e}")
         return 1
-    sys.path.insert(
-        0, os.path.join(base, "src", "quantum_edge_infra", "automation", "meta_agent")
-    )
-    runpy.run_path(target, run_name="__main__")
     return 0
 
 

@@ -11,8 +11,14 @@ import json
 from pathlib import Path
 
 from quantum_edge_core.strategies.legacy.lockbot.lockbot_btc.config import LockbotConfig
-from quantum_edge_core.strategies.legacy.lockbot.lockbot_btc.replay.runner import load_policy_config, run_replay
-from quantum_edge_core.strategies.legacy.lockbot.lockbot_btc.replay.scenarios import ScenarioConfig, generate_scenario
+from quantum_edge_core.strategies.legacy.lockbot.lockbot_btc.replay.runner import (
+    load_policy_config,
+    run_replay,
+)
+from quantum_edge_core.strategies.legacy.lockbot.lockbot_btc.replay.scenarios import (
+    ScenarioConfig,
+    generate_scenario,
+)
 
 
 def _hash_file(path: Path) -> str:
