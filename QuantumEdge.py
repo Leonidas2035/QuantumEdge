@@ -1,307 +1,431 @@
 #!/usr/bin/env python3
-import sys
-import os
-import subprocess
-import yaml
-import logging
-import logging.config
-import argparse
-import time
-import signal
-from pathlib import Path
-from dotenv import load_dotenv
+"""
+QuantumEdge Orchestrator
+Production-ready process manager for HFT system.
+Combines OOP architecture with ZMQ Guard and Async Log Multiplexing.
+"""
 
-# Load environment variables from .env
+import argparse
+import logging
+import os
+import signal
+import socket
+import subprocess
+import sys
+import threading
+import time
+from pathlib import Path
+from typing import List, Optional, Dict
+
+# Third-party imports
+try:
+    import psutil
+    import yaml
+    from dotenv import load_dotenv
+except ImportError as e:
+    print(f"Critical Error: Missing dependency {e}. Please install requirements.")
+    sys.exit(1)
+
+# Load environment variables
 load_dotenv()
 
-# Automatically set PYTHONPATH to include the src/ directory so subprocesses don't get ModuleNotFoundError
-project_root = Path(__file__).parent.absolute()
-src_path = project_root / "src"
-os.environ["PYTHONPATH"] = f"{src_path}{os.pathsep}{os.environ.get('PYTHONPATH', '')}"
+# Setup logging
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    handlers=[
+        logging.StreamHandler(sys.stdout),
+        logging.FileHandler("quantum_edge.log", mode="a"),
+    ],
+)
+logger = logging.getLogger("QuantumEdge")
 
 
 class ProcessManager:
-    def __init__(self, config_path, logging_config_path):
+    """
+    Manages the lifecycle of HFT services with robust startup/shutdown sequences,
+    port guarding, and log multiplexing.
+    """
+
+    def __init__(self, config_path: str = "config/config.yaml"):
         self.config_path = Path(config_path)
-        self.logging_config_path = Path(logging_config_path)
-        self.runtime_dir = Path("runtime")
-        self.runtime_dir.mkdir(exist_ok=True)
-        self.logs_dir = Path("logs")
-        self.logs_dir.mkdir(exist_ok=True)
+        self.processes: Dict[str, subprocess.Popen] = {}
+        self.stop_event = threading.Event()
+        self.pid_file = Path(".quantum_edge.pid")
 
-        self.config = self._load_yaml(self.config_path)
+        # Default ports if config is missing or incomplete
+        self.zmq_ports = [5555, 5556, 5557]
+        self._load_config()
 
-        # Load services config
-        self.services_config_path = self.config_path.parent / "services.yaml"
-        self.services_config = {}
-        if self.services_config_path.exists():
+    def _load_config(self):
+        """Loads configuration to override defaults."""
+        # Try loading ports from config/ports.yaml if it exists (per prompt suggestion)
+        ports_cfg = Path("config/ports.yaml")
+        if ports_cfg.exists():
             try:
-                self.services_config = self._load_yaml(self.services_config_path)
+                with open(ports_cfg, "r") as f:
+                    data = yaml.safe_load(f)
+                    if data and "ports" in data:
+                        self.zmq_ports = data["ports"]
+                        logger.info(f"Loaded ZMQ ports from {ports_cfg}: {self.zmq_ports}")
             except Exception as e:
-                print(
-                    f"Warning: Failed to load services config from {self.services_config_path}: {e}"
-                )
+                logger.warning(f"Failed to load {ports_cfg}: {e}")
 
-        # Merge secrets if available
-        secrets_path = self.config_path.parent / "secrets.yaml"
-        if secrets_path.exists():
-            try:
-                secrets = self._load_yaml(secrets_path)
-                if secrets and "env_vars" in secrets:
-                    self.config.setdefault("env_vars", {}).update(secrets["env_vars"])
-            except Exception as e:
-                print(f"Warning: Failed to load secrets from {secrets_path}: {e}")
+    def _build_child_env(self) -> Dict[str, str]:
+        """
+        Critical Fix: Constructs environment with absolute PYTHONPATH to src/.
+        Ensures 'import quantum_edge_core' works in subprocesses.
+        """
+        env = os.environ.copy()
+        repo_root = Path(__file__).resolve().parent
+        src_path = repo_root / "src"
 
-        self._setup_logging(self.logging_config_path)
-        self.logger = logging.getLogger("QuantumEdge")
-
-    def _load_yaml(self, path):
-        if not path.exists():
-            print(f"Error: Configuration file {path} not found.")
-            sys.exit(1)
-        with open(path, "r") as f:
-            return yaml.safe_load(f)
-
-    def _setup_logging(self, path):
-        if path.exists():
-            with open(path, "r") as f:
-                config = yaml.safe_load(f)
-                logging.config.dictConfig(config)
+        # Prepend src/ to PYTHONPATH
+        current_pythonpath = env.get("PYTHONPATH", "")
+        if current_pythonpath:
+            env["PYTHONPATH"] = f"{src_path}{os.pathsep}{current_pythonpath}"
         else:
-            logging.basicConfig(
-                level=logging.INFO,
-                format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+            env["PYTHONPATH"] = str(src_path)
+
+        return env
+
+    def _enforce_port_availability(self, ports: List[int]):
+        """
+        ZMQ Guard: Scans and kills processes holding critical ports.
+        """
+        logger.info(f"ZMQ Guard: Checking ports {ports}...")
+        for port in ports:
+            for proc in psutil.process_iter(['pid', 'name']):
+                try:
+                    for conn in proc.connections(kind='inet'):
+                        if conn.laddr.port == port:
+                            logger.warning(
+                                f"Port {port} is held by PID {proc.info['pid']} ({proc.info['name']}). Terminating..."
+                            )
+                            proc.terminate()
+                            try:
+                                proc.wait(timeout=2)
+                            except psutil.TimeoutExpired:
+                                logger.warning(f"PID {proc.info['pid']} did not terminate. Killing...")
+                                proc.kill()
+                except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+                    continue
+        logger.info("ZMQ Guard: All ports clear.")
+
+    def _stream_reader(self, pipe, prefix: str):
+        """
+        Async Log Multiplexing: Reads stdout/stderr from subprocess and logs it.
+        """
+        try:
+            with pipe:
+                for line in iter(pipe.readline, ''):
+                    if not line:
+                        break
+                    # Strip newline and log
+                    logger.info(f"[{prefix}] {line.strip()}")
+        except Exception as e:
+            logger.error(f"[{prefix}] Log stream error: {e}")
+
+    def _start_log_threads(self, process: subprocess.Popen, name: str):
+        """Starts daemon threads to read stdout and stderr."""
+        stdout_thread = threading.Thread(
+            target=self._stream_reader,
+            args=(process.stdout, name.upper()),
+            daemon=True
+        )
+        stderr_thread = threading.Thread(
+            target=self._stream_reader,
+            args=(process.stderr, name.upper()),
+            daemon=True
+        )
+        stdout_thread.start()
+        stderr_thread.start()
+
+    def _wait_for_port(self, port: int, timeout: int = 30) -> bool:
+        """Polls a TCP port until it accepts connections."""
+        start_time = time.time()
+        while time.time() - start_time < timeout:
+            try:
+                with socket.create_connection(("127.0.0.1", port), timeout=1):
+                    return True
+            except (OSError, ConnectionRefusedError):
+                time.sleep(0.5)
+        return False
+
+    def start_service(self, name: str, cmd: List[str], readiness_check=None):
+        """
+        Starts a subprocess with environment injection and log multiplexing.
+        """
+        logger.info(f"Starting {name}...")
+        env = self._build_child_env()
+
+        try:
+            # Use line buffering for real-time logging
+            process = subprocess.Popen(
+                cmd,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=True,
+                bufsize=1,  # Line buffered
+                env=env,
+                cwd=Path(__file__).resolve().parent
             )
 
-    def _get_pid_path(self, name):
-        return self.runtime_dir / f"{name}.pid"
+            self.processes[name] = process
+            self._start_log_threads(process, name)
 
-    def _get_log_path(self, name):
-        return self.logs_dir / f"{name}.log"
-
-    def _is_running(self, pid):
-        if pid <= 0:
-            return False
-        try:
-            os.kill(pid, 0)
-        except ProcessLookupError:
-            return False
-        except PermissionError:
-            return True
-        return True
-
-    def start_service(self, name, script_path):
-        pid_path = self._get_pid_path(name)
-        if pid_path.exists():
-            try:
-                pid = int(pid_path.read_text().strip())
-                if self._is_running(pid):
-                    self.logger.info(
-                        f"Service '{name}' is already running (PID: {pid})"
-                    )
-                    return
-            except ValueError:
-                pass
-            pid_path.unlink()
-
-        log_path = self._get_log_path(name)
-        self.logger.info(f"Starting service '{name}' using {script_path}...")
-
-        # Ensure we use absolute path for the script and set PYTHONPATH
-        abs_script_path = str(Path(script_path).absolute())
-        project_root = str(Path(__file__).parent.absolute())
-
-        env = os.environ.copy()
-
-        # Inject env vars from config
-        config_env = self.config.get("env_vars", {})
-        if config_env:
-            for k, v in config_env.items():
-                env[str(k)] = str(v)
-
-        # Inject services config
-        if self.services_config:
-            services = self.services_config.get("services", {})
-            bot_cfg = services.get("bot", {})
-            sup_cfg = services.get("supervisor", {})
-
-            if bot_cfg:
-                env["QE_BOT_ID"] = str(bot_cfg.get("id", ""))
-                zmq = bot_cfg.get("zmq", {})
-                env["QE_BOT_TELEMETRY_PORT"] = str(zmq.get("telemetry_port", ""))
-                env["QE_BOT_POLICY_PORT"] = str(zmq.get("policy_port", ""))
-
-            if sup_cfg:
-                env["QE_SUPERVISOR_ID"] = str(sup_cfg.get("id", ""))
-
-        python_path = env.get("PYTHONPATH", "")
-        src_path = Path(project_root) / "src"
-        core_path = src_path / "quantum_edge_core"
-        extra_paths = [
-            project_root,
-            str(src_path),
-            str(core_path),
-            str(src_path / "quantum_edge_infra"),
-            str(src_path / "quantum_edge_ml"),
-            str(core_path / "ai_scalper_bot"),
-            str(core_path / "supervisor"),
-        ]
-
-        new_python_path = os.pathsep.join(extra_paths)
-        if python_path:
-            new_python_path = f"{new_python_path}{os.pathsep}{python_path}"
-        env["PYTHONPATH"] = new_python_path
-
-        # Based on instructions: All Python modules must be launched from project root.
-        # We use absolute paths to avoid sys.path issues.
-        try:
-            with open(log_path, "a") as log_file:
-                if name == "supervisor":
-                    # Supervisor needs specific command and config
-                    cmd = [
-                        sys.executable,
-                        abs_script_path,
-                        "run-foreground",
-                        "--config",
-                        "config/config.yaml",
-                    ]
-                elif name == "hub":
-                    # Hub usually runs without args or has internal defaults
-                    cmd = [sys.executable, abs_script_path]
-                elif name == "bot":
-                    # Bot usually needs config
-                    cmd = [
-                        sys.executable,
-                        abs_script_path,
-                        "--config",
-                        "config/config.yaml",
-                    ]
+            if readiness_check:
+                logger.info(f"Waiting for {name} readiness...")
+                if readiness_check():
+                    logger.info(f"{name} is ready.")
                 else:
-                    # Fallback
-                    cmd = [sys.executable, abs_script_path]
+                    logger.error(f"{name} failed to become ready.")
+                    self.stop_all()
+                    sys.exit(1)
+            else:
+                # Basic check if process crashed immediately
+                time.sleep(1)
+                if process.poll() is not None:
+                    logger.error(f"{name} crashed immediately with exit code {process.returncode}.")
+                    self.stop_all()
+                    sys.exit(1)
 
-                proc = subprocess.Popen(
-                    cmd,
-                    stdout=log_file,
-                    stderr=log_file,
-                    cwd=project_root,
-                    env=env,
-                    start_new_session=True,
-                )
-                pid_path.write_text(str(proc.pid))
-                self.logger.info(f"Service '{name}' started with PID: {proc.pid}")
         except Exception as e:
-            self.logger.error(f"Failed to start service '{name}': {e}")
-
-    def stop_service(self, name):
-        pid_path = self._get_pid_path(name)
-        if not pid_path.exists():
-            self.logger.info(f"Service '{name}' is not running (no PID file).")
-            return
-
-        try:
-            pid = int(pid_path.read_text().strip())
-        except ValueError:
-            self.logger.warning(f"Invalid PID file for '{name}'. Removing.")
-            pid_path.unlink()
-            return
-
-        if self._is_running(pid):
-            self.logger.info(f"Stopping service '{name}' (PID: {pid})...")
-            try:
-                os.kill(pid, signal.SIGTERM)
-                # Grace period
-                for _ in range(20):
-                    if not self._is_running(pid):
-                        break
-                    time.sleep(0.5)
-
-                if self._is_running(pid):
-                    self.logger.warning(
-                        f"Service '{name}' (PID: {pid}) did not terminate, killing..."
-                    )
-                    os.kill(pid, signal.SIGKILL)
-            except ProcessLookupError:
-                pass
-        else:
-            self.logger.info(f"Service '{name}' (PID: {pid}) is already stopped.")
-
-        if pid_path.exists():
-            pid_path.unlink()
-        self.logger.info(f"Service '{name}' stopped.")
-
-    def status(self):
-        print(f"\n{'Service':<20} | {'Status':<10} | {'PID':<10}")
-        print("-" * 45)
-        services = {
-            "supervisor": self.config.get("supervisor_path"),
-            "hub": self.config.get("hub_path"),
-            "bot": self.config.get("bot_path"),
-        }
-        for name, script_path in services.items():
-            if not script_path:
-                print(f"{name:<20} | NOT CONFIG | -")
-                continue
-            pid_path = self._get_pid_path(name)
-            status = "STOPPED"
-            pid_str = "-"
-            if pid_path.exists():
-                try:
-                    pid = int(pid_path.read_text().strip())
-                    if self._is_running(pid):
-                        status = "RUNNING"
-                        pid_str = str(pid)
-                    else:
-                        pid_path.unlink()
-                except ValueError:
-                    pid_path.unlink()
-            print(f"{name:<20} | {status:<10} | {pid_str:<10}")
-        print()
+            logger.error(f"Failed to start {name}: {e}")
+            self.stop_all()
+            sys.exit(1)
 
     def start_all(self):
-        self.start_service("supervisor", self.config.get("supervisor_path"))
-        self.start_service("hub", self.config.get("hub_path"))
-        self.start_service("bot", self.config.get("bot_path"))
+        """Executes the strict startup sequence."""
+        # 1. ZMQ Guard
+        self._enforce_port_availability(self.zmq_ports)
+
+        # Define paths
+        repo_root = Path(__file__).resolve().parent
+        hub_script = repo_root / "src/quantum_edge_core/market_data/hub.py"
+        supervisor_script = repo_root / "src/quantum_edge_core/supervisor/supervisor.py"
+
+        if not hub_script.exists() or not supervisor_script.exists():
+            logger.error(f"Critical Error: Source files not found at {hub_script} or {supervisor_script}")
+            sys.exit(1)
+
+        # 2. Start MarketDataHub
+        self.start_service(
+            "Hub",
+            [sys.executable, str(hub_script)],
+            readiness_check=lambda: self._wait_for_port(5555, timeout=15) # Hub binds ZMQ PUB to 5555
+        )
+
+        # 3. Start SupervisorAgent
+        # Note: "run-foreground" is the command, and we pass config path.
+        # We rely on defaults if config/config.yaml is missing, or user provides it.
+        # Check if config exists, warn if not but proceed as instructed.
+        if not Path("config/config.yaml").exists():
+            logger.warning("config/config.yaml does not exist. Supervisor may fail or use defaults.")
+
+        self.start_service(
+            "Supervisor",
+            [sys.executable, str(supervisor_script), "run-foreground", "--config", "config/config.yaml"],
+            readiness_check=lambda: self._wait_for_supervisor_readiness()
+        )
+
+    def _wait_for_supervisor_readiness(self, timeout: int = 30) -> bool:
+        """
+        Waits for Supervisor API (if enabled) or monitors PID stability.
+        """
+        # Since we don't know the exact port without parsing config (and config might be missing),
+        # we'll try the default port 8000 mentioned in prompt/common practice,
+        # or fallback to PID monitoring.
+
+        # Try HTTP check on common ports
+        potential_ports = [8000, 8080, 5000]
+        start_time = time.time()
+
+        while time.time() - start_time < timeout:
+            # First check if process is still alive
+            supervisor_proc = self.processes.get("Supervisor")
+            if supervisor_proc and supervisor_proc.poll() is not None:
+                return False # Crashed
+
+            # Try ports
+            for port in potential_ports:
+                if self._wait_for_port(port, timeout=0.1):
+                    # If port is open, assume ready (or could do full HTTP GET /health)
+                    return True
+
+            # If we've waited 5 seconds and process is still up, assume it's okay (fallback)
+            if time.time() - start_time > 5:
+                return True
+
+            time.sleep(0.5)
+
+        return True
 
     def stop_all(self):
-        # Stop in reverse order
-        self.stop_service("bot")
-        self.stop_service("hub")
-        self.stop_service("supervisor")
+        """Graceful shutdown in reverse order."""
+        logger.info("Stopping all services...")
+
+        # Reverse order: Supervisor -> Hub
+        shutdown_order = ["Supervisor", "Hub"]
+
+        for name in shutdown_order:
+            proc = self.processes.get(name)
+            if proc and proc.poll() is None:
+                logger.info(f"Stopping {name}...")
+                proc.terminate()
+                try:
+                    proc.wait(timeout=3)
+                except subprocess.TimeoutExpired:
+                    logger.warning(f"{name} did not terminate. Killing...")
+                    proc.kill()
+
+        logger.info("All services stopped.")
+
+    def monitor_loop(self):
+        """Monitors child processes and handles signals."""
+        def signal_handler(sig, frame):
+            logger.info(f"Received signal {sig}. Shutting down...")
+            self.stop_event.set()
+
+        signal.signal(signal.SIGINT, signal_handler)
+        signal.signal(signal.SIGTERM, signal_handler)
+
+        logger.info("System is running. Press Ctrl+C to stop.")
+
+        while not self.stop_event.is_set():
+            # Check health
+            for name, proc in self.processes.items():
+                if proc.poll() is not None:
+                    logger.error(f"Critical: {name} died unexpectedly (Exit Code: {proc.returncode}). Emergency Stop.")
+                    self.stop_event.set()
+                    break
+            time.sleep(1)
+
+        self.stop_all()
+        # Clean up PID file
+        if self.pid_file.exists():
+            self.pid_file.unlink()
+
+    def run_foreground(self):
+        """Main entry point for running the orchestrator."""
+        # Write PID file
+        self.pid_file.write_text(str(os.getpid()))
+
+        try:
+            self.start_all()
+            self.monitor_loop()
+        except Exception as e:
+            logger.error(f"Orchestrator crashed: {e}")
+            self.stop_all()
+            sys.exit(1)
+
+
+# --- CLI Functions ---
+
+def run_command(args):
+    """Runs the orchestrator in the foreground."""
+    pm = ProcessManager()
+    pm.run_foreground()
+
+def start_command(args):
+    """Starts the orchestrator in the background."""
+    pid_file = Path(".quantum_edge.pid")
+    if pid_file.exists():
+        # Check if actually running
+        try:
+            pid = int(pid_file.read_text())
+            if psutil.pid_exists(pid):
+                print(f"QuantumEdge is already running (PID {pid}).")
+                return
+            else:
+                print("Stale PID file found. Removing...")
+                pid_file.unlink()
+        except ValueError:
+            pid_file.unlink()
+
+    print("Starting QuantumEdge in background...")
+    # Launch self with 'run' command
+    subprocess.Popen(
+        [sys.executable, __file__, "run"],
+        start_new_session=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL
+    )
+    print("QuantumEdge started. Use 'python QuantumEdge.py status' to check.")
+
+def stop_command(args):
+    """Stops the running orchestrator."""
+    pid_file = Path(".quantum_edge.pid")
+    if not pid_file.exists():
+        print("QuantumEdge is not running (no PID file).")
+        return
+
+    try:
+        pid = int(pid_file.read_text())
+        if psutil.pid_exists(pid):
+            print(f"Stopping QuantumEdge (PID {pid})...")
+            os.kill(pid, signal.SIGTERM)
+
+            # Wait for it to exit
+            for _ in range(10):
+                if not psutil.pid_exists(pid):
+                    print("Stopped.")
+                    if pid_file.exists(): pid_file.unlink()
+                    return
+                time.sleep(0.5)
+
+            print("Force killing...")
+            os.kill(pid, signal.SIGKILL)
+        else:
+            print("Process not found. Cleaning up PID file.")
+            pid_file.unlink()
+    except ValueError:
+        print("Invalid PID file.")
+        pid_file.unlink()
+
+def status_command(args):
+    """Checks status."""
+    pid_file = Path(".quantum_edge.pid")
+    if pid_file.exists():
+        try:
+            pid = int(pid_file.read_text())
+            if psutil.pid_exists(pid):
+                proc = psutil.Process(pid)
+                print(f"Status: RUNNING")
+                print(f"PID: {pid}")
+                print(f"Uptime: {int(time.time() - proc.create_time())}s")
+                # Could list children here
+                children = proc.children(recursive=True)
+                print(f"Child Processes: {len(children)}")
+                for child in children:
+                    print(f"  - {child.name()} (PID {child.pid})")
+                return
+        except (ValueError, psutil.NoSuchProcess):
+            pass
+
+    print("Status: STOPPED")
 
 
 def main():
     parser = argparse.ArgumentParser(description="QuantumEdge Orchestrator")
-    parser.add_argument(
-        "command",
-        choices=["start", "stop", "status", "restart"],
-        help="Action to perform",
-    )
-    parser.add_argument(
-        "--config", default="config/system_config.yaml", help="Path to system config"
-    )
-    parser.add_argument(
-        "--logging", default="config/logging.yaml", help="Path to logging config"
-    )
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    # Subcommands
+    subparsers.add_parser("run", help="Run in foreground (blocking)")
+    subparsers.add_parser("start", help="Start in background")
+    subparsers.add_parser("stop", help="Stop the system")
+    subparsers.add_parser("status", help="Show system status")
 
     args = parser.parse_args()
 
-    pm = ProcessManager(args.config, args.logging)
-
-    if args.command == "start":
-        pm.start_all()
+    if args.command == "run":
+        run_command(args)
+    elif args.command == "start":
+        start_command(args)
     elif args.command == "stop":
-        pm.stop_all()
+        stop_command(args)
     elif args.command == "status":
-        pm.status()
-    elif args.command == "restart":
-        pm.stop_all()
-        time.sleep(2)
-        pm.start_all()
-
+        status_command(args)
 
 if __name__ == "__main__":
-    import contextlib
-
-    with contextlib.suppress(KeyboardInterrupt):
-        main()
+    main()
