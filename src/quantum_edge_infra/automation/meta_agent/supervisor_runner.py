@@ -6,7 +6,7 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 from .meta_core import run_task
-from .projects_config import ProjectRegistry, resolve_project_root
+from .projects_config import ProjectRegistry
 from .task_manager import create_task
 
 REPORTS_SUPERVISOR_DIR = Path("reports") / "supervisor"
@@ -101,7 +101,7 @@ def build_backlog_from_reports(
             f"Source report: {rep.name}\n"
             f"Severity: {sev}\n\n"
             "Use the context below to propose fixes or follow-ups:\n\n"
-            f"{meta.get('body','')}\n"
+            f"{meta.get('body', '')}\n"
         )
         backlog.append(
             BacklogItem(

@@ -516,7 +516,11 @@ def tick(
 
 
 def status(schedules_dir: str, runtime_dir: str) -> List[dict]:
-    # base_abs = os.path.abspath(_resolve_base_dir())
+    # base_abs is not used in status(), so we can leave it or uncomment it.
+    # Actually it's cleaner to remove the comment if it's confusing, but let's check usage.
+    # It is NOT used in status(). So I will leave it commented or remove it.
+    # Wait, the error log didn't complain about status().
+    # Ah, I will just leave status() as is.
     schedules = load_schedules(schedules_dir)
     state = _load_state(_state_path(runtime_dir))
 
