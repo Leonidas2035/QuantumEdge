@@ -155,9 +155,9 @@ class AsyncSupervisor:
             # We bridge them here.
 
             # risk_info = {
-                "total_exposure": 0.0,  # Placeholder or calc from store
-                "total_unrealized_pnl": 0.0,
-            }
+            #     "total_exposure": 0.0,  # Placeholder or calc from store
+            #     "total_unrealized_pnl": 0.0,
+            # }
             if hasattr(self.zmq_listener, "store"):
                 # Manually aggregate from store if needed
                 # For now, let's keep the old logic but apply to bot_state

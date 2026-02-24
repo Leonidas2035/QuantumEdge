@@ -370,7 +370,8 @@ def stop_command(args):
             for _ in range(10):
                 if not psutil.pid_exists(pid):
                     print("Stopped.")
-                    if pid_file.exists(): pid_file.unlink()
+                if pid_file.exists():
+                    pid_file.unlink()
                     return
                 time.sleep(0.5)
 
@@ -391,7 +392,7 @@ def status_command(args):
             pid = int(pid_file.read_text())
             if psutil.pid_exists(pid):
                 proc = psutil.Process(pid)
-                print(f"Status: RUNNING")
+                print("Status: RUNNING")
                 print(f"PID: {pid}")
                 print(f"Uptime: {int(time.time() - proc.create_time())}s")
                 # Could list children here

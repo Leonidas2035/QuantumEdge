@@ -128,8 +128,10 @@ def run_supervisor_maintenance_once(
     for item in backlog:
         try:
             # project_info = resolve_project_root(item.project_id, registry)
+            pass
         except KeyError:
             # project_info = resolve_project_root(None, registry)
+            pass
 
         body = (
             f"# Supervisor Follow-up\n"

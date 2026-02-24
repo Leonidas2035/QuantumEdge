@@ -42,7 +42,7 @@ def _resolve_base_dir() -> str:
 
 def _resolve_runtime_dir() -> str:
     base = _resolve_base_dir()
-    # base_abs = os.path.abspath(base)
+    base_abs = os.path.abspath(base)
     env_runtime = os.getenv("META_AGENT_RUNTIME_DIR") or os.getenv("QE_RUNTIME_DIR")
     if env_runtime:
         candidate = os.path.abspath(env_runtime)
@@ -54,7 +54,7 @@ def _resolve_runtime_dir() -> str:
     return os.path.abspath(os.path.join(base_abs, "runtime"))
 
 def _resolve_schedules_dir(schedules_dir: Optional[str]) -> str:
-    # base_abs = os.path.abspath(_resolve_base_dir())
+    base_abs = os.path.abspath(_resolve_base_dir())
     if schedules_dir:
         candidate = schedules_dir
     else:
@@ -320,7 +320,7 @@ def tick(
     logger,
     now_utc: Optional[datetime] = None,
 ) -> dict:
-    # base_abs = os.path.abspath(_resolve_base_dir())
+    base_abs = os.path.abspath(_resolve_base_dir())
     schedules = load_schedules(schedules_dir)
     state_path = _state_path(runtime_dir)
     state = _load_state(state_path)

@@ -11,7 +11,7 @@ from typing import Dict, Tuple, Optional
 
 import yaml
 
-from .llm_client import LLMClient
+from quantum_edge_infra.automation.meta_agent.llm_client import LLMClient
 from .file_manager import build_change_set_from_response
 from .logger import configure_logger
 from .meta_core import run_task
