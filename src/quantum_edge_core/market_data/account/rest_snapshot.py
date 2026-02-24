@@ -219,7 +219,9 @@ class BinanceAccountRestSnapshotBuilder:
     async def _get(self, base: str, path: str, params: dict) -> dict:
         session = self._session or aiohttp.ClientSession()
         try:
-            async with session.get(f"{base}{path}", params=params, timeout=self._timeout) as resp:
+            async with session.get(
+                f"{base}{path}", params=params, timeout=self._timeout
+            ) as resp:
                 resp.raise_for_status()
                 return await resp.json()
         finally:

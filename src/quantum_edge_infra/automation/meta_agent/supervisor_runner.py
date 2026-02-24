@@ -11,12 +11,14 @@ from .task_manager import create_task
 
 REPORTS_SUPERVISOR_DIR = Path("reports") / "supervisor"
 
+
 @dataclass
 class BacklogItem:
     project_id: str
     title: str
     instructions: str
     severity: str  # low | normal | high
+
 
 def _load_reports(report_dir: Path) -> List[Path]:
     if not report_dir.exists():
@@ -27,6 +29,7 @@ def _load_reports(report_dir: Path) -> List[Path]:
             files.append(entry)
     return sorted(files, key=lambda p: p.stat().st_mtime, reverse=True)
 
+
 def _severity_from_name(name: str) -> str:
     lower = name.lower()
     if "high" in lower or "critical" in lower:
@@ -34,6 +37,7 @@ def _severity_from_name(name: str) -> str:
     if "low" in lower:
         return "low"
     return "normal"
+
 
 def _parse_report(path: Path) -> Dict[str, Any]:
     if path.suffix.lower() == ".json":
@@ -62,6 +66,7 @@ def _parse_report(path: Path) -> Dict[str, Any]:
         "severity": _severity_from_name(path.name),
     }
 
+
 def _select_project_for_report(report: Dict[str, Any]) -> str:
     title = (report.get("title") or "").lower()
     body = (report.get("body") or "").lower()
@@ -70,6 +75,7 @@ def _select_project_for_report(report: Dict[str, Any]) -> str:
     if "meta" in title or "meta" in body:
         return "meta_agent"
     return "ai_scalper_bot"
+
 
 def build_backlog_from_reports(
     registry: ProjectRegistry,
@@ -109,6 +115,7 @@ def build_backlog_from_reports(
             break
     return backlog
 
+
 def run_supervisor_maintenance_once(
     registry: ProjectRegistry,
     schedule_cfg: Dict[str, Any],
@@ -128,8 +135,10 @@ def run_supervisor_maintenance_once(
     for item in backlog:
         try:
             # project_info = resolve_project_root(item.project_id, registry)
+            pass
         except KeyError:
             # project_info = resolve_project_root(None, registry)
+            pass
 
         body = (
             f"# Supervisor Follow-up\n"

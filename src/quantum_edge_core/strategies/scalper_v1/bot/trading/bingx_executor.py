@@ -18,12 +18,14 @@ from bot.exchanges.bingx_swap.mapper import (
     round_qty_to_step,
 )
 
+
 @dataclass
 class SymbolMeta:
     step_size: float
     min_qty: float
     tick_size: float
     min_notional: float = 0.0
+
 
 class BingXDemoExecutor:
     """
@@ -277,13 +279,13 @@ class BingXDemoExecutor:
 
         try:
             side_up = side.upper()
-            position_# side = "LONG" if side_up == "BUY" else "SHORT"
+            position_side = "LONG" if side_up == "BUY" else "SHORT"
             if reduce_only:
                 if self.position > 0:
-                    position_# side = "LONG"
+                    position_side = "LONG"
                     side_up = "SELL"
                 elif self.position < 0:
-                    position_# side = "SHORT"
+                    position_side = "SHORT"
                     side_up = "BUY"
             order_type = "MARKET" if norm_price is None else "LIMIT"
             req = OrderRequest(
@@ -308,7 +310,7 @@ class BingXDemoExecutor:
         if self.position == 0:
             return
         sym = normalize_symbol(symbol or self.symbol)
-        # side = "SELL" if self.position > 0 else "BUY"
+        side = "SELL" if self.position > 0 else "BUY"
         qty = abs(self.position)
         result = await self.submit_order(sym, side, qty, reduce_only=True)
         if result:
@@ -400,7 +402,7 @@ class BingXDemoExecutor:
                 )
                 return
 
-            # side = "BUY" if decision.action == "buy" else "SELL"
+            side = "BUY" if decision.action == "buy" else "SELL"
             self._log(f"[DEMO] Placing MARKET {side} {sym} qty={qty} (BingX demo).")
             client_id = self._client_order_id(sym, decision.action)
             result = await self.submit_order(
@@ -428,7 +430,7 @@ class BingXDemoExecutor:
                 self._log("[DEMO] No open position to close.")
                 return
 
-            # side = "SELL" if self.position > 0 else "BUY"
+            side = "SELL" if self.position > 0 else "BUY"
             qty = await self._normalize_qty(sym, abs(self.position))
             if qty <= 0:
                 self._log(
@@ -571,7 +573,7 @@ class BingXDemoExecutor:
             hit = hit or "sl"
         if not hit:
             return False
-        close_# side = "SELL" if self.position > 0 else "BUY"
+        close_side = "SELL" if self.position > 0 else "BUY"
         qty = abs(self.position)
         client_id = self._client_order_id(self.symbol, f"bracket-{hit}")
         self._log(

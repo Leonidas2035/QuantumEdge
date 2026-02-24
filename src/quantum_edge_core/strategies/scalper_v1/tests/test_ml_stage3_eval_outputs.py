@@ -5,7 +5,9 @@ import numpy as np
 import pandas as pd
 import xgboost as xgb
 
-from quantum_edge_core.supervisor.research.offline.scalper_bot.ml.eval.run import evaluate
+from quantum_edge_core.supervisor.research.offline.scalper_bot.ml.eval.run import (
+    evaluate,
+)
 from bot.ml.features.builder import feature_names
 
 
@@ -32,7 +34,7 @@ def test_eval_outputs(tmp_path: Path) -> None:
     model_dir.mkdir(parents=True, exist_ok=True)
 
     train = pd.read_csv(data_root / "train.csv")
-    # model = xgboost_# model = xgb.XGBClassifier(
+    xgboost_model = xgb.XGBClassifier(
         n_estimators=5, max_depth=2, eval_metric="logloss"
     )
     xgboost_model.fit(train[feature_names()], train["y_up_h1"])

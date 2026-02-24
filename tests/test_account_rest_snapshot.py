@@ -5,7 +5,9 @@ import json
 from pathlib import Path
 from unittest.mock import MagicMock
 
-from quantum_edge_core.market_data.account.rest_snapshot import BinanceAccountRestSnapshotBuilder
+from quantum_edge_core.market_data.account.rest_snapshot import (
+    BinanceAccountRestSnapshotBuilder,
+)
 from quantum_edge_core.market_data.config import AccountConfig
 
 

@@ -338,7 +338,9 @@ def _health_check(runtime_dir: str) -> tuple[bool, list[dict]]:
             record(f"runtime_{sub}", False, str(exc))
 
     try:
-        from safety_policy import load_safety_policy
+        from quantum_edge_infra.automation.meta_agent.safety_policy import (
+            load_safety_policy,
+        )
 
         load_safety_policy()
         record("safety_policy", True, "loaded")
@@ -346,7 +348,9 @@ def _health_check(runtime_dir: str) -> tuple[bool, list[dict]]:
         record("safety_policy", False, str(exc))
 
     try:
-        from write_engine import apply_change_set_with_policy  # noqa: F401
+        from quantum_edge_infra.automation.meta_agent.write_engine import (
+            apply_change_set_with_policy,
+        )  # noqa: F401
 
         record("write_engine", True, "available")
     except Exception as exc:

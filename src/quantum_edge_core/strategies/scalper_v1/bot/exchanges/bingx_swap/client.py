@@ -102,7 +102,9 @@ class BingXClient:
         query = build_query_string(params)
         return f"{self.base_url}{path}?{query}"
 
-    async def _handle_response(self, response: aiohttp.ClientResponse, endpoint: str) -> Any:
+    async def _handle_response(
+        self, response: aiohttp.ClientResponse, endpoint: str
+    ) -> Any:
         status = response.status
         try:
             payload = await response.json()
@@ -175,7 +177,7 @@ class BingXClient:
 
         max_attempts = 3
         backoff = 0.5
-        
+
         async with aiohttp.ClientSession() as session:
             for attempt in range(max_attempts):
                 await self._throttle()
@@ -194,7 +196,9 @@ class BingXClient:
                         await asyncio.sleep(backoff + random.random() * 0.1)
                         backoff = min(backoff * 2, 4.0)
                         continue
-                    detail = BingXErrorDetail(None, None, f"Request failed: {exc}", path)
+                    detail = BingXErrorDetail(
+                        None, None, f"Request failed: {exc}", path
+                    )
                     raise BingXAPIError(detail) from exc
 
         detail = BingXErrorDetail(None, None, "Request failed after retries.", path)

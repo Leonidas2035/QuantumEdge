@@ -1,8 +1,10 @@
 import os
 import subprocess
+
 try:
     import tkinter as tk
     from tkinter import messagebox, scrolledtext
+
     GUI_AVAILABLE = True
 except ImportError:
     GUI_AVAILABLE = False
@@ -11,6 +13,7 @@ import yaml
 
 from .paths import BASE_DIR, PROMPTS_DIR, STAGES_PATH
 from .projects_config import load_project_registry
+
 
 def slugify(text: str) -> str:
     """
@@ -21,12 +24,14 @@ def slugify(text: str) -> str:
         text = text.replace(ch, "")
     return text or "task"
 
+
 def load_stages():
     if not os.path.exists(STAGES_PATH):
         return []
     with open(STAGES_PATH, "r", encoding="utf-8") as f:
         data = yaml.safe_load(f) or []
     return data if isinstance(data, list) else []
+
 
 def save_stages(stages):
     with open(STAGES_PATH, "w", encoding="utf-8") as f:
@@ -37,6 +42,7 @@ def save_stages(stages):
             sort_keys=False,
             default_flow_style=False,
         )
+
 
 def on_add():
     task_name = entry_name.get().strip()
@@ -73,6 +79,7 @@ def on_add():
 
     messagebox.showinfo("Success", f"Task added:\n  {filename}\nAdded to stages.yaml.")
 
+
 def on_run_meta_agent():
     """
     Runs meta_agent.py once in a blocking call.
@@ -93,10 +100,14 @@ def on_run_meta_agent():
     except Exception as exc:
         messagebox.showerror("Meta-Agent", f"Failed to run Meta-Agent: {exc}")
 
+
 def main():
     if not GUI_AVAILABLE:
-        print("[ERROR] Tkinter не знайдено. Сервер працює в headless-режимі. Будь ласка, використовуйте CLI-версію агента (meta_core.py / meta_agent.py --task-id ...)")
+        print(
+            "[ERROR] Tkinter не знайдено. Сервер працює в headless-режимі. Будь ласка, використовуйте CLI-версію агента (meta_core.py / meta_agent.py --task-id ...)"
+        )
         import sys
+
         sys.exit(1)
 
     global entry_name, text_prompt, project_var
@@ -136,6 +147,7 @@ def main():
     btn_run.pack(side=tk.LEFT, padx=5)
 
     root.mainloop()
+
 
 if __name__ == "__main__":
     main()
