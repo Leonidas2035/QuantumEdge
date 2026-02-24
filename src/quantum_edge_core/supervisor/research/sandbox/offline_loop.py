@@ -74,11 +74,11 @@ async def run_backtest(ticks_path: Path, symbol: str = "BTCUSDT"):
         p_up = 0.5 + ens_out.meta_edge
         p_down = 0.5 - ens_out.meta_edge
         # pseudo_signal = SignalOutput(
-            p_up=p_up,
-            p_down=p_down,
-            edge=ens_out.meta_edge,
-            direction=ens_out.direction,
-        )
+        #    p_up=p_up,
+        #    p_down=p_down,
+        #    edge=ens_out.meta_edge,
+        #    direction=ens_out.direction,
+        # )
 
         decision = engine.decide(
             symbol=symbol,

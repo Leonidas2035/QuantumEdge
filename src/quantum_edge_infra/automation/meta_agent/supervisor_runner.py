@@ -126,10 +126,7 @@ def run_supervisor_maintenance_once(
 
     tasks_summary: List[Dict[str, Any]] = []
     for item in backlog:
-        try:
-            # project_info = resolve_project_root(item.project_id, registry)
-        except KeyError:
-            # project_info = resolve_project_root(None, registry)
+        # project_info = resolve_project_root(item.project_id, registry)
 
         body = (
             f"# Supervisor Follow-up\n"
