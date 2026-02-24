@@ -64,7 +64,7 @@ def build_feature_frame(
     df["ts"] = pd.to_datetime(df["timestamp"], unit="ms")
     df = df.set_index("ts")
 
-    bars = df.resample("1S").agg(
+    bars = df.resample("1s").agg(
         price=("price", "last"),
         qty=("qty", "sum"),
         side_sign=("side_sign", "sum"),

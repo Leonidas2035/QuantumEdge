@@ -7,7 +7,6 @@ import pandas as pd
 from bot.engine.decision_engine import DecisionEngine
 from bot.engine.decision_types import DecisionAction
 from bot.ml.ensemble import EnsembleSignalModel
-from bot.ml.signal_model.model import SignalOutput
 from bot.ml.signal_model.online_features import OnlineFeatureBuilder
 from bot.trading.paper_trader import PaperTrader
 
@@ -70,9 +69,6 @@ async def run_backtest(ticks_path: Path, symbol: str = "BTCUSDT"):
         ens_out = ensemble.predict(features)
         if not ens_out.components:
             continue
-
-        p_up = 0.5 + ens_out.meta_edge
-        p_down = 0.5 - ens_out.meta_edge
 
         decision = engine.decide(
             symbol=symbol,

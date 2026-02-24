@@ -102,14 +102,16 @@ class ProcessManager:
                     for conn in proc.connections(kind="inet"):
                         if conn.laddr.port == port:
                             logger.warning(
-                                f"Port {port} is held by PID {proc.info['pid']} ({proc.info['name']}). Terminating..."
+                                f"Port {port} is held by PID {proc.info['pid']} "
+                                f"({proc.info['name']}). Terminating..."
                             )
                             proc.terminate()
                             try:
                                 proc.wait(timeout=2)
                             except psutil.TimeoutExpired:
                                 logger.warning(
-                                    f"PID {proc.info['pid']} did not terminate. Killing..."
+                                    f"PID {proc.info['pid']} did not terminate. "
+                                    "Killing..."
                                 )
                                 proc.kill()
                 except (
@@ -191,7 +193,8 @@ class ProcessManager:
                 time.sleep(1)
                 if process.poll() is not None:
                     logger.error(
-                        f"{name} crashed immediately with exit code {process.returncode}."
+                        f"{name} crashed immediately with exit code "
+                        f"{process.returncode}."
                     )
                     self.stop_all()
                     sys.exit(1)
@@ -213,7 +216,8 @@ class ProcessManager:
 
         if not hub_script.exists() or not supervisor_script.exists():
             logger.error(
-                f"Critical Error: Source files not found at {hub_script} or {supervisor_script}"
+                f"Critical Error: Source files not found at {hub_script} "
+                f"or {supervisor_script}"
             )
             sys.exit(1)
 
@@ -232,7 +236,8 @@ class ProcessManager:
         # Check if config exists, warn if not but proceed as instructed.
         if not Path("config/config.yaml").exists():
             logger.warning(
-                "config/config.yaml does not exist. Supervisor may fail or use defaults."
+                "config/config.yaml does not exist. "
+                "Supervisor may fail or use defaults."
             )
 
         self.start_service(
@@ -251,9 +256,9 @@ class ProcessManager:
         """
         Waits for Supervisor API (if enabled) or monitors PID stability.
         """
-        # Since we don't know the exact port without parsing config (and config might be missing),
-        # we'll try the default port 8000 mentioned in prompt/common practice,
-        # or fallback to PID monitoring.
+        # Since we don't know the exact port without parsing config (and config might
+        # be missing), we'll try the default port 8000 mentioned in
+        # prompt/common practice, or fallback to PID monitoring.
 
         # Try HTTP check on common ports
         potential_ports = [8000, 8080, 5000]
@@ -271,7 +276,8 @@ class ProcessManager:
                     # If port is open, assume ready (or could do full HTTP GET /health)
                     return True
 
-            # If we've waited 5 seconds and process is still up, assume it's okay (fallback)
+            # If we've waited 5 seconds and process is still up,
+            # assume it's okay (fallback)
             if time.time() - start_time > 5:
                 return True
 
@@ -316,7 +322,8 @@ class ProcessManager:
             for name, proc in self.processes.items():
                 if proc.poll() is not None:
                     logger.error(
-                        f"Critical: {name} died unexpectedly (Exit Code: {proc.returncode}). Emergency Stop."
+                        f"Critical: {name} died unexpectedly "
+                        f"(Exit Code: {proc.returncode}). Emergency Stop."
                     )
                     self.stop_event.set()
                     break

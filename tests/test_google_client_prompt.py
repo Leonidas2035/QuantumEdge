@@ -1,14 +1,15 @@
-import unittest
-from unittest.mock import MagicMock, patch
 import os
-
-# Set dummy key before import to pass validation
-os.environ["GOOGLE_API_KEY"] = "dummy"
+import unittest
+from unittest.mock import patch
 
 from quantum_edge_core.supervisor.supervisor.llm.google_client import GoogleClient
 
 
 class TestGoogleClient(unittest.TestCase):
+    def setUp(self):
+        # Set dummy key for validation
+        os.environ["GOOGLE_API_KEY"] = "dummy"
+
     @patch("google.generativeai.GenerativeModel")
     @patch("google.generativeai.configure")
     def test_generate_risk_query(self, mock_configure, mock_model):
@@ -21,7 +22,11 @@ class TestGoogleClient(unittest.TestCase):
             "spread_bps": 25,
         }
         prompt = client.generate_risk_query(context)
-        expected = "SYS:HFT_SUPERVISOR. MODE:SCALP. PNL:-1.2%. DD:0.5%. VOL:HIGH. SPREAD:25bps. Q: RISK_ASSESSMENT? OUTPUT: JSON {verdict: 'CONTINUE'|'REDUCE'|'HALT', reason: '...'}"
+        expected = (
+            "SYS:HFT_SUPERVISOR. MODE:SCALP. PNL:-1.2%. DD:0.5%. VOL:HIGH. "
+            "SPREAD:25bps. Q: RISK_ASSESSMENT? OUTPUT: JSON "
+            "{verdict: 'CONTINUE'|'REDUCE'|'HALT', reason: '...'}"
+        )
 
         self.assertEqual(prompt, expected)
         print(f"Prompt verified: {prompt}")
