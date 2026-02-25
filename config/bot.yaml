@@ -1,0 +1,4 @@
+# Force Mock Offline Mode
+mode: "paper"
+exchange:
+  name: "mock"
