@@ -193,9 +193,7 @@ class ProcessManager:
                 if self._wait_for_port(wait_port):
                     logger.info(f"{name} is ready.")
                 else:
-                    logger.error(
-                        f"{name} failed to become ready on port {wait_port}."
-                    )
+                    logger.error(f"{name} failed to become ready on port {wait_port}.")
                     self.stop_all()
                     sys.exit(1)
 
