@@ -2435,11 +2435,7 @@ def main(argv: Optional[list[str]] = None) -> None:
 
     qe_root = Path(
         os.getenv("QE_ROOT")
-        or (
-            qe_paths["qe_root"]
-            if qe_paths
-            else _discover_project_root(project_root)
-        )
+        or (qe_paths["qe_root"] if qe_paths else _discover_project_root(project_root))
     )
     os.environ.setdefault("QE_ROOT", str(qe_root))
 

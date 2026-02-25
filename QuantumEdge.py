@@ -84,7 +84,9 @@ class ProcessManager:
             for proc in psutil.process_iter(["pid", "name"]):
                 try:
                     # psutil >=6 renamed connections() -> net_connections()
-                    _conns_fn = getattr(proc, "net_connections", None) or proc.connections
+                    _conns_fn = (
+                        getattr(proc, "net_connections", None) or proc.connections
+                    )
                     for conn in _conns_fn(kind="inet"):
                         if conn.laddr.port == port:
                             logger.warning(
