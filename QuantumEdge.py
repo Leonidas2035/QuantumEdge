@@ -83,7 +83,9 @@ class ProcessManager:
         for port in ports:
             for proc in psutil.process_iter(["pid", "name"]):
                 try:
-                    for conn in proc.connections(kind="inet"):
+                    # psutil >=6 renamed connections() -> net_connections()
+                    _conns_fn = getattr(proc, "net_connections", None) or proc.connections
+                    for conn in _conns_fn(kind="inet"):
                         if conn.laddr.port == port:
                             logger.warning(
                                 f"Port {port} is held by PID {proc.info['pid']} "

@@ -2405,6 +2405,23 @@ def _compute_lag(value: Optional[str], now: float) -> Optional[int]:
     return max(0, int(now - ts))
 
 
+def _discover_project_root(start: Path) -> Path:
+    """Walk up from *start* to find the QuantumEdge project root.
+
+    The project root is identified by containing ``QuantumEdge.py`` **or**
+    a ``.git`` directory.  Falls back to *start* if nothing is found.
+    """
+    current = start.resolve()
+    for _ in range(10):  # safety cap
+        if (current / "QuantumEdge.py").exists() or (current / ".git").exists():
+            return current
+        parent = current.parent
+        if parent == current:
+            break
+        current = parent
+    return start
+
+
 def main(argv: Optional[list[str]] = None) -> None:
     args = parse_args(argv)
     project_root = Path(__file__).resolve().parent
@@ -2418,7 +2435,11 @@ def main(argv: Optional[list[str]] = None) -> None:
 
     qe_root = Path(
         os.getenv("QE_ROOT")
-        or (qe_paths["qe_root"] if qe_paths else project_root.parent)
+        or (
+            qe_paths["qe_root"]
+            if qe_paths
+            else _discover_project_root(project_root)
+        )
     )
     os.environ.setdefault("QE_ROOT", str(qe_root))
 
