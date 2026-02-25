@@ -62,8 +62,8 @@ from bot.ops.metrics import MetricsTracker
 from bot.state.store import StateStore, OrderRecord
 from bot.state.recovery import recover_state
 from bot.policy.policy_client import PolicyClient
-from bot.policy.policy_gate import policy_allows_entry
 from bot.telemetry.event_writer import EventWriter
+from bot.telemetry.publisher import TelemetryPublisher
 from bot.storage.tsdb.publisher import TsdbPublisher
 from telemetry.emitter import TelemetryEmitter, TelemetryConfig
 
@@ -264,25 +264,12 @@ async def main(
     supervisor_cfg = load_supervisor_settings(config)
     print(f"[INFO] Using config: {config.config_path}")
     print(f"[INFO] Supervisor URL: {supervisor_cfg.base_url}")
-    policy_cfg = config.get("policy", {}) or {}
-    policy_source = str(policy_cfg.get("policy_source", "auto")).lower()
-    policy_file_raw = policy_cfg.get("policy_file_path", "runtime/policy.json")
-    policy_file_path = Path(policy_file_raw)
-    if not policy_file_path.is_absolute():
-        policy_file_path = (Path(config.qe_root) / policy_file_path).resolve()
-    policy_api_url = str(
-        policy_cfg.get("policy_api_url", "http://127.0.0.1:8765/api/v1/policy/current")
-    )
-    policy_ttl_grace_sec = int(policy_cfg.get("policy_ttl_grace_sec", 0) or 0)
-    safe_mode_default = str(policy_cfg.get("safe_mode_default", "risk_off"))
-    policy_client = PolicyClient(
-        source=policy_source,
-        file_path=policy_file_path,
-        api_url=policy_api_url,
-        ttl_grace_sec=policy_ttl_grace_sec,
-        safe_mode_default=safe_mode_default,
-        request_timeout_s=float(policy_cfg.get("policy_api_timeout_s", 0.3)),
-    )
+    policy_client = PolicyClient(config.data)
+    await policy_client.start()
+
+    telemetry = TelemetryPublisher(config.data)
+    telemetry_task = asyncio.create_task(telemetry.start())
+
     telemetry_cfg = config.get("telemetry", {}) or {}
     telemetry_enabled = bool(telemetry_cfg.get("enabled", True))
     telemetry_sink = str(telemetry_cfg.get("sink", "http")).lower()
@@ -1045,11 +1032,11 @@ async def main(
                     )
                     metrics_tracker.record_error("llm_risk_moderator")
 
-            policy = policy_client.get_effective_policy()
+            policy = policy_client.get_current_policy()
             policy_snapshot = {
                 "mode": policy.mode,
-                "allow_trading": policy.allow_trading,
-                "reason": policy.reason,
+                "allow_trading": policy.long_allowed or policy.short_allowed,
+                "reason": policy.ai_reasoning,
             }
             if policy_snapshot != last_policy_snapshot:
                 emit_event("policy", policy_snapshot, evt_symbol)
@@ -1077,19 +1064,26 @@ async def main(
                         component="risk",
                     )
                     decision = None
-                if decision.action == DecisionAction.ENTER and not policy_allows_entry(
-                    decision.action, policy
-                ):
-                    logging.getLogger("policy_client").info(
-                        "Policy blocks entry for %s (mode=%s allow_trading=%s reason=%s)",
-                        evt_symbol,
-                        policy.mode,
-                        policy.allow_trading,
-                        policy.reason,
-                    )
-                    metrics_tracker.record_reject("POLICY_BLOCK")
-                    decision = None
-                elif decision.action == DecisionAction.ENTER:
+                if decision.action == DecisionAction.ENTER:
+                    policy_blocked = False
+                    if decision.direction == "long" and not policy.long_allowed:
+                        policy_blocked = True
+                    elif decision.direction == "short" and not policy.short_allowed:
+                        policy_blocked = True
+
+                    if policy_blocked:
+                        logging.getLogger("policy_client").info(
+                            "Policy blocks entry for %s (mode=%s long=%s short=%s reason=%s)",
+                            evt_symbol,
+                            policy.mode,
+                            policy.long_allowed,
+                            policy.short_allowed,
+                            policy.ai_reasoning,
+                        )
+                        metrics_tracker.record_reject("POLICY_BLOCK")
+                        decision = None
+
+                if decision and decision.action == DecisionAction.ENTER:
                     ml_state = ctx.get("ml_state", {})
                     ml_gate_enabled = bool(ctx.get("ml_enabled", True))
                     model_errors = model_manager.errors if model_manager else {}
@@ -1152,11 +1146,12 @@ async def main(
                             },
                             evt_symbol,
                         )
-                elif (
-                    decision.action == DecisionAction.ENTER
-                    and policy.size_multiplier != 1.0
+                if (
+                    decision
+                    and decision.action == DecisionAction.ENTER
+                    and policy.risk_multiplier != 1.0
                 ):
-                    decision.size = max(0.0, decision.size * policy.size_multiplier)
+                    decision.size = max(0.0, decision.size * policy.risk_multiplier)
                 if decision and decision.action not in (
                     DecisionAction.NO_TRADE,
                     DecisionAction.HOLD,
@@ -1773,9 +1768,13 @@ async def main(
                 "risk_block": engine.last_risk_state.get(evt_symbol, ""),
                 "kill_switch": bool(_kill_switch_active().get("active")),
                 "kill_reason": _kill_switch_active().get("reason"),
-                "policy_mode": policy.mode,
-                "policy_allow_trading": policy.allow_trading,
-                "policy_reason": policy.reason,
+                "policy_mode": (
+                    policy.mode.value
+                    if hasattr(policy.mode, "value")
+                    else str(policy.mode)
+                ),
+                "policy_allow_trading": policy.long_allowed or policy.short_allowed,
+                "policy_reason": policy.ai_reasoning,
                 "ml_policy": ctx.get("ml_policy"),
                 "ml_gate_counts": ctx.get("ml_gate_counts"),
                 "shadow_mode": shadow_mode,
@@ -1790,8 +1789,13 @@ async def main(
                     {
                         "symbol": evt_symbol,
                         "mode": mode,
-                        "policy_mode": policy.mode,
-                        "policy_allow_trading": policy.allow_trading,
+                        "policy_mode": (
+                            policy.mode.value
+                            if hasattr(policy.mode, "value")
+                            else str(policy.mode)
+                        ),
+                        "policy_allow_trading": policy.long_allowed
+                        or policy.short_allowed,
                         "tick_age_ms": freshness_snapshot.get("tick_age_ms"),
                         "book_age_ms": freshness_snapshot.get("book_age_ms"),
                         "breaker": breaker_snapshot,
@@ -1818,6 +1822,14 @@ async def main(
                 await snapshot_monitor_task
             except asyncio.CancelledError:
                 pass
+        if telemetry_task:
+            telemetry.stop()
+            telemetry_task.cancel()
+            try:
+                await telemetry_task
+            except asyncio.CancelledError:
+                pass
+        await policy_client.stop()
         try:
             data_manager.close()
         except Exception:

@@ -350,3 +350,8 @@ trading:
     max_hold_seconds: 30
     max_spread_bps: 5
     min_depth_quote: 500
+
+zmq:
+  market_data: 5555
+  telemetry: 5557
+  policy: 5558
