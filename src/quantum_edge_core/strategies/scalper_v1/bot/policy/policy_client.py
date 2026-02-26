@@ -57,8 +57,8 @@ class PolicyClient:
     Async ZMQ Subscriber for System Policy.
     """
 
-    def __init__(self, zmq_url: str = "tcp://127.0.0.1:5556"):
-        self.zmq_url = zmq_url
+    def __init__(self, config: dict):
+        self.config = config
         self.ctx = zmq.asyncio.Context()
         self.socket = None
 
@@ -82,11 +82,15 @@ class PolicyClient:
         """Start the background subscription task."""
         self.running = True
         self.socket = self.ctx.socket(zmq.SUB)
-        self.socket.connect(self.zmq_url)
+
+        policy_port = self.config.get("zmq", {}).get("policy", 5558)
+        zmq_url = f"tcp://127.0.0.1:{policy_port}"
+
+        self.socket.connect(zmq_url)
         self.socket.setsockopt_string(zmq.SUBSCRIBE, "system.policy")
 
         self._task = asyncio.create_task(self._subscribe_loop())
-        logger.info(f"PolicyClient connected to {self.zmq_url}")
+        logger.info(f"PolicyClient connected to {zmq_url}")
 
     async def stop(self):
         self.running = False
