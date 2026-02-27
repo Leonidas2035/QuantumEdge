@@ -1,57 +1,117 @@
-"""Google AI Client for concise risk assessment queries."""
+"""Google GenAI Client for concise risk assessment queries.
 
+Migrated from deprecated ``google.generativeai`` to the official
+``google-genai`` SDK (>= 1.x).  API key resolution order:
+  1. ``GOOGLE_API_KEY`` environment variable
+  2. ``config/config.yaml`` → key ``google_api_key``
+  3. Raise ``ValueError``
+"""
+
+import asyncio
 import logging
 import os
-import asyncio
-import warnings
-from typing import Dict, Any, Optional, List, Mapping
-import google.generativeai as genai
+from pathlib import Path
+from typing import Any, Dict, List, Mapping, Optional
 
-# Suppress Google Generative AI deprecation warning
-warnings.filterwarnings("ignore", category=FutureWarning, module="google.generativeai")
+import yaml
+from google import genai
+from google.genai import types
 
 logger = logging.getLogger(__name__)
 
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+_PROJECT_ROOT = Path(__file__).resolve().parents[5]  # …/QuantumEdge
+_CONFIG_YAML = _PROJECT_ROOT / "config" / "config.yaml"
+
+
+def _resolve_api_key(env_var: str = "GOOGLE_API_KEY") -> str:
+    """Return the Google API key using a secure fallback chain.
+
+    1. Environment variable  ``env_var``  (preferred).
+    2. ``config/config.yaml`` field ``google_api_key``.
+    3. ``ValueError`` – no key found anywhere.
+    """
+    # --- 1. Environment variable -------------------------------------------
+    key = os.environ.get(env_var)
+    if key:
+        logger.debug("Google API key loaded from env var '%s'.", env_var)
+        return key
+
+    # --- 2. config/config.yaml ---------------------------------------------
+    if _CONFIG_YAML.is_file():
+        try:
+            with open(_CONFIG_YAML, "r", encoding="utf-8") as fh:
+                cfg = yaml.safe_load(fh) or {}
+            key = cfg.get("google_api_key")
+            if key:
+                logger.debug(
+                    "Google API key loaded from %s.",
+                    _CONFIG_YAML,
+                )
+                return str(key)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("Failed to read %s: %s", _CONFIG_YAML, exc)
+
+    # --- 3. Fail -----------------------------------------------------------
+    raise ValueError(
+        f"Google API key not found. Set the '{env_var}' environment variable "
+        f"or add 'google_api_key' to {_CONFIG_YAML}."
+    )
+
+
+# ---------------------------------------------------------------------------
+# Client
+# ---------------------------------------------------------------------------
+
 
 class GoogleClient:
-    """
-    Client for interacting with Google AI (Gemini) with concise prompts.
+    """Client for interacting with Google GenAI (Gemini).
+
+    Uses the new ``google-genai`` SDK and ``client.models.generate_content``
+    calling convention.
     """
 
     def __init__(
         self,
         api_key_env: str = "GOOGLE_API_KEY",
         logger: Optional[logging.Logger] = None,
-    ):
+    ) -> None:
         self.api_key_env = api_key_env
         self.logger = logger or logging.getLogger(__name__)
-        self.api_key = os.getenv(api_key_env)
-        if self.api_key:
-            genai.configure(api_key=self.api_key)
-        else:
-            self.logger.warning(f"Google API Key ({api_key_env}) not set.")
+        self.api_key: str = _resolve_api_key(api_key_env)
+        self.client: genai.Client = genai.Client(api_key=self.api_key)
+        self.logger.info("GoogleClient initialised (genai SDK v2).")
+
+    # ---- async wrapper ----------------------------------------------------
 
     async def generate_content_async(
-        self, prompt: str, model_name: str = "gemini-2.0-flash"
+        self,
+        prompt: str,
+        model_name: str = "gemini-2.5-pro",
     ) -> Optional[str]:
-        """
-        Asynchronously generates content using Google AI.
-        Non-blocking wrapper around synchronous API.
-        """
-        if not self.api_key:
-            self.logger.error("API key not configured.")
-            return None
+        """Asynchronously generate content via Google GenAI.
 
-        def _call():
+        Offloads the synchronous SDK call to a thread so the event-loop
+        stays non-blocking.
+        """
+
+        def _call() -> Optional[str]:
             try:
-                model = genai.GenerativeModel(model_name)
-                response = model.generate_content(prompt)
+                response = self.client.models.generate_content(
+                    model=model_name,
+                    contents=prompt,
+                )
                 return response.text
-            except Exception as e:
-                self.logger.error(f"Google AI request failed: {e}")
+            except Exception as exc:
+                self.logger.error("Google GenAI async request failed: %s", exc)
                 return None
 
         return await asyncio.to_thread(_call)
+
+    # ---- sync ChatCompletions-like wrapper --------------------------------
 
     def complete(
         self,
@@ -60,12 +120,9 @@ class GoogleClient:
         temperature: float,
         timeout_seconds: float,
     ) -> str:
-        """Synchronous wrapper for Google AI (ChatCompletionsClient compatible)."""
-        if not self.api_key:
-            raise RuntimeError(f"Google API Key ({self.api_key_env}) not configured.")
-
-        # Convert chat messages to a single prompt string
-        prompt_parts = []
+        """Synchronous generation (ChatCompletionsClient-compatible API)."""
+        # Convert chat messages → single prompt string
+        prompt_parts: list[str] = []
         for msg in messages:
             role = msg.get("role", "user").upper()
             content = msg.get("content", "")
@@ -74,34 +131,42 @@ class GoogleClient:
         full_prompt = "\n".join(prompt_parts)
 
         try:
-            gen_model = genai.GenerativeModel(model)
-            config = genai.types.GenerationConfig(temperature=temperature)
-            response = gen_model.generate_content(full_prompt, generation_config=config)
+            config = types.GenerateContentConfig(
+                temperature=temperature,
+            )
+            response = self.client.models.generate_content(
+                model=model,
+                contents=full_prompt,
+                config=config,
+            )
             return response.text if response and response.text else ""
         except Exception as exc:
-            self.logger.error(f"Google AI request failed: {exc}")
-            raise RuntimeError(f"Google AI request failed: {exc}") from exc
+            self.logger.error("Google GenAI request failed: %s", exc)
+            raise RuntimeError(f"Google GenAI request failed: {exc}") from exc
+
+    # ---- prompt builder ---------------------------------------------------
 
     def generate_risk_query(self, context: Dict[str, Any]) -> str:
+        """Build a compressed prompt for risk assessment.
+
+        Returns a string like:
+        ``SYS:HFT_SUPERVISOR. MODE:SCALP. PNL:-1.2%. DD:0.5%.
+          VOL:HIGH. SPREAD:25bps.
+          Q: RISK_ASSESSMENT? OUTPUT: JSON {verdict, reason}``
         """
-        Generates a compressed prompt for risk assessment.
-        Format: "SYS:HFT_SUPERVISOR. MODE:SCALP. PNL:-1.2%. DD:0.5%. VOL:HIGH. SPREAD:25bps. Q: RISK_ASSESSMENT? OUTPUT: JSON {verdict: 'CONTINUE'|'REDUCE'|'HALT', reason: '...'}"
-        """
-        # Extract metrics with defaults
         pnl = context.get("pnl_pct", 0.0)
         dd = context.get("drawdown_pct", 0.0)
         vol = context.get("volatility", "MEDIUM")
         spread = context.get("spread_bps", 0)
         mode = context.get("mode", "SCALP").upper()
 
-        # Format values
         pnl_str = f"{pnl:.1f}%" if isinstance(pnl, (int, float)) else str(pnl)
         dd_str = f"{dd:.1f}%" if isinstance(dd, (int, float)) else str(dd)
         spread_str = f"{spread}bps"
 
-        prompt = (
+        return (
             f"SYS:HFT_SUPERVISOR. MODE:{mode}. "
             f"PNL:{pnl_str}. DD:{dd_str}. VOL:{vol}. SPREAD:{spread_str}. "
-            "Q: RISK_ASSESSMENT? OUTPUT: JSON {verdict: 'CONTINUE'|'REDUCE'|'HALT', reason: '...'}"
+            "Q: RISK_ASSESSMENT? OUTPUT: JSON "
+            "{verdict: 'CONTINUE'|'REDUCE'|'HALT', reason: '...'}"
         )
-        return prompt
