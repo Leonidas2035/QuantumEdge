@@ -246,14 +246,29 @@ class ProcessManager:
 
         self.start_service("Supervisor", cmd)
 
+        # Step 5: Start AI Scalper Bot (after Hub ZMQ is ready)
+        bot_script = (
+            self.project_root
+            / "src/quantum_edge_core/ai_scalper_bot/run_bot.py"
+        )
+        if bot_script.exists():
+            self.start_service(
+                "Bot",
+                [sys.executable, "-u", str(bot_script)],
+            )
+        else:
+            logger.warning(
+                f"ai_scalper_bot not found at {bot_script}. Skipping."
+            )
+
         logger.info("System startup complete. All services running.")
 
     def stop_all(self):
         """Graceful shutdown in reverse order."""
         logger.info("Stopping all services...")
 
-        # Reverse order: Supervisor -> Hub
-        shutdown_order = ["Supervisor", "Hub"]
+        # Reverse order: Bot -> Supervisor -> Hub
+        shutdown_order = ["Bot", "Supervisor", "Hub"]
 
         for name in shutdown_order:
             proc = self.processes.get(name)

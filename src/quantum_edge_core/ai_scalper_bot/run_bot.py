@@ -39,7 +39,7 @@ class BotEngine:
         # 1. Infrastructure (I/O)
         self.market_stream = ZmqSubStream(
             endpoint=f"tcp://127.0.0.1:{self.config.market_data_port}",
-            topic="trade",  # Filter only trades
+            topic="",  # Global subscription — receive ALL topics from Hub
         )
         self.gateway = BinanceExecutionGateway(self.config)
         self.reporter = SupervisorReporter(

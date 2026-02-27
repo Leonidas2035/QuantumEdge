@@ -271,6 +271,7 @@ class MarketDataHubService(BaseService):
             topic = f"{ev_type}.{symbol}".lower()
 
             await self.publisher.publish(topic, event)
+            self.logger.debug("Hub broadcasted tick to ZMQ", topic=topic)
             if self.microstructure_analyzer and isinstance(event, TradeEvent):
                 self.microstructure_analyzer.update_trade(event.ts_ns, event.size)
             if self.lockbot_engine and isinstance(event, TradeEvent):
@@ -290,10 +291,8 @@ class MarketDataHubService(BaseService):
                     agg_trade_id=event.seq,
                     source="binance_ws",
                 )
-            if self.writer and (
-                isinstance(event, TradeEvent) or isinstance(event, MarketTrade)
-            ):
-                # 4. Analytics
+            if isinstance(event, (TradeEvent, MarketTrade)):
+                # 4. Analytics (always run — independent of TSDB)
                 whale_event = self.alpha_engine.update_trade(event)
                 if whale_event:
                     await self.publisher.publish("market.alpha.whale", whale_event)
@@ -305,7 +304,7 @@ class MarketDataHubService(BaseService):
                     await self.publisher.publish("market.metrics", metrics)
                     self.last_metrics_pub = now
 
-                # 5. Persist
+                # 5. Persist (only if QuestDB writer is available)
                 if self.writer:
                     self._persist_trade(event)
 
