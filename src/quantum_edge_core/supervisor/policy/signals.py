@@ -75,6 +75,22 @@ def collect_signals(
     if info and info.uptime_seconds is not None and info.uptime_seconds < 15.0:
         bot_running = True
 
+    # TELEMETRY FALLBACK: When the bot is started by the orchestrator (not
+    # ProcessManager), the process state will be STOPPED.  In that case,
+    # trust live telemetry heartbeats received within the last 30 seconds.
+    if not bot_running and isinstance(telemetry_summary, dict):
+        last_seen = telemetry_summary.get("last_seen_ts")
+        if last_seen is not None:
+            try:
+                age = time.time() - float(last_seen)
+                if age < 30.0:
+                    bot_running = True
+                    logger.debug(
+                        "bot_running override via telemetry (age=%.1fs)", age
+                    )
+            except (TypeError, ValueError):
+                pass
+
     restarts = int(status.get("restarts") or 0)
     last_exit_ts = _parse_last_exit_time(status) if isinstance(status, dict) else None
     restart_rate = None
