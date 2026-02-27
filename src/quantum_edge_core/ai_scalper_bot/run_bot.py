@@ -70,10 +70,16 @@ class BotEngine:
 
         last_heartbeat = 0.0
 
+        # ── State retention across iterations ──────────────────
+        price = 0.0
+        qty = 0.0
+        timestamp = 0.0
+        is_buyer_maker = False
+
         try:
             while self.running:
-                # 1. Data Ingestion (Non-blocking check)
-                tick = self.market_stream.get_latest_tick(timeout_ms=1)
+                # 1. Data Ingestion — block up to 100 ms (efficient poll)
+                tick = self.market_stream.get_latest_tick(timeout_ms=100)
 
                 if tick:
                     current_ts = time.time()
@@ -100,6 +106,11 @@ class BotEngine:
                             or tick.get("volume")
                             or 0.0
                         )
+
+                    # ── Guard: skip non-price events (heartbeats, etc.) ──
+                    if price <= 0.0:
+                        await asyncio.sleep(0.01)
+                        continue
 
                     # T/timestamp handling (ns or ms or s)
                     ts_raw = (
@@ -151,9 +162,8 @@ class BotEngine:
                         atr_val = self.volatility.update(market_state.last_price)
 
                         # 3. Decision
-                        # DEBUG LOGGING for UAT
                         logger.info(
-                            f"DEBUG: Price={market_state.last_price:.2f}, OFI={feat_vec.ofi:.4f}, ATR={atr_val:.4f}, B={market_state.best_bid_qty}, A={market_state.best_ask_qty}"
+                            f"TICK: Price={market_state.last_price:.2f}, OFI={feat_vec.ofi:.4f}, ATR={atr_val:.4f}, B={market_state.best_bid_qty}, A={market_state.best_ask_qty}"
                         )
 
                         action = self.strategy.decide(
@@ -163,20 +173,9 @@ class BotEngine:
                         # 4. Execution
                         if action:
                             logger.info(f"!!! SIGNAL: {action}")
-                            # Execute on BingX
-                            # Position Update: Optimistic update (or wait for fill?)
-                            # Strategy assumes fill.
                             self.position.simulate_fill(
                                 action.price, action.qty, action.action_type
                             )
-
-                            # Fire and forget (or await?)
-                            # User template awaits: "await self.gateway.execute(action)"
-                            # We can await. It might block loop for HTTP RTT (~100ms).
-                            # For Scalper, usually create_task. But for UAT stability, await is safer to see result.
-                            # We'll use create_task to maintain speed, unless user template demanded blocking.
-                            # User template: "await self.gateway.execute(action)".
-                            # I will Use await to ensure we see the result log "✅ BINGX...".
                             await self.gateway.execute(action)
 
                 # 5. Reporting (Throttled)
@@ -190,7 +189,7 @@ class BotEngine:
                     last_heartbeat = now
 
                 # Yield control to event loop
-                await asyncio.sleep(0.0001)
+                await asyncio.sleep(0.01)
 
         except asyncio.CancelledError:
             logger.info("Bot Engine Stopping...")
