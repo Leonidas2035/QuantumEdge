@@ -17,8 +17,8 @@ from quantum_edge_core.ai_scalper_bot.bot.execution.strategy_core import (
 from quantum_edge_core.ai_scalper_bot.bot.execution.volatility import OnlineVolatility
 from quantum_edge_core.ai_scalper_bot.bot.execution.position import PositionManager
 from quantum_edge_core.ai_scalper_bot.bot.infrastructure.zmq_adapter import ZmqSubStream
-from quantum_edge_core.ai_scalper_bot.bot.infrastructure.exchange import (
-    BinanceExecutionGateway,
+from quantum_edge_core.ai_scalper_bot.bot.infrastructure.paper_trader import (
+    PaperTrader,
 )
 from quantum_edge_core.ai_scalper_bot.bot.infrastructure.reporter import (
     SupervisorReporter,
@@ -41,7 +41,7 @@ class BotEngine:
             endpoint=f"tcp://127.0.0.1:{self.config.market_data_port}",
             topic="",  # Global subscription — receive ALL topics from Hub
         )
-        self.gateway = BinanceExecutionGateway(self.config)
+        self.gateway = PaperTrader(self.config)
         self.reporter = SupervisorReporter(
             pub_endpoint=f"tcp://*:{self.config.telemetry_port}",
             service_id=self.config.service_id,
@@ -187,7 +187,7 @@ class BotEngine:
                         market_state, feat_vec, atr_val, self.position
                     )
 
-                    # 4. Execution
+                    # 4. Execution (PaperTrader — Shadow Mode)
                     if action:
                         logger.info(f"!!! SIGNAL: {action}")
                         self.position.simulate_fill(
