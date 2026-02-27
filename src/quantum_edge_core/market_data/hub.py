@@ -16,7 +16,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 from quantum_edge_core.core.service import BaseService
 from quantum_edge_core.logging_setup import setup_logging
 from quantum_edge_core.utils.async_runner import run_service
-from quantum_edge_core.events import MarketTrade
+from quantum_edge_core.events import MarketTrade, KlineEvent
 
 from quantum_edge_core.market_data.account.account_state import (
     AccountState,
@@ -291,7 +291,7 @@ class MarketDataHubService(BaseService):
                     agg_trade_id=event.seq,
                     source="binance_ws",
                 )
-            if isinstance(event, (TradeEvent, MarketTrade)):
+            if isinstance(event, (TradeEvent, MarketTrade, KlineEvent)):
                 # 4. Analytics (always run — independent of TSDB)
                 whale_event = self.alpha_engine.update_trade(event)
                 if whale_event:

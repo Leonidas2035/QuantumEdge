@@ -84,6 +84,28 @@ class MicrostructureMetrics(BaseEvent):
     timestamp: float
 
 
+class KlineEvent(BaseEvent):
+    """
+    A 1-minute kline (candlestick) update from Binance.
+    Emitted on every kline WS push; `is_closed` indicates bar completion.
+    """
+
+    symbol: str
+    interval: str  # e.g. "1m"
+    open: float
+    high: float
+    low: float
+    close: float
+    volume: float
+    trades: int
+    is_closed: bool
+    price: float  # alias for close — consumed by bot
+    quantity: float  # alias for volume — consumed by bot
+    timestamp: float  # kline open time in seconds
+    taker_side: str = "buy"  # default so bot normalizer doesn't crash
+    side: str = "buy"  # alias for AlphaEngine compatibility
+
+
 class MarketMetrics(BaseEvent):
     """
     Comprehensive Alpha Engine metrics for Regime Switching.
@@ -105,6 +127,7 @@ Event = Union[
     OrderBookUpdate,
     LargeBlockEvent,
     MicrostructureMetrics,
+    KlineEvent,
     MarketMetrics,
 ]
 

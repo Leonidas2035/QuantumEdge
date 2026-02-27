@@ -78,11 +78,28 @@ class BotEngine:
                 if tick:
                     current_ts = time.time()
 
-                    # Normalize tick data (handle p/q vs price/size/quantity)
-                    price = float(tick.get("p") or tick.get("price") or 0.0)
-                    qty = float(
-                        tick.get("q") or tick.get("size") or tick.get("quantity") or 0.0
-                    )
+                    # ── Normalize tick data ──────────────────────────
+                    # Priority: kline k.c → price → p → close → 0.0
+                    kline = tick.get("k")  # Binance raw kline wrapper
+                    if kline and isinstance(kline, dict):
+                        # Raw Binance kline payload (before EventCodec)
+                        price = float(kline.get("c", 0.0))
+                        qty = float(kline.get("v", 0.0))
+                    else:
+                        # EventCodec KlineEvent or legacy TradeEvent
+                        price = float(
+                            tick.get("price")
+                            or tick.get("p")
+                            or tick.get("close")
+                            or 0.0
+                        )
+                        qty = float(
+                            tick.get("quantity")
+                            or tick.get("q")
+                            or tick.get("size")
+                            or tick.get("volume")
+                            or 0.0
+                        )
 
                     # T/timestamp handling (ns or ms or s)
                     ts_raw = (
@@ -99,6 +116,8 @@ class BotEngine:
                     is_buyer_maker = bool(tick.get("m", False))
                     if "taker_side" in tick:
                         is_buyer_maker = tick["taker_side"] == "sell"
+                    elif "side" in tick:
+                        is_buyer_maker = tick["side"] == "sell"
 
                     # Create normalized dict for cache
                     norm_tick = {
