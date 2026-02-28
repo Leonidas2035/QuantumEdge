@@ -59,6 +59,10 @@ class QuestILPWriter:
         """
         try:
             line = self._format_ilp(table, symbols, columns, timestamp_ns)
+            # CRITICAL: Enforce newline terminator for QuestDB ILP
+            if not line.endswith("\n"):
+                line += "\n"
+            self.logger.debug("ILP ENQUEUE", line=line.strip(), table=table)
             self.queue.put_nowait(line)
         except asyncio.QueueFull:
             self.logger.warning("QuestDB Queue Full - Dropping metric", table=table)
@@ -93,15 +97,16 @@ class QuestILPWriter:
             parts = []
             for k, v in columns.items():
                 val_str = ""
-                if isinstance(v, int):
+                # IMPORTANT: bool must be checked BEFORE int (bool is subclass of int)
+                if isinstance(v, bool):
+                    val_str = "T" if v else "F"
+                elif isinstance(v, int):
                     val_str = f"{v}i"  # ILP Integer
                 elif isinstance(v, float):
                     val_str = f"{v}"
                 elif isinstance(v, str):
                     s = v.replace('"', '\\"')
                     val_str = f'"{s}"'  # Quoted string
-                elif isinstance(v, bool):
-                    val_str = "T" if v else "F"
                 else:
                     s = str(v).replace('"', '\\"')
                     val_str = f'"{s}"'
@@ -157,6 +162,12 @@ class QuestILPWriter:
 
                 # 3. Write
                 payload = "".join(batch).encode("utf-8")
+                self.logger.debug(
+                    "ILP WRITE",
+                    batch_lines=len(batch),
+                    batch_bytes=len(payload),
+                    first_line=batch[0].strip() if batch else "<empty>",
+                )
                 self.writer.write(payload)
                 await self.writer.drain()
 
