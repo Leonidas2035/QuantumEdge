@@ -95,7 +95,7 @@ class BinanceFuturesFeed(BaseFeed):
                 await self._handle_depth(data)
 
         except Exception as exc:
-            self.logger.error("Error processing WS message: %s", exc)
+            self.logger.error("Error processing WS message: %s", exc, exc_info=True)
 
     async def _handle_kline(self, data: Dict[str, Any]) -> None:
         """Emit KlineEvent from Binance kline payload."""

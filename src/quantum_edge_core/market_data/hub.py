@@ -256,85 +256,94 @@ class MarketDataHubService(BaseService):
     async def _dispatcher_loop(self) -> None:
         while not self._stop_event.is_set():
             event = await self.bus.get_event()
-            key = (getattr(event, "symbol", None), getattr(event, "event_type", ""))
-            self._last_event_ts[key] = getattr(event, "ts_ns", time.time_ns())
-            self.snapshot_cache.update(event)
+            try:
+                key = (getattr(event, "symbol", None), getattr(event, "event_type", ""))
+                self._last_event_ts[key] = getattr(event, "ts_ns", time.time_ns())
+                self.snapshot_cache.update(event)
 
-            # Derive topic
-            symbol = getattr(event, "symbol", "global") or "global"  # Handle None
-            ev_type = getattr(event, "event_type", "unknown")
-            topic = f"{ev_type}.{symbol}".lower()
+                # Derive topic
+                symbol = getattr(event, "symbol", "global") or "global"  # Handle None
+                ev_type = getattr(event, "event_type", "unknown")
+                topic = f"{ev_type}.{symbol}".lower()
 
-            await self.publisher.publish(topic, event)
-            self.logger.debug("Hub broadcasted tick to ZMQ", topic=topic)
-            if self.microstructure_analyzer and isinstance(event, TradeEvent):
-                self.microstructure_analyzer.update_trade(event.ts_ns, event.size)
-            if self.lockbot_engine and isinstance(event, TradeEvent):
-                ts_event_ms = int(event.ts_ns / 1_000_000)
-                taker_side = str(event.taker_side or "").lower()
-                is_buyer_maker = (
-                    True
-                    if taker_side == "sell"
-                    else False if taker_side == "buy" else None
-                )
-                self.lockbot_engine.on_trade(
-                    symbol=event.symbol,
-                    price=event.price,
-                    qty=event.size,
-                    ts_event_ms=ts_event_ms,
-                    is_buyer_maker=is_buyer_maker,
-                    agg_trade_id=event.seq,
-                    source="binance_ws",
-                )
-            if isinstance(event, (TradeEvent, MarketTrade, KlineEvent, OrderBookUpdate)):
-                # 4. Analytics (always run — independent of TSDB)
-                whale_event = self.alpha_engine.update_trade(event)
-                if whale_event:
-                    await self.publisher.publish("market.alpha.whale", whale_event)
-
-                # 4b. Order Book Aggregation (Whale Wall Detection)
-                if isinstance(event, OrderBookUpdate):
-                    bids = getattr(event, "bids", [])
-                    asks = getattr(event, "asks", [])
-                    # Use mid-price from best bid/ask, or cached price
-                    if bids and asks:
-                        mid = (float(bids[0][0]) + float(asks[0][0])) / 2.0
-                        self._last_mid_price = mid
-                    walls = self.ob_aggregator.process_book(
-                        bids, asks, self._last_mid_price
-                    )
-                    if any(v != 0.0 for v in walls.values()):
-                        await self.publisher.publish("market.walls", walls)
-
-                # Update cached mid price from kline close
-                if isinstance(event, KlineEvent):
-                    self._last_mid_price = float(
-                        getattr(event, "close", self._last_mid_price)
-                    )
-
-                # Publish Metrics (Throttled 100ms)
-                now = time.time()
-                if now - self.last_metrics_pub > 0.1:
-                    metrics = self.alpha_engine.compute_metrics()
-                    await self.publisher.publish("market.metrics", metrics)
-                    self.last_metrics_pub = now
-
-                # 5. Persist (only if QuestDB writer is available)
-                if self.writer:
-                    if isinstance(event, KlineEvent):
-                        self._persist_kline(event)
-                    elif isinstance(event, OrderBookUpdate):
-                        self._persist_orderbook(event)
-                    elif isinstance(event, (TradeEvent, MarketTrade)):
-                        self._persist_trade(event)
-
-            if ev_type == "liquidation":
-                # Publish to ZMQ
                 await self.publisher.publish(topic, event)
+                self.logger.debug("Hub broadcasted tick to ZMQ", topic=topic)
+                if self.microstructure_analyzer and isinstance(event, TradeEvent):
+                    self.microstructure_analyzer.update_trade(event.ts_ns, event.size)
+                if self.lockbot_engine and isinstance(event, TradeEvent):
+                    ts_event_ms = int(event.ts_ns / 1_000_000)
+                    taker_side = str(event.taker_side or "").lower()
+                    is_buyer_maker = (
+                        True
+                        if taker_side == "sell"
+                        else False if taker_side == "buy" else None
+                    )
+                    self.lockbot_engine.on_trade(
+                        symbol=event.symbol,
+                        price=event.price,
+                        qty=event.size,
+                        ts_event_ms=ts_event_ms,
+                        is_buyer_maker=is_buyer_maker,
+                        agg_trade_id=event.seq,
+                        source="binance_ws",
+                    )
+                if isinstance(event, (TradeEvent, MarketTrade, KlineEvent, OrderBookUpdate)):
+                    # 4. Analytics (always run — independent of TSDB)
+                    whale_event = self.alpha_engine.update_trade(event)
+                    if whale_event:
+                        await self.publisher.publish("market.alpha.whale", whale_event)
 
-                # Persist to QuestDB
-                if self.writer:
-                    self._persist_liquidation(event)
+                    # 4b. Order Book Aggregation (Whale Wall Detection)
+                    if isinstance(event, OrderBookUpdate):
+                        bids = getattr(event, "bids", [])
+                        asks = getattr(event, "asks", [])
+                        # Use mid-price from best bid/ask, or cached price
+                        if bids and asks:
+                            mid = (float(bids[0][0]) + float(asks[0][0])) / 2.0
+                            self._last_mid_price = mid
+                        walls = self.ob_aggregator.process_book(
+                            bids, asks, self._last_mid_price
+                        )
+                        if any(v != 0.0 for v in walls.values()):
+                            await self.publisher.publish("market.walls", walls)
+
+                    # Update cached mid price from kline close
+                    if isinstance(event, KlineEvent):
+                        self._last_mid_price = float(
+                            getattr(event, "close", self._last_mid_price)
+                        )
+
+                    # Publish Metrics (Throttled 100ms)
+                    now = time.time()
+                    if now - self.last_metrics_pub > 0.1:
+                        metrics = self.alpha_engine.compute_metrics()
+                        await self.publisher.publish("market.metrics", metrics)
+                        self.last_metrics_pub = now
+
+                    # 5. Persist (only if QuestDB writer is available)
+                    if self.writer:
+                        if isinstance(event, KlineEvent):
+                            self._persist_kline(event)
+                        elif isinstance(event, OrderBookUpdate):
+                            self._persist_orderbook(event)
+                        elif isinstance(event, (TradeEvent, MarketTrade)):
+                            self._persist_trade(event)
+
+                if ev_type == "liquidation":
+                    # Publish to ZMQ
+                    await self.publisher.publish(topic, event)
+
+                    # Persist to QuestDB
+                    if self.writer:
+                        self._persist_liquidation(event)
+
+            except Exception as e:
+                self.logger.error(
+                    "Pipeline crashed on tick — event survived",
+                    error=str(e),
+                    event_type=getattr(event, "event_type", "?"),
+                    exc_info=True,
+                )
 
     def _persist_trade(self, event: Any) -> None:
         # Map event to ILP structure

@@ -62,7 +62,7 @@ class QuestILPWriter:
             # CRITICAL: Enforce newline terminator for QuestDB ILP
             if not line.endswith("\n"):
                 line += "\n"
-            self.logger.debug("ILP ENQUEUE", line=line.strip(), table=table)
+            self.logger.info("Sending ILP", line=line.strip(), table=table)
             self.queue.put_nowait(line)
         except asyncio.QueueFull:
             self.logger.warning("QuestDB Queue Full - Dropping metric", table=table)
@@ -162,7 +162,7 @@ class QuestILPWriter:
 
                 # 3. Write
                 payload = "".join(batch).encode("utf-8")
-                self.logger.debug(
+                self.logger.info(
                     "ILP WRITE",
                     batch_lines=len(batch),
                     batch_bytes=len(payload),
