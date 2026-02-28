@@ -176,18 +176,8 @@ class MarketDataHubService(BaseService):
                 heatmap_half_life_s=lockbot_cfg.heatmap_half_life_s,
                 heatmap_top_n=lockbot_cfg.heatmap_top_n,
             )
-        self.orderbook: Optional[OrderBookAggregator] = (
-            OrderBookAggregator(
-                self.config.orderbook,
-                self.publisher,
-                self.bus,
-                self.snapshot_cache,
-                microstructure=self.microstructure_analyzer,
-                micro_publisher=self.microstructure_publisher,
-            )
-            if self.config.orderbook.enabled
-            else None
-        )
+        # Legacy OrderBookAggregator disabled — replaced by self.ob_aggregator (L138)
+        self.orderbook: Optional[OrderBookAggregator] = None
         self.account_state = AccountState(self.config.account)
         self.account_publisher = AccountPublisher(self.publisher)
         self._account_repair_manager = AccountRepairManager(
