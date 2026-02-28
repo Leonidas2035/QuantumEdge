@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Dict, Any
 
 from supervisor.llm.chat_client import ChatCompletionsClient
@@ -16,6 +17,13 @@ ALLOWED_KEYS = {
     "max_daily_loss",
     "reason",
 }
+
+
+def _strip_markdown_fences(text: str) -> str:
+    """Remove ```json ... ``` wrappers that LLMs often add."""
+    stripped = text.strip()
+    m = re.match(r"^```(?:json)?\s*\n?(.*?)\n?```$", stripped, re.DOTALL)
+    return m.group(1).strip() if m else stripped
 
 
 class LlmModerator:
@@ -56,7 +64,8 @@ class LlmModerator:
             timeout_seconds=self.timeout_sec,
         )
         try:
-            data = json.loads(response)
+            cleaned = _strip_markdown_fences(response)
+            data = json.loads(cleaned)
         except json.JSONDecodeError as exc:
             raise ValueError(f"LLM response is not valid JSON: {exc}") from exc
         if not isinstance(data, dict):

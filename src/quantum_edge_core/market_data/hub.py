@@ -51,6 +51,7 @@ from quantum_edge_core.market_data.lockbot.engine import LockbotDerivedEngine
 from quantum_edge_core.market_data.lockbot.publisher import LockbotPublisher
 from quantum_edge_core.market_data.spool.status import summarize_spool
 from quantum_edge_core.market_data.tsdb.quest_writer import QuestILPWriter
+from quantum_edge_core.market_data.orderbook_aggregator import OrderBookAggregator
 
 # Forward references for type hinting (Legacy components)
 MicrostructureAnalyzer = Any
@@ -134,7 +135,11 @@ class MarketDataHubService(BaseService):
             self.feeds = [BinanceFuturesFeed(self.config, self.bus)]
 
         self.alpha_engine = AlphaEngine(symbol="BTCUSDT")  # Default symbol
+        self.ob_aggregator = OrderBookAggregator(
+            wall_threshold_btc=20.0, max_depth_pct=2.0
+        )
         self.last_metrics_pub = 0.0
+        self._last_mid_price: float = 0.0  # Cache for OB aggregator
 
         # Legacy components commented out
         self.microstructure_analyzer: Optional[MicrostructureAnalyzer] = None
@@ -297,6 +302,26 @@ class MarketDataHubService(BaseService):
                 if whale_event:
                     await self.publisher.publish("market.alpha.whale", whale_event)
 
+                # 4b. Order Book Aggregation (Whale Wall Detection)
+                if isinstance(event, OrderBookUpdate):
+                    bids = getattr(event, "bids", [])
+                    asks = getattr(event, "asks", [])
+                    # Use mid-price from best bid/ask, or cached price
+                    if bids and asks:
+                        mid = (float(bids[0][0]) + float(asks[0][0])) / 2.0
+                        self._last_mid_price = mid
+                    walls = self.ob_aggregator.process_book(
+                        bids, asks, self._last_mid_price
+                    )
+                    if any(v != 0.0 for v in walls.values()):
+                        await self.publisher.publish("market.walls", walls)
+
+                # Update cached mid price from kline close
+                if isinstance(event, KlineEvent):
+                    self._last_mid_price = float(
+                        getattr(event, "close", self._last_mid_price)
+                    )
+
                 # Publish Metrics (Throttled 100ms)
                 now = time.time()
                 if now - self.last_metrics_pub > 0.1:
@@ -306,7 +331,12 @@ class MarketDataHubService(BaseService):
 
                 # 5. Persist (only if QuestDB writer is available)
                 if self.writer:
-                    self._persist_trade(event)
+                    if isinstance(event, KlineEvent):
+                        self._persist_kline(event)
+                    elif isinstance(event, OrderBookUpdate):
+                        self._persist_orderbook(event)
+                    elif isinstance(event, (TradeEvent, MarketTrade)):
+                        self._persist_trade(event)
 
             if ev_type == "liquidation":
                 # Publish to ZMQ
@@ -335,6 +365,66 @@ class MarketDataHubService(BaseService):
             columns={"price": price, "qty": qty},
             timestamp_ns=ts_ns,
         )
+
+    def _persist_kline(self, event: Any) -> None:
+        """Write KlineEvent to klines_1m table via ILP."""
+        symbol = str(getattr(event, "symbol", "unknown"))
+        ts_sec = float(getattr(event, "timestamp", 0.0))
+        ts_ns = int(ts_sec * 1_000_000_000) if ts_sec > 0 else None
+
+        self.writer.enqueue(
+            table="klines_1m",
+            symbols={"symbol": symbol},
+            columns={
+                "open": float(getattr(event, "open", 0.0)),
+                "high": float(getattr(event, "high", 0.0)),
+                "low": float(getattr(event, "low", 0.0)),
+                "close": float(getattr(event, "close", 0.0)),
+                "volume": float(getattr(event, "volume", 0.0)),
+                "trades_count": int(getattr(event, "trades", 0)),
+            },
+            timestamp_ns=ts_ns,
+        )
+
+    def _persist_orderbook(self, event: Any) -> None:
+        """Write OrderBookUpdate to orderbook_snapshots table via ILP.
+
+        Each bid/ask level is a separate ILP row for efficient querying.
+        """
+        symbol = str(getattr(event, "symbol", "unknown"))
+        ts_sec = float(getattr(event, "timestamp", 0.0))
+        ts_ns = int(ts_sec * 1_000_000_000) if ts_sec > 0 else None
+
+        bids = getattr(event, "bids", [])
+        asks = getattr(event, "asks", [])
+
+        for depth, (price, qty) in enumerate(bids):
+            self.writer.enqueue(
+                table="orderbook_snapshots",
+                symbols={"symbol": symbol, "side": "BUY"},
+                columns={
+                    "price": float(price),
+                    "qty": float(qty),
+                    "wall_size": 0.0,
+                    "wall_distance_pct": 0.0,
+                    "depth_level": depth,
+                },
+                timestamp_ns=ts_ns,
+            )
+
+        for depth, (price, qty) in enumerate(asks):
+            self.writer.enqueue(
+                table="orderbook_snapshots",
+                symbols={"symbol": symbol, "side": "SELL"},
+                columns={
+                    "price": float(price),
+                    "qty": float(qty),
+                    "wall_size": 0.0,
+                    "wall_distance_pct": 0.0,
+                    "depth_level": depth,
+                },
+                timestamp_ns=ts_ns,
+            )
 
     def _persist_liquidation(self, event: Dict[str, Any]) -> None:
         # Map liquidation event to ILP

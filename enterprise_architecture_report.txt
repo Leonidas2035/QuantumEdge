@@ -1,0 +1,147 @@
+================================================================================
+              QUANTUMEDGE — ENTERPRISE ARCHITECTURE REPORT
+                        MTF + L2 Data Pipeline
+================================================================================
+
+Generated: 2026-02-28
+Author:    QuantumEdge Architect (MCP)
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1. QUESTDB SCHEMAS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+1.1 Base Tables (ILP Ingested)
+───────────────────────────────
+
+TABLE klines_1m:
+  ┌───────────────┬───────────┬─────────────────────────────────────┐
+  │ Column        │ Type      │ Notes                               │
+  ├───────────────┼───────────┼─────────────────────────────────────┤
+  │ symbol        │ SYMBOL    │ e.g. BTCUSDT, cached, 32-capacity  │
+  │ open          │ DOUBLE    │ Candle open price                   │
+  │ high          │ DOUBLE    │ Candle high price                   │
+  │ low           │ DOUBLE    │ Candle low price                    │
+  │ close         │ DOUBLE    │ Candle close price                  │
+  │ volume        │ DOUBLE    │ Base asset volume (BTC)             │
+  │ trades_count  │ LONG      │ Number of trades in candle          │
+  │ ts            │ TIMESTAMP │ Kline open time (designated)        │
+  └───────────────┴───────────┴─────────────────────────────────────┘
+  Partition: DAY, WAL, DEDUP UPSERT KEYS(symbol, ts)
+
+TABLE orderbook_snapshots:
+  ┌───────────────────┬───────────┬─────────────────────────────────┐
+  │ Column            │ Type      │ Notes                           │
+  ├───────────────────┼───────────┼─────────────────────────────────┤
+  │ symbol            │ SYMBOL    │ Trading pair                    │
+  │ side              │ SYMBOL    │ BUY or SELL                     │
+  │ price             │ DOUBLE    │ Price level                     │
+  │ qty               │ DOUBLE    │ Size in BTC at this level       │
+  │ wall_size         │ DOUBLE    │ Detected wall size (if any)     │
+  │ wall_distance_pct │ DOUBLE    │ Distance from mid-price (%)     │
+  │ depth_level       │ INT       │ Depth level index (0=best)      │
+  │ ts                │ TIMESTAMP │ Event time (designated)         │
+  └───────────────────┴───────────┴─────────────────────────────────┘
+  Partition: DAY, WAL
+
+1.2 Materialized Views (MTF Continuous Aggregation)
+────────────────────────────────────────────────────
+
+The following views auto-aggregate klines_1m:
+
+  VIEW klines_5m   SAMPLE BY 5m  ALIGN TO CALENDAR
+  VIEW klines_15m  SAMPLE BY 15m ALIGN TO CALENDAR
+  VIEW klines_1h   SAMPLE BY 1h  ALIGN TO CALENDAR
+  VIEW klines_4h   SAMPLE BY 4h  ALIGN TO CALENDAR
+
+Each view selects:
+  first(open), max(high), min(low), last(close), sum(volume), sum(trades_count)
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+2. ORDERBOOK AGGREGATOR — MATH & THRESHOLDS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Class: OrderBookAggregator (market_data/orderbook_aggregator.py)
+
+Parameters:
+  wall_threshold_btc = 20.0   (minimum BTC for a "whale wall")
+  max_depth_pct      = 2.0    (scan range: ±2% from mid-price)
+
+Detection Algorithm:
+  For each side (BUY/SELL):
+    1. Iterate levels from best price outward.
+    2. Skip levels outside ±max_depth_pct.
+    3. If single level qty ≥ wall_threshold_btc → wall detected.
+    4. Otherwise, accumulate cumulative qty.
+       If cumulative ≥ wall_threshold_btc → distributed wall detected.
+    5. Return the CLOSEST wall (first one found).
+
+Formula:
+  wall_distance_pct = ((wall_price - current_price) / current_price) × 100
+
+Output Keys:
+  closest_bid_wall_btc       — Size of closest bid wall (BTC)
+  closest_bid_wall_dist_pct  — Distance from mid-price (%, negative)
+  closest_ask_wall_btc       — Size of closest ask wall (BTC)
+  closest_ask_wall_dist_pct  — Distance from mid-price (%, positive)
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+3. EXAMPLE PAYLOADS
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+3.1 XGBoost Hot Path — JSON Feature Vector
+───────────────────────────────────────────
+
+{
+    "price": 65528.90,
+    "slope_5m": 0.000342,
+    "r2_5m": 0.7821,
+    "slope_15m": 0.000715,
+    "r2_15m": 0.8934,
+    "slope_1h": 0.001203,
+    "r2_1h": 0.8812,
+    "slope_4h": 0.001542,
+    "r2_4h": 0.9201,
+    "closest_bid_wall_btc": 25.4,
+    "closest_bid_wall_dist_pct": -0.52,
+    "closest_ask_wall_btc": 45.0,
+    "closest_ask_wall_dist_pct": 0.18
+}
+
+
+3.2 LLM Cold Path — Narrative Text
+───────────────────────────────────
+
+Price: 65528.90 BTCUSDT. Macro 4h is bullish (slope=0.0015, R²=0.92,
+strong fit, 20 candles). Mid 1h is bullish (slope=0.0012, R²=0.88,
+strong fit, 20 candles). Short 15m is bullish (slope=0.0007, R²=0.89,
+strong fit, 20 candles). Micro 5m is neutral (slope=0.0003, R²=0.78,
+strong fit, 20 candles). Ask wall detected at +0.18% (45.0 BTC).
+Bid wall detected at -0.52% (25.4 BTC). Overall bias: BULLISH.
+
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+4. FILE MANIFEST
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+Stage 1 — QuestDB Blueprint:
+  [NEW]    scripts/setup_questdb.py
+  [MODIFY] market_data/hub.py  (_persist_kline, _persist_orderbook)
+
+Stage 2 — OrderBook Aggregation:
+  [NEW]    market_data/orderbook_aggregator.py
+  [MODIFY] market_data/hub.py  (dispatcher integration, ZMQ publish)
+
+Stage 3 — MTF Resampling & Context:
+  [NEW]    market_data/market_context.py
+  [NEW]    market_data/resampler.py
+  [NEW]    supervisor/narrative_translator.py
+
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+                              END OF REPORT
+━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━

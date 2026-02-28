@@ -8,12 +8,20 @@ from dataclasses import dataclass
 from datetime import date
 from enum import Enum
 from pathlib import Path
+import re
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 from supervisor.audit_report import load_events_for_date
 from supervisor.config import LlmSupervisorConfig, RiskConfig
 from supervisor.events import BaseEvent, EventType, EventLogger
 from supervisor.llm.chat_client import ChatCompletionsClient
 from supervisor.state import RiskStateSnapshot
+
+
+def _strip_markdown_fences(text: str) -> str:
+    """Remove ```json ... ``` wrappers that LLMs often add."""
+    stripped = text.strip()
+    m = re.match(r"^```(?:json)?\s*\n?(.*?)\n?```$", stripped, re.DOTALL)
+    return m.group(1).strip() if m else stripped
 
 
 class LlmAction(str, Enum):
@@ -121,7 +129,8 @@ class LlmSupervisor:
 
     def parse_advice(self, raw_response: str) -> LlmSupervisorAdvice:
         try:
-            payload = json.loads(raw_response.strip())
+            cleaned = _strip_markdown_fences(raw_response)
+            payload = json.loads(cleaned)
             action_raw = str(payload.get("action", "UNSPECIFIED")).upper()
             action = (
                 LlmAction(action_raw)
