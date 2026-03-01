@@ -59,10 +59,12 @@ class OrderBookCache:
 
             # A real O(1) orderbook update usually requires receiving depth updates.
             # If 'tick' contains BBO:
+            # If 'tick' contains BBO:
             best_bid = float(tick.get("b", 0.0))
             best_ask = float(tick.get("a", 0.0))
             best_bid_qty = float(tick.get("B", 0.0))
             best_ask_qty = float(tick.get("A", 0.0))
+            whale_walls = tick.get("W", [])
 
             # If we don't have previous state, init it
             if self._current_state is None:
@@ -73,6 +75,7 @@ class OrderBookCache:
                     best_bid_qty=best_bid_qty,
                     best_ask_qty=best_ask_qty,
                     last_price=price,
+                    whale_walls=whale_walls,
                 )
             else:
                 s = self._current_state
@@ -86,6 +89,8 @@ class OrderBookCache:
                     s.best_bid_qty = best_bid_qty
                 if best_ask_qty:
                     s.best_ask_qty = best_ask_qty
+                if whale_walls is not None:
+                    s.whale_walls = whale_walls
 
         except (KeyError, ValueError, TypeError):
             # Log error strictly or pass as per requirement "pass" in snippet example

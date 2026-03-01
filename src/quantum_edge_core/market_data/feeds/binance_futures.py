@@ -1,9 +1,13 @@
-"""Binance Futures WebSocket Feed — Kline (1m) + L2 Depth mode.
+"""Binance Futures WebSocket Feed — Full Market Data Suite.
 
-Subscribes to Mainnet ``@kline_1m`` and ``@depth5@100ms`` streams
-and emits ``KlineEvent`` / ``OrderBookUpdate`` objects into the
-EventBus.  Kline pushes arrive every ~2 s; depth pushes arrive
-every 100 ms for low-latency order book data.
+Subscribes to Mainnet streams per symbol:
+    - ``@kline_1m``      — 1-minute candles
+    - ``@depth@100ms``   — L2 depth deltas (incremental LOB)
+    - ``@aggTrade``      — Aggregated trades
+    - ``@forceOrder``    — Liquidation events
+
+Emits ``KlineEvent``, ``OrderBookUpdate``, ``MarketTrade``, and
+``LiquidationEvent`` objects into the EventBus.
 """
 
 from __future__ import annotations
@@ -19,14 +23,21 @@ from typing import Any, Dict, List
 from quantum_edge_core.market_data.bus.event_bus import EventBus
 from quantum_edge_core.market_data.config import HubConfig
 from quantum_edge_core.market_data.feeds.base import BaseFeed
-from quantum_edge_core.events import KlineEvent, OrderBookUpdate
+from quantum_edge_core.market_data.lob_manager import OrderBookManager
+from quantum_edge_core.events import (
+    KlineEvent,
+    OrderBookUpdate,
+    MarketTrade,
+    LiquidationEvent,
+    WhaleWall,
+)
 
 
 class BinanceFuturesFeed(BaseFeed):
     """
     Connects to Binance Futures Mainnet WebSocket streams
-    (``@kline_1m`` + ``@depth5@100ms``) and emits KlineEvent /
-    OrderBookUpdate via the internal EventBus.
+    (kline + depth + aggTrade + forceOrder) and emits typed
+    events via the internal EventBus.
 
     Default URL uses Mainnet for reliable data; execution remains on
     Testnet via the separate execution gateway.
@@ -39,6 +50,12 @@ class BinanceFuturesFeed(BaseFeed):
         self.symbols = [s.lower() for s in config.symbols]
         self.ws_url = os.getenv("BINANCE_WS_URL", self.DEFAULT_WS_URL)
         self.logger = logging.getLogger("BinanceFuturesFeed")
+
+        # Per-symbol local order book managers
+        self._lob: Dict[str, OrderBookManager] = {
+            s.upper(): OrderBookManager(symbol=s.upper())
+            for s in self.symbols
+        }
 
     async def _run(self) -> None:
         """Main run loop with exponential back-off reconnection."""
@@ -57,16 +74,18 @@ class BinanceFuturesFeed(BaseFeed):
                 retry_delay = min(retry_delay * 2, 60.0)
 
     async def _connect_and_listen(self) -> None:
-        # Combined streams: kline_1m + depth5@100ms per symbol
+        # Full stream suite per symbol
         streams: List[str] = []
         for s in self.symbols:
             streams.append(f"{s}@kline_1m")
-            streams.append(f"{s}@depth5@100ms")
+            streams.append(f"{s}@depth@100ms")
+            streams.append(f"{s}@aggTrade")
+            streams.append(f"{s}@forceOrder")
 
         stream_path = "/".join(streams)
         url = f"{self.ws_url}/{stream_path}"
 
-        self.logger.info("Connecting to Binance Futures (kline+depth): %s", url)
+        self.logger.info("Connecting to Binance Futures (full suite): %s", url)
 
         async with websockets.connect(url) as ws:
             self.logger.info("Connected to %s", url)
@@ -74,8 +93,7 @@ class BinanceFuturesFeed(BaseFeed):
             while not self._stop_event.is_set():
                 try:
                     msg = await asyncio.wait_for(ws.recv(), timeout=120.0)
-                    # HARD LOGGING — raw data visibility (truncated for depth)
-                    self.logger.info("RAW WS DATA RECEIVED: %s", str(msg)[:150])
+                    self.logger.debug("RAW WS: %s", str(msg)[:150])
                     await self._handle_message(msg)
                 except asyncio.TimeoutError:
                     self.logger.warning(
@@ -84,7 +102,7 @@ class BinanceFuturesFeed(BaseFeed):
                     return
 
     async def _handle_message(self, msg: str | bytes) -> None:
-        """Parse Binance kline / depth payload and emit events."""
+        """Parse Binance payload and dispatch to typed handler."""
         try:
             data: Dict[str, Any] = json.loads(msg)
             event_type = data.get("e")
@@ -93,9 +111,15 @@ class BinanceFuturesFeed(BaseFeed):
                 await self._handle_kline(data)
             elif event_type == "depthUpdate":
                 await self._handle_depth(data)
+            elif event_type == "aggTrade":
+                await self._handle_agg_trade(data)
+            elif event_type == "forceOrder":
+                await self._handle_liquidation(data)
 
         except Exception as exc:
             self.logger.error("Error processing WS message: %s", exc, exc_info=True)
+
+    # ── Kline Handler ─────────────────────────────────────────
 
     async def _handle_kline(self, data: Dict[str, Any]) -> None:
         """Emit KlineEvent from Binance kline payload."""
@@ -118,52 +142,154 @@ class BinanceFuturesFeed(BaseFeed):
             volume=volume,
             trades=int(k["n"]),
             is_closed=bool(k.get("x", False)),
-            # Bot-compatible aliases
             price=close_price,
             quantity=volume,
             timestamp=kline_open_time_ms / 1000.0,
         )
         await self.bus.publish(event)
 
-    async def _handle_depth(self, data: Dict[str, Any]) -> None:
-        """Emit OrderBookUpdate from Binance partial depth payload.
+    # ── Depth Handler (LOB Integration) ───────────────────────
 
-        Binance ``@depth5@100ms`` payload:
+    async def _handle_depth(self, data: Dict[str, Any]) -> None:
+        """Process depth delta, update local LOB, emit enriched OrderBookUpdate.
+
+        Binance ``@depth@100ms`` payload:
         {
             "e": "depthUpdate",
-            "E": 123456789,    // Event time (ms)
-            "T": 123456788,    // Transaction time (ms)
+            "E": 123456789,     // Event time (ms)
             "s": "BTCUSDT",
-            "U": 157,          // First update ID
-            "u": 160,          // Final update ID
-            "pu": 156,         // Previous final update ID
-            "b": [             // Bids: [[price, qty], ...]
-                ["65500.00", "1.234"],
-                ...
-            ],
-            "a": [             // Asks: [[price, qty], ...]
-                ["65501.00", "0.567"],
-                ...
-            ]
+            "U": 157,           // First update ID
+            "u": 160,           // Final update ID
+            "b": [["65500.00", "1.234"], ...],  // Bid deltas
+            "a": [["65501.00", "0.567"], ...]   // Ask deltas
         }
         """
         symbol = data.get("s", "BTCUSDT")
         event_time_ms = data.get("E", 0)
+        final_update_id = data.get("u", 0)
 
-        # Convert string pairs to float pairs
-        bids = [[float(p), float(q)] for p, q in data.get("b", [])]
-        asks = [[float(p), float(q)] for p, q in data.get("a", [])]
+        bids_delta = data.get("b", [])
+        asks_delta = data.get("a", [])
 
-        if not bids and not asks:
+        if not bids_delta and not asks_delta:
             return
 
+        # 1. Update local order book
+        lob = self._lob.get(symbol)
+        if lob is None:
+            lob = OrderBookManager(symbol=symbol)
+            self._lob[symbol] = lob
+
+        lob.apply_delta(bids_delta, asks_delta, final_update_id)
+
+        # 2. Get snapshot with whale walls (top 20 levels)
+        snap_data = lob.get_snapshot(depth=20, wall_threshold=20.0)
+        
+        walls = [
+            WhaleWall(
+                priority="L0",
+                event_type="whale_wall",
+                seq=0,
+                side=w["side"],
+                price=w["price"],
+                quantity=w["quantity"]
+            ) for w in snap_data["whale_walls"]
+        ]
+
+        # 3. Emit enriched OrderBookUpdate
         event = OrderBookUpdate(
             priority="L0",
             event_type="depth",
             seq=self.bus.assign_sequence(symbol, "depth"),
             symbol=symbol,
-            bids=bids,
-            asks=asks,
+            bids=snap_data["bids"],
+            asks=snap_data["asks"],
             timestamp=event_time_ms / 1000.0,
+            whale_walls=walls,
+        )
+        await self.bus.publish(event)
+
+    # ── Aggregated Trade Handler ──────────────────────────────
+
+    async def _handle_agg_trade(self, data: Dict[str, Any]) -> None:
+        """Emit MarketTrade from Binance aggTrade payload.
+
+        Binance ``@aggTrade`` payload:
+        {
+            "e": "aggTrade",
+            "E": 123456789,     // Event time (ms)
+            "s": "BTCUSDT",
+            "a": 5933014,       // Aggregate trade ID
+            "p": "65500.00",    // Price
+            "q": "0.500",       // Quantity
+            "f": 100,           // First trade ID
+            "l": 105,           // Last trade ID
+            "T": 123456785,     // Trade time (ms)
+            "m": true           // Is buyer maker?
+        }
+        """
+        symbol = data.get("s", "BTCUSDT")
+        price = float(data.get("p", 0.0))
+        qty = float(data.get("q", 0.0))
+        trade_time_ms = data.get("T", data.get("E", 0))
+        is_buyer_maker = data.get("m", False)
+
+        side = "sell" if is_buyer_maker else "buy"
+
+        event = MarketTrade(
+            priority="L0",
+            event_type="trade",
+            seq=self.bus.assign_sequence(symbol, "trade"),
+            symbol=symbol,
+            price=price,
+            quantity=qty,
+            side=side,
+            timestamp=trade_time_ms / 1000.0,
+        )
+        await self.bus.publish(event)
+
+    # ── Liquidation Handler ───────────────────────────────────
+
+    async def _handle_liquidation(self, data: Dict[str, Any]) -> None:
+        """Emit LiquidationEvent from Binance forceOrder payload.
+
+        Binance ``@forceOrder`` payload:
+        {
+            "e": "forceOrder",
+            "E": 123456789,
+            "o": {
+                "s": "BTCUSDT",
+                "S": "SELL",        // Side
+                "o": "LIMIT",       // Order type
+                "f": "IOC",
+                "q": "0.014",       // Original quantity
+                "p": "65500.00",    // Price
+                "ap": "65480.00",   // Average price
+                "X": "FILLED",
+                "l": "0.014",       // Last filled qty
+                "z": "0.014",       // Cumulative filled qty
+                "T": 123456789      // Trade time (ms)
+            }
+        }
+        """
+        order = data.get("o", {})
+        symbol = order.get("s", "BTCUSDT")
+        side = order.get("S", "SELL")
+        price = float(order.get("p", 0.0))
+        qty = float(order.get("q", 0.0))
+        trade_time_ms = order.get("T", data.get("E", 0))
+
+        usd_size = price * qty
+
+        event = LiquidationEvent(
+            priority="L0",
+            event_type="liquidation",
+            seq=self.bus.assign_sequence(symbol, "liquidation"),
+            symbol=symbol,
+            side=side,
+            price=price,
+            qty=qty,
+            usd_size=usd_size,
+            timestamp=trade_time_ms / 1000.0,
         )
         await self.bus.publish(event)

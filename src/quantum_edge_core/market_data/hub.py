@@ -16,7 +16,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 from quantum_edge_core.core.service import BaseService
 from quantum_edge_core.logging_setup import setup_logging
 from quantum_edge_core.utils.async_runner import run_service
-from quantum_edge_core.events import MarketTrade, KlineEvent, OrderBookUpdate
+from quantum_edge_core.events import MarketTrade, KlineEvent, OrderBookUpdate, LiquidationEvent
 
 from quantum_edge_core.market_data.account.account_state import (
     AccountState,
@@ -330,11 +330,9 @@ class MarketDataHubService(BaseService):
                         elif isinstance(event, (TradeEvent, MarketTrade)):
                             self._persist_trade(event)
 
-                if ev_type == "liquidation":
-                    # Publish to ZMQ
-                    await self.publisher.publish(topic, event)
-
-                    # Persist to QuestDB
+                if isinstance(event, LiquidationEvent):
+                    # Liquidation events: ZMQ broadcast + QuestDB persist
+                    # (topic already derived as liquidation.btcusdt at L267)
                     if self.writer:
                         self._persist_liquidation(event)
 
@@ -346,6 +344,11 @@ class MarketDataHubService(BaseService):
                     exc_info=True,
                 )
 
+    def _get_next_offset(self) -> int:
+        """Helper to generate a rolling nanosecond offset to prevent QuestDB WAL duplication."""
+        self._ns_offset = getattr(self, "_ns_offset", 0) + 1
+        return self._ns_offset % 1_000_000  # Wrap around at 1ms
+
     def _persist_trade(self, event: Any) -> None:
         # Map event to ILP structure
         # Support both legacy TradeEvent and new MarketTrade
@@ -355,9 +358,15 @@ class MarketDataHubService(BaseService):
         price = float(getattr(event, "price", 0.0))
         qty = float(getattr(event, "quantity", getattr(event, "size", 0.0)))
 
-        # Pull nanoseconds timestamp if it exists to keep precise time
-        ts_ns_val = getattr(event, "ts_ns", None)
-        ts_ns = int(float(ts_ns_val)) if ts_ns_val else None
+        # Fallback to server ingest time if no timestamp found
+        ts_ns = None
+        ts_sec = float(getattr(event, "timestamp", 0.0))
+        if ts_sec > 0:
+            ts_ns = int(ts_sec * 1_000_000_000) + self._get_next_offset()
+        else:
+            ts_ns_val = getattr(event, "ts_ns", None) # Legacy support
+            if ts_ns_val:
+                ts_ns = int(float(ts_ns_val)) + self._get_next_offset()
 
         self.writer.enqueue(
             table="trades",
@@ -454,19 +463,17 @@ class MarketDataHubService(BaseService):
                 "PERSIST_OB: FAILED — %s", exc, exc_info=True
             )
 
-    def _persist_liquidation(self, event: Dict[str, Any]) -> None:
+    def _persist_liquidation(self, event: Any) -> None:
         # Map liquidation event to ILP
-        # { "symbol": "BTCUSDT", "side": "SELL", "price": ..., "qty": ..., "usd_size": ..., "timestamp": ... }
-        symbol = str(event.get("symbol", "unknown"))
-        side = str(event.get("side", "unknown"))
-        price = float(event.get("price", 0.0))
-        qty = float(event.get("qty", 0.0))
-        usd_size = float(event.get("usd_size", 0.0))
-        timestamp_ms = event.get("timestamp", 0)  # ms
+        symbol = str(getattr(event, "symbol", "unknown"))
+        side = str(getattr(event, "side", "unknown"))
+        price = float(getattr(event, "price", 0.0))
+        qty = float(getattr(event, "qty", 0.0))
+        usd_size = float(getattr(event, "usd_size", 0.0))
+        ts_sec = float(getattr(event, "timestamp", 0.0))
 
-        # Convert ms to ns for ILP
-        # We need to pass this timestamp to enqueue
-        ts_ns = int(float(timestamp_ms) * 1_000_000) if timestamp_ms else None
+        # Convert epoch seconds to nanoseconds for ILP, add offset
+        ts_ns = int(ts_sec * 1_000_000_000) + self._get_next_offset() if ts_sec > 0 else None
 
         self.writer.enqueue(
             table="liquidations",

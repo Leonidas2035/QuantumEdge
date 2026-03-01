@@ -48,16 +48,39 @@ class MarketTrade(BaseEvent):
     timestamp: float
 
 
+class WhaleWall(BaseEvent):
+    """
+    Detected large limit order in the local order book.
+    """
+
+    side: str  # "BID" or "ASK"
+    price: float
+    quantity: float
+
+
 class OrderBookUpdate(BaseEvent):
     """
     L2 Order Book update snapshot or delta.
-    bids/asks are list of [price, qty] or similar structure.
-    For simplicity here, we assert they are lists of lists of floats.
+    bids/asks are list of [price, qty].
     """
 
     symbol: str
     bids: List[List[float]]
     asks: List[List[float]]
+    timestamp: float
+    whale_walls: List[WhaleWall] = []
+
+
+class LiquidationEvent(BaseEvent):
+    """
+    Forced liquidation event from Binance @forceOrder stream.
+    """
+
+    symbol: str
+    side: str           # "BUY" or "SELL"
+    price: float        # Liquidation price
+    qty: float          # Liquidation quantity
+    usd_size: float     # Notional value (price * qty)
     timestamp: float
 
 
@@ -124,8 +147,10 @@ class MarketMetrics(BaseEvent):
 Event = Union[
     Heartbeat,
     MarketTrade,
+    WhaleWall,
     OrderBookUpdate,
     LargeBlockEvent,
+    LiquidationEvent,
     MicrostructureMetrics,
     KlineEvent,
     MarketMetrics,

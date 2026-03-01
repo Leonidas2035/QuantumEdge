@@ -98,10 +98,19 @@ class BotEngine:
                 # Hub publishes whale, metrics, heartbeat events
                 # on the same ZMQ bus — skip those.
                 ev_type = tick.get("type", "") or tick.get("event_type", "")
+                
+                # ── Handle Liquidation Immediately ──
+                if ev_type == "liquidation":
+                    l_side = tick.get("side", "N/A")
+                    l_price = float(tick.get("price", 0.0))
+                    l_qty = float(tick.get("qty", 0.0))
+                    logger.warning(f"LIQUIDATION DETECTED: {l_side} {l_qty} BTC @ {l_price}")
+                    await asyncio.sleep(0.001)
+                    continue
+
                 if ev_type not in (
                     "KlineEvent", "kline",
-                    "TradeEvent", "trade",
-                    "MarketTrade",
+                    "TradeEvent", "trade", "MarketTrade",
                     "depth", "OrderBookUpdate",  # ← L2 depth events
                     "",  # allow untyped raw payloads
                 ):
@@ -113,15 +122,18 @@ class BotEngine:
                     "bids" in tick and "asks" in tick
                 )
 
-                # ── Extract BBO from depth payload ───────────────
+                # ── Extract BBO & Walls from depth payload ───────────────
                 best_bid = 0.0
                 best_ask = 0.0
                 best_bid_qty = 0.0
                 best_ask_qty = 0.0
+                whale_walls = []
 
                 if is_depth:
                     bids = tick.get("bids", [])
                     asks = tick.get("asks", [])
+                    whale_walls = tick.get("whale_walls", [])
+                    
                     if bids and len(bids[0]) >= 2:
                         best_bid = float(bids[0][0])
                         best_bid_qty = float(bids[0][1])
@@ -177,7 +189,7 @@ class BotEngine:
                 elif "side" in tick:
                     is_buyer_maker = tick["side"] == "sell"
 
-                # Create normalized dict for cache (with BBO from depth)
+                # Create normalized dict for cache (with BBO & Walls from depth)
                 norm_tick = {
                     "p": price,
                     "q": qty,
@@ -187,6 +199,7 @@ class BotEngine:
                     "a": best_ask,     # Best ask price
                     "B": best_bid_qty, # Best bid qty
                     "A": best_ask_qty, # Best ask qty
+                    "W": whale_walls,  # List of WhaleWall dicts
                 }
 
                 # 2. Critical Path: Update State
@@ -210,8 +223,21 @@ class BotEngine:
                     atr_val = self.volatility.update(market_state.last_price)
 
                     # 3. Decision
+                    # Format log with walls info
+                    walls = market_state.whale_walls or []
+                    walls_info = ""
+                    if walls:
+                        # Extract first wall's price info safely (handles both object and dict formats)
+                        first_wall = walls[0]
+                        w_side = getattr(first_wall, "side", first_wall.get("side", "")) if isinstance(first_wall, dict) else getattr(first_wall, "side", getattr(first_wall, "side", ""))
+                        if isinstance(first_wall, dict):
+                            w_side, w_price = first_wall.get("side", "?"), first_wall.get("price", 0.0)
+                        else:
+                            w_side, w_price = getattr(first_wall, "side", "?"), getattr(first_wall, "price", 0.0)
+                        walls_info = f" | Walls: {len(walls)} ({w_side}: {w_price})"
+
                     logger.info(
-                        f"TICK: Price={market_state.last_price:.2f}, OFI={feat_vec.ofi:.4f}, ATR={atr_val:.4f}, B={market_state.best_bid_qty}, A={market_state.best_ask_qty}"
+                        f"TICK: Price={market_state.last_price:.2f}, OFI={feat_vec.ofi:.4f}, ATR={atr_val:.4f}, B={market_state.best_bid_qty}, A={market_state.best_ask_qty}{walls_info}"
                     )
 
                     action = self.strategy.decide(

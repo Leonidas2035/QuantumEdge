@@ -53,6 +53,7 @@ class MarketState:
         best_bid_qty (float): Quantity at best bid.
         best_ask_qty (float): Quantity at best ask.
         last_price (float): Last traded price.
+        whale_walls (List[dict]): Detected whale side limit orders.
     """
 
     timestamp: float
@@ -61,3 +62,4 @@ class MarketState:
     best_bid_qty: float
     best_ask_qty: float
     last_price: float
+    whale_walls: List[dict] = None
