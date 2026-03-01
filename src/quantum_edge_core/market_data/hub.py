@@ -288,10 +288,11 @@ class MarketDataHubService(BaseService):
                         source="binance_ws",
                     )
                 if isinstance(event, (TradeEvent, MarketTrade, KlineEvent, OrderBookUpdate)):
-                    # 4. Analytics (always run — independent of TSDB)
-                    whale_event = self.alpha_engine.update_trade(event)
-                    if whale_event:
-                        await self.publisher.publish("market.alpha.whale", whale_event)
+                    # 4. Analytics — ONLY for trade-like events (not OrderBookUpdate)
+                    if isinstance(event, (TradeEvent, MarketTrade)):
+                        whale_event = self.alpha_engine.update_trade(event)
+                        if whale_event:
+                            await self.publisher.publish("market.alpha.whale", whale_event)
 
                     # 4b. Order Book Aggregation (Whale Wall Detection)
                     if isinstance(event, OrderBookUpdate):
@@ -389,40 +390,68 @@ class MarketDataHubService(BaseService):
         """Write OrderBookUpdate to orderbook_snapshots table via ILP.
 
         Each bid/ask level is a separate ILP row for efficient querying.
+        Per-row nanosecond offset prevents QuestDB timestamp collision.
         """
         symbol = str(getattr(event, "symbol", "unknown"))
         ts_sec = float(getattr(event, "timestamp", 0.0))
-        ts_ns = int(ts_sec * 1_000_000_000) if ts_sec > 0 else None
+        base_ts_ns = int(ts_sec * 1_000_000_000) if ts_sec > 0 else None
 
         bids = getattr(event, "bids", [])
         asks = getattr(event, "asks", [])
 
-        for depth, (price, qty) in enumerate(bids):
-            self.writer.enqueue(
-                table="orderbook_snapshots",
-                symbols={"symbol": symbol, "side": "BUY"},
-                columns={
-                    "price": float(price),
-                    "qty": float(qty),
-                    "wall_size": 0.0,
-                    "wall_distance_pct": 0.0,
-                    "depth_level": depth,
-                },
-                timestamp_ns=ts_ns,
-            )
+        self.logger.info(
+            "PERSIST_OB: symbol=%s bids=%d asks=%d ts=%.3f base_ns=%s",
+            symbol, len(bids), len(asks), ts_sec,
+            base_ts_ns,
+        )
 
-        for depth, (price, qty) in enumerate(asks):
-            self.writer.enqueue(
-                table="orderbook_snapshots",
-                symbols={"symbol": symbol, "side": "SELL"},
-                columns={
-                    "price": float(price),
-                    "qty": float(qty),
-                    "wall_size": 0.0,
-                    "wall_distance_pct": 0.0,
-                    "depth_level": depth,
-                },
-                timestamp_ns=ts_ns,
+        if base_ts_ns is None:
+            self.logger.warning("PERSIST_OB: skipping — no timestamp")
+            return
+
+        row_offset = 0  # nanosecond offset to avoid timestamp collision
+
+        try:
+            for depth, level in enumerate(bids):
+                if len(level) < 2:
+                    continue
+                self.writer.enqueue(
+                    table="orderbook_snapshots",
+                    symbols={"symbol": symbol, "side": "BUY"},
+                    columns={
+                        "price": float(level[0]),
+                        "qty": float(level[1]),
+                        "wall_size": 0.0,
+                        "wall_distance_pct": 0.0,
+                        "depth_level": depth,
+                    },
+                    timestamp_ns=base_ts_ns + row_offset,
+                )
+                row_offset += 1
+
+            for depth, level in enumerate(asks):
+                if len(level) < 2:
+                    continue
+                self.writer.enqueue(
+                    table="orderbook_snapshots",
+                    symbols={"symbol": symbol, "side": "SELL"},
+                    columns={
+                        "price": float(level[0]),
+                        "qty": float(level[1]),
+                        "wall_size": 0.0,
+                        "wall_distance_pct": 0.0,
+                        "depth_level": depth,
+                    },
+                    timestamp_ns=base_ts_ns + row_offset,
+                )
+                row_offset += 1
+
+            self.logger.info(
+                "PERSIST_OB: enqueued %d ILP rows for %s", row_offset, symbol
+            )
+        except Exception as exc:
+            self.logger.error(
+                "PERSIST_OB: FAILED — %s", exc, exc_info=True
             )
 
     def _persist_liquidation(self, event: Dict[str, Any]) -> None:
