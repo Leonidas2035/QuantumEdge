@@ -94,39 +94,66 @@ class BotEngine:
                     await asyncio.sleep(0.01)
                     continue
 
-                # ── Event type filter: only process kline / trade ──
-                # Hub also publishes whale, metrics, heartbeat events
+                # ── Event type filter: process kline, trade AND depth ──
+                # Hub publishes whale, metrics, heartbeat events
                 # on the same ZMQ bus — skip those.
                 ev_type = tick.get("type", "") or tick.get("event_type", "")
                 if ev_type not in (
                     "KlineEvent", "kline",
                     "TradeEvent", "trade",
                     "MarketTrade",
+                    "depth", "OrderBookUpdate",  # ← L2 depth events
                     "",  # allow untyped raw payloads
                 ):
                     await asyncio.sleep(0.001)
                     continue
 
+                # ── Detect depth (orderbook) event ───────────────
+                is_depth = ev_type in ("depth", "OrderBookUpdate") or (
+                    "bids" in tick and "asks" in tick
+                )
+
+                # ── Extract BBO from depth payload ───────────────
+                best_bid = 0.0
+                best_ask = 0.0
+                best_bid_qty = 0.0
+                best_ask_qty = 0.0
+
+                if is_depth:
+                    bids = tick.get("bids", [])
+                    asks = tick.get("asks", [])
+                    if bids and len(bids[0]) >= 2:
+                        best_bid = float(bids[0][0])
+                        best_bid_qty = float(bids[0][1])
+                    if asks and len(asks[0]) >= 2:
+                        best_ask = float(asks[0][0])
+                        best_ask_qty = float(asks[0][1])
+
+                    # Depth events don't carry trade price — use mid or last known
+                    if best_bid and best_ask and price <= 0.0:
+                        price = (best_bid + best_ask) / 2.0
+
                 # ── Normalize tick data ──────────────────────────
-                # Priority: kline k.c → price → p → close → 0.0
-                kline = tick.get("k")  # Binance raw kline wrapper
-                if kline and isinstance(kline, dict):
-                    price = float(kline.get("c", 0.0))
-                    qty = float(kline.get("v", 0.0))
-                else:
-                    price = float(
-                        tick.get("price")
-                        or tick.get("p")
-                        or tick.get("close")
-                        or 0.0
-                    )
-                    qty = float(
-                        tick.get("quantity")
-                        or tick.get("q")
-                        or tick.get("size")
-                        or tick.get("volume")
-                        or 0.0
-                    )
+                if not is_depth:
+                    # Priority: kline k.c → price → p → close → 0.0
+                    kline = tick.get("k")  # Binance raw kline wrapper
+                    if kline and isinstance(kline, dict):
+                        price = float(kline.get("c", 0.0))
+                        qty = float(kline.get("v", 0.0))
+                    else:
+                        price = float(
+                            tick.get("price")
+                            or tick.get("p")
+                            or tick.get("close")
+                            or 0.0
+                        )
+                        qty = float(
+                            tick.get("quantity")
+                            or tick.get("q")
+                            or tick.get("size")
+                            or tick.get("volume")
+                            or 0.0
+                        )
 
                 # ── Guard: skip zero-price events ──
                 if price <= 0.0:
@@ -150,12 +177,16 @@ class BotEngine:
                 elif "side" in tick:
                     is_buyer_maker = tick["side"] == "sell"
 
-                # Create normalized dict for cache
+                # Create normalized dict for cache (with BBO from depth)
                 norm_tick = {
                     "p": price,
                     "q": qty,
                     "T": timestamp * 1000,
                     "m": is_buyer_maker,
+                    "b": best_bid,     # Best bid price
+                    "a": best_ask,     # Best ask price
+                    "B": best_bid_qty, # Best bid qty
+                    "A": best_ask_qty, # Best ask qty
                 }
 
                 # 2. Critical Path: Update State
