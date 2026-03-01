@@ -1,0 +1,310 @@
+# FULL SYSTEM CONTEXT — QuantumEdge
+**Generated: 2026-03-01  |  Commit: latest main  |  Author: MCP Architect**
+
+---
+
+## 1. FILE SYSTEM STRUCTURE (Verified)
+
+```
+QuantumEdge/                          # Root Repository
+├── QuantumEdge.py                    # System Orchestrator (process manager)
+├── meta_agent.py                     # Legacy meta-agent entry
+├── Dockerfile                        # Multi-stage container
+├── docker-compose.yml                # Stack: Hub + Supervisor + QuestDB
+├── Makefile                          # Build/test shortcuts
+├── requirements.txt                  # Python deps
+├── config/
+│   ├── config.yaml                   # Hub config (symbols, modes, ports)
+│   ├── lockbot.yaml                  # LockBot strategy config
+│   ├── logging.yaml                  # Structured logging (JSON)
+│   ├── services.yaml                 # Service registry
+│   ├── system_config.yaml            # Global config (timeouts, limits)
+│   └── quantumedge_testnet.yaml      # Testnet-specific overrides
+│
+├── src/
+│   ├── quantum_edge_core/            # ⭐ CORE TRADING PACKAGE
+│   │   ├── events.py                 # Pydantic event models: KlineEvent, OrderBookUpdate, TradeEvent, MarketTrade
+│   │   │
+│   │   ├── market_data/              # MarketDataHub Service
+│   │   │   ├── hub.py                # ⭐ Central Hub: ingest → analytics → ZMQ broadcast → QuestDB persist
+│   │   │   ├── config.py             # HubConfig dataclass (YAML loader)
+│   │   │   ├── market_context.py     # MarketContext + TimeframeSlope (Hot/Cold path model)
+│   │   │   ├── resampler.py          # MTF Resampler (QuestDB REST → numpy linreg slopes)
+│   │   │   ├── orderbook_aggregator.py  # Whale Wall Detector (≥20 BTC, ±2% depth)
+│   │   │   ├── feeds/
+│   │   │   │   ├── base.py           # BaseFeed (abstract WS feed)
+│   │   │   │   ├── binance_futures.py  # ⭐ Binance Mainnet WS: @kline_1m + @depth5@100ms
+│   │   │   │   └── mock_feed.py      # MockLiveFeed (dev/test mode)
+│   │   │   ├── bus/
+│   │   │   │   └── event_bus.py      # AsyncIO EventBus (internal pub/sub)
+│   │   │   ├── ipc/
+│   │   │   │   ├── zmq_publisher.py  # ZmqPublisher (PUB socket, port 5555)
+│   │   │   │   └── zmq_subscriber.py # ZmqSubscriber (SUB socket)
+│   │   │   ├── tsdb/
+│   │   │   │   └── quest_writer.py   # ⭐ QuestILPWriter (async TCP ILP → QuestDB:9009)
+│   │   │   ├── analytics/
+│   │   │   │   └── alpha_engine.py   # AlphaEngine (OFI, VWAP, RSI, whale detection)
+│   │   │   ├── account/              # Account state tracking
+│   │   │   ├── lockbot/              # LockBot-derived data engine
+│   │   │   ├── microstructure/       # Microstructure analysis
+│   │   │   ├── models/               # Data models
+│   │   │   ├── orderbook/            # Order book ingestion (legacy)
+│   │   │   └── spool/                # On-disk spool (WAL replay)
+│   │   │
+│   │   ├── supervisor/               # ⭐ Supervisor Agent
+│   │   │   ├── narrative_translator.py  # MarketContext → LLM text narrative
+│   │   │   ├── supervisor/           # Core supervisor logic
+│   │   │   │   ├── llm_supervisor.py # ⭐ LLM risk moderator (Gemini LLM → LlmSupervisorAdvice)
+│   │   │   │   ├── config.py         # LlmSupervisorConfig, RiskConfig, CircuitBreakerConfig
+│   │   │   │   ├── state.py          # RiskStateSnapshot
+│   │   │   │   ├── events.py         # BaseEvent, EventLogger
+│   │   │   │   ├── llm/
+│   │   │   │   │   ├── google_client.py  # GoogleClient (Gemini genai SDK v2)
+│   │   │   │   │   └── chat_client.py    # ChatCompletionsClient (OpenAI-compat)
+│   │   │   │   ├── dashboard/        # Web dashboard
+│   │   │   │   ├── ingest/           # Bot telemetry ingestion
+│   │   │   │   ├── autopilot/        # Autonomous operation mode
+│   │   │   │   └── ops/              # Process management
+│   │   │   ├── policy/
+│   │   │   │   ├── policy_contract.py  # Policy dataclass + validation
+│   │   │   │   ├── policy_engine.py    # Policy generation engine
+│   │   │   │   └── llm_moderator.py    # LLM-moderated policy adjustments
+│   │   │   ├── domain/               # Domain models (risk, states)
+│   │   │   ├── monitoring/           # Health checks, heartbeat
+│   │   │   ├── research/             # Offline backtesting / ML
+│   │   │   ├── dashboard_web/        # Web UI (HTML/JS)
+│   │   │   ├── runtime/              # Run artifacts, logs, directives
+│   │   │   └── tests/                # Supervisor-specific tests
+│   │   │
+│   │   ├── ai_scalper_bot/           # ⭐ AI Scalper Bot (Active Bot)
+│   │   │   ├── run_bot.py            # Bot entry point
+│   │   │   ├── bot/
+│   │   │   │   ├── core/             # DecisionEngine
+│   │   │   │   ├── features/         # FeatureEngine (technical indicators)
+│   │   │   │   ├── execution/        # Order execution logic
+│   │   │   │   └── infrastructure/
+│   │   │   │       ├── exchange.py   # BinanceExecutionGateway (CCXT)
+│   │   │   │       └── paper_trader.py  # PaperTrader (Shadow Mode mock)
+│   │   │   ├── state/                # Bot state management
+│   │   │   └── tests/                # Bot-specific tests
+│   │   │
+│   │   ├── strategies/               # Strategy Libraries
+│   │   │   ├── scalper_v1/           # Scalper V1 (with ML pipeline)
+│   │   │   │   ├── bot/              # Full bot implementation
+│   │   │   │   │   ├── ai/           # AI decision logic
+│   │   │   │   │   ├── ml/           # XGBoost / signal model / features
+│   │   │   │   │   ├── risk/         # Risk management
+│   │   │   │   │   └── trading/      # Trade execution
+│   │   │   │   ├── config/           # Strategy-specific config
+│   │   │   │   └── tests/            # Strategy tests
+│   │   │   └── legacy/
+│   │   │       └── lockbot/          # LockBot DDN (Delta Neutral)
+│   │   │
+│   │   ├── backtesting/              # Backtesting engine
+│   │   ├── core/                     # Core utilities
+│   │   ├── logging/                  # Structured logging
+│   │   └── utils/                    # Shared utilities (async_runner)
+│   │
+│   ├── quantum_edge_infra/           # INFRASTRUCTURE & DEVOPS
+│   │   ├── automation/
+│   │   │   └── meta_agent/           # Meta-Agent (autonomous code assistant)
+│   │   │       ├── meta_agent.py     # Core meta-agent logic
+│   │   │       ├── control_center.py # Control center server
+│   │   │       └── ...               # 30+ modules
+│   │   └── tools/
+│   │       ├── mcp_server.py         # MCP Tool Server
+│   │       ├── qe_cli.py             # CLI entry point
+│   │       ├── qe_doctor.py          # System health check
+│   │       ├── smoke_e2e.py          # End-to-end smoke test
+│   │       ├── smoke_questdb_ilp.py  # QuestDB ILP validation
+│   │       └── ...                   # Spool, replay, load tools
+│   │
+│   └── quantum_edge_ml/              # ML & AI INFERENCE
+│       ├── inference_engine/         # TensorRT-LLM inference
+│       │   └── scripts/              # Calibration, smoke tests
+│       └── model_router/             # ⭐ Model Router (multi-backend LLM)
+│           ├── router/router.py      # Request routing (Gemini/OpenAI/TRT)
+│           ├── backends/             # Backend adapters
+│           │   ├── google_gemini.py  # Gemini adapter
+│           │   ├── openai_chat.py    # OpenAI adapter
+│           │   └── trtllm_local.py   # TensorRT-LLM local
+│           ├── api/app.py            # FastAPI service
+│           ├── contracts/            # Response schemas
+│           ├── context/              # Context packing (SQL → prompts)
+│           └── tests/                # Router tests
+│
+├── scripts/                          # Operations & Test Scripts
+│   ├── setup_questdb.py              # QuestDB schema init (tables + materialized views)
+│   ├── zmq_sniffer.py                # ZMQ pipeline diagnostic sniffer
+│   ├── test_supervisor_contracts.py  # Supervisor Cold Path audit
+│   ├── run_bot.py                    # Bot runner (legacy path)
+│   ├── run_backtest.py               # Backtesting runner
+│   ├── run_orchestrator.py           # Orchestrator launcher
+│   ├── run_uat_system.py             # UAT integration test
+│   └── linux/                        # Shell scripts (start/stop/diag)
+│
+├── tests/                            # Project-wide Tests (90+ files)
+│   ├── conftest.py                   # Shared fixtures
+│   ├── fixtures/                     # JSON test fixtures
+│   └── test_*.py                     # Unit + integration tests
+│
+└── logs/                             # Runtime logs
+```
+
+---
+
+## 2. ARCHITECTURE — DATA FLOW
+
+```
+┌──────────────────────────────────────────────────────────────────────┐
+│                         INGEST LAYER                                │
+│                                                                     │
+│   Binance Mainnet WS ──→ BinanceFuturesFeed                       │
+│     @kline_1m              ├─ _handle_kline() → KlineEvent         │
+│     @depth5@100ms          └─ _handle_depth() → OrderBookUpdate    │
+│                                     │                               │
+│                              AsyncIO EventBus                       │
+└─────────────────────────────────────┬────────────────────────────────┘
+                                      │
+                                      ▼
+┌──────────────────────────────────────────────────────────────────────┐
+│                    MarketDataHub._dispatcher_loop()                  │
+│                                                                     │
+│   KlineEvent ──→ AlphaEngine ──→ compute_metrics()                 │
+│   TradeEvent ──→ AlphaEngine ──→ whale detection                   │
+│   OrderBookUpdate ──→ OrderBookAggregator.process_book() → walls   │
+│                                                                     │
+│   ┌─── ZMQ BROADCAST (port 5555) ──────────────────────────┐       │
+│   │  topic: kline.btcusdt    → KlineEvent                  │       │
+│   │  topic: depth.btcusdt    → OrderBookUpdate              │       │
+│   │  topic: market.walls     → Whale Wall features          │       │
+│   │  topic: market.metrics   → AlphaEngine metrics          │       │
+│   └─────────────────────────────────────────────────────────┘       │
+│                                                                     │
+│   ┌─── QUESTDB PERSIST (TCP ILP port 9009) ─────────────────┐      │
+│   │  klines_1m          → _persist_kline()                   │      │
+│   │  orderbook_snapshots → _persist_orderbook()              │      │
+│   │  trades             → _persist_trade()                   │      │
+│   │  liquidations       → _persist_liquidation()             │      │
+│   └──────────────────────────────────────────────────────────┘      │
+└──────────────────────────────────────────────────────────────────────┘
+                          │                              │
+                          ▼                              ▼
+        ┌─────────────────────────┐  ┌──────────────────────────────┐
+        │  HOT PATH (XGBoost)     │  │  COLD PATH (LLM Supervisor)  │
+        │                         │  │                              │
+        │  ZMQ SUB (port 5555)    │  │  1. Resampler fetches MTF    │
+        │  → ai_scalper_bot       │  │     from QuestDB REST :9000  │
+        │  → FeatureEngine        │  │  2. Builds MarketContext     │
+        │  → DecisionEngine       │  │  3. NarrativeTranslator     │
+        │  → PaperTrader (shadow) │  │     converts to text         │
+        │    or BinanceGateway    │  │  4. Gemini 2.5 Flash         │
+        │                         │  │     → LlmSupervisorAdvice   │
+        │  MarketContext          │  │  5. Policy Engine            │
+        │  .to_feature_dict()     │  │     → Policy (validated)     │
+        └─────────────────────────┘  └──────────────────────────────┘
+
+        ┌─────────────────────────────────────────────────────────────┐
+        │  QuestDB MATERIALIZED VIEWS (Continuous Aggregation MTF)    │
+        │  klines_5m / klines_15m / klines_1h / klines_4h            │
+        │  Source: klines_1m    SAMPLE BY {interval} ALIGN TO CAL.   │
+        └─────────────────────────────────────────────────────────────┘
+```
+
+---
+
+## 3. TECHNOLOGY STACK
+
+| Layer | Technology | Notes |
+|-------|-----------|-------|
+| Language | Python 3.10+ | Strict typing, asyncio |
+| WS Feeds | `websockets` | Binance Mainnet streams |
+| IPC Bus | ZeroMQ (PUB/SUB) | Port 5555 (data), port 5557 (telemetry) |
+| TSDB | QuestDB 8.x | ILP TCP :9009, REST :9000, WAL tables |
+| LLM (Prod) | Gemini 2.5 Flash | via `google-genai` SDK v2 |
+| LLM (Router) | Model Router | Multi-backend: Gemini / OpenAI / TRT-LLM |
+| ML Hot Path | XGBoost | Signal / confidence / execution models |
+| ML Inference | TensorRT-LLM | GPU-accelerated inference (GKE) |
+| Execution | CCXT | Binance Futures Testnet |
+| Container | Docker + docker-compose | Multi-stage builds |
+| Orchestration | GKE (prod), docker-compose (dev) | Kubernetes for production |
+| Logging | `structlog` (JSON) | Correlation IDs, latency tracking |
+| Config | YAML + `.env` | `config/config.yaml`, env vars for secrets |
+
+---
+
+## 4. MODULE STATUS
+
+| Module | Path | Status | Notes |
+|--------|------|--------|-------|
+| MarketDataHub | `market_data/hub.py` | ✅ Active | Kline + L2 depth ingestion |
+| BinanceFuturesFeed | `market_data/feeds/binance_futures.py` | ✅ Active | Mainnet WS |
+| QuestILPWriter | `market_data/tsdb/quest_writer.py` | ✅ Active | Async TCP batch writer |
+| OrderBookAggregator | `market_data/orderbook_aggregator.py` | ✅ Active | Whale wall detection |
+| Resampler | `market_data/resampler.py` | ✅ New | MTF slopes from QuestDB |
+| MarketContext | `market_data/market_context.py` | ✅ New | Unified context model |
+| NarrativeTranslator | `supervisor/narrative_translator.py` | ✅ New | Context → LLM text |
+| AlphaEngine | `market_data/analytics/alpha_engine.py` | ✅ Active | VWAP, OFI, RSI |
+| AI Scalper Bot | `ai_scalper_bot/run_bot.py` | ✅ Active | Shadow mode (PaperTrader) |
+| LLM Supervisor | `supervisor/supervisor/llm_supervisor.py` | ✅ Active | Gemini risk review |
+| Policy Engine | `supervisor/policy/policy_engine.py` | ✅ Active | Policy generation |
+| LLM Moderator | `supervisor/policy/llm_moderator.py` | ✅ Active | Policy moderation |
+| Model Router | `quantum_edge_ml/model_router/` | ✅ Active | FastAPI multi-backend |
+| Meta Agent | `quantum_edge_infra/automation/meta_agent/` | ✅ Active | Autonomous operations |
+| Backtesting | `backtesting/` | ⚠️ Partial | MockExchange + runner |
+| Scalper V1 | `strategies/scalper_v1/` | ⚠️ Partial | Full structure, needs integration |
+| LockBot DDN | `strategies/legacy/lockbot/` | 🗄️ Legacy | Refactored, not active |
+
+---
+
+## 5. COMMANDS — HOW TO RUN
+
+```bash
+# Environment setup
+cd /home/l_garnatko/QuantumEdge
+source .venv/bin/activate
+export PYTHONPATH=src   # CRITICAL: all imports use quantum_edge_core.*
+
+# QuestDB schema initialization
+python scripts/setup_questdb.py --host 127.0.0.1 --port 9000
+
+# Start Hub (data collection)
+PYTHONPATH=src python QuantumEdge.py run
+# or directly:
+PYTHONPATH=src python -m quantum_edge_core.market_data.hub
+
+# Start Bot (shadow mode)
+PYTHONPATH=src python src/quantum_edge_core/ai_scalper_bot/run_bot.py
+
+# Diagnostic tools
+PYTHONPATH=src python scripts/zmq_sniffer.py --port 5555 --duration 30
+PYTHONPATH=src python scripts/test_supervisor_contracts.py
+
+# QuestDB queries
+curl "http://127.0.0.1:9000/exec?query=SELECT+count()+FROM+klines_1m"
+curl "http://127.0.0.1:9000/exec?query=SELECT+count()+FROM+orderbook_snapshots"
+```
+
+---
+
+## 6. ENVIRONMENT VARIABLES
+
+| Variable | Purpose | Default |
+|----------|---------|---------|
+| `PYTHONPATH` | Must be set to `src` | — |
+| `GOOGLE_API_KEY` | Gemini LLM access | via `.env` or `config.yaml` |
+| `BINANCE_WS_URL` | WS endpoint override | `wss://fstream.binance.com/ws` |
+| `MARKET_DATA_TSDB_ENABLED` | Toggle QuestDB writes | `1` |
+| `QE_MODE` | Runtime mode | `live` / `mock` / `shadow` |
+
+---
+
+## 7. PORTS
+
+| Port | Service | Protocol |
+|------|---------|----------|
+| 5555 | ZMQ PUB (market data) | TCP |
+| 5557 | ZMQ PUB (telemetry) | TCP |
+| 9000 | QuestDB REST API | HTTP |
+| 9009 | QuestDB ILP Ingestion | TCP |
+| 8080 | Supervisor Dashboard | HTTP |
