@@ -62,7 +62,7 @@ class QuestILPWriter:
             # CRITICAL: Enforce newline terminator for QuestDB ILP
             if not line.endswith("\n"):
                 line += "\n"
-            self.logger.info("Sending ILP", line=line.strip(), table=table)
+            self.logger.debug("Enqueuing ILP line", table=table)
             self.queue.put_nowait(line)
         except asyncio.QueueFull:
             self.logger.warning("QuestDB Queue Full - Dropping metric", table=table)
@@ -144,35 +144,39 @@ class QuestILPWriter:
             # 2. Batch read
             batch = []
             batch_size = 0
-            MAX_BATCH_BYTES = 4096
+            MAX_BATCH_BYTES = 65536  # Increased batch size to 64KB for faster DB ingestion
 
             try:
-                # Wait for first item
-                line = await self.queue.get()
-                batch.append(line)
-                batch_size += len(line)
-                self.queue.task_done()
+                # Wait for first item, but don't hang forever if stopping
+                try:
+                    line = await asyncio.wait_for(self.queue.get(), timeout=1.0)
+                    batch.append(line)
+                    batch_size += len(line)
+                    self.queue.task_done()
+                except asyncio.TimeoutError:
+                    continue  # Just re-check stop_event and try again
 
-                # Opportunistic batching
-                while not self.queue.empty() and batch_size < MAX_BATCH_BYTES:
+                # Opportunistic batching: drain as much as possible up to limit
+                while not self.queue.empty() and batch_size < MAX_BATCH_BYTES and len(batch) < 1000:
                     line = self.queue.get_nowait()
                     batch.append(line)
                     batch_size += len(line)
                     self.queue.task_done()
 
                 # 3. Write
-                payload = "".join(batch).encode("utf-8")
-                self.logger.info(
-                    "ILP WRITE",
-                    batch_lines=len(batch),
-                    batch_bytes=len(payload),
-                    first_line=batch[0].strip() if batch else "<empty>",
-                )
-                self.writer.write(payload)
-                await self.writer.drain()
+                if batch:
+                    payload = "".join(batch).encode("utf-8")
+                    self.logger.debug(
+                        "ILP WRITE BATCH",
+                        batch_lines=len(batch),
+                        batch_bytes=len(payload)
+                    )
+                    self.writer.write(payload)
+                    await self.writer.drain()
 
             except Exception as e:
                 self.logger.error("Write error", error=str(e))
-                self.writer.close()
-                await self.writer.wait_closed()
+                if self.writer:
+                    self.writer.close()
+                    await self.writer.wait_closed()
                 self.writer = None  # Trigger reconnect
