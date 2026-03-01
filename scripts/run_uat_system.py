@@ -1,175 +1,94 @@
 #!/usr/bin/env python3
 """
-Unified UAT System Runner for QuantumEdge AI Scalper.
-Automates Port Cleanup, Mock Environment, and Bot Execution.
+QuantumEdge UAT Orchestrator
+Запускає Hub, Bot та Supervisor в єдиному терміналі з префіксами логів.
 """
 
 import subprocess
-import time
-import os
 import sys
+import os
+import signal
 import threading
-from typing import IO
 
-# ANSI Colors
-GREEN = "\033[92m"
-RED = "\033[91m"
-YELLOW = "\033[93m"
-BLUE = "\033[94m"
-RESET = "\033[0m"
+# Команди для запуску наших трьох китів
+PROCESSES = {
+    "HUB": [sys.executable, "-m", "quantum_edge_core.market_data.hub"],
+    "BOT": [sys.executable, "src/quantum_edge_core/ai_scalper_bot/run_bot.py"],
+    "SUP": [sys.executable, "src/quantum_edge_core/supervisor/supervisor.py", "run-foreground"]  # Перевір точний шлях
+}
 
-MOCK_SCRIPT = "scripts/verify_bot_isolation.py"
-BOT_SCRIPT = "src/quantum_edge_core/ai_scalper_bot/run_bot.py"
-ENV_VARS = os.environ.copy()
-ENV_VARS["PYTHONPATH"] = f"{os.getcwd()}/src:{os.getcwd()}"
-# Ensure Bot runs in Dry Run mode
-ENV_VARS["DRY_RUN"] = "True"
-ENV_VARS["PYTHONUNBUFFERED"] = "1"
+colors = {
+    "HUB": "\033[94m",  # Blue
+    "BOT": "\033[92m",  # Green
+    "SUP": "\033[95m",  # Magenta
+    "RESET": "\033[0m"
+}
 
+active_processes = []
 
-def kill_port(port: int):
-    """Force kill any process using the specified port."""
-    try:
-        # Use fuser to find and kill
-        subprocess.run(
-            ["fuser", "-k", f"{port}/tcp"],
-            stderr=subprocess.DEVNULL,
-            stdout=subprocess.DEVNULL,
-        )
-    except Exception:
-        pass
+def stream_reader(pipe, prefix):
+    """Читає потік процесу і виводить його з кольоровим префіксом."""
+    color = colors.get(prefix, colors["RESET"])
+    for line in iter(pipe.readline, ''):
+        sys.stdout.write(f"{color}[{prefix}]{colors['RESET']} {line}")
+        sys.stdout.flush()
 
-
-def stream_reader(
-    pipe: IO, prefix: str, color: str, stop_event: threading.Event, success_flags: dict
-):
-    """Reads stdout from a subprocess and prints with prefix."""
-    try:
-        for line in iter(pipe.readline, ""):
-            if stop_event.is_set():
-                break
-            if not line:
-                break
-
-            decoded = line.strip()
-            if not decoded:
-                continue
-
-            print(f"{color}{prefix} | {decoded}{RESET}")
-
-            # Check for Success Conditions
-            if "!!! SIGNAL:" in decoded or "!!! EXECUTE:" in decoded:  # Bot trading
-                success_flags["bot_signal"] = True
-            if "✅ [HEARTBEAT]" in decoded:  # Supervisor receiving
-                success_flags["heartbeat"] = True
-
-    except Exception:
-        pass
-
+def terminate_all(sig, frame):
+    print("\n🛑 Зупинка системи UAT...")
+    for p in active_processes:
+        p.terminate()
+    sys.exit(0)
 
 def main():
-    print(f"{YELLOW}>>> QuantumEdge UAT System Runner <<<{RESET}")
+    print("🚀 Запуск QuantumEdge End-to-End UAT...")
+    
+    # Налаштовуємо PYTHONPATH: додаємо src та корінь проекту
+    env = os.environ.copy()
+    project_root = os.path.abspath(os.path.join(os.path.dirname(__file__), ".."))
+    src_dir = os.path.join(project_root, "src")
+    
+    current_pythonpath = env.get("PYTHONPATH", "")
+    new_path = f"{src_dir}:{project_root}"
+    env["PYTHONPATH"] = f"{new_path}:{current_pythonpath}" if current_pythonpath else new_path
+    
+    # Load .env file explicitly if exists so subprocesses get GOOGLE_API_KEY
+    env_file = os.path.join(project_root, ".env")
+    if os.path.exists(env_file):
+        with open(env_file, "r") as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith("#") and "=" in line:
+                    k, v = line.split("=", 1)
+                    env[k.strip()] = v.strip().strip('"').strip("'")
+    
+    # Alternatively accept the user environment var
+    if "GOOGLE_API_KEY" not in env and "GOOGLE_API_KEY" in os.environ:
+        env["GOOGLE_API_KEY"] = os.environ["GOOGLE_API_KEY"]
+    
+    signal.signal(signal.SIGINT, terminate_all)
 
-    # 1. Cleanup
-    print(f"{BLUE}[SYSTEM] Cleaning ports 5555 and 5557...{RESET}")
-    kill_port(5555)
-    kill_port(5557)
-    time.sleep(1)
-
-    success_flags = {"bot_signal": False, "heartbeat": False}
-    stop_event = threading.Event()
-
-    processes = []
-
-    try:
-        # 2. Start Mock Environment (Market + Supervisor)
-        print(f"{BLUE}[SYSTEM] Starting Mock Environment ({MOCK_SCRIPT})...{RESET}")
-        mock_proc = subprocess.Popen(
-            [sys.executable, MOCK_SCRIPT],
+    # Запускаємо процеси
+    for name, cmd in PROCESSES.items():
+        print(f"[*] Стартує {name}...")
+        p = subprocess.Popen(
+            cmd,
+            env=env,
             stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
+            stderr=subprocess.STDOUT, # Об'єднуємо помилки з виводом
             text=True,
-            bufsize=1,
-            env=ENV_VARS,
+            bufsize=1
         )
-        processes.append(mock_proc)
+        active_processes.append(p)
+        
+        # Запускаємо окремий потік для читання логів цього процесу
+        t = threading.Thread(target=stream_reader, args=(p.stdout, name), daemon=True)
+        t.start()
 
-        t_mock = threading.Thread(
-            target=stream_reader,
-            args=(mock_proc.stdout, "[MOCK]", YELLOW, stop_event, success_flags),
-        )
-        t_mock.daemon = True
-        t_mock.start()
-
-        # Wait for Mock to bind
-        time.sleep(2)
-
-        # 3. Start Bot
-        print(f"{BLUE}[SYSTEM] Starting Bot Engine ({BOT_SCRIPT})...{RESET}")
-        bot_proc = subprocess.Popen(
-            [sys.executable, BOT_SCRIPT],
-            stdout=subprocess.PIPE,
-            stderr=subprocess.STDOUT,
-            text=True,
-            bufsize=1,
-            env=ENV_VARS,
-        )
-        processes.append(bot_proc)
-
-        t_bot = threading.Thread(
-            target=stream_reader,
-            args=(bot_proc.stdout, "[BOT ]", GREEN, stop_event, success_flags),
-        )
-        t_bot.daemon = True
-        t_bot.start()
-
-        print(
-            f"{BLUE}[SYSTEM] Monitoring for triggers... (Press Ctrl+C to stop){RESET}"
-        )
-
-        # Monitor Loop
-        start_time = time.time()
-        while True:
-            time.sleep(1)
-
-            if success_flags["bot_signal"] and success_flags["heartbeat"]:
-                print(f"\n{GREEN}✅ SYSTEM INTEGRATION TEST PASSED!{RESET}")
-                print(f"{GREEN}   - Bot is generating signals/execution.{RESET}")
-                print(f"{GREEN}   - Supervisor is receiving heartbeats via ZMQ.{RESET}")
-                break
-
-            if time.time() - start_time > 30:  # Timeout 30s
-                print(
-                    f"\n{RED}❌ TIMEOUT: Success triggers not detected in 30s.{RESET}"
-                )
-                break
-
-            # Check if processes died
-            if mock_proc.poll() is not None:
-                print(f"{RED}❌ Mock Process died unexpectedly.{RESET}")
-                break
-            if bot_proc.poll() is not None:
-                print(f"{RED}❌ Bot Process died unexpectedly.{RESET}")
-                break
-
-    except KeyboardInterrupt:
-        print(f"\n{YELLOW}[SYSTEM] Stopping...{RESET}")
-    finally:
-        stop_event.set()
-        print(f"{BLUE}[SYSTEM] Terminating subprocesses...{RESET}")
-        for p in processes:
-            if p.poll() is None:
-                p.terminate()
-                try:
-                    p.wait(timeout=2)
-                except subprocess.TimeoutExpired:
-                    p.kill()
-
-        # Final cleanup just in case
-        kill_port(5555)
-        kill_port(5557)
-        print(f"{BLUE}[SYSTEM] Done.{RESET}")
-
+    print("✅ Усі системи запущені. Натисніть Ctrl+C для зупинки.\n" + "-"*50)
+    
+    # Чекаємо завершення
+    for p in active_processes:
+        p.wait()
 
 if __name__ == "__main__":
     main()

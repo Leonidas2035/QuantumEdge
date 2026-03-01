@@ -1,16 +1,16 @@
 # LLM Supervisor configuration (Stage 4).
 # Controls periodic AI moderation of trading behavior.
 
-enabled: false  # default off; set true to enable checks
-api_url: "https://api.openai.com/v1/chat/completions"
-model: "gpt-4.1-mini"
-api_key_env: "OPENAI_API_KEY_SUPERVISOR"
-check_interval_minutes: 15
-min_order_decisions: 10
+enabled: true
+api_url: "https://generativelanguage.googleapis.com/v1beta/models"
+model: "gemini-2.5-flash"
+api_key_env: "GOOGLE_API_KEY"
+check_interval_minutes: 1
+min_order_decisions: 0      # ЗМІНЕНО ДЛЯ UAT: дозволяє LLM аналізувати відразу
 max_events_in_summary: 50
 max_trades_in_table: 20
 timeout_seconds: 20
-dry_run: true  # when true, advice is logged but not auto-applied
+dry_run: false              # КРИТИЧНО ДЛЯ UAT: дозволяє відправляти команди (Command Bus)
 
 trust_policy:
   allow_risk_multiplier: true

@@ -95,7 +95,7 @@ class OrderBookManager:
     def get_snapshot(
         self,
         depth: int = 20,
-        wall_threshold: float = 20.0,
+        wall_threshold: float = 2.0,
     ) -> dict:
         """Сортує стакан, знаходить стіни і повертає дані.
 

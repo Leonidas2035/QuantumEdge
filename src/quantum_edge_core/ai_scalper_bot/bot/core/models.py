@@ -63,3 +63,8 @@ class MarketState:
     best_ask_qty: float
     last_price: float
     whale_walls: List[dict] = None
+    entries_paused: bool = False
+    risk_multiplier: float = 1.0
+    volume_delta_1m: float = 0.0
+    liquidations_1m: int = 0
+    atr: float = 0.0

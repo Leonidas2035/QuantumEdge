@@ -74,11 +74,63 @@ class AdaptiveGridStrategy:
                     reason="Risk Limit Reached: Drawdown > Threshold",
                 )
 
-        # 2. Logic based on States
+        # 2. Logic based on Whale Walls (Front-running)
+        # Prioritize trading off massive limit walls if they exist close to current price
+        if market.whale_walls:
+            # Sort walls by distance to current price
+            closest_walls = sorted(
+                market.whale_walls, 
+                key=lambda w: abs((w.get("price", 0.0) if isinstance(w, dict) else getattr(w, "price", 0.0)) - current_price)
+            )
+            nearest = closest_walls[0]
+            n_price = nearest.get("price", 0.0) if isinstance(nearest, dict) else getattr(nearest, "price", 0.0)
+            n_side = nearest.get("side", "") if isinstance(nearest, dict) else getattr(nearest, "side", "")
+            
+            # Calculate distance percentage
+            if current_price > 0:
+                dist_pct = abs(n_price - current_price) / current_price
+                
+                # If nearest wall is within 0.2%
+                if dist_pct <= 0.002:
+                    qty = self.config.get("base_order_size_q", 0.01) * getattr(market, "risk_multiplier", 1.0)
+                    
+                    # BID Wall -> Support -> Bounce up (BUY)
+                    if n_side == "BID" and features.ofi > -1.0:
+                        if getattr(market, "entries_paused", False):
+                            pass # Supervisor halted entries
+                        else:
+                            # Front-run: Buy slightly above the wall
+                            front_run_price = n_price * 1.0001
+                            # Only buy if we are IDLE or need a DCA
+                            if self.state == BotState.IDLE or (self.state == BotState.LONG_ACCUMULATION and current_price <= (self.last_buy_price - atr)):
+                                self.last_buy_price = current_price
+                                return TradeAction(
+                                    action_type="BUY",
+                                    price=front_run_price,
+                                    qty=qty,
+                                    reason=f"Front-run BID Wall @ {n_price} (OFI: {features.ofi:.2f})"
+                                )
+                            
+                    # ASK Wall -> Resistance -> Reject down (SELL/TAKE PROFIT)
+                    elif n_side == "ASK" and features.ofi < 1.0:
+                        front_run_price = n_price * 0.9999
+                        if self.state == BotState.LONG_ACCUMULATION:
+                            return TradeAction(
+                                action_type="SELL",
+                                price=front_run_price,
+                                qty=position.total_qty,
+                                reason=f"Front-run ASK Wall @ {n_price} (Take Profit, OFI: {features.ofi:.2f})"
+                            )
+
+        # 3. Logic based on States (Standard)
+        if getattr(market, "entries_paused", False):
+            # If paused, only allow HEDGE and SELLs (which are above).
+            return None
+
         if self.state == BotState.IDLE:
             # Entry Logic: High OFI (Buying Pressure)
             if features.ofi > self.config.get("ofi_entry_threshold", 0.1):
-                qty = self.config.get("base_order_size_q", 0.01)
+                qty = self.config.get("base_order_size_q", 0.01) * getattr(market, "risk_multiplier", 1.0)
                 self.last_buy_price = (
                     current_price  # Temporarily set, confirmed on fill
                 )
@@ -113,7 +165,7 @@ class AdaptiveGridStrategy:
             if current_price <= (self.last_buy_price - gap):
                 # DCA Size: Multiplier * Base (Simplified)
                 # In real bot, we'd replicate existing size or use martingale
-                dca_qty = self.config.get("base_order_size_q", 0.01)  # Simplified
+                dca_qty = self.config.get("base_order_size_q", 0.01) * getattr(market, "risk_multiplier", 1.0)
 
                 self.last_buy_price = current_price
                 return TradeAction(

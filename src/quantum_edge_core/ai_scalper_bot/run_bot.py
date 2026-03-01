@@ -47,6 +47,13 @@ class BotEngine:
             service_id=self.config.service_id,
         )
 
+        # 1.5 Command Bus (Control Input)
+        import zmq
+        self.zmq_ctx = zmq.Context()
+        self.cmd_sub = self.zmq_ctx.socket(zmq.SUB)
+        self.cmd_sub.connect("tcp://127.0.0.1:5558")
+        self.cmd_sub.subscribe(f"command.{self.config.service_id}".encode("utf-8"))
+
         # 2. Memory (State)
         self.cache = OrderBookCache()
         self.position = PositionManager()
@@ -69,6 +76,7 @@ class BotEngine:
         self.running = True
 
         last_heartbeat = 0.0
+        last_1m_reset = time.time()
 
         # ── State retention across iterations ──────────────────
         price = 0.0
@@ -78,6 +86,38 @@ class BotEngine:
 
         try:
             while self.running:
+                # ── 0. Process Command Bus (Non-blocking) ──
+                try:
+                    import zmq
+                    import json
+                    while True:
+                        topic, msg = self.cmd_sub.recv_multipart(zmq.NOBLOCK)
+                        cmd = json.loads(msg.decode("utf-8"))
+                        market_state = self.cache._current_state
+                        if market_state:
+                            if cmd["action"] == "PAUSE_ENTRIES":
+                                market_state.entries_paused = True
+                                logger.warning("🛑 SUPERVISOR COMMAND: Entries Paused!")
+                            elif cmd["action"] == "RESUME_ENTRIES":
+                                market_state.entries_paused = False
+                                logger.warning("🟢 SUPERVISOR COMMAND: Entries Resumed!")
+                            elif cmd["action"] == "ADJUST_RISK":
+                                market_state.risk_multiplier = cmd.get("multiplier", 1.0)
+                                logger.warning(f"⚠️ SUPERVISOR COMMAND: Risk Multiplier set to {market_state.risk_multiplier}")
+                except zmq.Again:
+                    pass
+                except Exception as e:
+                    logger.error(f"Error processing command bus: {e}")
+
+                # ── 0.5 Rolling 1M State Reset ──
+                now_reset = time.time()
+                if now_reset - last_1m_reset >= 60.0:
+                    ms = self.cache._current_state
+                    if ms:
+                        ms.volume_delta_1m = 0.0
+                        ms.liquidations_1m = 0
+                    last_1m_reset = now_reset
+
                 # 1. Data Ingestion — block up to 100 ms (efficient poll)
                 tick = self.market_stream.get_latest_tick(timeout_ms=100)
 
@@ -85,10 +125,12 @@ class BotEngine:
                 if not tick:
                     now = time.time()
                     if now - last_heartbeat >= 1.0:
+                        ms = self.cache._current_state
                         await self.reporter.send_heartbeat(
                             self.strategy.state,
                             self.position.state.unrealized_pnl,
                             self.position.total_qty,
+                            market_state=ms,
                         )
                         last_heartbeat = now
                     await asyncio.sleep(0.01)
@@ -104,6 +146,9 @@ class BotEngine:
                     l_side = tick.get("side", "N/A")
                     l_price = float(tick.get("price", 0.0))
                     l_qty = float(tick.get("qty", 0.0))
+                    ms = self.cache._current_state
+                    if ms:
+                        ms.liquidations_1m += 1
                     logger.warning(f"LIQUIDATION DETECTED: {l_side} {l_qty} BTC @ {l_price}")
                     await asyncio.sleep(0.001)
                     continue
@@ -218,9 +263,17 @@ class BotEngine:
                         is_buyer_maker=is_buyer_maker,
                     )
 
+                    # Update Maco-metrics (Volume Delta)
+                    if not is_depth and ev_type in ("trade", "TradeEvent", "MarketTrade", "") and qty > 0.0:
+                        if is_buyer_maker:
+                            market_state.volume_delta_1m -= qty
+                        else:
+                            market_state.volume_delta_1m += qty
+
                     # Update Alpha Features
                     feat_vec = self.features.update(tick_obj, market_state)
                     atr_val = self.volatility.update(market_state.last_price)
+                    market_state.atr = atr_val
 
                     # 3. Decision
                     # Format log with walls info
@@ -245,12 +298,32 @@ class BotEngine:
                     )
 
                     # 4. Execution (PaperTrader — Shadow Mode)
+                    active_signal_name = "HOLD"
                     if action:
-                        logger.info(f"!!! SIGNAL: {action}")
+                        active_signal_name = action.action_type
+                        logger.warning(f"🚀 SIGNAL GENERATED: {action.action_type} @ {action.price} | Reason: {action.reason}")
                         self.position.simulate_fill(
                             action.price, action.qty, action.action_type
                         )
                         await self.gateway.execute(action)
+
+                    # 4.5 Telemetry publishing
+                    dist_pct = 0.0
+                    if market_state.whale_walls:
+                        closest_walls = sorted(
+                            market_state.whale_walls, 
+                            key=lambda w: abs((w.get("price", 0.0) if isinstance(w, dict) else getattr(w, "price", 0.0)) - market_state.last_price)
+                        )
+                        n_price = closest_walls[0].get("price", 0.0) if isinstance(closest_walls[0], dict) else getattr(closest_walls[0], "price", 0.0)
+                        if market_state.last_price > 0:
+                            dist_pct = abs(n_price - market_state.last_price) / market_state.last_price
+                    
+                    await self.reporter.send_telemetry(
+                        market_state=market_state,
+                        ofi=feat_vec.ofi,
+                        action=active_signal_name,
+                        closest_wall_dist_pct=dist_pct
+                    )
 
                 # 5. Reporting (Throttled)
                 now = time.time()

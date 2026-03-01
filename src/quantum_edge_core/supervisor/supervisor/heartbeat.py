@@ -17,6 +17,14 @@ class HeartbeatPayload:
     metrics: Optional[Mapping[str, Any]] = None
     errors: Optional[List[str]] = None
 
+    # Bot Telemetry Extension (Step 6.3)
+    ofi_1s: Optional[float] = None
+    closest_wall_dist_pct: Optional[float] = None
+    active_signal: Optional[str] = None
+    atr: Optional[float] = None
+    volume_delta_1m: Optional[float] = None
+    liquidations_1m: Optional[int] = None
+
     # Legacy / Internal Fields
     uptime_s: Optional[float] = None
     pnl: Optional[float] = None

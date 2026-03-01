@@ -785,13 +785,19 @@ def load_llm_supervisor_config(path: Path) -> LlmSupervisorConfig:
             raise ValueError(f"{name} must be positive")
         return val
 
+    def _non_negative_int(name: str, default: int) -> int:
+        val = int(raw.get(name, default))
+        if val < 0:
+            raise ValueError(f"{name} must not be negative")
+        return val
+
     return LlmSupervisorConfig(
         enabled=bool(raw.get("enabled", False)),
         api_url=str(raw.get("api_url", "https://api.openai.com/v1/chat/completions")),
         model=str(raw.get("model", "gpt-4.1-mini")),
         api_key_env=str(raw.get("api_key_env", "OPENAI_API_KEY_SUPERVISOR")),
         check_interval_minutes=_positive_int("check_interval_minutes", 15),
-        min_order_decisions=_positive_int("min_order_decisions", 10),
+        min_order_decisions=_non_negative_int("min_order_decisions", 10),
         max_events_in_summary=_positive_int("max_events_in_summary", 50),
         max_trades_in_table=_positive_int("max_trades_in_table", 20),
         timeout_seconds=_positive_int("timeout_seconds", 20),

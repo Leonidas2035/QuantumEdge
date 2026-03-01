@@ -7,6 +7,7 @@ import zmq
 import ujson
 import time
 import logging
+from typing import Any
 from zmq.asyncio import Context as AsyncContext
 
 from quantum_edge_core.ai_scalper_bot.bot.execution.strategy_core import BotState
@@ -40,6 +41,7 @@ class SupervisorReporter:
         pnl: float,
         open_positions_qty: float,
         drawdown_pct: float = 0.0,
+        market_state: Any = None,
     ):
         """
         Sends a JSON heartbeat packet.
@@ -68,6 +70,9 @@ class SupervisorReporter:
                 "cpu_usage": 0.0,
             },
             "errors": [],
+            "atr": float(getattr(market_state, "atr", 0.0)) if market_state else 0.0,
+            "volume_delta_1m": float(getattr(market_state, "volume_delta_1m", 0.0)) if market_state else 0.0,
+            "liquidations_1m": int(getattr(market_state, "liquidations_1m", 0)) if market_state else 0,
         }
 
         try:
@@ -77,6 +82,35 @@ class SupervisorReporter:
             await self.socket.send_multipart([b"telemetry", payload.encode("utf-8")])
         except Exception as e:
             logger.warning(f"Failed to send heartbeat: {e}")
+
+    async def send_telemetry(
+        self,
+        market_state: Any,
+        ofi: float,
+        action: str,
+        closest_wall_dist_pct: float,
+    ):
+        """
+        Sends the scalper bot's detailed telemetry and active signals.
+        """
+        msg = {
+            "service_id": self.service_id, # normalized for supervisor ZmqHeartbeatSubscriber
+            "timestamp": time.time(),
+            "last_price": getattr(market_state, "last_price", 0.0),
+            "ofi_1s": ofi,
+            "active_signal": action,
+            "closest_wall_dist_pct": closest_wall_dist_pct,
+            "atr": float(getattr(market_state, "atr", 0.0)),
+            "volume_delta_1m": float(getattr(market_state, "volume_delta_1m", 0.0)),
+            "liquidations_1m": int(getattr(market_state, "liquidations_1m", 0)),
+        }
+
+        try:
+            payload = ujson.dumps(msg)
+            # Send using exact topic requested
+            await self.socket.send_multipart([b"telemetry.ai_scalper_bot", payload.encode("utf-8")])
+        except Exception as e:
+            logger.warning(f"Failed to send telemetry: {e}")
 
     def close(self):
         self.socket.close()

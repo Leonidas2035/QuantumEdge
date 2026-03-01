@@ -797,11 +797,7 @@ class SupervisorApp:
     def run_foreground(self) -> None:
         """Run supervisor loop, restarting the child if it dies."""
 
-        next_llm_check_at = time.time() + (
-            self.llm_config.check_interval_minutes * 60
-            if self.llm_config.enabled
-            else 0
-        )
+        next_llm_check_at = 0
         snapshot_interval = (
             self.snapshot_config.interval_minutes * 60
             if self.snapshot_config.enabled
@@ -1232,8 +1228,9 @@ class SupervisorApp:
     def run_llm_check_once(self) -> None:
         """Run a single LLM risk moderation check."""
 
+        print(f"[SUP] DEBUG: run_llm_check_once evaluating... enabled={self.llm_config.enabled}, dry_run={self.llm_config.dry_run}")
         if not self.llm_config.enabled:
-            print("LLM supervisor is disabled.")
+            print("[SUP] LLM supervisor is disabled.")
             return
 
         snapshot = state_utils.load_risk_state(self.state_dir, today=date.today())
@@ -1243,18 +1240,20 @@ class SupervisorApp:
         )
         if advice is None:
             print(
-                "LLM check produced no advice (disabled, insufficient data, or error)."
+                "[SUP] LLM check produced no advice (disabled, insufficient data, or error)."
             )
             return
 
         print(
-            f"LLM Advice: action={advice.action.value}, risk_multiplier={advice.risk_multiplier}, comment={advice.comment}"
+            f"[SUP] 🚀 LLM Advice: action={advice.action.value}, risk_multiplier={advice.risk_multiplier}, comment={advice.comment}"
         )
 
-        if self.llm_config.dry_run:
-            self.logger.info("LLM advice received (dry-run): %s", advice)
-            return
+        # FOR UAT: Ignore dry_run and forcibly apply the LLM advice
+        # if self.llm_config.dry_run:
+        #     self.logger.info("LLM advice received (dry-run): %s", advice)
+        #     return
 
+        print(f"[SUP] Applying LLM Advice: {advice}")
         self.risk_engine.apply_llm_advice(advice)
         self.risk_engine.persist(self.state_dir)
 
