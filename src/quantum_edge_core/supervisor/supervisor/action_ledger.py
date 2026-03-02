@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 from uuid import uuid4
 
-from supervisor.run_context import RunContext
+from quantum_edge_core.supervisor.supervisor.run_context import RunContext
 
 
 @dataclass

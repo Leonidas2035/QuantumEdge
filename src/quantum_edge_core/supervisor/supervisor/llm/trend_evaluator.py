@@ -8,10 +8,10 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Dict, Literal, Optional
 
-from supervisor.config import TrendEvaluatorConfig
-from supervisor.llm.chat_client import ChatCompletionsClient
-from supervisor.utils.cache import TtlCache
-from supervisor.utils.rate_limit import PerMinuteRateLimiter
+from quantum_edge_core.supervisor.supervisor.config import TrendEvaluatorConfig
+from quantum_edge_core.supervisor.supervisor.llm.chat_client import ChatCompletionsClient
+from quantum_edge_core.supervisor.supervisor.utils.cache import TtlCache
+from quantum_edge_core.supervisor.supervisor.utils.rate_limit import PerMinuteRateLimiter
 
 TrendLabel = Literal["UP", "DOWN", "RANGE", "UNKNOWN"]
 

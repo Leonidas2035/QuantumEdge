@@ -1,4 +1,4 @@
-from supervisor.autopilot.remediation import RateLimiter
+from quantum_edge_core.supervisor.supervisor.autopilot.remediation import RateLimiter
 
 
 def test_rate_limiter_blocks_after_limit():

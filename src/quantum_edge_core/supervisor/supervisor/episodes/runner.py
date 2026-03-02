@@ -10,17 +10,17 @@ from pathlib import Path
 from typing import Dict, Optional
 
 from policy.policy_contract import POLICY_VERSION
-from supervisor.action_ledger import ActionLedger
-from supervisor.guards import GuardEvaluator, GuardConfig, load_guard_config
-from supervisor.regime_sm import (
+from quantum_edge_core.supervisor.supervisor.action_ledger import ActionLedger
+from quantum_edge_core.supervisor.supervisor.guards import GuardEvaluator, GuardConfig, load_guard_config
+from quantum_edge_core.supervisor.supervisor.regime_sm import (
     RegimeStateMachine,
     RegimeConfig,
     DirectivesConfig,
     load_regime_config,
     load_directives_config,
 )
-from supervisor.run_context import RunContext
-from supervisor.stats import StatsAggregator
+from quantum_edge_core.supervisor.supervisor.run_context import RunContext
+from quantum_edge_core.supervisor.supervisor.stats import StatsAggregator
 
 from .cutter import load_scenarios, RollingWindow
 from .io import iter_ticks

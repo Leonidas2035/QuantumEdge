@@ -6,7 +6,7 @@ import json
 import re
 from typing import Dict, Any
 
-from supervisor.llm.chat_client import ChatCompletionsClient
+from quantum_edge_core.supervisor.supervisor.llm.chat_client import ChatCompletionsClient
 
 ALLOWED_KEYS = {
     "allow_trading",

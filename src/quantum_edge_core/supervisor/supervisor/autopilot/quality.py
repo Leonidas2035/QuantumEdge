@@ -6,7 +6,7 @@ from collections import deque
 from dataclasses import dataclass
 from typing import Any, Deque, Dict, List, Tuple
 
-from supervisor.autopilot.collector import MetricsSnapshot
+from quantum_edge_core.supervisor.supervisor.autopilot.collector import MetricsSnapshot
 
 
 @dataclass

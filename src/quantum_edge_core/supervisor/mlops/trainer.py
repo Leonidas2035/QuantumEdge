@@ -8,9 +8,9 @@ import time
 from pathlib import Path
 from typing import Dict, List, Optional
 
-from supervisor.mlops.manifest import ModelManifest
-from supervisor.mlops.registry import sha256_file
-from supervisor.research.offline.signal_model.train import train_model
+from quantum_edge_core.supervisor.mlops.manifest import ModelManifest
+from quantum_edge_core.supervisor.mlops.registry import sha256_file
+from quantum_edge_core.supervisor.research.offline.signal_model.train import train_model
 from importlib import metadata as importlib_metadata
 
 

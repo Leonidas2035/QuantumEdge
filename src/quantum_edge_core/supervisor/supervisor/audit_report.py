@@ -8,8 +8,8 @@ from datetime import date
 from pathlib import Path
 from typing import Dict, Iterable, List
 
-from supervisor.config import RiskConfig
-from supervisor.events import BaseEvent, EventType
+from quantum_edge_core.supervisor.supervisor.config import RiskConfig
+from quantum_edge_core.supervisor.supervisor.events import BaseEvent, EventType
 
 
 @dataclass

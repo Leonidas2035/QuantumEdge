@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from supervisor.config_loader import load_processes_spec
+from quantum_edge_core.supervisor.supervisor.config_loader import load_processes_spec
 
 
 def _write(path: Path, content: str) -> Path:

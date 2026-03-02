@@ -10,7 +10,7 @@ from pathlib import Path
 from typing import Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from supervisor.process_manager import ProcessInfo
+    from quantum_edge_core.supervisor.supervisor.process_manager import ProcessInfo
 
 
 STATE_FILENAME = "process_state.json"
@@ -37,7 +37,7 @@ def load_process_info(state_dir: Path) -> Optional["ProcessInfo"]:
         return None
 
     try:
-        from supervisor.process_manager import ProcessInfo
+        from quantum_edge_core.supervisor.supervisor.process_manager import ProcessInfo
     except Exception:
         return None
 

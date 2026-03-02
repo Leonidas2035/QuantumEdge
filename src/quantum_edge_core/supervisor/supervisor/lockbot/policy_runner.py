@@ -10,16 +10,16 @@ from collections import deque
 from pathlib import Path
 from typing import Any, Deque, Dict, Optional
 
-from supervisor.lockbot.hub_subscriber import LockbotHubSubscriber, MarketDataCache
-from supervisor.lockbot.models import (
+from quantum_edge_core.supervisor.supervisor.lockbot.hub_subscriber import LockbotHubSubscriber, MarketDataCache
+from quantum_edge_core.supervisor.supervisor.lockbot.models import (
     BotStatusSnapshot,
     MarketSnapshot,
     PolicyIntent,
     PolicyRunnerConfig,
 )
-from supervisor.lockbot.regime_detector import RegimeDetector, RegimeHysteresis
-from supervisor.lockbot.strategy_range import evaluate_range
-from supervisor.lockbot.strategy_trend import evaluate_trend
+from quantum_edge_core.supervisor.supervisor.lockbot.regime_detector import RegimeDetector, RegimeHysteresis
+from quantum_edge_core.supervisor.supervisor.lockbot.strategy_range import evaluate_range
+from quantum_edge_core.supervisor.supervisor.lockbot.strategy_trend import evaluate_trend
 
 
 class PolicyAuditLogger:

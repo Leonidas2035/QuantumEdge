@@ -7,14 +7,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Iterable, Optional, Set
 
-from supervisor.ingest.parsers import (
+from quantum_edge_core.supervisor.supervisor.ingest.parsers import (
     event_hash,
     event_to_point,
     exec_to_point,
     parse_event_line,
     parse_exec_line,
 )
-from supervisor.tsdb.writer import TsdbWriter
+from quantum_edge_core.supervisor.supervisor.tsdb.writer import TsdbWriter
 
 
 def run_backfill(

@@ -1,6 +1,6 @@
 from pathlib import Path
 
-from supervisor.ingest.tailer import FileTailer
+from quantum_edge_core.supervisor.supervisor.ingest.tailer import FileTailer
 
 
 def test_tailer_reads_new_lines(tmp_path: Path):

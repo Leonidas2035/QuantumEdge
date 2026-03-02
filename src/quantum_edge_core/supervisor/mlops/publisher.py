@@ -7,7 +7,7 @@ import shutil
 import time
 from pathlib import Path
 
-from supervisor.mlops.manifest import ModelManifest
+from quantum_edge_core.supervisor.mlops.manifest import ModelManifest
 
 
 def publish_model(

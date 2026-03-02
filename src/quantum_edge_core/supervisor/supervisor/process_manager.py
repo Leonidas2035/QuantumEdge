@@ -15,9 +15,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Optional
 
-from supervisor.config import PathsConfig, SupervisorConfig
-from supervisor.events import BaseEvent, EventLogger, EventType
-from supervisor.process_spec import HealthCheckSpec, ProcessSpec, ProcessStatus
+from quantum_edge_core.supervisor.supervisor.config import PathsConfig, SupervisorConfig
+from quantum_edge_core.supervisor.supervisor.events import BaseEvent, EventLogger, EventType
+from quantum_edge_core.supervisor.supervisor.process_spec import HealthCheckSpec, ProcessSpec, ProcessStatus
 
 
 class ProcessState:

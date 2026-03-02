@@ -6,10 +6,10 @@ import argparse
 from pathlib import Path
 from typing import List, Optional
 
-from supervisor.mlops.dataset_builder import build_dataset
-from supervisor.mlops.trainer import train_horizons
-from supervisor.mlops.validator import validate_model
-from supervisor.mlops.publisher import publish_model
+from quantum_edge_core.supervisor.mlops.dataset_builder import build_dataset
+from quantum_edge_core.supervisor.mlops.trainer import train_horizons
+from quantum_edge_core.supervisor.mlops.validator import validate_model
+from quantum_edge_core.supervisor.mlops.publisher import publish_model
 
 
 def _parse_horizons(raw: str) -> List[int]:

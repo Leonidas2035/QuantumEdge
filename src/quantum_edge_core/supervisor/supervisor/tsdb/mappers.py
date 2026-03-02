@@ -6,8 +6,8 @@ import json
 from datetime import datetime
 from typing import List
 
-from supervisor.events import BaseEvent, EventType
-from supervisor.tsdb.base import Point
+from quantum_edge_core.supervisor.supervisor.events import BaseEvent, EventType
+from quantum_edge_core.supervisor.supervisor.tsdb.base import Point
 
 
 def event_to_points(event: BaseEvent) -> List[Point]:

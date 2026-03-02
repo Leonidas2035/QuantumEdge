@@ -8,8 +8,8 @@ import urllib.request
 from pathlib import Path
 from typing import Optional
 
-from supervisor.config import TsdbConfig, TsdbRetentionConfig
-from supervisor.tsdb.query import derive_questdb_query_url, questdb_exec
+from quantum_edge_core.supervisor.supervisor.config import TsdbConfig, TsdbRetentionConfig
+from quantum_edge_core.supervisor.supervisor.tsdb.query import derive_questdb_query_url, questdb_exec
 
 
 def apply_clickhouse(sql_path: Path, cfg: TsdbConfig, logger: logging.Logger) -> bool:

@@ -13,11 +13,11 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, Mapping, Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from supervisor.process_manager import ProcessInfo
-    from supervisor.risk_engine import OrderRequest, RiskDecision
+    from quantum_edge_core.supervisor.supervisor.process_manager import ProcessInfo
+    from quantum_edge_core.supervisor.supervisor.risk_engine import OrderRequest, RiskDecision
 
-from supervisor.snapshot_models import SnapshotReport
-from supervisor.tsdb.writer import TsdbWriter
+from quantum_edge_core.supervisor.supervisor.snapshot_models import SnapshotReport
+from quantum_edge_core.supervisor.supervisor.tsdb.writer import TsdbWriter
 
 SCHEMA_VERSION = "telemetry.v1"
 
@@ -117,7 +117,7 @@ class EventLogger:
         if self.tsdb_writer:
             try:
                 # Lazy import to avoid circular dependency during module import time
-                from supervisor.tsdb import mappers as tsdb_mappers  # type: ignore
+                from quantum_edge_core.supervisor.supervisor.tsdb import mappers as tsdb_mappers  # type: ignore
 
                 points = tsdb_mappers.event_to_points(event)
                 if points:

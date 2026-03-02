@@ -7,16 +7,16 @@ import uuid
 from pathlib import Path
 from typing import Any, Dict
 
-from supervisor.autopilot.audit import AuditLogger
-from supervisor.autopilot.collector import MetricsCollector
-from supervisor.autopilot.policy_manager import PolicyManager
-from supervisor.autopilot.quality import QualityMonitor
-from supervisor.autopilot.remediation import RemediationManager
-from supervisor.autopilot.state_machine import (
+from quantum_edge_core.supervisor.supervisor.autopilot.audit import AuditLogger
+from quantum_edge_core.supervisor.supervisor.autopilot.collector import MetricsCollector
+from quantum_edge_core.supervisor.supervisor.autopilot.policy_manager import PolicyManager
+from quantum_edge_core.supervisor.supervisor.autopilot.quality import QualityMonitor
+from quantum_edge_core.supervisor.supervisor.autopilot.remediation import RemediationManager
+from quantum_edge_core.supervisor.supervisor.autopilot.state_machine import (
     AutopilotController,
     AutopilotStateMachine,
 )
-from supervisor.config import AutopilotConfig, PathsConfig
+from quantum_edge_core.supervisor.supervisor.config import AutopilotConfig, PathsConfig
 
 
 def build_controller(

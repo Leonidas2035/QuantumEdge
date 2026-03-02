@@ -1,6 +1,6 @@
 import pytest
 
-from supervisor.tsdb.query import build_timeseries_query
+from quantum_edge_core.supervisor.supervisor.tsdb.query import build_timeseries_query
 
 
 def test_timeseries_allowlist_blocks_unknown_metric():

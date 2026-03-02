@@ -10,14 +10,14 @@ from typing import Any, Dict, Optional
 import msgspec
 import zmq
 
-from supervisor.config import LockbotControlConfig
-from supervisor.contracts.lockbot_control_v1 import (
+from quantum_edge_core.supervisor.supervisor.config import LockbotControlConfig
+from quantum_edge_core.supervisor.supervisor.contracts.lockbot_control_v1 import (
     AckEnvelope,
     StatusEnvelope,
     build_command,
     validate_command,
 )
-from supervisor.contracts.lockbot_exec_v1 import ExecEnvelope
+from quantum_edge_core.supervisor.supervisor.contracts.lockbot_exec_v1 import ExecEnvelope
 
 
 class LockbotControlClient:

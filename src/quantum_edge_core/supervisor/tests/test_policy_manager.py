@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-from supervisor.autopilot.policy_manager import PolicyManager
+from quantum_edge_core.supervisor.supervisor.autopilot.policy_manager import PolicyManager
 
 
 def test_policy_validation_and_rollout(tmp_path: Path):

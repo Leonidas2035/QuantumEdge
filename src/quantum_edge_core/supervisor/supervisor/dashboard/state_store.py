@@ -7,9 +7,9 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, Optional, Tuple
 
-from supervisor.alerts.engine import AlertResult
-from supervisor.alerts.engine import AlertEngine
-from supervisor.dashboard.audit_log import DashboardAuditLogger
+from quantum_edge_core.supervisor.supervisor.alerts.engine import AlertResult
+from quantum_edge_core.supervisor.supervisor.alerts.engine import AlertEngine
+from quantum_edge_core.supervisor.supervisor.dashboard.audit_log import DashboardAuditLogger
 
 StrategyKey = Tuple[str, str]
 

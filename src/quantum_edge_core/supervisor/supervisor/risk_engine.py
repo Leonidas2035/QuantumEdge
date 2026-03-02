@@ -188,7 +188,7 @@ class HardRiskEngine:
         return RiskDecision(True, "ALLOWED", "OK", RiskAction.ALLOW)
 
     def persist(self, state_dir):
-        from supervisor.state import save_risk_state
+        from quantum_edge_core.supervisor.supervisor.state import save_risk_state
 
         save_risk_state(state_dir, self.state)
 

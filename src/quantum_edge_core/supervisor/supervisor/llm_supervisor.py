@@ -10,11 +10,11 @@ from enum import Enum
 from pathlib import Path
 import re
 from typing import Any, Dict, Iterable, List, Optional, Tuple
-from supervisor.audit_report import load_events_for_date
-from supervisor.config import LlmSupervisorConfig, RiskConfig
-from supervisor.events import BaseEvent, EventType, EventLogger
-from supervisor.llm.chat_client import ChatCompletionsClient
-from supervisor.state import RiskStateSnapshot
+from quantum_edge_core.supervisor.supervisor.audit_report import load_events_for_date
+from quantum_edge_core.supervisor.supervisor.config import LlmSupervisorConfig, RiskConfig
+from quantum_edge_core.supervisor.supervisor.events import BaseEvent, EventType, EventLogger
+from quantum_edge_core.supervisor.supervisor.llm.chat_client import ChatCompletionsClient
+from quantum_edge_core.supervisor.supervisor.state import RiskStateSnapshot
 
 
 def _strip_markdown_fences(text: str) -> str:

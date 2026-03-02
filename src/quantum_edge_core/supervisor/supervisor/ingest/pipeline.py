@@ -13,7 +13,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Deque, Dict, Optional
 
-from supervisor.ingest.parsers import (
+from quantum_edge_core.supervisor.supervisor.ingest.parsers import (
     event_hash,
     event_to_point,
     exec_to_point,
@@ -22,8 +22,8 @@ from supervisor.ingest.parsers import (
     parse_exec_line,
     parse_metrics_file,
 )
-from supervisor.ingest.tailer import FileTailer
-from supervisor.tsdb.writer import TsdbWriter
+from quantum_edge_core.supervisor.supervisor.ingest.tailer import FileTailer
+from quantum_edge_core.supervisor.supervisor.tsdb.writer import TsdbWriter
 
 
 @dataclass

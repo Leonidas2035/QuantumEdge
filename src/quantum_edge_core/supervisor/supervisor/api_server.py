@@ -13,10 +13,10 @@ from pathlib import Path
 from typing import Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from supervisor import SupervisorApp  # type: ignore
+    from quantum_edge_core.supervisor import SupervisorApp  # type: ignore
 
-from supervisor.events import new_trace_id
-from supervisor.security import (
+from quantum_edge_core.supervisor.supervisor.events import new_trace_id
+from quantum_edge_core.supervisor.supervisor.security import (
     check_dashboard_auth,
     dashboard_auth_mode,
     dashboard_auth_token,

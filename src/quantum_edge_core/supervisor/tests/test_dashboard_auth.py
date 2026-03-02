@@ -1,4 +1,4 @@
-from supervisor.security import check_dashboard_auth, dashboard_auth_required
+from quantum_edge_core.supervisor.supervisor.security import check_dashboard_auth, dashboard_auth_required
 
 
 def test_dashboard_auth_required():

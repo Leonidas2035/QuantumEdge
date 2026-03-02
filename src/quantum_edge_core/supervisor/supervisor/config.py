@@ -936,7 +936,7 @@ def load_trading_behavior_config(path: Path) -> TradingBehaviorConfig:
 
 
 def load_snapshot_scheduler_config(path: Path) -> SnapshotSchedulerConfig:
-    """Load snapshot scheduler configuration from supervisor.yaml."""
+    """Load snapshot scheduler configuration from quantum_edge_core.supervisor.yaml."""
 
     raw = _load_yaml(path)
     snap = raw.get("snapshots", {}) or {}

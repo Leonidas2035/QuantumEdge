@@ -1,6 +1,6 @@
 """Replay adapters for LockBot policy runner."""
 
-from supervisor.lockbot.replay.policy_adapter import (
+from quantum_edge_core.supervisor.supervisor.lockbot.replay.policy_adapter import (
     PolicyReplayAdapter,
     ReplayControlClient,
 )

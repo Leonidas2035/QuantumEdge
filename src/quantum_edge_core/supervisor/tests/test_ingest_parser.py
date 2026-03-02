@@ -1,4 +1,4 @@
-from supervisor.ingest.parsers import event_hash, event_to_point, parse_event_line
+from quantum_edge_core.supervisor.supervisor.ingest.parsers import event_hash, event_to_point, parse_event_line
 
 
 def test_event_parser_and_point():

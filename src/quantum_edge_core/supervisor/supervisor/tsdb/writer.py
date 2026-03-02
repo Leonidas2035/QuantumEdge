@@ -8,7 +8,7 @@ import time
 from datetime import datetime, timezone
 from typing import List, Optional
 
-from supervisor.tsdb.base import Point, TimeseriesStore
+from quantum_edge_core.supervisor.supervisor.tsdb.base import Point, TimeseriesStore
 
 
 class TsdbWriter:
