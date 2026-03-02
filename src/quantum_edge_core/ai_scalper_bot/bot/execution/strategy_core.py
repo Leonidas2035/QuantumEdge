@@ -7,6 +7,11 @@ from enum import Enum, auto
 from dataclasses import dataclass
 from typing import Optional, Dict, Any
 
+import os
+import collections
+import numpy as np
+import xgboost as xgb
+
 from quantum_edge_core.ai_scalper_bot.bot.core.models import MarketState
 from quantum_edge_core.ai_scalper_bot.bot.features.facade import FeatureVector
 from quantum_edge_core.ai_scalper_bot.bot.execution.position import PositionManager
@@ -43,6 +48,24 @@ class AdaptiveGridStrategy:
         self.config = config
         self.last_buy_price: float = 0.0
 
+        # Feature state
+        self.mid_prices = collections.deque(maxlen=100)
+        self.prev_bid_qty = 0.0
+        self.prev_ask_qty = 0.0
+
+        # Load ML model
+        self.model = None
+        model_path = "models/xgboost_alpha.json"
+        if os.path.exists(model_path):
+            try:
+                self.model = xgb.XGBClassifier()
+                self.model.load_model(model_path)
+                print(f"[StrategyCore] Loaded XGBoost model from {model_path}")
+            except Exception as e:
+                print(f"[StrategyCore] Error loading model: {e}")
+        else:
+            print(f"[StrategyCore] Model not found at {model_path}. Using fallback logic.")
+
     def decide(
         self,
         market: MarketState,
@@ -54,6 +77,29 @@ class AdaptiveGridStrategy:
         Main Decision Function.
         """
         current_price = market.last_price  # Or best_bid? Using last_price as reference.
+
+        # --- ML Feature Pipeline ---
+        bid_price = market.best_bid
+        ask_price = market.best_ask
+        bid_qty = market.best_bid_qty
+        ask_qty = market.best_ask_qty
+        
+        mid_price = (bid_price + ask_price) / 2.0
+        self.mid_prices.append(mid_price)
+        
+        prediction = None
+        if self.model is not None:
+            spread = ask_price - bid_price
+            micro_imbalance = (bid_qty - ask_qty) / (bid_qty + ask_qty + 1e-8)
+            ofi_proxy = (bid_qty - self.prev_bid_qty) - (ask_qty - self.prev_ask_qty)
+            volatility_100t = float(np.std(self.mid_prices)) if len(self.mid_prices) >= 100 else 0.0
+            
+            X = np.array([[spread, micro_imbalance, ofi_proxy, volatility_100t]])
+            prediction = self.model.predict(X)[0]
+            
+        self.prev_bid_qty = bid_qty
+        self.prev_ask_qty = ask_qty
+        # ---------------------------
 
         # 0. State Transition Check
         if position.total_qty == 0 and self.state == BotState.LONG_ACCUMULATION:
@@ -122,62 +168,83 @@ class AdaptiveGridStrategy:
                                 reason=f"Front-run ASK Wall @ {n_price} (Take Profit, OFI: {features.ofi:.2f})"
                             )
 
-        # 3. Logic based on States (Standard)
+        # 3. Logic based on States (Standard or ML)
         if getattr(market, "entries_paused", False):
             # If paused, only allow HEDGE and SELLs (which are above).
             return None
 
-        if self.state == BotState.IDLE:
-            # Entry Logic: High OFI (Buying Pressure)
-            if features.ofi > self.config.get("ofi_entry_threshold", 0.1):
-                qty = self.config.get("base_order_size_q", 0.01) * getattr(market, "risk_multiplier", 1.0)
-                self.last_buy_price = (
-                    current_price  # Temporarily set, confirmed on fill
-                )
-                return TradeAction(
-                    action_type="BUY",
-                    price=market.best_ask,  # Buy from ask
-                    qty=qty,
-                    reason=f"High OFI ({features.ofi:.2f})",
-                )
-
-        elif self.state == BotState.LONG_ACCUMULATION:
-            # A. Take Profit Check
-            tp_price = position.avg_price * (
-                1 + self.config.get("take_profit_pct", 0.01)
-            )
-            if current_price >= tp_price:
-                return TradeAction(
-                    action_type="SELL",
-                    price=market.best_bid,
-                    qty=position.total_qty,
-                    reason="Take Profit Hit",
-                )
-
-            # B. DCA Check (Dynamic ATR Spacing)
-            # If price < last_buy - (ATR * gap_mult)
-            gap = atr * self.config.get("grid_step_atr_mult", 2.0)
-
-            # Safety: Ensure Gap is not zero or tiny
-            if gap < current_price * 0.0005:  # Minimum 5 bps spacing
-                gap = current_price * 0.0005
-
-            if current_price <= (self.last_buy_price - gap):
-                # DCA Size: Multiplier * Base (Simplified)
-                # In real bot, we'd replicate existing size or use martingale
-                dca_qty = self.config.get("base_order_size_q", 0.01) * getattr(market, "risk_multiplier", 1.0)
-
+        if self.model is not None:
+            # --- ML Logic ---
+            qty = self.config.get("base_order_size_q", 0.01) * getattr(market, "risk_multiplier", 1.0)
+            
+            if prediction == 2 and self.state == BotState.IDLE: # BUY
                 self.last_buy_price = current_price
                 return TradeAction(
                     action_type="BUY",
                     price=market.best_ask,
-                    qty=dca_qty,
-                    reason=f"DCA Step (ATR Gap: {gap:.2f})",
+                    qty=qty,
+                    reason="XGBoost Signal: BUY"
                 )
+            elif prediction == 0 and self.state == BotState.LONG_ACCUMULATION: # SELL
+                return TradeAction(
+                    action_type="SELL",
+                    price=market.best_bid,
+                    qty=position.total_qty,
+                    reason="XGBoost Signal: SELL"
+                )
+        else:
+            # --- Fallback (Old Baseline Logic) ---
+            if self.state == BotState.IDLE:
+                # Entry Logic: High OFI (Buying Pressure)
+                if features.ofi > self.config.get("ofi_entry_threshold", 0.1):
+                    qty = self.config.get("base_order_size_q", 0.01) * getattr(market, "risk_multiplier", 1.0)
+                    self.last_buy_price = (
+                        current_price  # Temporarily set, confirmed on fill
+                    )
+                    return TradeAction(
+                        action_type="BUY",
+                        price=market.best_ask,  # Buy from ask
+                        qty=qty,
+                        reason=f"High OFI ({features.ofi:.2f})",
+                    )
 
-        elif self.state == BotState.HEDGED:
-            # Logic to unwind hedge would go here.
-            # For now, stay hedged until manual intervention or further logic.
-            pass
+            elif self.state == BotState.LONG_ACCUMULATION:
+                # A. Take Profit Check
+                tp_price = position.avg_price * (
+                    1 + self.config.get("take_profit_pct", 0.01)
+                )
+                if current_price >= tp_price:
+                    return TradeAction(
+                        action_type="SELL",
+                        price=market.best_bid,
+                        qty=position.total_qty,
+                        reason="Take Profit Hit",
+                    )
+
+                # B. DCA Check (Dynamic ATR Spacing)
+                # If price < last_buy - (ATR * gap_mult)
+                gap = atr * self.config.get("grid_step_atr_mult", 2.0)
+
+                # Safety: Ensure Gap is not zero or tiny
+                if gap < current_price * 0.0005:  # Minimum 5 bps spacing
+                    gap = current_price * 0.0005
+
+                if current_price <= (self.last_buy_price - gap):
+                    # DCA Size: Multiplier * Base (Simplified)
+                    # In real bot, we'd replicate existing size or use martingale
+                    dca_qty = self.config.get("base_order_size_q", 0.01) * getattr(market, "risk_multiplier", 1.0)
+
+                    self.last_buy_price = current_price
+                    return TradeAction(
+                        action_type="BUY",
+                        price=market.best_ask,
+                        qty=dca_qty,
+                        reason=f"DCA Step (ATR Gap: {gap:.2f})",
+                    )
+
+            elif self.state == BotState.HEDGED:
+                # Logic to unwind hedge would go here.
+                # For now, stay hedged until manual intervention or further logic.
+                pass
 
         return None
