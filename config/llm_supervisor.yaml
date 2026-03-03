@@ -1,0 +1,41 @@
+# ──────────────────────────────────────────────────────────────────
+# QuantumEdge — LLM Supervisor Configuration
+# ──────────────────────────────────────────────────────────────────
+# Loaded by: config.load_llm_supervisor_config()
+# Dataclass: LlmSupervisorConfig
+#
+# Key names MUST match exactly what the parser expects.
+# Positive integer fields validated via _positive_int / _non_negative_int.
+# ──────────────────────────────────────────────────────────────────
+
+enabled: true
+api_url: "https://generativelanguage.googleapis.com/v1beta/models"
+model: "gemini-2.5-flash"
+api_key_env: "GOOGLE_API_KEY"
+
+# ── Check Schedule ───────────────────────────────────────────────
+check_interval_minutes: 1        # How often LLM reviews risk (minutes, >0)
+min_order_decisions: 0           # Min order events before LLM check (0 = immediate)
+max_events_in_summary: 50        # Max events included in LLM prompt (>0)
+max_trades_in_table: 20          # Max trade rows in LLM prompt (>0)
+timeout_seconds: 20              # HTTP timeout for LLM call (>0)
+
+# ── Execution Mode ───────────────────────────────────────────────
+dry_run: false                   # false = LLM commands sent to Command Bus
+
+# ── Trust Policy ─────────────────────────────────────────────────
+# Controls what the LLM is allowed to change.
+# Constraint: 0 < min_multiplier <= max_multiplier <= 1.0
+trust_policy:
+  allow_risk_multiplier: true
+  allow_mode_switch: false
+  allow_pause: true
+  min_multiplier: 0.2
+  max_multiplier: 1.0
+
+# ── Circuit Breaker ──────────────────────────────────────────────
+# Protects against LLM API failures/flapping.
+circuit_breaker:
+  failures: 3                    # Consecutive failures to trip breaker
+  window_sec: 300                # Window to count failures (seconds)
+  open_sec: 120                  # How long breaker stays open (seconds)
