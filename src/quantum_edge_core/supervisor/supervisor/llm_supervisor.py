@@ -28,6 +28,15 @@ def _strip_markdown_fences(text: str) -> str:
     return m.group(1).strip() if m else stripped
 
 
+class TradingMode(str, Enum):
+    LONG_ONLY = "LONG_ONLY"
+    SHORT_ONLY = "SHORT_ONLY"
+    NEUTRAL = "NEUTRAL"
+    RISK_OFF = "RISK_OFF"
+    HALT = "HALT"
+
+
+# Keep legacy LlmAction for backward compat with EventLogger
 class LlmAction(str, Enum):
     OK = "OK"
     LOWER_RISK = "LOWER_RISK"
@@ -36,12 +45,26 @@ class LlmAction(str, Enum):
     UNSPECIFIED = "UNSPECIFIED"
 
 
+def _trading_mode_to_action(mode: TradingMode) -> LlmAction:
+    """Map TradingMode to legacy LlmAction for event logging."""
+    return {
+        TradingMode.LONG_ONLY: LlmAction.OK,
+        TradingMode.SHORT_ONLY: LlmAction.OK,
+        TradingMode.NEUTRAL: LlmAction.OK,
+        TradingMode.RISK_OFF: LlmAction.LOWER_RISK,
+        TradingMode.HALT: LlmAction.PAUSE,
+    }.get(mode, LlmAction.UNSPECIFIED)
+
+
 @dataclass
 class LlmSupervisorAdvice:
-    action: LlmAction
+    trading_mode: TradingMode
     risk_multiplier: Optional[float]
-    comment: str
+    reasoning: str
     raw_response: str
+    # Legacy compat
+    action: LlmAction = LlmAction.UNSPECIFIED
+    comment: str = ""
 
 
 @dataclass
@@ -133,9 +156,21 @@ class LlmSupervisor:
             self._event_logger.log_llm_advice(
                 advice.action.value,
                 advice.risk_multiplier,
-                advice.comment,
+                advice.reasoning,
                 self._config.dry_run,
             )
+
+        # ── Beautiful console output ─────────────────────────────────
+        self._logger.info(
+            "\n┌─── LLM DECISION ───────────────────────────────────────┐"
+            "\n│ Trading Mode : %-12s │ Risk Multiplier : %.2f │"
+            "\n├─── LLM REASONING ──────────────────────────────────────┤"
+            "\n│ %s"
+            "\n└────────────────────────────────────────────────────────┘",
+            advice.trading_mode.value,
+            advice.risk_multiplier if advice.risk_multiplier is not None else 1.0,
+            advice.reasoning,
+        )
         return advice
 
     def call_llm(self, system_prompt: str, user_prompt: str) -> str:
@@ -155,28 +190,42 @@ class LlmSupervisor:
         try:
             cleaned = _strip_markdown_fences(raw_response)
             payload = json.loads(cleaned)
-            action_raw = str(payload.get("action", "UNSPECIFIED")).upper()
-            action = (
-                LlmAction(action_raw)
-                if action_raw in LlmAction.__members__
-                else LlmAction.UNSPECIFIED
+
+            # Parse trading_mode (Phase 3)
+            mode_raw = str(payload.get("trading_mode", "NEUTRAL")).upper()
+            trading_mode = (
+                TradingMode(mode_raw)
+                if mode_raw in TradingMode.__members__
+                else TradingMode.NEUTRAL
             )
+
+            # Parse risk_multiplier
             risk_multiplier = payload.get("risk_multiplier")
             if risk_multiplier is not None:
-                risk_multiplier = float(risk_multiplier)
-            comment = str(payload.get("comment") or "")
+                risk_multiplier = max(0.0, min(1.0, float(risk_multiplier)))
+
+            # Parse reasoning (Phase 3)
+            reasoning = str(payload.get("reasoning") or payload.get("comment") or "")
+
+            # Legacy action mapping
+            action = _trading_mode_to_action(trading_mode)
+
             return LlmSupervisorAdvice(
-                action=action,
+                trading_mode=trading_mode,
                 risk_multiplier=risk_multiplier,
-                comment=comment,
+                reasoning=reasoning,
                 raw_response=raw_response,
+                action=action,
+                comment=reasoning,
             )
         except Exception as exc:
             return LlmSupervisorAdvice(
-                action=LlmAction.UNSPECIFIED,
+                trading_mode=TradingMode.NEUTRAL,
                 risk_multiplier=None,
-                comment=f"Failed to parse LLM response: {exc}",
+                reasoning=f"Failed to parse LLM response: {exc}",
                 raw_response=raw_response,
+                action=LlmAction.UNSPECIFIED,
+                comment=f"Failed to parse LLM response: {exc}",
             )
 
 
@@ -282,15 +331,19 @@ def build_prompts(
 ) -> Tuple[str, str]:
     system_prompt = (
         "Ти — Головний Маркет-Мейкер (Lead Market Maker) та Ризик-менеджер HFT-системи. "
-        "Твоя мета — аналізувати макро-ризик та диктувати режим роботи для HFT-бота. "
-        "Ти розглядаєш State (ризики) та Situation (ринкові таймфрейми). "
-        "Спершу оціни State (баланс, вільну маржу, відкриті позиції, PnL та леверидж). "
-        "Потім оціни Situation (макро-тренд на 4H, 1H, 15m). "
-        "Якщо на 4H сильний даунтренд — обмежуй лонги. "
-        "Тільки переконавшись, що ризики в нормі, дозволяй торгувати. "
-        "Видавай action та risk_multiplier від 0.0 до 1.0. "
-        "Return ONLY a JSON object with keys: action, risk_multiplier, comment. "
-        "Allowed actions: OK (continue), LOWER_RISK (tighten limits), PAUSE (soft halt), SWITCH_TO_PAPER, UNSPECIFIED."
+        "Проаналізуй STATE (ризики: баланс, маржу, PnL, леверидж) та SITUATION (ринкові дані: 4H, 1H, 15m). "
+        "Зроби синтез:\n"
+        "- Якщо на 4H сильний даунтренд — заборони лонги (trading_mode: SHORT_ONLY).\n"
+        "- Якщо на 4H сильний аптренд — дозволь лонги (trading_mode: LONG_ONLY).\n"
+        "- Якщо ризики завищені (великий unrealized loss, високий leverage) — RISK_OFF і знижуй risk_multiplier.\n"
+        "- Якщо все стабільно — NEUTRAL.\n"
+        "- Якщо критична ситуація (дродаун вище ліміту, система halted) — HALT.\n"
+        "Твоя відповідь має бути ВИКЛЮЧНО у форматі JSON:\n"
+        '{\n'
+        '  \"reasoning\": \"твій аналіз ситуації 1-2 реченнями\",\n'
+        '  \"trading_mode\": \"LONG_ONLY | SHORT_ONLY | NEUTRAL | RISK_OFF | HALT\",\n'
+        '  \"risk_multiplier\": 0.5\n'
+        '}'
     )
 
     deny_breakdown = (
@@ -470,10 +523,14 @@ def _run_standalone(args: argparse.Namespace) -> None:
         situation_text=situation_text,
     )
     if advice:
+        print("\n" + "=" * 60)
+        print(f"  [LLM DECISION] Mode: {advice.trading_mode.value} | Risk: {advice.risk_multiplier}")
+        print(f"  [LLM REASONING] \"{advice.reasoning}\"")
+        print("=" * 60 + "\n")
         print(json.dumps({
-            "action": advice.action.value,
+            "trading_mode": advice.trading_mode.value,
             "risk_multiplier": advice.risk_multiplier,
-            "comment": advice.comment,
+            "reasoning": advice.reasoning,
         }, indent=2, ensure_ascii=False))
     else:
         print("[LlmSupervisor] No advice returned (disabled or insufficient data).")
