@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 import time
 from pathlib import Path
 from typing import Any, Dict, Optional
@@ -109,6 +110,9 @@ class LockBotService:
         self._loop_counter = 0
         self._last_loop_ts = time.time()
         self._dropped_msgs = 0
+        # Supervisor policy state
+        self._supervisor_mode: Optional[str] = None
+        self._supervisor_risk_multiplier: float = 1.0
 
     async def start(self) -> None:
         if self._hub_sub:
@@ -127,6 +131,9 @@ class LockBotService:
             self._tasks.append(asyncio.create_task(self._heartbeat_loop()))
         if self._account_sub:
             self._tasks.append(asyncio.create_task(self._account_loop()))
+        # Directive listener (Supervisor → LockBot policy channel)
+        if self._ipc_enabled:
+            self._tasks.append(asyncio.create_task(self._directive_loop()))
 
     async def stop(self) -> None:
         self._stop.set()
@@ -429,6 +436,108 @@ class LockBotService:
             self._publisher.publish_ack(ACK_TOPIC, ack)
             status = self.build_status()
             self._publisher.publish_status(STATUS_TOPIC, status)
+
+    async def _directive_loop(self) -> None:
+        """Listen for directive.v1 messages from Supervisor on policy SUB."""
+        import zmq as _zmq
+        import zmq.asyncio as _zmq_async
+
+        endpoint = self._cfg.supervisor_policy_sub_endpoint
+        topic = "LOCKBOT:BTCUSDT:directive"
+        ctx = _zmq_async.Context.instance()
+        sock = ctx.socket(_zmq.SUB)
+        sock.setsockopt(_zmq.RCVHWM, 100)
+        sock.setsockopt(_zmq.LINGER, 0)
+        sock.setsockopt(_zmq.SUBSCRIBE, topic.encode("utf-8"))
+        sock.connect(endpoint)
+        logger.info(
+            "[LockBot] Directive listener connected to %s (topic=%s)",
+            endpoint, topic,
+        )
+
+        while not self._stop.is_set():
+            try:
+                _topic_bytes, payload_bytes = await sock.recv_multipart()
+            except asyncio.CancelledError:
+                break
+            except Exception:
+                continue
+
+            try:
+                directive = json.loads(payload_bytes.decode("utf-8"))
+            except Exception:
+                logger.warning("[LockBot] Failed to parse directive JSON.")
+                continue
+
+            if directive.get("schema") != "directive.v1":
+                continue
+
+            mode = directive.get("mode", "NEUTRAL")
+            risk = directive.get("risk_multiplier", 1.0)
+            reasoning = directive.get("reasoning", "")
+
+            logger.info(
+                "[LockBot] Отримано нову директиву від Супервізора: "
+                "Mode=%s, Risk=%.2f, Reasoning='%s'",
+                mode, risk, reasoning,
+            )
+
+            self._apply_supervisor_directive(mode, risk)
+
+        sock.close()
+
+    def _apply_supervisor_directive(self, mode: str, risk_multiplier: float) -> None:
+        """Map Supervisor trading_mode to LockBot DDN state."""
+        self._supervisor_mode = mode
+        self._supervisor_risk_multiplier = risk_multiplier
+
+        if mode == "LONG_ONLY":
+            self._bot_state.ddn_target = 0.1
+            self._bot_state.ddn_band_low = 0.0
+            self._bot_state.ddn_band_high = 0.2
+            self._bot_state.ddn_profile = "trend"
+            self._bot_state.regime = "TREND_UP"
+            if self._bot_state.mode == "PAUSED":
+                self._bot_state.mode = "IDLE"
+            logger.info("[LockBot] DDN set to LONG_ONLY: target=+0.1, band=[0.0, 0.2]")
+
+        elif mode == "SHORT_ONLY":
+            self._bot_state.ddn_target = -0.1
+            self._bot_state.ddn_band_low = -0.2
+            self._bot_state.ddn_band_high = 0.0
+            self._bot_state.ddn_profile = "trend"
+            self._bot_state.regime = "TREND_DOWN"
+            if self._bot_state.mode == "PAUSED":
+                self._bot_state.mode = "IDLE"
+            logger.info("[LockBot] DDN set to SHORT_ONLY: target=-0.1, band=[-0.2, 0.0]")
+
+        elif mode == "NEUTRAL":
+            self._bot_state.ddn_target = 0.0
+            self._bot_state.ddn_band_low = -0.05
+            self._bot_state.ddn_band_high = 0.05
+            self._bot_state.ddn_profile = "neutral"
+            self._bot_state.regime = "RANGE"
+            if self._bot_state.mode == "PAUSED":
+                self._bot_state.mode = "IDLE"
+            logger.info("[LockBot] DDN set to NEUTRAL: target=0.0, band=[-0.05, 0.05]")
+
+        elif mode == "RISK_OFF":
+            self._bot_state.ddn_target = 0.0
+            self._bot_state.ddn_band_low = -0.02
+            self._bot_state.ddn_band_high = 0.02
+            self._bot_state.ddn_profile = "neutral"
+            self._bot_state.mode = "PAUSED"
+            logger.info("[LockBot] DDN set to RISK_OFF: PAUSED, tight bands [-0.02, 0.02]")
+
+        elif mode in ("HALT", "PANIC_LOCK"):
+            self._bot_state.ddn_target = 0.0
+            self._bot_state.mode = "PANIC"
+            logger.info("[LockBot] DDN set to HALT/PANIC: mode=PANIC, target=0.0")
+
+        else:
+            logger.warning("[LockBot] Unknown directive mode: %s", mode)
+
+        self._bot_state.bump_state()
 
     async def _heartbeat_loop(self) -> None:
         interval = max(self._cfg.heartbeat_interval_ms / 1000.0, 0.2)

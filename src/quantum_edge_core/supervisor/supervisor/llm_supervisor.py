@@ -103,6 +103,7 @@ class LlmSupervisor:
         logger: logging.Logger,
         event_logger: Optional[EventLogger] = None,
         chat_client: Optional[ChatCompletionsClient] = None,
+        policy_publisher: Optional["ZmqPolicyPublisher"] = None,
     ) -> None:
         self._config = config
         self._risk_config = risk_config
@@ -112,6 +113,7 @@ class LlmSupervisor:
         self._chat_client = chat_client or ChatCompletionsClient(
             config.api_url, config.api_key_env, logger
         )
+        self._policy_publisher = policy_publisher
         print(f"[SUP] DEBUG: LlmSupervisor initialized. enabled={config.enabled}")
 
     def run_check(
@@ -171,6 +173,31 @@ class LlmSupervisor:
             advice.risk_multiplier if advice.risk_multiplier is not None else 1.0,
             advice.reasoning,
         )
+
+        # ── Publish directive via ZMQ PUB → LockBot ──────────────────
+        if self._policy_publisher is not None:
+            import asyncio
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    asyncio.ensure_future(
+                        self._policy_publisher.publish_directive(
+                            mode=advice.trading_mode.value,
+                            risk_multiplier=advice.risk_multiplier if advice.risk_multiplier is not None else 1.0,
+                            reasoning=advice.reasoning,
+                        )
+                    )
+                else:
+                    loop.run_until_complete(
+                        self._policy_publisher.publish_directive(
+                            mode=advice.trading_mode.value,
+                            risk_multiplier=advice.risk_multiplier if advice.risk_multiplier is not None else 1.0,
+                            reasoning=advice.reasoning,
+                        )
+                    )
+            except Exception as exc:
+                self._logger.warning("Failed to publish ZMQ directive: %s", exc)
+
         return advice
 
     def call_llm(self, system_prompt: str, user_prompt: str) -> str:
