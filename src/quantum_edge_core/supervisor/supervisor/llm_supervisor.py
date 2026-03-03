@@ -2,7 +2,11 @@
 
 from __future__ import annotations
 
+import argparse
 import json
+import os
+import sys
+import traceback
 import logging
 from dataclasses import dataclass
 from datetime import date
@@ -314,3 +318,139 @@ def build_prompts(
     )
 
     return system_prompt, user_prompt
+
+
+def _parse_cli_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
+    """Parse CLI arguments for standalone LLM supervisor execution."""
+    parser = argparse.ArgumentParser(
+        description="LLM Supervisor — standalone risk-check runner.",
+    )
+    parser.add_argument(
+        "command",
+        nargs="?",
+        default="run-foreground",
+        choices=["run-foreground", "check-once"],
+        help="Command to execute (default: run-foreground).",
+    )
+    parser.add_argument(
+        "--mode",
+        default="demo",
+        choices=["demo", "paper", "live"],
+        help="Execution mode (default: demo).",
+    )
+    parser.add_argument(
+        "--config-dir",
+        dest="config_dir",
+        default="config",
+        help="Path to supervisor config directory.",
+    )
+    return parser.parse_args(argv)
+
+
+def _run_standalone(args: argparse.Namespace) -> None:
+    """Run a single LLM risk check from the command line."""
+    from datetime import date as _date
+
+    config_dir = Path(args.config_dir)
+
+    # ── Pre-flight: API key ──────────────────────────────────────────
+    api_key_env = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
+    if not api_key_env:
+        print(
+            "[!] ПОМИЛКА: Не встановлено GOOGLE_API_KEY або GEMINI_API_KEY.\n"
+            "    Встановіть змінну середовища і спробуйте знову:\n"
+            "    export GOOGLE_API_KEY=<your-key>",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    # ── Load configs ─────────────────────────────────────────────────
+    llm_config_path = config_dir / "llm_supervisor.yaml"
+    risk_config_path = config_dir / "risk.yaml"
+
+    if not llm_config_path.exists():
+        print(
+            f"[!] ПОМИЛКА: Конфіг LLM Supervisor не знайдено: {llm_config_path}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    if not risk_config_path.exists():
+        print(
+            f"[!] ПОМИЛКА: Конфіг Risk не знайдено: {risk_config_path}",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    from quantum_edge_core.supervisor.supervisor.config import (
+        load_llm_supervisor_config,
+        load_risk_config,
+    )
+
+    llm_cfg = load_llm_supervisor_config(llm_config_path)
+    risk_cfg = load_risk_config(risk_config_path)
+
+    # ── Build supervisor ─────────────────────────────────────────────
+    _logger = logging.getLogger("LlmSupervisor")
+    events_dir = Path("runtime") / "events"
+    events_dir.mkdir(parents=True, exist_ok=True)
+
+    supervisor = LlmSupervisor(
+        config=llm_cfg,
+        risk_config=risk_cfg,
+        events_dir=events_dir,
+        logger=_logger,
+    )
+
+    # ── Build a minimal snapshot ─────────────────────────────────────
+    snapshot = RiskStateSnapshot(
+        trading_day=_date.today(),
+        halted=False,
+        llm_paused=False,
+        llm_risk_multiplier=1.0,
+        equity_start=None,
+        equity_now=None,
+        max_equity_intraday=None,
+        realized_pnl_today=None,
+    )
+
+    _logger.info(
+        "Running LLM check in mode=%s, command=%s …",
+        args.mode, args.command,
+    )
+    advice = supervisor.run_check(
+        today=_date.today(), snapshot=snapshot, mode=args.mode,
+    )
+    if advice:
+        print(json.dumps({
+            "action": advice.action.value,
+            "risk_multiplier": advice.risk_multiplier,
+            "comment": advice.comment,
+        }, indent=2, ensure_ascii=False))
+    else:
+        print("[LlmSupervisor] No advice returned (disabled or insufficient data).")
+
+
+if __name__ == "__main__":
+    # ── Configure logging first ──────────────────────────────────────
+    logging.basicConfig(
+        level=logging.DEBUG,
+        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+        stream=sys.stdout,
+    )
+
+    try:
+        cli_args = _parse_cli_args()
+        _run_standalone(cli_args)
+    except KeyboardInterrupt:
+        print("\n[LlmSupervisor] Перервано користувачем.", file=sys.stderr)
+        sys.exit(130)
+    except SystemExit:
+        raise
+    except Exception:
+        # ── НІКОЛИ не мовчимо: повний stacktrace ─────────────────────
+        print(
+            "\n[!] КРИТИЧНА ПОМИЛКА під час ініціалізації LLM Supervisor:\n",
+            file=sys.stderr,
+        )
+        traceback.print_exc(file=sys.stderr)
+        sys.exit(1)

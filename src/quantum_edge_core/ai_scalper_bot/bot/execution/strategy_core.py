@@ -3,6 +3,7 @@ Adaptive Grid Strategy Core.
 Decides trade actions based on Market State, Alpha Features, and Position Risk.
 """
 
+import logging
 from enum import Enum, auto
 from dataclasses import dataclass
 from typing import Optional, Dict, Any
@@ -15,6 +16,8 @@ import xgboost as xgb
 from quantum_edge_core.ai_scalper_bot.bot.core.models import MarketState
 from quantum_edge_core.ai_scalper_bot.bot.features.facade import FeatureVector
 from quantum_edge_core.ai_scalper_bot.bot.execution.position import PositionManager
+
+logger = logging.getLogger(__name__)
 
 
 class BotState(Enum):
@@ -60,11 +63,20 @@ class AdaptiveGridStrategy:
             try:
                 self.model = xgb.XGBClassifier()
                 self.model.load_model(model_path)
-                print(f"[StrategyCore] Loaded XGBoost model from {model_path}")
+                logger.info("[StrategyCore] Loaded XGBoost model from %s", model_path)
             except Exception as e:
-                print(f"[StrategyCore] Error loading model: {e}")
+                logger.error("[StrategyCore] Error loading model: %s", e)
+                logger.warning(
+                    "[!] УВАГА: XGBoost модель не завантажилася (%s). "
+                    "Бот працює в Fallback режимі!",
+                    model_path,
+                )
         else:
-            print(f"[StrategyCore] Model not found at {model_path}. Using fallback logic.")
+            logger.warning(
+                "[!] УВАГА: XGBoost модель не знайдено (%s). "
+                "Бот працює в Fallback режимі!",
+                model_path,
+            )
 
     def decide(
         self,
@@ -96,6 +108,12 @@ class AdaptiveGridStrategy:
             
             X = np.array([[spread, micro_imbalance, ofi_proxy, volatility_100t]])
             prediction = self.model.predict(X)[0]
+
+            logger.info(
+                "[XGBoost] Prediction: %s | Spread=%.4f, Imbalance=%.4f, "
+                "OFI=%.4f, Vol100t=%.6f",
+                prediction, spread, micro_imbalance, ofi_proxy, volatility_100t,
+            )
             
         self.prev_bid_qty = bid_qty
         self.prev_ask_qty = ask_qty
