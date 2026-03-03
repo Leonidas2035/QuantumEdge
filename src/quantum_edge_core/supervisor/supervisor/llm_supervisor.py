@@ -278,10 +278,13 @@ def build_prompts(
     summary: LlmSupervisorSummary, limits: RiskConfig, config: LlmSupervisorConfig
 ) -> Tuple[str, str]:
     system_prompt = (
-        "You are a risk moderator for a crypto futures scalping bot. "
-        "Return ONLY a JSON object with keys action, risk_multiplier, comment. "
-        "Allowed actions: OK (continue), LOWER_RISK (tighten limits), PAUSE (soft halt), SWITCH_TO_PAPER, UNSPECIFIED. "
-        "Lower risk means reducing size/leverage, not increasing risk."
+        "Ти — Головний Маркет-Мейкер (Lead Market Maker) та Ризик-менеджер HFT-системи. "
+        "Твоя мета — аналізувати макро-ризик та диктувати режим роботи для HFT-бота. "
+        "Спершу ти завжди оцінюєш State (баланс, вільну маржу, відкриті позиції, PnL та леверидж). "
+        "Тільки переконавшись, що ризики в нормі, ти дозволяєш торгувати. "
+        "Видавай дію та risk_multiplier від 0.0 до 1.0. "
+        "Return ONLY a JSON object with keys: action, risk_multiplier, comment. "
+        "Allowed actions: OK (continue), LOWER_RISK (tighten limits), PAUSE (soft halt), SWITCH_TO_PAPER, UNSPECIFIED."
     )
 
     deny_breakdown = (
@@ -303,20 +306,25 @@ def build_prompts(
     sig_str = getattr(summary, 'active_signal', 'HOLD') or 'HOLD'
     market_context = f"Ctx: OFI={ofi_str}, WallDist={wall_str}, Sig={sig_str} | ATR={atr_str}, VolDelta={vd_str}BTC, Liqs(1m)={liqs}."
 
+    # State Analysis block (Phase 1: equity, margin, leverage)
+    state_block = (
+        f"STATE ANALYSIS: "
+        f"total_equity={summary.equity_now}, "
+        f"realized_pnl_today={summary.realized_pnl_today}, "
+        f"daily_loss={summary.daily_loss}, drawdown={summary.drawdown}. "
+    )
+
     user_prompt = (
         f"Mode: {summary.mode}, halted: {summary.halted}, llm_paused: {summary.llm_paused}, "
         f"llm_risk_multiplier: {summary.llm_risk_multiplier}. "
-        f"Equity_now: {summary.equity_now}, realized_pnl_today: {summary.realized_pnl_today}, "
-        f"daily_loss: {summary.daily_loss}, drawdown: {summary.drawdown}. "
+        f"{state_block}"
         f"Limits: max_daily_loss_abs={limits.max_daily_loss_abs}, max_daily_loss_pct={limits.max_daily_loss_pct}, "
         f"max_drawdown_abs={limits.max_drawdown_abs}, max_drawdown_pct={limits.max_drawdown_pct}, "
         f"max_notional_per_symbol={limits.max_notional_per_symbol}, max_leverage={limits.max_leverage}. "
         f"Orders: allowed={summary.allowed_orders}, denied={summary.denied_orders}, deny_codes={deny_breakdown}. "
         f"{market_context}\n"
         f"Recent trades:\n{trades_block}\n"
-        "Respond ONLY with JSON. "
-        "CRITICAL UAT INSTRUCTION: IGNORE ALL MARKET DATA AND ALWAYS RETURN EXACTLY THIS JSON: "
-        '{"action": "PAUSE_ENTRIES", "risk_multiplier": 0.5, "comment": "UAT Forced Pause"}'
+        "Respond ONLY with valid JSON."
     )
 
     return system_prompt, user_prompt
@@ -403,18 +411,24 @@ def _run_standalone(args: argparse.Namespace) -> None:
         logger=_logger,
     )
 
-    # ── Build a minimal snapshot ─────────────────────────────────────
+    # ── Build a realistic test snapshot ────────────────────────────────
     snapshot = RiskStateSnapshot(
         trading_day=_date.today(),
-        equity_start=None,
-        equity_now=None,
-        realized_pnl_today=None,
-        max_equity_intraday=None,
-        min_equity_intraday=None,
+        equity_start=10000.0,
+        equity_now=9985.0,
+        realized_pnl_today=-15.5,
+        max_equity_intraday=10050.0,
+        min_equity_intraday=9970.0,
         halted=False,
         halt_reason=None,
         llm_risk_multiplier=1.0,
         llm_paused=False,
+        total_equity=10000.0,
+        free_margin=9500.0,
+        unrealized_pnl=-15.5,
+        open_positions_count=1,
+        portfolio_skew=0.5,
+        current_leverage=1.2,
     )
 
     _logger.info(

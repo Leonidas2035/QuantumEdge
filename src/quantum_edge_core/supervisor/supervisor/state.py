@@ -180,6 +180,13 @@ class RiskStateSnapshot:
     llm_paused: bool = False
     llm_last_action: Optional[str] = None
     llm_last_reason: Optional[str] = None
+    # ── Phase 1: State Analysis fields ───────────────────────────
+    total_equity: Optional[float] = None
+    free_margin: Optional[float] = None
+    unrealized_pnl: Optional[float] = None
+    open_positions_count: int = 0
+    portfolio_skew: float = 0.0
+    current_leverage: float = 0.0
 
 
 def _risk_state_file(state_dir: Path) -> Path:
@@ -256,6 +263,12 @@ def load_risk_state(state_dir: Path, today: date) -> RiskStateSnapshot:
         llm_paused=bool(raw.get("llm_paused", False)),
         llm_last_action=raw.get("llm_last_action"),
         llm_last_reason=raw.get("llm_last_reason"),
+        total_equity=raw.get("total_equity"),
+        free_margin=raw.get("free_margin"),
+        unrealized_pnl=raw.get("unrealized_pnl"),
+        open_positions_count=int(raw.get("open_positions_count", 0)),
+        portfolio_skew=float(raw.get("portfolio_skew", 0.0)),
+        current_leverage=float(raw.get("current_leverage", 0.0)),
     )
 
 
@@ -277,6 +290,12 @@ def save_risk_state(state_dir: Path, snapshot: RiskStateSnapshot) -> None:
         "llm_paused": snapshot.llm_paused,
         "llm_last_action": snapshot.llm_last_action,
         "llm_last_reason": snapshot.llm_last_reason,
+        "total_equity": snapshot.total_equity,
+        "free_margin": snapshot.free_margin,
+        "unrealized_pnl": snapshot.unrealized_pnl,
+        "open_positions_count": snapshot.open_positions_count,
+        "portfolio_skew": snapshot.portfolio_skew,
+        "current_leverage": snapshot.current_leverage,
     }
     with path.open("w", encoding="utf-8") as handle:
         json.dump(payload, handle, indent=2)
