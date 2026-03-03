@@ -32,7 +32,7 @@ logger = logging.getLogger(__name__)
 
 BINANCE_KLINES_URL = "https://api.binance.com/api/v3/klines"
 DEFAULT_SYMBOL = "BTCUSDT"
-DEFAULT_TIMEFRAMES = ("15m", "1h", "4h")
+DEFAULT_TIMEFRAMES = ("5m", "1h", "4h")
 DEFAULT_LIMIT = 20
 
 # Kline array indices (Binance REST response)
@@ -162,13 +162,13 @@ def format_situation_block(
 ) -> str:
     """Build the SITUATION ANALYSIS text block for the LLM prompt.
 
-    Output order: 4h → 1h → 15m (macro → micro).
+    Output order: 4h → 1h → 5m (macro → micro).
     """
 
     lines = [f"SITUATION ANALYSIS ({symbol}):"]
 
     # Order: longest timeframe first (top-down)
-    tf_order = ["4h", "1h", "15m"]
+    tf_order = ["4h", "1h", "5m"]
     for tf in tf_order:
         klines = multi_tf_data.get(tf, [])
         lines.append(f"  {_summarize_timeframe(tf, klines)}")
@@ -201,6 +201,6 @@ def mock_situation_summary(symbol: str = DEFAULT_SYMBOL) -> str:
         f"Vol=4200.5 | Range=[95800.0-97500.0] | Trend=UP Chg=+0.85%\n"
         f"  1h: O=96700.0 H=97000.0 L=96600.0 C=96850.0 | "
         f"Vol=1100.2 | Range=[96400.0-97100.0] | Trend=FLAT Chg=+0.12%\n"
-        f"  15m: O=96820.0 H=96900.0 L=96780.0 C=96850.0 | "
+        f"  5m: O=96820.0 H=96900.0 L=96780.0 C=96850.0 | "
         f"Vol=280.8 | Range=[96750.0-96920.0] | Trend=FLAT Chg=+0.03%"
     )
