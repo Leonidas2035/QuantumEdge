@@ -92,7 +92,8 @@ class LlmSupervisor:
         print(f"[SUP] DEBUG: LlmSupervisor initialized. enabled={config.enabled}")
 
     def run_check(
-        self, today: date, snapshot: RiskStateSnapshot, mode: str = "unknown"
+        self, today: date, snapshot: RiskStateSnapshot, mode: str = "unknown",
+        situation_text: str = "",
     ) -> Optional[LlmSupervisorAdvice]:
         print(f"[SUP] DEBUG: LlmSupervisor.run_check triggered! enabled={self._config.enabled}")
         if not self._config.enabled:
@@ -113,7 +114,8 @@ class LlmSupervisor:
         try:
             summary = build_summary(snapshot, self._risk_config, events, self._config, mode)
             system_prompt, user_prompt = build_prompts(
-                summary, self._risk_config, self._config
+                summary, self._risk_config, self._config,
+                situation_text=situation_text,
             )
         except Exception as e:
             print(f"[SUP] ERROR building LLM prompts: {e}")
@@ -275,14 +277,18 @@ def build_summary(
 
 
 def build_prompts(
-    summary: LlmSupervisorSummary, limits: RiskConfig, config: LlmSupervisorConfig
+    summary: LlmSupervisorSummary, limits: RiskConfig, config: LlmSupervisorConfig,
+    situation_text: str = "",
 ) -> Tuple[str, str]:
     system_prompt = (
         "Ти — Головний Маркет-Мейкер (Lead Market Maker) та Ризик-менеджер HFT-системи. "
         "Твоя мета — аналізувати макро-ризик та диктувати режим роботи для HFT-бота. "
-        "Спершу ти завжди оцінюєш State (баланс, вільну маржу, відкриті позиції, PnL та леверидж). "
-        "Тільки переконавшись, що ризики в нормі, ти дозволяєш торгувати. "
-        "Видавай дію та risk_multiplier від 0.0 до 1.0. "
+        "Ти розглядаєш State (ризики) та Situation (ринкові таймфрейми). "
+        "Спершу оціни State (баланс, вільну маржу, відкриті позиції, PnL та леверидж). "
+        "Потім оціни Situation (макро-тренд на 4H, 1H, 15m). "
+        "Якщо на 4H сильний даунтренд — обмежуй лонги. "
+        "Тільки переконавшись, що ризики в нормі, дозволяй торгувати. "
+        "Видавай action та risk_multiplier від 0.0 до 1.0. "
         "Return ONLY a JSON object with keys: action, risk_multiplier, comment. "
         "Allowed actions: OK (continue), LOWER_RISK (tighten limits), PAUSE (soft halt), SWITCH_TO_PAPER, UNSPECIFIED."
     )
@@ -314,10 +320,14 @@ def build_prompts(
         f"daily_loss={summary.daily_loss}, drawdown={summary.drawdown}. "
     )
 
+    # Situation Analysis block (Phase 2: multi-timeframe OHLCV)
+    situation_block = f"\n{situation_text}\n" if situation_text else ""
+
     user_prompt = (
         f"Mode: {summary.mode}, halted: {summary.halted}, llm_paused: {summary.llm_paused}, "
         f"llm_risk_multiplier: {summary.llm_risk_multiplier}. "
         f"{state_block}"
+        f"{situation_block}"
         f"Limits: max_daily_loss_abs={limits.max_daily_loss_abs}, max_daily_loss_pct={limits.max_daily_loss_pct}, "
         f"max_drawdown_abs={limits.max_drawdown_abs}, max_drawdown_pct={limits.max_drawdown_pct}, "
         f"max_notional_per_symbol={limits.max_notional_per_symbol}, max_leverage={limits.max_leverage}. "
@@ -435,8 +445,29 @@ def _run_standalone(args: argparse.Namespace) -> None:
         "Running LLM check in mode=%s, command=%s …",
         args.mode, args.command,
     )
+
+    # ── Phase 2: Fetch market data for Situation Analysis ────────────
+    from quantum_edge_core.supervisor.supervisor.market_client import (
+        fetch_situation_summary,
+        mock_situation_summary,
+    )
+
+    if args.mode == "demo":
+        situation_text = mock_situation_summary()
+        _logger.info("Using MOCK market data for demo mode.")
+    else:
+        try:
+            situation_text = fetch_situation_summary()
+            _logger.info("Fetched live OHLCV from Binance.")
+        except Exception as exc:
+            _logger.warning("Failed to fetch market data: %s. Using mock.", exc)
+            situation_text = mock_situation_summary()
+
+    _logger.info("Situation text:\n%s", situation_text)
+
     advice = supervisor.run_check(
         today=_date.today(), snapshot=snapshot, mode=args.mode,
+        situation_text=situation_text,
     )
     if advice:
         print(json.dumps({
