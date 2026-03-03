@@ -115,6 +115,59 @@ class LockBotService:
         self._supervisor_risk_multiplier: float = 1.0
 
     async def start(self) -> None:
+        # ── Startup Audit: query exchange for current state ──────────
+        from quantum_edge_core.lock_bot.state.lock_auditor import (
+            LockAuditor,
+            AuditResult,
+        )
+
+        try:
+            auditor = LockAuditor(
+                api_key_env=self._cfg.execution.api_key_env,
+                api_secret_env=self._cfg.execution.api_secret_env,
+            )
+            audit = auditor.run_audit(symbol=self._cfg.symbol)
+            LockAuditor.log_audit(audit)
+
+            # Seed AccountState with real exchange data
+            self._account_state.long_qty = audit.long_qty
+            self._account_state.short_qty = audit.short_qty
+            self._account_state.long_avg_px = audit.long_entry_price
+            self._account_state.short_avg_px = audit.short_entry_price
+            self._account_state.liq_price_long = audit.long_liq_price
+            self._account_state.liq_price_short = audit.short_liq_price
+            self._account_state.equity = audit.total_margin_balance
+            if audit.total_margin_balance > 0:
+                self._account_state.margin_usage = (
+                    (audit.total_margin_balance - audit.available_balance)
+                    / audit.total_margin_balance
+                )
+
+            # Set initial DDN profile based on actual position status
+            if audit.status == "LOCKED":
+                self._bot_state.mode = "LOCKED"
+                self._bot_state.ddn_target = 0.0
+                logger.info(
+                    "[LockBot] Startup: LOCKED position detected. "
+                    "DDN target = 0.0 (delta-neutral)."
+                )
+            elif audit.status == "IMBALANCED":
+                self._bot_state.ddn_target = 0.0  # aim to rebalance
+                logger.info(
+                    "[LockBot] Startup: IMBALANCED (Δ=%.6f). "
+                    "DDN will work to neutralize delta.",
+                    audit.net_delta,
+                )
+            else:
+                logger.info("[LockBot] Startup: FLAT — no positions.")
+
+        except Exception as exc:
+            logger.warning(
+                "[LockBot] Startup audit failed: %s. Continuing with defaults.",
+                exc,
+            )
+
+        # ── Start event loop subscribers ─────────────────────────────
         if self._hub_sub:
             await self._hub_sub.start()
         if self._cmd_sub:
