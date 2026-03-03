@@ -181,4 +181,15 @@ class LockbotConfig:
                 base_url=str(exec_cfg.get("base_url", cfg.execution.base_url)),
                 recv_window=int(exec_cfg.get("recv_window", cfg.execution.recv_window)),
             )
+        # ── Security: validate API keys from ENV ─────────────────────
+        if cfg.execution.mode != ExecutionMode.DRY_RUN:
+            api_key = os.getenv(cfg.execution.api_key_env)
+            api_secret = os.getenv(cfg.execution.api_secret_env)
+            if not api_key or not api_secret:
+                raise ValueError(
+                    f"Missing API keys in environment. Set "
+                    f"{cfg.execution.api_key_env} and "
+                    f"{cfg.execution.api_secret_env} before running "
+                    f"in {cfg.execution.mode.value} mode."
+                )
         return cfg

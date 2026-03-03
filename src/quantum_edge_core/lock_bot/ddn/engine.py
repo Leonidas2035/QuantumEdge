@@ -87,11 +87,42 @@ class DDNEngine:
         self._cfg = cfg
         self._action_ts: Deque[int] = deque()
         self._last_reject_ms: Optional[int] = None
+        # Price Velocity Guard state
+        self._last_price: Optional[float] = None
+        self._last_price_ts_ms: Optional[int] = None
 
     def evaluate(self, ctx: DDNContext, now_ms: Optional[int] = None) -> DDNDecision:
         now_ms = now_ms if now_ms is not None else int(time.time() * 1000)
         intent = ctx.intent
         reasons: List[str] = []
+
+        # ── Price Velocity Guard (Flash Crash Reflex) ────────────────
+        mark = ctx.market.mark_price
+        if mark and mark > 0:
+            if (
+                self._last_price is not None
+                and self._last_price > 0
+                and self._last_price_ts_ms is not None
+            ):
+                time_delta_s = (now_ms - self._last_price_ts_ms) / 1000.0
+                if time_delta_s > 0:
+                    velocity_bps = (
+                        abs(mark - self._last_price) / self._last_price
+                    ) * 10000.0 / time_delta_s
+                    if velocity_bps > self._cfg.max_velocity_bps_per_sec:
+                        self._last_price = mark
+                        self._last_price_ts_ms = now_ms
+                        return self._reject(
+                            now_ms,
+                            [
+                                f"FLASH_CRASH_DETECTED "
+                                f"(velocity={velocity_bps:.1f} bps/s "
+                                f"> limit={self._cfg.max_velocity_bps_per_sec} bps/s)"
+                            ],
+                        )
+            self._last_price = mark
+            self._last_price_ts_ms = now_ms
+        # ── End Velocity Guard ───────────────────────────────────────
 
         if _is_stale(
             ctx.market.market_lag_ms,

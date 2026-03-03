@@ -10,9 +10,12 @@ supervisor_policy_sub_endpoint: "tcp://127.0.0.1:5556"
 bot_pub_endpoint: "tcp://127.0.0.1:5557"
 
 # Execution (Binance Futures Testnet)
+# API keys must be loaded from ENV:
+#   export BINANCE_TESTNET_API_KEY=<your-key>
+#   export BINANCE_TESTNET_API_SECRET=<your-secret>
 execution:
-  api_key: "TESTNET_API_KEY"
-  api_secret: "TESTNET_API_SECRET"
+  api_key_env: "BINANCE_TESTNET_API_KEY"
+  api_secret_env: "BINANCE_TESTNET_API_SECRET"
   base_url: "https://testnet.binancefuture.com"
   dry_run: false
   max_margin_usage: 0.5  # 50% Margin Guard
