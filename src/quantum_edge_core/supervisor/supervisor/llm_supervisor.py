@@ -404,13 +404,15 @@ def _run_standalone(args: argparse.Namespace) -> None:
     # ── Build a minimal snapshot ─────────────────────────────────────
     snapshot = RiskStateSnapshot(
         trading_day=_date.today(),
-        halted=False,
-        llm_paused=False,
-        llm_risk_multiplier=1.0,
         equity_start=None,
         equity_now=None,
-        max_equity_intraday=None,
         realized_pnl_today=None,
+        max_equity_intraday=None,
+        min_equity_intraday=None,
+        halted=False,
+        halt_reason=None,
+        llm_risk_multiplier=1.0,
+        llm_paused=False,
     )
 
     _logger.info(
