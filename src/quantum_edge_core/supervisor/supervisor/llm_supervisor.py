@@ -137,6 +137,8 @@ class LlmSupervisor:
         return advice
 
     def call_llm(self, system_prompt: str, user_prompt: str) -> str:
+        # Gemini models are slower than OpenAI — enforce a 60s minimum.
+        timeout = max(self._config.timeout_seconds, 60)
         return self._chat_client.complete(
             model=self._config.model,
             messages=[
@@ -144,7 +146,7 @@ class LlmSupervisor:
                 {"role": "user", "content": user_prompt},
             ],
             temperature=0,
-            timeout_seconds=self._config.timeout_seconds,
+            timeout_seconds=timeout,
         )
 
     def parse_advice(self, raw_response: str) -> LlmSupervisorAdvice:
