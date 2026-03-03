@@ -495,45 +495,71 @@ def _run_standalone(args: argparse.Namespace) -> None:
     )
 
     _logger.info(
-        "Running LLM check in mode=%s, command=%s …",
+        "Starting LLM Supervisor in mode=%s, command=%s …",
         args.mode, args.command,
     )
 
-    # ── Phase 2: Fetch market data for Situation Analysis ────────────
+    # ── Phase 2: Import market data fetchers ─────────────────────────
     from quantum_edge_core.supervisor.supervisor.market_client import (
         fetch_situation_summary,
         mock_situation_summary,
     )
 
-    if args.mode == "demo":
-        situation_text = mock_situation_summary()
-        _logger.info("Using MOCK market data for demo mode.")
-    else:
-        try:
-            situation_text = fetch_situation_summary()
-            _logger.info("Fetched live OHLCV from Binance.")
-        except Exception as exc:
-            _logger.warning("Failed to fetch market data: %s. Using mock.", exc)
+    # ── Analysis loop ────────────────────────────────────────────────
+    import time as _time
+
+    is_continuous = args.command == "run-foreground"
+    cycle = 0
+
+    while True:
+        cycle += 1
+        _logger.info("═" * 50)
+        _logger.info("Analysis cycle #%d started.", cycle)
+
+        # Refresh snapshot date (handles midnight rollover)
+        snapshot.trading_day = _date.today()
+
+        # Fetch market data
+        if args.mode == "demo":
             situation_text = mock_situation_summary()
+        else:
+            try:
+                situation_text = fetch_situation_summary()
+                _logger.info("Fetched live OHLCV from Binance.")
+            except Exception as exc:
+                _logger.warning("Failed to fetch market data: %s. Using mock.", exc)
+                situation_text = mock_situation_summary()
 
-    _logger.info("Situation text:\n%s", situation_text)
+        _logger.info("Situation text:\n%s", situation_text)
 
-    advice = supervisor.run_check(
-        today=_date.today(), snapshot=snapshot, mode=args.mode,
-        situation_text=situation_text,
-    )
-    if advice:
-        print("\n" + "=" * 60)
-        print(f"  [LLM DECISION] Mode: {advice.trading_mode.value} | Risk: {advice.risk_multiplier}")
-        print(f"  [LLM REASONING] \"{advice.reasoning}\"")
-        print("=" * 60 + "\n")
-        print(json.dumps({
-            "trading_mode": advice.trading_mode.value,
-            "risk_multiplier": advice.risk_multiplier,
-            "reasoning": advice.reasoning,
-        }, indent=2, ensure_ascii=False))
-    else:
-        print("[LlmSupervisor] No advice returned (disabled or insufficient data).")
+        advice = supervisor.run_check(
+            today=_date.today(), snapshot=snapshot, mode=args.mode,
+            situation_text=situation_text,
+        )
+        if advice:
+            print("\n" + "=" * 60)
+            print(f"  [LLM DECISION] Mode: {advice.trading_mode.value} | Risk: {advice.risk_multiplier}")
+            print(f'  [LLM REASONING] "{advice.reasoning}"')
+            print("=" * 60 + "\n")
+            print(json.dumps({
+                "trading_mode": advice.trading_mode.value,
+                "risk_multiplier": advice.risk_multiplier,
+                "reasoning": advice.reasoning,
+            }, indent=2, ensure_ascii=False))
+        else:
+            print("[LlmSupervisor] No advice returned (disabled or insufficient data).")
+
+        # ── Exit or sleep ────────────────────────────────────────────
+        if not is_continuous:
+            _logger.info("Single check complete (check-once mode). Exiting.")
+            break
+
+        sleep_sec = llm_cfg.check_interval_minutes * 60
+        _logger.info(
+            "[INFO] Sleeping for %d minutes (%d seconds) until next analysis...",
+            llm_cfg.check_interval_minutes, sleep_sec,
+        )
+        _time.sleep(sleep_sec)
 
 
 if __name__ == "__main__":
