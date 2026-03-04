@@ -560,8 +560,15 @@ def _run_standalone(args: argparse.Namespace) -> None:
                 situation_text = fetch_situation_summary()
                 _logger.info("Fetched live OHLCV from Binance.")
             except Exception as exc:
-                _logger.warning("Failed to fetch market data: %s. Using mock.", exc)
-                situation_text = mock_situation_summary()
+                _logger.critical(
+                    "CRITICAL: Failed to fetch live market data from Binance: %s. "
+                    "Skipping this cycle — REFUSING to feed fake data to LLM.",
+                    exc,
+                )
+                if not is_continuous:
+                    raise
+                _time.sleep(10)
+                continue
 
         _logger.info("Situation text:\n%s", situation_text)
 
