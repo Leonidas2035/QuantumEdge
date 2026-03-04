@@ -113,6 +113,11 @@ class LockBotService:
         # Supervisor policy state
         self._supervisor_mode: Optional[str] = None
         self._supervisor_risk_multiplier: float = 1.0
+        # Tick-driven trading state
+        self._last_trade_intent_ts_ms: int = 0
+        self._trade_intent_cooldown_ms: int = 2000  # min 2s between intents
+        self._vwap_band_pct: float = 0.15  # 0.15% VWAP deviation trigger
+        self._trade_loop_enabled: bool = True
 
     async def start(self) -> None:
         # ── Startup Audit: query exchange for current state ──────────
@@ -187,6 +192,9 @@ class LockBotService:
         # Directive listener (Supervisor → LockBot policy channel)
         if self._ipc_enabled:
             self._tasks.append(asyncio.create_task(self._directive_loop()))
+        # Tick-driven trading loop
+        if self._trade_loop_enabled:
+            self._tasks.append(asyncio.create_task(self._trading_loop()))
 
     async def stop(self) -> None:
         self._stop.set()
@@ -423,6 +431,187 @@ class LockBotService:
         async for _topic, event in self._hub_sub.events():
             self._loop_counter += 1
             self.handle_market_event(event)
+
+    # ═══════════════════════════════════════════════════════════════
+    # Tick-Driven Trading Loop (THE MOTOR)
+    # ═══════════════════════════════════════════════════════════════
+
+    async def _trading_loop(self) -> None:
+        """Autonomous trading loop: evaluate entry signals on every tick."""
+        logger.info("[LockBot] Trading loop started. Waiting for market data...")
+
+        # Wait for first mark price to arrive
+        while not self._stop.is_set():
+            if self._market_state.mark_price is not None:
+                break
+            await asyncio.sleep(0.5)
+
+        logger.info(
+            "[LockBot] Market data received. Mark=%.2f. Trading loop active.",
+            self._market_state.mark_price,
+        )
+
+        while not self._stop.is_set():
+            try:
+                await asyncio.sleep(0.5)  # 2 Hz evaluation cycle
+                self._tick_evaluate()
+            except asyncio.CancelledError:
+                break
+            except Exception as exc:
+                logger.error("[LockBot] Trading loop error: %s", exc)
+                await asyncio.sleep(2.0)
+
+    def _tick_evaluate(self) -> None:
+        """Run one tick evaluation cycle."""
+        now_ms = int(time.time() * 1000)
+
+        # Throttle: enforce minimum cooldown between intents
+        if now_ms - self._last_trade_intent_ts_ms < self._trade_intent_cooldown_ms:
+            return
+
+        # Skip if bot is in non-trading state
+        mode = self._bot_state.mode
+        if mode in ("FLAT", "PAUSED", "PANIC", "EXITING"):
+            return
+
+        # Skip if no mark price
+        if not self._market_state.mark_price:
+            return
+
+        # Generate entry signal based on VWAP / supervisor mode
+        intent = self._generate_trade_intent(now_ms)
+        if intent is None:
+            return
+
+        self._last_trade_intent_ts_ms = now_ms
+
+        # Build DDN context and evaluate
+        ctx = self._build_ddn_context(intent, now_ms=now_ms)
+        decision = self._ddn.evaluate(ctx, now_ms=now_ms)
+
+        # Log the decision
+        logger.info(
+            "[LockBot] Tick intent=%s verdict=%s reasons=%s qty=%s",
+            intent.action,
+            decision.verdict,
+            decision.reasons,
+            decision.recommended_step_qty,
+        )
+
+        # Record decision in bot state
+        self._bot_state.record_decision(
+            verdict=decision.verdict,
+            reasons=decision.reasons,
+            step_qty=decision.recommended_step_qty,
+            cost_bps=decision.expected_cost_bps,
+            plans=[p.__dict__ for p in decision.order_plans],
+        )
+
+        # Update DDN state
+        if decision.adjusted_target is not None:
+            self._bot_state.ddn_target = decision.adjusted_target
+        if decision.adjusted_band_low is not None:
+            self._bot_state.ddn_band_low = decision.adjusted_band_low
+        if decision.adjusted_band_high is not None:
+            self._bot_state.ddn_band_high = decision.adjusted_band_high
+
+        # Execute if DDN approves
+        if decision.verdict in ("ALLOW", "MODIFY", "PANIC_ONLY") and decision.order_plans:
+            self._execute_decision(decision, intent, now_ms)
+
+    def _generate_trade_intent(self, now_ms: int) -> Optional[DDNIntent]:
+        """Generate entry signal based on VWAP deviation (Range Scalp / DCA).
+
+        Returns a DDNIntent if price has deviated enough from VWAP to trigger
+        an entry, or None if no signal.
+        """
+        mark = self._market_state.mark_price
+        vwap = self._market_state.vwap_d
+        supervisor_mode = self._supervisor_mode or "NEUTRAL"
+
+        # If RISK_OFF or HALT — don't generate any intents
+        if supervisor_mode in ("RISK_OFF", "HALT"):
+            return None
+
+        delta = self._account_state.net_delta_est()
+
+        # ── Strategy: VWAP Mean Reversion (RANGE_SCALP) ──────────────
+        if vwap and mark and vwap > 0:
+            deviation_pct = (mark - vwap) / vwap * 100.0
+            band_pct = self._vwap_band_pct
+
+            # Price ABOVE VWAP + band → overheated → lean short
+            if deviation_pct > band_pct:
+                if supervisor_mode == "SHORT_ONLY" or supervisor_mode == "NEUTRAL":
+                    # If we have long exposure, trim it (reduce-only)
+                    if delta > 0:
+                        return DDNIntent(
+                            action="TRIM_LONG",
+                            reason=f"VWAP_SELL: price +{deviation_pct:.3f}% above VWAP",
+                            expected_edge_bps=abs(deviation_pct) * 100 * 0.5,
+                        )
+                    else:
+                        return DDNIntent(
+                            action="ADD_SHORT",
+                            reason=f"VWAP_SELL: price +{deviation_pct:.3f}% above VWAP",
+                            expected_edge_bps=abs(deviation_pct) * 100 * 0.5,
+                        )
+
+            # Price BELOW VWAP - band → cheap → lean long
+            elif deviation_pct < -band_pct:
+                if supervisor_mode == "LONG_ONLY" or supervisor_mode == "NEUTRAL":
+                    if delta < 0:
+                        return DDNIntent(
+                            action="TRIM_SHORT",
+                            reason=f"VWAP_BUY: price {deviation_pct:.3f}% below VWAP",
+                            expected_edge_bps=abs(deviation_pct) * 100 * 0.5,
+                        )
+                    else:
+                        return DDNIntent(
+                            action="ADD_LONG",
+                            reason=f"VWAP_BUY: price {deviation_pct:.3f}% below VWAP",
+                            expected_edge_bps=abs(deviation_pct) * 100 * 0.5,
+                        )
+
+        # ── Strategy: Delta Rebalance (if IMBALANCED) ────────────────
+        target_delta = self._bot_state.ddn_target
+        if abs(delta - target_delta) > 0.001 and mark:
+            # Delta too positive → trim long
+            if delta > target_delta + 0.001:
+                return DDNIntent(
+                    action="TRIM_LONG",
+                    reason=f"DELTA_REBALANCE: Δ={delta:.4f} > target={target_delta:.4f}",
+                    expected_edge_bps=2.0,  # conservative edge estimate
+                )
+            # Delta too negative → trim short
+            elif delta < target_delta - 0.001:
+                return DDNIntent(
+                    action="TRIM_SHORT",
+                    reason=f"DELTA_REBALANCE: Δ={delta:.4f} < target={target_delta:.4f}",
+                    expected_edge_bps=2.0,
+                )
+
+        return None
+
+    def _execute_decision(
+        self, decision: "DDNDecision", intent: DDNIntent, now_ms: int
+    ) -> None:
+        """Submit approved order plans to ExecutionManager."""
+        account_lag = _lag_ms(now_ms, self._account_state.last_account_ts)
+        self._exec_manager.submit_plans(
+            cmd_id=f"tick_{now_ms}",
+            plans=decision.order_plans,
+            intent_action=intent.action,
+            now_ms=now_ms,
+            bot_mode=self._bot_state.mode,
+            account_lag_ms=account_lag,
+            mark_price=self._market_state.mark_price,
+        )
+        logger.info(
+            "[LockBot] ✅ Order submitted: %s qty=%.6f via tick engine",
+            intent.action,
+            decision.recommended_step_qty,
+        )
 
     def handle_account_payload(self, payload: Dict[str, Any]) -> None:
         ts_event = payload.get("ts_event") or payload.get("ts_ms")

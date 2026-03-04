@@ -124,11 +124,21 @@ class DDNEngine:
             self._last_price_ts_ms = now_ms
         # ── End Velocity Guard ───────────────────────────────────────
 
-        if _is_stale(
-            ctx.market.market_lag_ms,
-            ctx.position.account_lag_ms,
-            self._cfg.panic_on_lag_ms,
-        ):
+        # ── Stale Data Check ──────────────────────────────────────────
+        # Soft reject (no cooldown) when data hasn't arrived yet
+        market_lag = ctx.market.market_lag_ms
+        account_lag = ctx.position.account_lag_ms
+        if market_lag is None or account_lag is None:
+            if intent.action not in {"PANIC_LOCK", "PAUSE"}:
+                # Soft verdict — does NOT trigger cooldown
+                return DDNDecision(
+                    verdict="REJECT",
+                    recommended_step_qty=None,
+                    order_plans=[],
+                    reasons=["WAITING_FOR_DATA"],
+                    expected_cost_bps=0.0,
+                )
+        elif _is_stale(market_lag, account_lag, self._cfg.panic_on_lag_ms):
             if intent.action not in {"PANIC_LOCK", "PAUSE"}:
                 return self._reject(now_ms, ["STALE_DATA"])
 
