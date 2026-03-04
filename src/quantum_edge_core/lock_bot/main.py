@@ -411,6 +411,23 @@ class LockBotService:
                 self._market_state.update_mark_price(float(mark_price))
             if "funding_rate" in payload:
                 self._market_state.funding_rate = payload.get("funding_rate")
+        elif event_type in ("trade", "agg_trade"):
+            price = payload.get("price") or payload.get("p")
+            if price is not None:
+                self._market_state.last_price = float(price)
+                # Use as mark_price fallback if mark is not available
+                if self._market_state.mark_price is None:
+                    self._market_state.mark_price = float(price)
+        elif event_type in ("orderbook", "book_ticker", "depth"):
+            bid = payload.get("best_bid") or payload.get("b") or payload.get("bids", [[None]])[0][0]
+            ask = payload.get("best_ask") or payload.get("a") or payload.get("asks", [[None]])[0][0]
+            if bid is not None:
+                self._market_state.best_bid = float(bid)
+            if ask is not None:
+                self._market_state.best_ask = float(ask)
+            # Mid-price as mark_price fallback
+            if self._market_state.mark_price is None and bid and ask:
+                self._market_state.mark_price = (float(bid) + float(ask)) / 2.0
         elif event_type == "vwap_d":
             self._market_state.vwap_d = payload.get("vwap")
         elif event_type == "vwap_bands_d":
@@ -436,19 +453,29 @@ class LockBotService:
     # Tick-Driven Trading Loop (THE MOTOR)
     # ═══════════════════════════════════════════════════════════════
 
+    def _best_price(self) -> Optional[float]:
+        """Return best available price: mark > last > bid."""
+        ms = self._market_state
+        return (
+            ms.mark_price
+            or getattr(ms, "last_price", None)
+            or getattr(ms, "best_bid", None)
+        )
+
     async def _trading_loop(self) -> None:
         """Autonomous trading loop: evaluate entry signals on every tick."""
         logger.info("[LockBot] Trading loop started. Waiting for market data...")
 
-        # Wait for first mark price to arrive
+        # Wait for ANY price source to arrive
         while not self._stop.is_set():
-            if self._market_state.mark_price is not None:
+            price = self._best_price()
+            if price is not None:
                 break
             await asyncio.sleep(0.5)
 
         logger.info(
-            "[LockBot] Market data received. Mark=%.2f. Trading loop active.",
-            self._market_state.mark_price,
+            "[LockBot] Market data received. Price=%.2f. Trading loop active.",
+            self._best_price(),
         )
 
         while not self._stop.is_set():
@@ -474,8 +501,8 @@ class LockBotService:
         if mode in ("FLAT", "PAUSED", "PANIC", "EXITING"):
             return
 
-        # Skip if no mark price
-        if not self._market_state.mark_price:
+        # Skip if no price data available
+        if not self._best_price():
             return
 
         # Generate entry signal based on VWAP / supervisor mode
@@ -525,7 +552,7 @@ class LockBotService:
         Returns a DDNIntent if price has deviated enough from VWAP to trigger
         an entry, or None if no signal.
         """
-        mark = self._market_state.mark_price
+        mark = self._best_price()
         vwap = self._market_state.vwap_d
         supervisor_mode = self._supervisor_mode or "NEUTRAL"
 
