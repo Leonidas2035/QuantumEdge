@@ -23,7 +23,7 @@ class PolicyManager:
     def __init__(self):
         # Default Safe Policy
         self.active_policy = PolicyContract(
-            mode=TradingMode.NORMAL,
+            mode=TradingMode.NEUTRAL,
             long_allowed=True,
             short_allowed=True,
             max_leverage=10.0,
@@ -73,12 +73,12 @@ class PolicyManager:
 
         regime = ai_output.get("regime", "range").lower()
         if regime == "volatile":
-            proposal.mode = TradingMode.WINTER
+            proposal.mode = TradingMode.PASS
             proposal.max_leverage = 5.0  # Reduce leverage in volatility
         elif regime == "trend":
-            proposal.mode = TradingMode.SNIPER  # Example mapping
+            proposal.mode = TradingMode.SCALP  # Example mapping
         else:
-            proposal.mode = TradingMode.NORMAL
+            proposal.mode = TradingMode.NEUTRAL
 
         # Param overrides
         if "suggested_leverage" in ai_output:
@@ -109,8 +109,8 @@ class PolicyManager:
 
         # Critical Level -> Halt / Freeze / Close All
         if verdict.level == RiskLevel.CRITICAL:
-            # "Force PolicyContract(mode='FREEZE', can_trade=False)"
-            policy.mode = TradingMode.FREEZE  # or HALT which leads to stop
+            # "Force PolicyContract(mode='PASS', can_trade=False)"
+            policy.mode = TradingMode.PASS  # or HALT which leads to stop
             policy.close_only = True
             policy.long_allowed = False
             policy.short_allowed = False

@@ -30,11 +30,10 @@ def _strip_markdown_fences(text: str) -> str:
 
 
 class TradingMode(str, Enum):
-    LONG_ONLY = "LONG_ONLY"
-    SHORT_ONLY = "SHORT_ONLY"
-    NEUTRAL = "NEUTRAL"
-    RISK_OFF = "RISK_OFF"
-    HALT = "HALT"
+    SCALP = "scalp"
+    DCA = "dca"
+    PASS = "pass"
+    NEUTRAL = "neutral"
 
 class LlmTradingPolicy(BaseModel):
     reasoning: str = Field(description="Коротке пояснення рішення")
@@ -57,11 +56,10 @@ class LlmAction(str, Enum):
 def _trading_mode_to_action(mode: TradingMode) -> LlmAction:
     """Map TradingMode to legacy LlmAction for event logging."""
     return {
-        TradingMode.LONG_ONLY: LlmAction.OK,
-        TradingMode.SHORT_ONLY: LlmAction.OK,
+        TradingMode.SCALP: LlmAction.OK,
+        TradingMode.DCA: LlmAction.OK,
         TradingMode.NEUTRAL: LlmAction.OK,
-        TradingMode.RISK_OFF: LlmAction.LOWER_RISK,
-        TradingMode.HALT: LlmAction.PAUSE,
+        TradingMode.PASS: LlmAction.PAUSE,
     }.get(mode, LlmAction.UNSPECIFIED)
 
 
@@ -237,12 +235,11 @@ class LlmSupervisor:
                 policy = LlmTradingPolicy(**payload)
 
             # Parse trading_mode (Phase 3)
-            mode_raw = str(policy.trading_mode).upper()
-            trading_mode = (
-                TradingMode(mode_raw)
-                if mode_raw in TradingMode.__members__
-                else TradingMode.NEUTRAL
-            )
+            mode_raw = str(policy.trading_mode).lower()
+            try:
+                trading_mode = TradingMode(mode_raw)
+            except ValueError:
+                trading_mode = TradingMode.NEUTRAL
 
             # Parse risk_multiplier
             risk_multiplier = policy.risk_multiplier

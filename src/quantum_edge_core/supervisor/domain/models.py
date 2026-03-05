@@ -17,14 +17,11 @@ class RiskLevel(Enum):
     CRITICAL = auto()  # Liquidation, Halt
 
 
-class TradingMode(Enum):
-    NORMAL = "normal"
-    CONSERVATIVE = "conservative"  # Reduced leverage, tighter stops
-    SNIPER = "sniper"  # High confidence entries only
-    WINTER = "winter"  # Reduced activity due to volatility/uncertainty
-    FREEZE = "freeze"  # No new trades
-    REDUCE_ONLY = "reduce_only"  # Only closing trades
-    HALT = "halt"  # Hard Stop
+class TradingMode(str, Enum):
+    SCALP = "scalp"
+    DCA = "dca"
+    PASS = "pass"
+    NEUTRAL = "neutral"
 
 
 # --- Config & State ---
