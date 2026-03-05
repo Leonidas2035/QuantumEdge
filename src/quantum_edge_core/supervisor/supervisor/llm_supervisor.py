@@ -114,13 +114,13 @@ class LlmSupervisor:
             config.api_url, config.api_key_env, logger
         )
         self._policy_publisher = policy_publisher
-        print(f"[SUP] DEBUG: LlmSupervisor initialized. enabled={config.enabled}")
+        self._logger.debug("LlmSupervisor initialized. enabled=%s", config.enabled)
 
     def run_check(
         self, today: date, snapshot: RiskStateSnapshot, mode: str = "unknown",
         situation_text: str = "",
     ) -> Optional[LlmSupervisorAdvice]:
-        print(f"[SUP] DEBUG: LlmSupervisor.run_check triggered! enabled={self._config.enabled}")
+        self._logger.debug("LlmSupervisor.run_check triggered. enabled=%s", self._config.enabled)
         if not self._config.enabled:
             self._logger.info("LLM supervisor disabled; skipping.")
             return None
@@ -143,8 +143,7 @@ class LlmSupervisor:
                 situation_text=situation_text,
             )
         except Exception as e:
-            print(f"[SUP] ERROR building LLM prompts: {e}")
-            self._logger.error("Failed to build LLM prompts: %s", e)
+            self._logger.error("Error building LLM prompts: %s", e)
             return None
 
         try:

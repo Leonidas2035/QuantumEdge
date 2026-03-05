@@ -109,7 +109,15 @@ class GeminiClient:
         if hasattr(config.circuit_breaker, "open_sec"):
             self._circuit_breaker._recovery_timeout = config.circuit_breaker.open_sec
 
-        self._client = httpx.AsyncClient(timeout=config.timeout_seconds)
+        # Gemini models are slower than OpenAI — enforce ≥60s floor.
+        effective_timeout = max(config.timeout_seconds, 60)
+        if config.timeout_seconds < 60:
+            self.logger.warning(
+                "Config timeout_seconds=%d is below Gemini minimum; "
+                "raised to %ds",
+                config.timeout_seconds, effective_timeout,
+            )
+        self._client = httpx.AsyncClient(timeout=effective_timeout)
 
     async def close(self) -> None:
         await self._client.aclose()

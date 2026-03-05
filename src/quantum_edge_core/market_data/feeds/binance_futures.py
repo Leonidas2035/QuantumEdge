@@ -57,13 +57,40 @@ class BinanceFuturesFeed(BaseFeed):
             for s in self.symbols
         }
 
+    # Binance IP ban / rate-limit HTTP codes
+    _BAN_CODES: frozenset[int] = frozenset({418, 451, 403, 429})
+    _BAN_BACKOFF_S: float = 300.0  # 5 min cool-down on IP ban
+
     async def _run(self) -> None:
-        """Main run loop with exponential back-off reconnection."""
+        """Main run loop with exponential back-off reconnection.
+
+        Detects Binance IP bans (HTTP 418/451/429) and applies extended
+        backoff to prevent useless rapid reconnect loops.
+        """
         retry_delay = 1.0
         while not self._stop_event.is_set():
             try:
                 await self._connect_and_listen()
-                retry_delay = 1.0  # Reset on success
+                retry_delay = 1.0  # Reset on clean disconnect
+            except websockets.exceptions.InvalidStatusCode as exc:
+                if self._stop_event.is_set():
+                    break
+                if exc.status_code in self._BAN_CODES:
+                    self.logger.critical(
+                        "BINANCE IP BAN DETECTED (HTTP %d). "
+                        "Backing off for %.0fs. "
+                        "Check WAF status / rotate IP / contact support.",
+                        exc.status_code,
+                        self._BAN_BACKOFF_S,
+                    )
+                    await self._sleep(self._BAN_BACKOFF_S)
+                else:
+                    self.logger.error(
+                        "WebSocket rejected (HTTP %d): %s. Retrying in %.1fs",
+                        exc.status_code, exc, retry_delay,
+                    )
+                    await self._sleep(retry_delay)
+                    retry_delay = min(retry_delay * 2, 60.0)
             except Exception as exc:
                 if self._stop_event.is_set():
                     break

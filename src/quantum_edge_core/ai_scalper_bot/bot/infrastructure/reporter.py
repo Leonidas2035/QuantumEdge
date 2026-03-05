@@ -42,6 +42,8 @@ class SupervisorReporter:
         open_positions_qty: float,
         drawdown_pct: float = 0.0,
         market_state: Any = None,
+        min_equity_intraday: float | None = None,
+        halt_reason: str | None = None,
     ):
         """
         Sends a JSON heartbeat packet.
@@ -50,10 +52,11 @@ class SupervisorReporter:
           "source": "ai_scalper_bot",
           "timestamp": <unix_epoch_float>,
           "status": "RUNNING",
+          "pnl_session": <float>,
+          "min_equity_intraday": <float|null>,
+          "halt_reason": <str|null>,
           "metrics": {
-              "pnl_session": <float>,
               "active_positions_count": <int>,
-              "current_drawdown_pct": <float>,
               "cpu_usage": <float>
           },
           "errors": []
@@ -65,6 +68,8 @@ class SupervisorReporter:
             "status": state.name,  # Using BotState name (e.g., RUNNING, IDLE, ERROR)
             "pnl_session": float(pnl),
             "drawdown_pct": float(drawdown_pct),
+            "min_equity_intraday": min_equity_intraday,
+            "halt_reason": halt_reason,
             "metrics": {
                 "active_positions_count": int(open_positions_qty),
                 "cpu_usage": 0.0,
