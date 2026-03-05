@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
 POLICY_VERSION = "policy.v1"
-ALLOWED_MODES = {"normal", "scalp", "risk_off", "conservative"}
+ALLOWED_MODES = {"normal", "scalp", "risk_off", "conservative", "dca", "pass", "neutral"}
 
 POLICY_SCHEMA: Dict[str, Any] = {
     "$schema": "https://json-schema.org/draft/2020-12/schema",
@@ -69,7 +69,7 @@ def _validate_policy_dict(raw: Dict[str, Any]) -> Dict[str, Any]:
     allow_trading = raw.get("allow_trading")
     _require_type(allow_trading, (bool,), "allow_trading")
     mode = _require_non_empty_str(raw.get("mode"), "mode")
-    if mode not in ALLOWED_MODES:
+    if mode.lower() not in ALLOWED_MODES:
         raise ValueError(f"mode must be one of {sorted(ALLOWED_MODES)}")
 
     size_multiplier = raw.get("size_multiplier", 1.0)
