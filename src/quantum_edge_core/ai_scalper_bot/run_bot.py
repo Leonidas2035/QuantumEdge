@@ -23,6 +23,9 @@ from quantum_edge_core.ai_scalper_bot.bot.infrastructure.paper_trader import (
 from quantum_edge_core.ai_scalper_bot.bot.infrastructure.reporter import (
     SupervisorReporter,
 )
+from quantum_edge_core.ai_scalper_bot.bot.infrastructure.questdb_telemetry import (
+    QuestDbTelemetry,
+)
 
 # Configure Logging
 logging.basicConfig(
@@ -46,6 +49,7 @@ class BotEngine:
             pub_endpoint=f"tcp://*:{self.config.telemetry_port}",
             service_id=self.config.service_id,
         )
+        self.quest_telemetry = QuestDbTelemetry()
 
         # 1.5 Command Bus (Control Input)
         import zmq
@@ -146,6 +150,14 @@ class BotEngine:
                             self.position.state.unrealized_pnl,
                             self.position.total_qty,
                             market_state=ms,
+                        )
+                        # ILP Portfolio logging
+                        eq = getattr(ms, "equity_now", 0.0) if ms else 0.0
+                        self.quest_telemetry.log_portfolio_state(
+                            symbol=self.config.symbol, 
+                            equity=eq, 
+                            unrealized_pnl=self.position.state.unrealized_pnl, 
+                            position_qty=self.position.total_qty
                         )
                         last_heartbeat = now
                     await asyncio.sleep(0.01)
@@ -318,7 +330,7 @@ class BotEngine:
                         active_signal_name = action.action_type
                         logger.warning(f"🚀 SIGNAL GENERATED: {action.action_type} @ {action.price} | Reason: {action.reason}")
                         self.position.simulate_fill(
-                            action.price, action.qty, action.action_type
+                            action.price, action.qty, action.action_type, self.config.symbol
                         )
                         await self.gateway.execute(action)
 
@@ -348,6 +360,16 @@ class BotEngine:
                         self.position.state.unrealized_pnl,
                         self.position.total_qty,
                     )
+                    
+                    ms = self.cache._current_state
+                    eq = getattr(ms, "equity_now", 0.0) if ms else 0.0
+                    self.quest_telemetry.log_portfolio_state(
+                        symbol=self.config.symbol, 
+                        equity=eq, 
+                        unrealized_pnl=self.position.state.unrealized_pnl, 
+                        position_qty=self.position.total_qty
+                    )
+                    
                     last_heartbeat = now
 
                 # Yield control to event loop

@@ -21,8 +21,12 @@ class PositionManager:
 
     def __init__(self):
         self.state = PositionState()
+        
+        # Initialize telemetry explicitly (lazy) to prevent cyclic imports
+        from quantum_edge_core.ai_scalper_bot.bot.infrastructure.questdb_telemetry import QuestDbTelemetry
+        self.telemetry = QuestDbTelemetry()
 
-    def simulate_fill(self, price: float, qty: float, side: str):
+    def simulate_fill(self, price: float, qty: float, side: str, symbol: str = "BTCUSDT"):
         """
         Updates the position state assuming a fill occurred.
 
@@ -42,10 +46,11 @@ class PositionManager:
         elif side == "SELL":
             # FIFO / Partial Reduction (Avg Entry usually doesn't change on reduction unless LIFO specified)
             # Standard accounting: Selling reduces quantity but keeps Avg Entry Price same.
-            # Realized PnL is captured elsewhere.
-
-            # Note: If we flip short, this logic needs expansion.
-            # Prompt assumes Long-only DCA logic ("If LONG ... Signal SELL").
+            
+            # Pnl realization (for long positions, PnL = (Exit - Entry) * Qty)
+            if self.state.total_qty > 0 and self.state.avg_price > 0:
+                realized_pnl = (price - self.state.avg_price) * qty
+                self.telemetry.log_realized_trade(symbol, side, price, qty, realized_pnl)
 
             new_qty = max(0.0, self.state.total_qty - qty)
             if new_qty == 0:
