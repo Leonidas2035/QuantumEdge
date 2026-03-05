@@ -89,7 +89,7 @@ class QuestDbTimeseriesStore(TimeseriesStore):
         backoff = self.base_backoff_ms / 1000.0
         while True:
             try:
-                req = urllib.request.Request(self.url + "/write", data=payload, method="POST")
+                req = urllib.request.Request(self.url, data=payload, method="POST")
                 req.add_header("Content-Type", "text/plain")
                 with urllib.request.urlopen(req, timeout=5) as resp:
                     if resp.status >= 300:

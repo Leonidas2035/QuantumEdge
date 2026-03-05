@@ -26,7 +26,7 @@ timescale:
   schema: "public"
 
 questdb:
-  ilp_http_url: "http://localhost:9000/imp"
+  ilp_http_url: "http://localhost:9000/write"
   query_url: "http://localhost:9000/exec"
 
 ingest:

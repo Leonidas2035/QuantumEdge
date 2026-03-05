@@ -13,7 +13,7 @@ from datetime import date
 from enum import Enum
 from pathlib import Path
 import re
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Tuple, Literal
 from pydantic import BaseModel, Field
 from quantum_edge_core.supervisor.supervisor.audit_report import load_events_for_date
 from quantum_edge_core.supervisor.supervisor.config import LlmSupervisorConfig, RiskConfig
@@ -38,7 +38,7 @@ class TradingMode(str, Enum):
 
 class LlmTradingPolicy(BaseModel):
     reasoning: str = Field(description="Коротке пояснення рішення")
-    trading_mode: str = Field(description="Один з: SCALP, DCA, PASS, NEUTRAL")
+    trading_mode: Literal['scalp', 'dca', 'pass', 'neutral'] = Field(description="Обов'язково маленькими літерами")
     risk_multiplier: float = Field(description="Від 0.0 до 1.0")
     buy_zone_max: float = Field(description="Максимальна ціна для покупки")
     sell_zone_min: float = Field(description="Мінімальна ціна для продажу")
