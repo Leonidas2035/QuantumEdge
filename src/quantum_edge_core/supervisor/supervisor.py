@@ -58,7 +58,7 @@ from quantum_edge_core.supervisor.supervisor.risk_engine import (
     OrderSide,
     OrderType,
 )
-from quantum_edge_core.supervisor import state as state_utils
+from quantum_edge_core.supervisor.supervisor import state as state_utils
 from quantum_edge_core.supervisor.supervisor.events import (
     BaseEvent,
     EventLogger,
