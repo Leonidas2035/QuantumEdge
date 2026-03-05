@@ -3,7 +3,7 @@
 
 enabled: true
 api_url: "https://generativelanguage.googleapis.com/v1beta/models"
-model: "gemini-2.5-flash"
+model: "gemini-3.1-flash-lite-preview"
 api_key_env: "GOOGLE_API_KEY"
 check_interval_minutes: 1
 min_order_decisions: 0      # ЗМІНЕНО ДЛЯ UAT: дозволяє LLM аналізувати відразу

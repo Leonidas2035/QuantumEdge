@@ -96,6 +96,13 @@ class QuestDbTimeseriesStore(TimeseriesStore):
                         raise RuntimeError(f"QuestDB ILP HTTP status {resp.status}")
                 return
             except Exception as exc:  # pylint: disable=broad-except
+                if hasattr(exc, "code") and exc.code == 400 and hasattr(exc, "read"):
+                    try:
+                        resp_text = exc.read().decode("utf-8", errors="replace")
+                        self.logger.error(f"QUESTDB 400 ERROR! Payload that caused it:\n{payload.decode('utf-8')}")
+                        self.logger.error(f"Response text: {resp_text}")
+                    except Exception:
+                        pass
                 attempt += 1
                 if attempt > self.max_retries:
                     self.logger.warning("QuestDB write failed after retries: %s", exc)
