@@ -95,13 +95,28 @@ class BotEngine:
                         cmd = json.loads(msg.decode("utf-8"))
                         market_state = self.cache._current_state
                         if market_state:
-                            if cmd["action"] == "PAUSE_ENTRIES":
+                            if "trading_mode" in cmd:
+                                from quantum_edge_core.ai_scalper_bot.bot.core.models import TradingMode
+                                try:
+                                    mode_str = str(cmd["trading_mode"]).upper()
+                                    if mode_str in TradingMode.__members__:
+                                        market_state.trading_mode = TradingMode[mode_str]
+                                        logger.warning(f"🤖 SUPERVISOR POLICY: Trading Mode -> {market_state.trading_mode.value}")
+                                    
+                                    if "buy_zone_max" in cmd and cmd["buy_zone_max"] is not None:
+                                        market_state.buy_zone_max = float(cmd["buy_zone_max"])
+                                    if "sell_zone_min" in cmd and cmd["sell_zone_min"] is not None:
+                                        market_state.sell_zone_min = float(cmd["sell_zone_min"])
+                                except Exception as p_err:
+                                    logger.error(f"Error parsing trade policy: {p_err}")
+
+                            if cmd.get("action") == "PAUSE_ENTRIES":
                                 market_state.entries_paused = True
                                 logger.warning("🛑 SUPERVISOR COMMAND: Entries Paused!")
-                            elif cmd["action"] == "RESUME_ENTRIES":
+                            elif cmd.get("action") == "RESUME_ENTRIES":
                                 market_state.entries_paused = False
                                 logger.warning("🟢 SUPERVISOR COMMAND: Entries Resumed!")
-                            elif cmd["action"] == "ADJUST_RISK":
+                            elif cmd.get("action") == "ADJUST_RISK":
                                 market_state.risk_multiplier = cmd.get("multiplier", 1.0)
                                 logger.warning(f"⚠️ SUPERVISOR COMMAND: Risk Multiplier set to {market_state.risk_multiplier}")
                 except zmq.Again:

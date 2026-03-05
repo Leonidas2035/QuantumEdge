@@ -4,7 +4,14 @@ Optimized for memory efficiency and high-frequency access using slots.
 """
 
 from dataclasses import dataclass
-from typing import List
+from typing import List, Optional
+from enum import Enum
+
+class TradingMode(str, Enum):
+    SCALP = "SCALP"
+    DCA = "DCA"
+    PASS = "PASS"
+    NEUTRAL = "NEUTRAL"
 
 
 @dataclass(slots=True)
@@ -68,3 +75,6 @@ class MarketState:
     volume_delta_1m: float = 0.0
     liquidations_1m: int = 0
     atr: float = 0.0
+    trading_mode: TradingMode = TradingMode.PASS
+    buy_zone_max: float = 0.0
+    sell_zone_min: float = 0.0
