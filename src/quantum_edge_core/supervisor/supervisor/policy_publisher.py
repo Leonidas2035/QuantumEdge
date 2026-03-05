@@ -1,33 +1,35 @@
-"""ZMQ PUB publisher for Supervisor → LockBot policy directives.
+"""ZMQ PUB publisher for Supervisor → Bot policy directives.
 
-Publishes `directive.v1` messages on ZMQ PUB socket.
-LockBot subscribes via ControlSubscriber on this same port.
+Publishes ``TradingPolicy`` as MessagePack on ZMQ PUB socket.
+Bot subscribes via SUB on the same port.
 
-Usage:
+Usage::
+
     publisher = ZmqPolicyPublisher("tcp://*:5556")
     await publisher.start()
-    await publisher.publish_directive("LONG_ONLY", 0.8, "4H uptrend, safe equity")
+    await publisher.publish_policy(policy)
     publisher.close()
 """
 
 from __future__ import annotations
 
-import json
 import logging
 import time
-import uuid
 from typing import Optional
 
+import msgspec.msgpack
 import zmq
 import zmq.asyncio
 
-logger = logging.getLogger(__name__)
+from quantum_edge_core.shared.trading_policy import TradingPolicy
+
+logger: logging.Logger = logging.getLogger(__name__)
 
 
 class ZmqPolicyPublisher:
-    """Publishes LLM Supervisor directives to LockBot via ZMQ PUB."""
+    """Publishes TradingPolicy via MessagePack on ZMQ PUB."""
 
-    TOPIC = "LOCKBOT:BTCUSDT:directive"
+    TOPIC: str = "policy.v2"
 
     def __init__(
         self,
@@ -51,36 +53,42 @@ class ZmqPolicyPublisher:
             "ZmqPolicyPublisher bound on %s (topic=%s)", self._bind_url, self._topic
         )
 
+    async def publish_policy(self, policy: TradingPolicy) -> None:
+        """Publish a TradingPolicy as MessagePack."""
+        if self._socket is None:
+            logger.warning("Cannot publish: socket not started.")
+            return
+
+        payload_bytes: bytes = msgspec.msgpack.encode(policy)
+        topic_bytes: bytes = self._topic.encode("utf-8")
+        await self._socket.send_multipart([topic_bytes, payload_bytes])
+
+        logger.info(
+            "[ZMQ PUB] Policy sent: mode=%s risk=%.2f buy_max=%.2f sell_min=%.2f",
+            policy.strategy_mode,
+            policy.risk_multiplier,
+            policy.buy_zone_max,
+            policy.sell_zone_min,
+        )
+
     async def publish_directive(
         self,
         mode: str,
         risk_multiplier: float,
         reasoning: str,
+        buy_zone_max: float = 0.0,
+        sell_zone_min: float = 0.0,
     ) -> None:
-        """Publish a directive.v1 message to all subscribers."""
-        if self._socket is None:
-            logger.warning("Cannot publish: socket not started.")
-            return
-
-        payload = {
-            "schema": "directive.v1",
-            "ts_ms": int(time.time() * 1000),
-            "policy_id": str(uuid.uuid4()),
-            "mode": mode,
-            "risk_multiplier": risk_multiplier,
-            "reasoning": reasoning,
-        }
-
-        topic_bytes = self._topic.encode("utf-8")
-        payload_bytes = json.dumps(payload).encode("utf-8")
-        await self._socket.send_multipart([topic_bytes, payload_bytes])
-
-        logger.info(
-            "[ZMQ PUB] Directive sent: mode=%s risk=%.2f id=%s",
-            mode,
-            risk_multiplier,
-            payload["policy_id"][:8],
+        """Backward-compatible wrapper: builds TradingPolicy and publishes."""
+        policy = TradingPolicy(
+            timestamp=time.time(),
+            strategy_mode=mode,
+            risk_multiplier=risk_multiplier,
+            buy_zone_max=buy_zone_max,
+            sell_zone_min=sell_zone_min,
+            reasoning=reasoning,
         )
+        await self.publish_policy(policy)
 
     def close(self) -> None:
         """Close PUB socket."""

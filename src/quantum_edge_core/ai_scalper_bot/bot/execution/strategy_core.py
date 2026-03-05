@@ -1,12 +1,15 @@
 """
 Adaptive Grid Strategy Core.
 Decides trade actions based on Market State, Alpha Features, and Position Risk.
+
+Uses ``predict_proba`` (probability 0.0–1.0) instead of ``predict``
+(hard class 0/1) for XGBoost signal generation.
 """
 
 import logging
 from enum import Enum, auto
 from dataclasses import dataclass
-from typing import Optional, Dict, Any
+from typing import List, Optional, Dict, Any, Tuple
 
 import os
 import collections
@@ -17,7 +20,62 @@ from quantum_edge_core.ai_scalper_bot.bot.core.models import MarketState
 from quantum_edge_core.ai_scalper_bot.bot.features.facade import FeatureVector
 from quantum_edge_core.ai_scalper_bot.bot.execution.position import PositionManager
 
-logger = logging.getLogger(__name__)
+logger: logging.Logger = logging.getLogger(__name__)
+
+# ── Probability thresholds for XGBoost signal ────────────────────────
+_BUY_THRESHOLD: float = 0.65   # P(buy) > 65% → BUY
+_SELL_THRESHOLD: float = 0.35  # P(buy) < 35% → SELL
+_TICK_SIZE: float = 0.10       # BTCUSDT tick size on Binance
+
+
+def find_frontrun_price(
+    l2_bids: List[Tuple[float, float]],
+    target_price: float,
+    ticks_above: int = 2,
+) -> float:
+    """Find optimal limit-buy price by front-running the largest L2 bid block.
+
+    Scans the L2 order book bids below ``target_price``, finds the
+    price level with maximum volume concentration (the "wall"), and
+    returns a price ``ticks_above`` ticks ABOVE that wall.
+
+    Parameters
+    ----------
+    l2_bids:
+        List of ``(price, qty)`` tuples, sorted descending by price.
+    target_price:
+        Maximum price we're willing to buy at (from TradingPolicy.buy_zone_max).
+    ticks_above:
+        How many ticks above the wall to place our order (default: 2).
+
+    Returns
+    -------
+    float
+        The front-run price. Falls back to ``target_price`` if no
+        suitable bids are found.
+    """
+    if not l2_bids:
+        return target_price
+
+    best_price: float = 0.0
+    best_qty: float = 0.0
+
+    for price, qty in l2_bids:
+        if price > target_price:
+            continue  # Skip bids above our zone limit
+        if qty > best_qty:
+            best_qty = qty
+            best_price = price
+
+    if best_price <= 0.0:
+        return target_price
+
+    frontrun: float = best_price + (ticks_above * _TICK_SIZE)
+    logger.info(
+        "[L2] Front-run: wall @ %.2f (qty=%.4f), placing @ %.2f (+%d ticks)",
+        best_price, best_qty, frontrun, ticks_above,
+    )
+    return frontrun
 
 
 class BotState(Enum):
@@ -99,20 +157,20 @@ class AdaptiveGridStrategy:
         mid_price = (bid_price + ask_price) / 2.0
         self.mid_prices.append(mid_price)
         
-        prediction = None
+        buy_probability: Optional[float] = None
         if self.model is not None:
             spread = ask_price - bid_price
             micro_imbalance = (bid_qty - ask_qty) / (bid_qty + ask_qty + 1e-8)
             ofi_proxy = (bid_qty - self.prev_bid_qty) - (ask_qty - self.prev_ask_qty)
             volatility_100t = float(np.std(self.mid_prices)) if len(self.mid_prices) >= 100 else 0.0
-            
+
             X = np.array([[spread, micro_imbalance, ofi_proxy, volatility_100t]])
-            prediction = self.model.predict(X)[0]
+            buy_probability = float(self.model.predict_proba(X)[0][1])
 
             logger.info(
-                "[XGBoost] Prediction: %s | Spread=%.4f, Imbalance=%.4f, "
+                "[XGBoost] P(buy)=%.3f | Spread=%.4f, Imbalance=%.4f, "
                 "OFI=%.4f, Vol100t=%.6f",
-                prediction, spread, micro_imbalance, ofi_proxy, volatility_100t,
+                buy_probability, spread, micro_imbalance, ofi_proxy, volatility_100t,
             )
             
         self.prev_bid_qty = bid_qty
@@ -191,24 +249,36 @@ class AdaptiveGridStrategy:
             # If paused, only allow HEDGE and SELLs (which are above).
             return None
 
-        if self.model is not None:
-            # --- ML Logic ---
+        if self.model is not None and buy_probability is not None:
+            # --- ML Logic (probability-based) ---
             qty = self.config.get("base_order_size_q", 0.01) * getattr(market, "risk_multiplier", 1.0)
-            
-            if prediction == 2 and self.state == BotState.IDLE: # BUY
-                self.last_buy_price = current_price
+
+            if buy_probability > _BUY_THRESHOLD and self.state == BotState.IDLE:
+                # Front-run L2 instead of market-buying
+                buy_zone_max = getattr(market, "buy_zone_max", 0.0)
+                l2_bids = getattr(market, "l2_bids", [])
+                if l2_bids and buy_zone_max > 0:
+                    entry_price = find_frontrun_price(l2_bids, buy_zone_max)
+                else:
+                    entry_price = market.best_bid + _TICK_SIZE  # 1 tick above best bid
+
+                self.last_buy_price = entry_price
+                logger.info(
+                    "[LIMIT] Front-run BUY @ %.2f (P=%.3f, zone_max=%.2f)",
+                    entry_price, buy_probability, buy_zone_max,
+                )
                 return TradeAction(
                     action_type="BUY",
-                    price=market.best_ask,
+                    price=entry_price,
                     qty=qty,
-                    reason="XGBoost Signal: BUY"
+                    reason=f"XGBoost P(buy)={buy_probability:.3f} → Limit @ {entry_price:.2f}"
                 )
-            elif prediction == 0 and self.state == BotState.LONG_ACCUMULATION: # SELL
+            elif buy_probability < _SELL_THRESHOLD and self.state == BotState.LONG_ACCUMULATION:
                 return TradeAction(
                     action_type="SELL",
                     price=market.best_bid,
                     qty=position.total_qty,
-                    reason="XGBoost Signal: SELL"
+                    reason=f"XGBoost P(buy)={buy_probability:.3f} → SELL"
                 )
         else:
             # --- Fallback (Old Baseline Logic) ---

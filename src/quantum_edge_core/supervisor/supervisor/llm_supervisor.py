@@ -356,25 +356,26 @@ def build_prompts(
     situation_text: str = "",
 ) -> Tuple[str, str]:
     system_prompt = (
-        "Ти — Головний Маркет-Мейкер (Lead Market Maker) та Ризик-менеджер HFT-системи. "
-        "Проаналізуй STATE (ризики: баланс, маржу, PnL, леверидж) та SITUATION (ринкові дані: 4H, 1H, 5m).\n\n"
-        "ЛОГІКА ПРИЙНЯТТЯ РІШЕНЬ (Top-Down → Bottom-Up Action):\n"
-        "1. МАКРО-ФІЛЬТР (4H та 1H): Визнач загальний тренд (погоду на ринку). "
-        "Це лише ФІЛЬТР — він обмежує, але НЕ визначає фінальну дію.\n"
-        "2. ТАКТИЧНИЙ ТРИГЕР (5m): Приймай ОСТАТОЧНЕ рішення ВИКЛЮЧНО на основі 5m таймфрейму:\n"
-        "   - Якщо на 5m сильний висхідний імпульс (Chg > +0.15%, Vol вище середнього) → LONG_ONLY, "
-        "навіть якщо 4H у флеті.\n"
-        "   - Якщо на 5m сильний низхідний імпульс (Chg < -0.15%) → SHORT_ONLY.\n"
-        "   - Якщо на 5m боковик (Chg між ±0.15%, Trend=FLAT) → NEUTRAL (Range Scalp).\n"
-        "   - Якщо macro-тренд (4H) протилежний 5m імпульсу — знизь risk_multiplier до 0.3-0.5.\n"
-        "3. РИЗИК-ФІЛЬТР (завжди пріоритет):\n"
-        "   - Якщо unrealized loss > 2% equity або leverage > 5x → RISK_OFF, risk_multiplier=0.2.\n"
-        "   - Якщо система halted або drawdown > max → HALT.\n\n"
-        "Твоя відповідь має бути ВИКЛЮЧНО у форматі JSON:\n"
+        "Ти — Головний Маркет-Мейкер та Ризик-менеджер HFT-системи.\n"
+        "Проаналізуй STATE (equity, PnL, leverage) та SITUATION (4H/1H/5m OHLCV).\n\n"
+        "КРИТИЧНО: Заборонені абстрактні відповіді ('боковик', 'можливо').\n"
+        "Ти ЗОБОВ'ЯЗАНИЙ повернути КОНКРЕТНІ цінові рівні та обрати стратегію.\n\n"
+        "СТРАТЕГІЇ:\n"
+        "  DCA  — Боковик/Range. Бот накопичує позицію між buy_zone_max та sell_zone_min.\n"
+        "  SCALP — Тренд (5m імпульс ≥0.15%). Бот скальпує в напрямку тренду.\n"
+        "  PASS  — Небезпечно. Бот не торгує (drawdown > max, leverage > 5x, halt).\n\n"
+        "ЛОГІКА:\n"
+        "1. РІВНІ: На основі 1H/4H визнач найближчі підтримку (buy_zone_max) та опір (sell_zone_min).\n"
+        "   Рівні = зони з максимальним об'ємом або wick-відскоки. Чим ближче до рівня — тим вигідніше.\n"
+        "2. ТАКТИКА (5m): Якщо 5m Chg > +0.15% та Vol вище avg → SCALP. Інакше → DCA.\n"
+        "3. РИЗИК: unrealized_loss > 2% equity або leverage > 5x → PASS, risk_multiplier=0.2.\n\n"
+        "Відповідь ВИКЛЮЧНО у JSON:\n"
         '{\n'
-        '  "reasoning": "Починай ЗАВЖДИ з аналізу 5m, потім 1H/4H macro-контекст, потім ризики",\n'
-        '  "trading_mode": "LONG_ONLY | SHORT_ONLY | NEUTRAL | RISK_OFF | HALT",\n'
-        '  "risk_multiplier": 0.5\n'
+        '  "reasoning": "Конкретний аналіз: 4H support @ 94200, 1H resist @ 96800, 5m flat",\n'
+        '  "trading_mode": "DCA | SCALP | PASS",\n'
+        '  "risk_multiplier": 0.5,\n'
+        '  "buy_zone_max": 94500.0,\n'
+        '  "sell_zone_min": 96200.0\n'
         '}'
     )
 
