@@ -51,6 +51,7 @@ class AccountState:
     ) -> None:
         self._config = config
         self._rest_builder = rest_builder or BinanceAccountRestSnapshotBuilder(config)
+
         self._account_ref = account_ref or _mask_key(
             config.spot_api_key or config.usdm_api_key
         )

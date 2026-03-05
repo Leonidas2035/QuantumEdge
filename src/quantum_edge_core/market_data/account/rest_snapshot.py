@@ -1,16 +1,19 @@
-"""REST snapshot builder for Binance account data."""
+"""REST snapshot builder for Binance account data.
+
+Uses :class:`BinanceRateLimiter` for weight-aware request
+throttling and shared ``aiohttp`` connection pooling.
+"""
 
 from __future__ import annotations
 
 import hashlib
 import hmac
+import logging
 import time
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 from urllib.parse import urlencode
 
-import asyncio
-import aiohttp
-
+from quantum_edge_core.market_data.account.rate_limiter import BinanceRateLimiter
 from quantum_edge_core.market_data.config import AccountConfig
 from quantum_edge_core.market_data.models.account_snapshot import (
     AccountSnapshot,
@@ -26,6 +29,8 @@ from quantum_edge_core.market_data.models.account_snapshot import (
     UsdmMarkEntry,
 )
 
+logger: logging.Logger = logging.getLogger(__name__)
+
 
 def _mask_key(key: str) -> str:
     if not key:
@@ -33,19 +38,33 @@ def _mask_key(key: str) -> str:
     return f"binance:{key[-4:]}"
 
 
-def _ensure_str(value) -> str:
+def _ensure_str(value: Any) -> str:
     return str(value) if value is not None else ""
 
 
 class BinanceAccountRestSnapshotBuilder:
-    """Build normalized account snapshot data from Binance REST."""
+    """Build normalized account snapshot data from Binance REST.
+
+    All HTTP calls are routed through :class:`BinanceRateLimiter`
+    which tracks ``x-mbx-used-weight-1m`` and auto-throttles
+    when weight exceeds 75 % of the per-minute limit.
+    """
 
     def __init__(
-        self, config: AccountConfig, session: Optional[aiohttp.ClientSession] = None
-    ):
+        self,
+        config: AccountConfig,
+        rate_limiter: Optional[BinanceRateLimiter] = None,
+    ) -> None:
         self._config = config
-        self._session = session
-        self._timeout = 10.0
+        self._limiter = rate_limiter or BinanceRateLimiter()
+        self._owns_limiter = rate_limiter is None
+
+    async def close(self) -> None:
+        """Release resources if we own the limiter."""
+        if self._owns_limiter:
+            await self._limiter.close()
+
+    # ── Full snapshot ────────────────────────────────────────────────
 
     async def build_full_account_snapshot(
         self,
@@ -62,6 +81,14 @@ class BinanceAccountRestSnapshotBuilder:
         spot_block = await self.build_spot_snapshot(symbols)
         usdm_block = await self.build_usdm_snapshot(symbols)
         snapshot_account_ref = account_ref or _mask_key(self._config.spot_api_key)
+
+        logger.info(
+            "Account snapshot built: %d symbols, weight=%d/%d",
+            len(symbols),
+            self._limiter.used_weight,
+            self._limiter.weight_limit,
+        )
+
         return AccountSnapshot(
             ts_ms=ts_ms,
             account_ref=snapshot_account_ref,
@@ -71,8 +98,10 @@ class BinanceAccountRestSnapshotBuilder:
             usdm=usdm_block,
         )
 
+    # ── Spot ─────────────────────────────────────────────────────────
+
     async def build_spot_snapshot(self, symbols: List[str]) -> SpotBlock:
-        account = await self._signed_get(
+        account: Dict[str, Any] = await self._signed_get(
             self._config.base_url,
             "/api/v3/account",
             {"omitZeroBalances": "true"},
@@ -87,9 +116,9 @@ class BinanceAccountRestSnapshotBuilder:
             )
             for item in account.get("balances", [])
         ]
-        open_orders = []
+        open_orders: List[OpenOrderEntry] = []
         for symbol in symbols:
-            data = await self._signed_get(
+            data: Any = await self._signed_get(
                 self._config.base_url,
                 "/api/v3/openOrders",
                 {"symbol": symbol},
@@ -100,24 +129,26 @@ class BinanceAccountRestSnapshotBuilder:
                 open_orders.append(self._normalize_order(order))
         return SpotBlock(balances=balances, open_orders=open_orders)
 
+    # ── USD-M Futures ────────────────────────────────────────────────
+
     async def build_usdm_snapshot(self, symbols: List[str]) -> UsdmBlock:
-        account = await self._signed_get(
+        account: Dict[str, Any] = await self._signed_get(
             self._config.fapi_url,
             "/fapi/v3/account",
             {},
             self._config.usdm_api_key,
             self._config.usdm_api_secret,
         )
-        positions = await self._signed_get(
+        positions: Any = await self._signed_get(
             self._config.fapi_url,
             "/fapi/v3/positionRisk",
             {},
             self._config.usdm_api_key,
             self._config.usdm_api_secret,
         )
-        open_orders = []
+        open_orders: List[OpenOrderEntry] = []
         for symbol in symbols:
-            data = await self._signed_get(
+            data: Any = await self._signed_get(
                 self._config.fapi_url,
                 "/fapi/v1/openOrders",
                 {"symbol": symbol},
@@ -126,6 +157,7 @@ class BinanceAccountRestSnapshotBuilder:
             )
             for order in data:
                 open_orders.append(self._normalize_order(order, include_future=True))
+
         totals = account
         assets = account.get("assets", [])
         assets_entries = [
@@ -166,11 +198,13 @@ class BinanceAccountRestSnapshotBuilder:
             open_orders=open_orders,
         )
 
+    # ── Market prices (LOW priority — startup only) ──────────────────
+
     async def build_market_snapshot(self, symbols: List[str]) -> MarketBlock:
-        spot_last = []
-        usdm_mark = []
+        spot_last: List[MarketPriceEntry] = []
+        usdm_mark: List[UsdmMarkEntry] = []
         for symbol in symbols:
-            ticker = await self._get(
+            ticker: Dict[str, Any] = await self._get(
                 self._config.base_url, "/api/v3/ticker/price", {"symbol": symbol}
             )
             spot_last.append(
@@ -181,7 +215,7 @@ class BinanceAccountRestSnapshotBuilder:
                     src="spot_rest_ticker_price",
                 )
             )
-            premium = await self._get(
+            premium: Any = await self._get(
                 self._config.fapi_url, "/fapi/v1/premiumIndex", {"symbol": symbol}
             )
             if isinstance(premium, list) and premium:
@@ -196,6 +230,8 @@ class BinanceAccountRestSnapshotBuilder:
                 )
             )
         return MarketBlock(spot_last=spot_last, usdm_mark=usdm_mark)
+
+    # ── Helpers ──────────────────────────────────────────────────────
 
     def _normalize_order(
         self, order: dict, include_future: bool = False
@@ -216,21 +252,20 @@ class BinanceAccountRestSnapshotBuilder:
             transactTime=order.get("transactTime"),
         )
 
-    async def _get(self, base: str, path: str, params: dict) -> dict:
-        session = self._session or aiohttp.ClientSession()
-        try:
-            async with session.get(
-                f"{base}{path}", params=params, timeout=self._timeout
-            ) as resp:
-                resp.raise_for_status()
-                return await resp.json()
-        finally:
-            if not self._session:
-                await session.close()
+    async def _get(self, base: str, path: str, params: Dict[str, Any]) -> Any:
+        """Unsigned GET through rate limiter."""
+        url = f"{base}{path}"
+        return await self._limiter.get(url, params=params)
 
     async def _signed_get(
-        self, base: str, path: str, params: dict, api_key: str, api_secret: str
-    ) -> dict:
+        self,
+        base: str,
+        path: str,
+        params: Dict[str, Any],
+        api_key: str,
+        api_secret: str,
+    ) -> Any:
+        """Signed GET through rate limiter (HMAC-SHA256)."""
         params = {
             **params,
             "timestamp": int(time.time() * 1000),
@@ -242,13 +277,5 @@ class BinanceAccountRestSnapshotBuilder:
         ).hexdigest()
         params["signature"] = signature
         headers = {"X-MBX-APIKEY": api_key}
-        session = self._session or aiohttp.ClientSession()
-        try:
-            async with session.get(
-                f"{base}{path}", params=params, headers=headers, timeout=self._timeout
-            ) as resp:
-                resp.raise_for_status()
-                return await resp.json()
-        finally:
-            if not self._session:
-                await session.close()
+        url = f"{base}{path}"
+        return await self._limiter.signed_get(url, params=params, headers=headers)
