@@ -81,7 +81,7 @@ class QuestDbTimeseriesStore(TimeseriesStore):
         # Debug requested by user
         if self.logger:
             try:
-                self.logger.debug(f"QuestDB Payload: {payload.decode('utf-8')}")
+                self.logger.error(f"DEBUG QUESTDB PAYLOAD:\n{payload.decode('utf-8')}")
             except Exception:
                 pass
 
