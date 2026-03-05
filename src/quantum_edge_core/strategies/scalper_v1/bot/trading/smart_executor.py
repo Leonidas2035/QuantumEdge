@@ -83,6 +83,9 @@ class SmartExecutor:
         remaining_qty = qty
         attempts = 0
         current_order_id = None
+        
+        # Enforce Maker-Only (GTX) for LOW urgency (Front-Running)
+        tif = "GTX" if urgency == "LOW" else "GTC"
 
         while attempts < self.max_chase_attempts and remaining_qty > 0:
             attempts += 1
@@ -90,13 +93,12 @@ class SmartExecutor:
             # 1. Get BBO
             price = await self._get_bbo_price(symbol, side)
             if not price:
-                logger.warning("Failed to get BBO, falling back to Market")
+                logger.warning("Failed to get BBO, falling back to Market/Cancel")
                 break
 
-            # 2. Place Limit (Post-Only if possible/supported, otherwise GTC)
-            # For simplicity, GTC Limit at BBO
+            # 2. Place Limit
             logger.info(
-                f"Chase {attempts}/{self.max_chase_attempts}: Limit {side} {symbol} {remaining_qty} @ {price}"
+                f"Chase {attempts}/{self.max_chase_attempts}: Limit {side} {symbol} {remaining_qty} @ {price} (TIF={tif})"
             )
 
             try:
@@ -107,7 +109,7 @@ class SmartExecutor:
                         type="LIMIT",
                         quantity=remaining_qty,
                         price=price,
-                        timeInForce="GTC",
+                        timeInForce=tif,
                         reduceOnly=reduce_only,
                     )
                 else:
@@ -117,14 +119,20 @@ class SmartExecutor:
                         type="LIMIT",
                         quantity=remaining_qty,
                         price=price,
-                        timeInForce="GTC",
+                        timeInForce=tif,
                     )
 
                 current_order_id = order.get("orderId")
 
             except Exception as e:
                 logger.warning(f"Limit placement failed: {e}. Retrying/Fallback.")
-                break
+                if urgency == "LOW":
+                    # For Maker-Only, a failure (e.g., would take liquidity) means we stop
+                    logger.info("Maker-Only placement rejected. Stopping chase.")
+                    break
+                # Only delay retry if not a strict post-only failure
+                await asyncio.sleep(self.chase_interval)
+                continue
 
             # 3. Wait
             await asyncio.sleep(self.chase_interval)
@@ -137,53 +145,39 @@ class SmartExecutor:
 
             status = status_res.get("status")
             executed = float(status_res.get("executedQty", 0.0))
-            remaining_qty = (
-                qty - executed
-            )  # Update remaining from total context if strictly tracking,
-            # or status_res might reflect this specific order's fill.
-            # Wait, if we cancel & replace, we need to track cumulative fill?
-            # Actually, `executed` here is for THIS order.
-            # We need to track `filled_total`.
-
-            # Correction: logic should track total filled across attempts or relying on order replacement
-            # If partial fill, we only cancel remainder.
-
+            
             effective_rem = float(status_res.get("origQty", 0.0)) - executed
-            # (Assuming origQty matches what we sent)
 
             if status == "FILLED" or effective_rem <= 0:
                 return status_res
 
-            if status == "CANCELED" or status == "REJECTED":
-                # Odd, but OK, retry loop
-                pass
+            if status in ("CANCELED", "REJECTED", "EXPIRED"):
+                # EXPIRED often happens for GTX orders that cross the spread
+                if urgency == "LOW":
+                    logger.info(f"Maker-Only order {status}. Not chasing.")
+                    remaining_qty = effective_rem
+                    break
             elif status == "NEW" or status == "PARTIALLY_FILLED":
-                # Check if price moved away
                 new_bbo = await self._get_bbo_price(symbol, side)
 
-                # If Price hasn't moved (much), maybe keep waiting?
-                # Urgency MEDIUM: We chase quickly.
-                # If new_bbo != price -> Cancel and Replace
-                # Or just Cancel and next loop checks price
-
                 if new_bbo != price:
-                    # Cancel
-                    await self._cancel_order(symbol, current_order_id)
-                    remaining_qty = effective_rem  # Next loop places for this amount
-                else:
-                    # Price same. If urgency LOW, maybe wait more?
-                    # If MEDIUM, we count attempt. If max attempts reached, we fall through to Market.
-                    # To "Force" the loop continuation, we cancel logic here.
                     await self._cancel_order(symbol, current_order_id)
                     remaining_qty = effective_rem
-
-            if remaining_qty <= 0:
-                return status_res
+                else:
+                    if urgency == "LOW":
+                        # Post-Only: if price hasn't moved, we don't spam cancels, 
+                        # just wait or rely on single attempt. We stop chasing.
+                        await self._cancel_order(symbol, current_order_id)
+                        remaining_qty = effective_rem
+                        break
+                    else:
+                        await self._cancel_order(symbol, current_order_id)
+                        remaining_qty = effective_rem
 
         # End of Loop
         if remaining_qty > 0:
             if urgency == "LOW":
-                logger.info("Low urgency chase failed, not placing Market.")
+                logger.info("Maker-Only (LOW urgency) not filled. Canceling, NO market fallback.")
                 return {"status": "CANCELED", "executedQty": qty - remaining_qty}
             else:
                 # Fallback Market

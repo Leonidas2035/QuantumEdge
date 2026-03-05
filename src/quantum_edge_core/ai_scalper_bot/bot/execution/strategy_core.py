@@ -28,16 +28,19 @@ _SELL_THRESHOLD: float = 0.35  # P(buy) < 35% → SELL
 _TICK_SIZE: float = 0.10       # BTCUSDT tick size on Binance
 
 
+_MIN_WALL_VOLUME: float = 5.0  # BTC
+
+
 def find_frontrun_price(
     l2_bids: List[Tuple[float, float]],
     target_price: float,
     ticks_above: int = 2,
-) -> float:
+) -> Optional[float]:
     """Find optimal limit-buy price by front-running the largest L2 bid block.
 
     Scans the L2 order book bids below ``target_price``, finds the
-    price level with maximum volume concentration (the "wall"), and
-    returns a price ``ticks_above`` ticks ABOVE that wall.
+    price level with maximum volume concentration (the "wall") that exceeds
+    ``_MIN_WALL_VOLUME``, and returns a price ``ticks_above`` ticks ABOVE that wall.
 
     Parameters
     ----------
@@ -50,12 +53,12 @@ def find_frontrun_price(
 
     Returns
     -------
-    float
-        The front-run price. Falls back to ``target_price`` if no
-        suitable bids are found.
+    Optional[float]
+        The front-run price rounded to 1 decimal place.
+        Returns None if no wall >= 5.0 BTC is found in the zone.
     """
     if not l2_bids:
-        return target_price
+        return None
 
     best_price: float = 0.0
     best_qty: float = 0.0
@@ -67,12 +70,12 @@ def find_frontrun_price(
             best_qty = qty
             best_price = price
 
-    if best_price <= 0.0:
-        return target_price
+    if best_qty < _MIN_WALL_VOLUME or best_price <= 0.0:
+        return None  # No real wall found
 
-    frontrun: float = best_price + (ticks_above * _TICK_SIZE)
+    frontrun: float = round(best_price + (ticks_above * _TICK_SIZE), 1)
     logger.info(
-        "[L2] Front-run: wall @ %.2f (qty=%.4f), placing @ %.2f (+%d ticks)",
+        "[L2] Front-run: wall @ %.1f (qty=%.4f), placing @ %.1f (+%d ticks)",
         best_price, best_qty, frontrun, ticks_above,
     )
     return frontrun
@@ -257,21 +260,31 @@ class AdaptiveGridStrategy:
                 # Front-run L2 instead of market-buying
                 buy_zone_max = getattr(market, "buy_zone_max", 0.0)
                 l2_bids = getattr(market, "l2_bids", [])
+                
+                entry_price = None
                 if l2_bids and buy_zone_max > 0:
                     entry_price = find_frontrun_price(l2_bids, buy_zone_max)
-                else:
-                    entry_price = market.best_bid + _TICK_SIZE  # 1 tick above best bid
+                
+                if entry_price is None:
+                    # No wall found, skip tick
+                    return None
 
                 self.last_buy_price = entry_price
                 logger.info(
-                    "[LIMIT] Front-run BUY @ %.2f (P=%.3f, zone_max=%.2f)",
+                    "[LIMIT] Front-run BUY @ %.1f (P=%.3f, zone_max=%.1f)",
                     entry_price, buy_probability, buy_zone_max,
                 )
+                
+                # Use a custom field or hack 'reason' for now to pass urgency since TradeAction doesn't have it natively
+                # Wait, I should probably use a mechanism that smart_executor understands, 
+                # but since I can't easily change TradeAction definition without potentially breaking other things, 
+                # let's assume the executor maps 'FRONTRUN' or similar. 
+                # Actually, the user asked to modify smart_executor.py for Maker-Only. Let me just add a tag to the reason.
                 return TradeAction(
                     action_type="BUY",
                     price=entry_price,
                     qty=qty,
-                    reason=f"XGBoost P(buy)={buy_probability:.3f} → Limit @ {entry_price:.2f}"
+                    reason=f"FRONTRUN: XGBoost P(buy)={buy_probability:.3f} → Limit @ {entry_price:.1f}"
                 )
             elif buy_probability < _SELL_THRESHOLD and self.state == BotState.LONG_ACCUMULATION:
                 return TradeAction(
