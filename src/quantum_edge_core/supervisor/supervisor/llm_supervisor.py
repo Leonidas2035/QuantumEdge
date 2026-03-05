@@ -14,6 +14,7 @@ from enum import Enum
 from pathlib import Path
 import re
 from typing import Any, Dict, Iterable, List, Optional, Tuple
+from pydantic import BaseModel, Field
 from quantum_edge_core.supervisor.supervisor.audit_report import load_events_for_date
 from quantum_edge_core.supervisor.supervisor.config import LlmSupervisorConfig, RiskConfig
 from quantum_edge_core.supervisor.supervisor.events import BaseEvent, EventType, EventLogger
@@ -34,6 +35,14 @@ class TradingMode(str, Enum):
     NEUTRAL = "NEUTRAL"
     RISK_OFF = "RISK_OFF"
     HALT = "HALT"
+
+class LlmTradingPolicy(BaseModel):
+    reasoning: str = Field(description="Коротке пояснення рішення")
+    trading_mode: str = Field(description="Один з: SCALP, DCA, PASS, NEUTRAL")
+    risk_multiplier: float = Field(description="Від 0.0 до 1.0")
+    buy_zone_max: float = Field(description="Максимальна ціна для покупки")
+    sell_zone_min: float = Field(description="Мінімальна ціна для продажу")
+    emergency_action: str = Field(description="NONE або CLOSE_ALL")
 
 
 # Keep legacy LlmAction for backward compat with EventLogger
@@ -199,7 +208,7 @@ class LlmSupervisor:
 
         return advice
 
-    def call_llm(self, system_prompt: str, user_prompt: str) -> str:
+    def call_llm(self, system_prompt: str, user_prompt: str) -> Any:
         # Gemini models are slower than OpenAI — enforce a 60s minimum.
         timeout = max(self._config.timeout_seconds, 60)
         return self._chat_client.complete(
@@ -210,15 +219,25 @@ class LlmSupervisor:
             ],
             temperature=0,
             timeout_seconds=timeout,
+            response_schema=LlmTradingPolicy,
         )
 
-    def parse_advice(self, raw_response: str) -> LlmSupervisorAdvice:
+    def parse_advice(self, payload: Any) -> LlmSupervisorAdvice:
         try:
-            cleaned = _strip_markdown_fences(raw_response)
-            payload = json.loads(cleaned)
+            # If payload is mostly the text when schema fails, try json loads
+            # But normally google_client returns `response.parsed` which is already the LlmTradingPolicy object
+            if isinstance(payload, str):
+                cleaned = _strip_markdown_fences(payload)
+                raw_dict = json.loads(cleaned)
+                policy = LlmTradingPolicy(**raw_dict)
+            elif isinstance(payload, LlmTradingPolicy):
+                policy = payload
+            else:
+                # Dict or other mapping returned
+                policy = LlmTradingPolicy(**payload)
 
             # Parse trading_mode (Phase 3)
-            mode_raw = str(payload.get("trading_mode", "NEUTRAL")).upper()
+            mode_raw = str(policy.trading_mode).upper()
             trading_mode = (
                 TradingMode(mode_raw)
                 if mode_raw in TradingMode.__members__
@@ -226,12 +245,11 @@ class LlmSupervisor:
             )
 
             # Parse risk_multiplier
-            risk_multiplier = payload.get("risk_multiplier")
+            risk_multiplier = policy.risk_multiplier
             if risk_multiplier is not None:
                 risk_multiplier = max(0.0, min(1.0, float(risk_multiplier)))
 
-            # Parse reasoning (Phase 3)
-            reasoning = str(payload.get("reasoning") or payload.get("comment") or "")
+            reasoning = str(policy.reasoning or "")
 
             # Legacy action mapping
             action = _trading_mode_to_action(trading_mode)
@@ -240,7 +258,7 @@ class LlmSupervisor:
                 trading_mode=trading_mode,
                 risk_multiplier=risk_multiplier,
                 reasoning=reasoning,
-                raw_response=raw_response,
+                raw_response=str(policy.model_dump_json() if hasattr(policy, "model_dump_json") else {"reasoning": reasoning}),
                 action=action,
                 comment=reasoning,
             )
@@ -249,7 +267,7 @@ class LlmSupervisor:
                 trading_mode=TradingMode.NEUTRAL,
                 risk_multiplier=None,
                 reasoning=f"Failed to parse LLM response: {exc}",
-                raw_response=raw_response,
+                raw_response=str(payload),
                 action=LlmAction.UNSPECIFIED,
                 comment=f"Failed to parse LLM response: {exc}",
             )

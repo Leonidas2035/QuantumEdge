@@ -119,7 +119,8 @@ class GoogleClient:
         messages: List[Mapping[str, str]],
         temperature: float,
         timeout_seconds: float,
-    ) -> str:
+        response_schema: Optional[Any] = None,
+    ) -> Any:
         """Synchronous generation (ChatCompletionsClient-compatible API)."""
         # Convert chat messages → single prompt string
         prompt_parts: list[str] = []
@@ -131,14 +132,20 @@ class GoogleClient:
         full_prompt = "\n".join(prompt_parts)
 
         try:
-            config = types.GenerateContentConfig(
-                temperature=temperature,
-            )
+            config_kwargs = {"temperature": temperature}
+            if response_schema is not None:
+                config_kwargs["response_mime_type"] = "application/json"
+                config_kwargs["response_schema"] = response_schema
+                
+            config = types.GenerateContentConfig(**config_kwargs)
             response = self.client.models.generate_content(
                 model=model,
                 contents=full_prompt,
                 config=config,
             )
+            # If a schema is provided, return the parsed object, otherwise text
+            if response_schema is not None and hasattr(response, "parsed"):
+                return response.parsed
             return response.text if response and response.text else ""
         except Exception as exc:
             self.logger.error("Google GenAI request failed: %s", exc)

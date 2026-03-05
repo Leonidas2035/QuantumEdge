@@ -1233,15 +1233,32 @@ class SupervisorApp:
             print("[SUP] LLM supervisor is disabled.")
             return
 
-        # Fetch live OHLCV context
         situation_text = ""
-        try:
-            from quantum_edge_core.supervisor.supervisor.market_client import fetch_situation_summary
-            situation_text = fetch_situation_summary()
-        except Exception as exc:
-            self.logger.warning("Failed to fetch OHLCV situation text: %s", exc)
-
         snapshot = state_utils.load_risk_state(self.state_dir, today=date.today())
+        
+        try:
+            import asyncio
+            from quantum_edge_core.supervisor.supervisor.market_context_builder import MarketContextBuilder
+            context_builder = MarketContextBuilder()
+            # run_llm_check_once is sync, so we use asyncio.run or loop
+            try:
+                loop = asyncio.get_event_loop()
+                if loop.is_running():
+                    import concurrent.futures
+                    with concurrent.futures.ThreadPoolExecutor() as pool:
+                        situation_text = pool.submit(
+                            lambda: asyncio.run(context_builder.build_context(symbol="BTCUSDT", current_state=snapshot))
+                        ).result()
+                else:
+                    situation_text = loop.run_until_complete(
+                        context_builder.build_context(symbol="BTCUSDT", current_state=snapshot)
+                    )
+            except RuntimeError:
+                situation_text = asyncio.run(context_builder.build_context(symbol="BTCUSDT", current_state=snapshot))
+                
+        except Exception as exc:
+            self.logger.warning("Failed to fetch market context via builder: %s", exc)
+
         self.risk_engine.state = snapshot
         advice = self.llm_supervisor.run_check(
             date.today(), snapshot, mode=self.config.mode, situation_text=situation_text

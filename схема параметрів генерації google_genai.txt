@@ -1,0 +1,47 @@
+Офіційний Pydantic Structured Outputs для Google GenAI (Gemini)
+
+Завдяки новому SDK `google-genai`, Gemini підтримує гарантований вивід JSON
+через механізм Structured Outputs. 
+
+Для цього ми використовуємо `pydantic.BaseModel`. Наприклад:
+
+```python
+from pydantic import BaseModel, Field
+
+class LlmTradingPolicy(BaseModel):
+    reasoning: str = Field(description="Коротке пояснення рішення")
+    trading_mode: str = Field(description="Один з: SCALP, DCA, PASS, NEUTRAL")
+    risk_multiplier: float = Field(description="Від 0.0 до 1.0")
+    buy_zone_max: float = Field(description="Максимальна ціна для покупки")
+    sell_zone_min: float = Field(description="Мінімальна ціна для продажу")
+    emergency_action: str = Field(description="NONE або CLOSE_ALL")
+```
+
+При виклику SDK `google-genai` цей клас передається у конфіг `GenerateContentConfig`:
+
+```python
+from google.genai import types
+
+config = types.GenerateContentConfig(
+    temperature=0.1,
+    response_mime_type="application/json",
+    response_schema=LlmTradingPolicy,
+)
+
+response = client.models.generate_content(
+    model="gemini-3.1-flash-lite-preview",
+    contents="Prompt details here",
+    config=config
+)
+
+# Результат вже одразу є валідним Pydantic об'єктом
+parsed: LlmTradingPolicy = response.parsed
+print(parsed.trading_mode, parsed.reasoning)
+```
+
+Переваги цього методу:
+- Ніякого "гадання" на кавовій гущі та Regex'у.
+- Строга типізація (types) і перевірка.
+- Немає більше ValueError та маркдаун обгорток типу \`\`\`json у відповіді.
+- Pydantic автоматично транслюється у формат OpenAPI Schema, який LLM розуміє 
+  "під капотом" як JSON Schema definition.

@@ -1,0 +1,18 @@
+{
+  "price": 72756.6,
+  "vol_24h_btc": 3093423.035,
+  "price_change_pct": 3.024,
+  "l2_bid_vol": 4538.018,
+  "l2_ask_vol": 6247.28,
+  "biggest_bid_wall": {
+    "price": 72687.9,
+    "vol": 694.903
+  },
+  "biggest_ask_wall": {
+    "price": 72758.1,
+    "vol": 688.02
+  },
+  "4H_trend": "UP",
+  "funding_rate": 8.547e-05,
+  "open_interest_btc": 273465965.994
+}
