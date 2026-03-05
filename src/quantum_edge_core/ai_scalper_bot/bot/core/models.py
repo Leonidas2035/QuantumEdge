@@ -8,10 +8,10 @@ from typing import List, Optional
 from enum import Enum
 
 class TradingMode(str, Enum):
-    SCALP = "SCALP"
-    DCA = "DCA"
-    PASS = "PASS"
-    NEUTRAL = "NEUTRAL"
+    SCALP = "scalp"
+    DCA = "dca"
+    PASS = "pass"
+    NEUTRAL = "neutral"
 
 
 @dataclass(slots=True)
