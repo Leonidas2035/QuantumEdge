@@ -1233,10 +1233,18 @@ class SupervisorApp:
             print("[SUP] LLM supervisor is disabled.")
             return
 
+        # Fetch live OHLCV context
+        situation_text = ""
+        try:
+            from quantum_edge_core.supervisor.supervisor.market_client import fetch_situation_summary
+            situation_text = fetch_situation_summary()
+        except Exception as exc:
+            self.logger.warning("Failed to fetch OHLCV situation text: %s", exc)
+
         snapshot = state_utils.load_risk_state(self.state_dir, today=date.today())
         self.risk_engine.state = snapshot
         advice = self.llm_supervisor.run_check(
-            date.today(), snapshot, mode=self.config.mode
+            date.today(), snapshot, mode=self.config.mode, situation_text=situation_text
         )
         if advice is None:
             print(

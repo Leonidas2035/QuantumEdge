@@ -28,10 +28,25 @@ def _encode_field(value: object) -> str:
     return f'"{escaped}"'
 
 
+import math
+
 def point_to_line(point: Point) -> str:
     tags = ",".join(f"{_escape(k)}={_escape(v)}" for k, v in point.tags.items())
+    valid_fields = {}
+    for k, v in point.fields.items():
+        if isinstance(v, float) and math.isnan(v):
+            continue
+        if isinstance(v, str) and v.lower() in ("nan", "infinity", "-infinity"):
+            continue
+        if v is None:
+            continue
+        valid_fields[k] = v
+
+    if not valid_fields:
+        return ""
+
     fields = ",".join(
-        f"{_escape(k)}={_encode_field(v)}" for k, v in point.fields.items()
+        f"{_escape(k)}={_encode_field(v)}" for k, v in valid_fields.items()
     )
     ts_ns = int(point.ts.timestamp() * 1_000_000_000)
     if tags:
@@ -57,7 +72,19 @@ class QuestDbTimeseriesStore(TimeseriesStore):
     def write_points(self, points: list[Point]) -> None:
         if not points:
             return
-        payload = "\n".join(point_to_line(p) for p in points).encode("utf-8")
+        lines = [point_to_line(p) for p in points]
+        lines = [L for L in lines if L]  # filter skipped points
+        if not lines:
+            return
+        payload = "\n".join(lines).encode("utf-8")
+        
+        # Debug requested by user
+        if self.logger:
+            try:
+                self.logger.debug(f"QuestDB Payload: {payload.decode('utf-8')}")
+            except Exception:
+                pass
+
         attempt = 0
         backoff = self.base_backoff_ms / 1000.0
         while True:

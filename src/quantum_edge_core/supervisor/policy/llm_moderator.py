@@ -6,7 +6,7 @@ import json
 import re
 from typing import Dict, Any
 
-from quantum_edge_core.supervisor.supervisor.llm.chat_client import ChatCompletionsClient
+from quantum_edge_core.supervisor.supervisor.llm.google_client import GoogleClient
 
 ALLOWED_KEYS = {
     "allow_trading",
@@ -35,7 +35,8 @@ class LlmModerator:
         timeout_sec: float,
         temperature: float = 0.1,
     ) -> None:
-        self.client = ChatCompletionsClient(api_url, api_key_env)
+        # Use our updated GoogleClient that wraps google.genai
+        self.client = GoogleClient(api_key_env=api_key_env)
         self.model = model
         self.timeout_sec = timeout_sec
         self.temperature = temperature
