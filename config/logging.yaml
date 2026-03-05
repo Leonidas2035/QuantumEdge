@@ -10,12 +10,14 @@ handlers:
     level: INFO
     stream: ext://sys.stdout
   file:
-    class: logging.FileHandler
+    class: logging.handlers.RotatingFileHandler
     formatter: standard
     level: INFO
     filename: "logs/quantum_edge.log"
     mode: "a"
     encoding: "utf-8"
+    maxBytes: 52428800
+    backupCount: 5
 root:
   level: INFO
   handlers: [console, file]

@@ -58,7 +58,11 @@ class TsdbConfig:
 
 @dataclass
 class L2Config:
-    enabled: bool = os.getenv("MARKET_DATA_L2_ENABLED", "1") in {"1", "true", "True"}
+    enabled: bool = os.getenv("MARKET_DATA_L2_ENABLED", "0") in {
+        "1",
+        "true",
+        "True",
+    }
     spool_dir: str = os.getenv("MARKET_DATA_L2_SPOOL_DIR", "spool/l2")
     rotate_mb: int = int(os.getenv("MARKET_DATA_L2_ROTATE_MB", "64"))
     flush_interval_ms: int = int(os.getenv("MARKET_DATA_L2_FLUSH_MS", "200"))
