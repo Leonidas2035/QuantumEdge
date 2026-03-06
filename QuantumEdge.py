@@ -363,6 +363,39 @@ def start_command(args):
     print("QuantumEdge started. Use 'python QuantumEdge.py status' to check.")
 
 
+def dashboard_command(args):
+    """Starts the Single Pane of Glass dashboard in the background."""
+    print("Starting QuantumEdge Dashboard on port 8501...")
+
+    # Check if streamlit is available
+    try:
+        import streamlit
+    except ImportError:
+        print("Streamlit not found. Please install requirements first.")
+        return
+
+    dashboard_path = Path(__file__).resolve().parent / "src" / "quantum_edge_core" / "dashboard" / "app.py"
+    if not dashboard_path.exists():
+        print(f"Error: Dashboard app not found at {dashboard_path}")
+        return
+
+    cmd = [
+        sys.executable, "-m", "streamlit", "run",
+        str(dashboard_path),
+        "--server.port", "8501",
+        "--server.headless", "true"
+    ]
+
+    # Launch detached
+    subprocess.Popen(
+        cmd,
+        start_new_session=True,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+    )
+    print("Dashboard is running in the background. Visit http://localhost:8501")
+
+
 def stop_command(args):
     """Stops the running orchestrator."""
     pid_file = Path(".quantum_edge.pid")
@@ -435,6 +468,7 @@ def main():
     subparsers.add_parser("start", help="Start in background")
     subparsers.add_parser("stop", help="Stop the system")
     subparsers.add_parser("status", help="Show system status")
+    subparsers.add_parser("dashboard", help="Start the UI dashboard")
 
     args = parser.parse_args()
 
@@ -446,6 +480,8 @@ def main():
         stop_command(args)
     elif args.command == "status":
         status_command(args)
+    elif args.command == "dashboard":
+        dashboard_command(args)
 
 
 if __name__ == "__main__":
