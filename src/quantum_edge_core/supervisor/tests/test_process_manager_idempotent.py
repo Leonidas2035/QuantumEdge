@@ -2,7 +2,10 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from quantum_edge_core.supervisor.supervisor.config import PathsConfig, SupervisorConfig
-from quantum_edge_core.supervisor.supervisor.process_manager import ProcessManager, ProcessInfo
+from quantum_edge_core.supervisor.supervisor.process_manager import (
+    ProcessManager,
+    ProcessInfo,
+)
 from quantum_edge_core.supervisor.supervisor.process_spec import ProcessSpec
 
 

@@ -8,7 +8,11 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence
 
-from quantum_edge_core.supervisor.supervisor.dashboard.models import DashboardEvent, HealthStatus, OverviewData
+from quantum_edge_core.supervisor.supervisor.dashboard.models import (
+    DashboardEvent,
+    HealthStatus,
+    OverviewData,
+)
 from quantum_edge_core.supervisor.supervisor.events import BaseEvent, EventType
 from quantum_edge_core.supervisor.supervisor.heartbeat import HeartbeatServer
 from quantum_edge_core.supervisor.supervisor.snapshot_models import SnapshotReport

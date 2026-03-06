@@ -282,9 +282,9 @@ def send_halt_command():
         socket.connect("tcp://127.0.0.1:5558")
         time.sleep(0.1)  # wait for connection
         msg = json.dumps(
-            {"command": "HALT", "source": "dashboard", "timestamp": time.time()}
+            {"action": "HALT", "source": "dashboard", "timestamp": time.time()}
         )
-        socket.send_string(f"CONTROL {msg}")
+        socket.send_multipart([b"CONTROL", msg.encode("utf-8")])
         socket.close()
         return True
     except Exception as e:
@@ -299,8 +299,10 @@ def force_apply_mode(mode: str):
         socket = context.socket(zmq.PUB)
         socket.connect("tcp://127.0.0.1:5558")
         time.sleep(0.1)
-        msg = json.dumps({"command": "SET_MODE", "mode": mode, "source": "dashboard"})
-        socket.send_string(f"CONTROL {msg}")
+        msg = json.dumps(
+            {"trading_mode": mode, "source": "dashboard", "timestamp": time.time()}
+        )
+        socket.send_multipart([b"CONTROL", msg.encode("utf-8")])
         socket.close()
         return True
     except Exception as e:
@@ -311,17 +313,18 @@ def force_apply_mode(mode: str):
 # --- Log Tailing ---
 
 
+from collections import deque
+
+
 def tail_log(filename: str, lines: int = 50) -> str:
-    """Tail a log file from PROJECT_ROOT."""
+    """Tail a log file from PROJECT_ROOT memory-efficiently."""
     filepath = PROJECT_ROOT / filename
     if not filepath.exists():
         return f"File not found: {filepath}"
 
     try:
         with open(filepath, "r") as f:
-            # Read last N lines efficiently or just readlines if small
-            all_lines = f.readlines()
-            return "".join(all_lines[-lines:])
+            return "".join(deque(f, maxlen=lines))
     except Exception as e:
         return f"Error reading log: {e}"
 

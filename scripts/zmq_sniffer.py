@@ -21,12 +21,15 @@ import zmq
 
 def main():
     parser = argparse.ArgumentParser(description="ZMQ PUB sniffer")
-    parser.add_argument("--port", type=int, default=5555,
-                        help="ZMQ PUB port (default: 5555)")
-    parser.add_argument("--duration", type=int, default=30,
-                        help="Seconds to listen (default: 30)")
-    parser.add_argument("--topic", type=str, default="",
-                        help="Topic filter (default: '' = all)")
+    parser.add_argument(
+        "--port", type=int, default=5555, help="ZMQ PUB port (default: 5555)"
+    )
+    parser.add_argument(
+        "--duration", type=int, default=30, help="Seconds to listen (default: 30)"
+    )
+    parser.add_argument(
+        "--topic", type=str, default="", help="Topic filter (default: '' = all)"
+    )
     args = parser.parse_args()
 
     ctx = zmq.Context()
@@ -46,6 +49,7 @@ def main():
 
     def _sigint(*a):
         pass
+
     signal.signal(signal.SIGINT, _sigint)
 
     while time.time() - start < args.duration:
@@ -88,7 +92,9 @@ def main():
     print("🔬 DIAGNOSIS")
     print("=" * 70)
 
-    depth_topics = [t for t in counts if "depth" in t or "orderbook" in t or "book" in t]
+    depth_topics = [
+        t for t in counts if "depth" in t or "orderbook" in t or "book" in t
+    ]
     kline_topics = [t for t in counts if "kline" in t]
     wall_topics = [t for t in counts if "wall" in t]
 
@@ -100,12 +106,16 @@ def main():
     if depth_topics:
         print(f"  ✅ Depth/OrderBook events detected: {depth_topics}")
     else:
-        print("  ❌ NO depth/orderbook events — Check BinanceFuturesFeed._handle_depth()")
+        print(
+            "  ❌ NO depth/orderbook events — Check BinanceFuturesFeed._handle_depth()"
+        )
 
     if wall_topics:
         print(f"  ✅ Whale wall events detected: {wall_topics}")
     else:
-        print("  ⚠️  No whale wall events — aggregator may not find walls (normal if market is calm)")
+        print(
+            "  ⚠️  No whale wall events — aggregator may not find walls (normal if market is calm)"
+        )
 
     print("=" * 70)
     return 0

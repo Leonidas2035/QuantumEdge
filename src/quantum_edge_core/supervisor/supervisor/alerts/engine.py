@@ -8,7 +8,10 @@ from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 from quantum_edge_core.supervisor.supervisor.alerts.rules import AlertRule
-from quantum_edge_core.supervisor.supervisor.alerts.storage import AlertRecord, AlertStorage
+from quantum_edge_core.supervisor.supervisor.alerts.storage import (
+    AlertRecord,
+    AlertStorage,
+)
 
 
 @dataclass

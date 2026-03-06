@@ -75,16 +75,19 @@ class ZmqCommandPublisher:
         bot_id dictates the topic, e.g. "command.ai_scalper_bot"
         """
         import time
+
         topic = f"command.{bot_id}".encode("utf-8")
         payload = {"action": action, "timestamp": time.time()}
         payload.update(kwargs)
-        
+
         try:
             msg = json.dumps(payload).encode("utf-8")
             self.socket.send_multipart([topic, msg])
             return True
         except Exception as e:
-            logging.getLogger(__name__).warning(f"Failed to send command to {bot_id}: {e}")
+            logging.getLogger(__name__).warning(
+                f"Failed to send command to {bot_id}: {e}"
+            )
             return False
 
     def close(self):

@@ -97,9 +97,7 @@ class Resampler:
             timestamp=time.time(),
         )
 
-    async def _query_candles(
-        self, table: str, symbol: str
-    ) -> List[Dict[str, Any]]:
+    async def _query_candles(self, table: str, symbol: str) -> List[Dict[str, Any]]:
         """Query QuestDB REST /exec for recent candle data."""
         sql = (
             f"SELECT open, high, low, close, volume, ts "
@@ -120,9 +118,7 @@ class Resampler:
                     url, params={"query": sql}, timeout=aiohttp.ClientTimeout(total=5)
                 ) as resp:
                     if resp.status != 200:
-                        logger.warning(
-                            "QuestDB query failed: HTTP %d", resp.status
-                        )
+                        logger.warning("QuestDB query failed: HTTP %d", resp.status)
                         return []
                     data = await resp.json()
                     return self._parse_questdb_response(data)
@@ -138,9 +134,7 @@ class Resampler:
         return [dict(zip(columns, row)) for row in rows]
 
     @staticmethod
-    def _compute_slope(
-        candles: List[Dict[str, Any]], interval: str
-    ) -> TimeframeSlope:
+    def _compute_slope(candles: List[Dict[str, Any]], interval: str) -> TimeframeSlope:
         """Compute linear regression slope on close prices.
 
         Uses numpy polyfit(degree=1) for simple linear regression.

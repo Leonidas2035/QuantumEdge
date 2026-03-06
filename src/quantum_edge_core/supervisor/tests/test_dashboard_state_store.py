@@ -2,8 +2,12 @@ from pathlib import Path
 
 from quantum_edge_core.supervisor.supervisor.alerts.engine import AlertEngine
 from quantum_edge_core.supervisor.supervisor.alerts.storage import AlertStorage
-from quantum_edge_core.supervisor.supervisor.dashboard.audit_log import DashboardAuditLogger
-from quantum_edge_core.supervisor.supervisor.dashboard.state_store import DashboardStateStore
+from quantum_edge_core.supervisor.supervisor.dashboard.audit_log import (
+    DashboardAuditLogger,
+)
+from quantum_edge_core.supervisor.supervisor.dashboard.state_store import (
+    DashboardStateStore,
+)
 
 
 def _make_store(tmp_path: Path) -> DashboardStateStore:

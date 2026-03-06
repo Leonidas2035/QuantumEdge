@@ -19,7 +19,15 @@ from datetime import date
 from pathlib import Path
 
 # Ensure supervisor subpackages are importable
-sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src" / "quantum_edge_core" / "supervisor"))
+sys.path.insert(
+    0,
+    str(
+        Path(__file__).resolve().parent.parent
+        / "src"
+        / "quantum_edge_core"
+        / "supervisor"
+    ),
+)
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent / "src"))
 
 from supervisor.config import (
@@ -40,13 +48,16 @@ from supervisor.llm_supervisor import (
 from supervisor.llm.google_client import GoogleClient
 from policy.policy_contract import Policy, POLICY_VERSION, ALLOWED_MODES
 
-logging.basicConfig(level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s")
+logging.basicConfig(
+    level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s"
+)
 logger = logging.getLogger("ContractTest")
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
 # 1. Mock Data
 # ═══════════════════════════════════════════════════════════════════════════════
+
 
 def build_mock_telemetry() -> dict:
     """Simulate a healthy bot telemetry payload."""
@@ -124,6 +135,7 @@ def build_mock_llm_config() -> LlmSupervisorConfig:
 # ═══════════════════════════════════════════════════════════════════════════════
 # 2. Test Runner
 # ═══════════════════════════════════════════════════════════════════════════════
+
 
 def main() -> int:
     errors = 0

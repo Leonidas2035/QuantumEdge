@@ -9,7 +9,15 @@ from dataclasses import dataclass
 from typing import Any, Dict, Optional
 
 POLICY_VERSION = "policy.v1"
-ALLOWED_MODES = {"normal", "scalp", "risk_off", "conservative", "dca", "pass", "neutral"}
+ALLOWED_MODES = {
+    "normal",
+    "scalp",
+    "risk_off",
+    "conservative",
+    "dca",
+    "pass",
+    "neutral",
+}
 
 POLICY_SCHEMA: Dict[str, Any] = {
     "$schema": "https://json-schema.org/draft/2020-12/schema",

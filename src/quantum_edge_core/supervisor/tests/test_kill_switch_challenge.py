@@ -1,4 +1,6 @@
-from quantum_edge_core.supervisor.supervisor.security import validate_kill_switch_challenge
+from quantum_edge_core.supervisor.supervisor.security import (
+    validate_kill_switch_challenge,
+)
 
 
 def test_kill_switch_challenge_validation():

@@ -1,6 +1,9 @@
 import urllib.request
 
-from quantum_edge_core.supervisor.supervisor.process_manager import _http_health, _tcp_health
+from quantum_edge_core.supervisor.supervisor.process_manager import (
+    _http_health,
+    _tcp_health,
+)
 
 
 class DummyResponse:

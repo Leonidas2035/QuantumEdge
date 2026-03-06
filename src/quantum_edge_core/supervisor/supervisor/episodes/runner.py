@@ -11,7 +11,11 @@ from typing import Dict, Optional
 
 from policy.policy_contract import POLICY_VERSION
 from quantum_edge_core.supervisor.supervisor.action_ledger import ActionLedger
-from quantum_edge_core.supervisor.supervisor.guards import GuardEvaluator, GuardConfig, load_guard_config
+from quantum_edge_core.supervisor.supervisor.guards import (
+    GuardEvaluator,
+    GuardConfig,
+    load_guard_config,
+)
 from quantum_edge_core.supervisor.supervisor.regime_sm import (
     RegimeStateMachine,
     RegimeConfig,

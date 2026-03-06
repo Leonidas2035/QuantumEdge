@@ -54,7 +54,12 @@ class NarrativeTranslator:
 
         # 2. MTF Trend Analysis (ordered: 4h → 1h → 15m → 5m)
         ordered_tfs = ["4h", "1h", "15m", "5m"]
-        tf_labels = {"4h": "Macro 4h", "1h": "Mid 1h", "15m": "Short 15m", "5m": "Micro 5m"}
+        tf_labels = {
+            "4h": "Macro 4h",
+            "1h": "Mid 1h",
+            "15m": "Short 15m",
+            "5m": "Micro 5m",
+        }
 
         for tf in ordered_tfs:
             if tf in context.slopes:

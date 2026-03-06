@@ -177,10 +177,40 @@ with st.sidebar:
             st.error("Action denied: localhost only.")
 
     st.markdown("### Metrics Overview")
-    st.metric("Equity", "$10,245.50", "2.4%")
-    st.metric("Unrealized PnL", "-$12.30", "-0.1%")
-    st.metric("Drawdown", "1.2%", "-0.5%")
-    st.metric("Risk Multiplier", "1.5x", "0.5")
+    # Fetch real/mock data for dynamic metrics
+    df_inv, _ = fetch_data(
+        "SELECT * FROM inventory ORDER BY timestamp DESC LIMIT 2", get_mock_inventory
+    )
+    df_llm, _ = fetch_data(
+        "SELECT * FROM llm_advice ORDER BY time DESC LIMIT 1", get_mock_llm_advice
+    )
+
+    if not df_inv.empty and len(df_inv) >= 2:
+        curr_eq = df_inv.iloc[0]["equity"]
+        prev_eq = df_inv.iloc[1]["equity"]
+        eq_pct = ((curr_eq - prev_eq) / prev_eq) * 100 if prev_eq > 0 else 0
+
+        curr_dd = df_inv.iloc[0]["drawdown"]
+        prev_dd = df_inv.iloc[1]["drawdown"]
+        dd_delta = curr_dd - prev_dd
+
+        st.metric("Equity", f"${curr_eq:,.2f}", f"{eq_pct:+.2f}%")
+        st.metric(
+            "Drawdown", f"{curr_dd:.2f}%", f"{dd_delta:+.2f}%", delta_color="inverse"
+        )
+    else:
+        st.metric("Equity", "—", "—")
+        st.metric("Drawdown", "—", "—")
+
+    st.metric(
+        "Unrealized PnL", "-$12.30", "-0.1%"
+    )  # Hard to mock dynamically without full position state
+
+    if not df_llm.empty:
+        curr_mult = df_llm.iloc[0]["multiplier"]
+        st.metric("Risk Multiplier", f"{curr_mult}x")
+    else:
+        st.metric("Risk Multiplier", "—")
 
 # ─── Tabs ────────────────────────────────────────────────────────────
 
@@ -364,8 +394,14 @@ with tab3:
 
     # Mocking timestamps for trades to overlay on the chart properly
     if "timestamp" not in df_trades.columns:
+        market_len = len(df_market)
         df_trades["timestamp"] = [
-            df_market["timestamp"].iloc[-(i + 1) * 5] for i in range(len(df_trades))
+            (
+                df_market["timestamp"].iloc[-min((i + 1) * 5, market_len)]
+                if market_len > 0
+                else pd.Timestamp.now()
+            )
+            for i in range(len(df_trades))
         ]
 
     buys_df = df_trades[df_trades["side"] == "BUY"]

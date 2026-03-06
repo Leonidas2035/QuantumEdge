@@ -34,17 +34,18 @@ logger: logging.Logger = logging.getLogger(__name__)
 T = TypeVar("T")
 
 # ── Binance weight constants ────────────────────────────────────────
-_WEIGHT_LIMIT: int = 2400          # Binance default per-minute IP weight
-_THROTTLE_PCT: float = 0.75       # Start throttling at 75 %
-_THROTTLE_THRESHOLD: int = int(_WEIGHT_LIMIT * _THROTTLE_PCT)   # 1 800
+_WEIGHT_LIMIT: int = 2400  # Binance default per-minute IP weight
+_THROTTLE_PCT: float = 0.75  # Start throttling at 75 %
+_THROTTLE_THRESHOLD: int = int(_WEIGHT_LIMIT * _THROTTLE_PCT)  # 1 800
 _INTER_REQUEST_DELAY_S: float = 0.1  # Min gap between sequential REST calls
 
 
 class RequestPriority(enum.IntEnum):
     """Lower value = higher priority."""
-    HIGH = 0      # Order send / cancel
-    MEDIUM = 1    # Account sync, position sync
-    LOW = 2       # Exchange info, historical klines
+
+    HIGH = 0  # Order send / cancel
+    MEDIUM = 1  # Account sync, position sync
+    LOW = 2  # Exchange info, historical klines
 
 
 @dataclass(order=True)
@@ -145,7 +146,9 @@ class BinanceRateLimiter:
 
         logger.debug(
             "Binance weight: %d / %d (threshold=%d)",
-            self._used_weight, self._weight_limit, self._throttle_threshold,
+            self._used_weight,
+            self._weight_limit,
+            self._throttle_threshold,
         )
 
     async def _maybe_throttle(self) -> None:

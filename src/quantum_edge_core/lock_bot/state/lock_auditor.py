@@ -77,7 +77,8 @@ class LockAuditor:
             logger.warning(
                 "[LockAuditor] API keys not set (%s / %s). "
                 "Running in OFFLINE mode with default FLAT state.",
-                self._api_key_env, self._api_secret_env,
+                self._api_key_env,
+                self._api_secret_env,
             )
             return result
 
@@ -94,15 +95,9 @@ class LockAuditor:
         # ── 1. Account balance ───────────────────────────────────────
         try:
             account = client.futures_account()
-            result.total_wallet_balance = float(
-                account.get("totalWalletBalance", 0)
-            )
-            result.total_margin_balance = float(
-                account.get("totalMarginBalance", 0)
-            )
-            result.available_balance = float(
-                account.get("availableBalance", 0)
-            )
+            result.total_wallet_balance = float(account.get("totalWalletBalance", 0))
+            result.total_margin_balance = float(account.get("totalMarginBalance", 0))
+            result.available_balance = float(account.get("availableBalance", 0))
             if result.total_margin_balance > 0:
                 used = result.total_margin_balance - result.available_balance
                 result.margin_usage_pct = (used / result.total_margin_balance) * 100.0
@@ -111,9 +106,7 @@ class LockAuditor:
 
         # ── 2. Positions ─────────────────────────────────────────────
         try:
-            positions: List[Dict] = client.futures_position_information(
-                symbol=symbol
-            )
+            positions: List[Dict] = client.futures_position_information(symbol=symbol)
             for pos in positions:
                 amt = float(pos.get("positionAmt", 0))
                 upnl = float(pos.get("unRealizedProfit", 0))

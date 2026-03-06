@@ -28,8 +28,8 @@ class TradingPolicy(msgspec.Struct, frozen=True):
     """
 
     timestamp: float = msgspec.field(default_factory=time.time)
-    strategy_mode: str = "PASS"           # SCALP | DCA | PASS
-    risk_multiplier: float = 1.0          # 0.0 – 1.0
-    buy_zone_max: float = 0.0            # Max price for BUY entries
-    sell_zone_min: float = 0.0           # Min price for SELL / TP
-    reasoning: str = ""                   # LLM reasoning (human-readable)
+    strategy_mode: str = "PASS"  # SCALP | DCA | PASS
+    risk_multiplier: float = 1.0  # 0.0 – 1.0
+    buy_zone_max: float = 0.0  # Max price for BUY entries
+    sell_zone_min: float = 0.0  # Min price for SELL / TP
+    reasoning: str = ""  # LLM reasoning (human-readable)

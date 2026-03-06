@@ -25,6 +25,7 @@ logger = logging.getLogger("OrderBookAggregator")
 @dataclass
 class WallInfo:
     """Detected liquidity wall."""
+
     price: float
     size_btc: float
     distance_pct: float

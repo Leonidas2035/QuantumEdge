@@ -77,10 +77,10 @@ class LiquidationEvent(BaseEvent):
     """
 
     symbol: str
-    side: str           # "BUY" or "SELL"
-    price: float        # Liquidation price
-    qty: float          # Liquidation quantity
-    usd_size: float     # Notional value (price * qty)
+    side: str  # "BUY" or "SELL"
+    price: float  # Liquidation price
+    qty: float  # Liquidation quantity
+    usd_size: float  # Notional value (price * qty)
     timestamp: float
 
 

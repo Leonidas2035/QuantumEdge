@@ -30,6 +30,7 @@ def _encode_field(value: object) -> str:
 
 import math
 
+
 def point_to_line(point: Point) -> str:
     tags = ",".join(f"{_escape(k)}={_escape(v)}" for k, v in point.tags.items())
     valid_fields = {}
@@ -77,7 +78,7 @@ class QuestDbTimeseriesStore(TimeseriesStore):
         if not lines:
             return
         payload = "\n".join(lines).encode("utf-8")
-        
+
         # Debug requested by user
         if self.logger:
             try:
@@ -90,9 +91,10 @@ class QuestDbTimeseriesStore(TimeseriesStore):
         while True:
             try:
                 import socket
+
                 sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
                 sock.settimeout(5.0)
-                sock.connect(('127.0.0.1', 9009))
+                sock.connect(("127.0.0.1", 9009))
                 sock.sendall(payload)
                 sock.close()
                 return

@@ -20,8 +20,13 @@ from quantum_edge_core.supervisor.supervisor.config import (
 )
 from quantum_edge_core.supervisor.supervisor.config_loader import load_processes_spec
 from quantum_edge_core.supervisor.supervisor.guards import load_guard_config
-from quantum_edge_core.supervisor.supervisor.policy_store import resolve_active_policy_path
-from quantum_edge_core.supervisor.supervisor.regime_sm import load_directives_config, load_regime_config
+from quantum_edge_core.supervisor.supervisor.policy_store import (
+    resolve_active_policy_path,
+)
+from quantum_edge_core.supervisor.supervisor.regime_sm import (
+    load_directives_config,
+    load_regime_config,
+)
 
 
 def _load_supervisor_app_class():

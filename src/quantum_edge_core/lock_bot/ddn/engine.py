@@ -107,8 +107,10 @@ class DDNEngine:
                 time_delta_s = (now_ms - self._last_price_ts_ms) / 1000.0
                 if time_delta_s > 0:
                     velocity_bps = (
-                        abs(mark - self._last_price) / self._last_price
-                    ) * 10000.0 / time_delta_s
+                        (abs(mark - self._last_price) / self._last_price)
+                        * 10000.0
+                        / time_delta_s
+                    )
                     if velocity_bps > self._cfg.max_velocity_bps_per_sec:
                         self._last_price = mark
                         self._last_price_ts_ms = now_ms

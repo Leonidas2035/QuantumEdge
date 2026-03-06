@@ -53,6 +53,7 @@ class BotEngine:
 
         # 1.5 Command Bus (Control Input)
         import zmq
+
         self.zmq_ctx = zmq.Context()
         self.cmd_sub = self.zmq_ctx.socket(zmq.SUB)
         self.cmd_sub.connect("tcp://127.0.0.1:5558")
@@ -94,23 +95,41 @@ class BotEngine:
                 try:
                     import zmq
                     import json
+
                     while True:
                         topic, msg = self.cmd_sub.recv_multipart(zmq.NOBLOCK)
                         cmd = json.loads(msg.decode("utf-8"))
                         market_state = self.cache._current_state
                         if market_state:
                             if "trading_mode" in cmd:
-                                from quantum_edge_core.ai_scalper_bot.bot.core.models import TradingMode
+                                from quantum_edge_core.ai_scalper_bot.bot.core.models import (
+                                    TradingMode,
+                                )
+
                                 try:
                                     mode_str = str(cmd["trading_mode"]).upper()
                                     if mode_str in TradingMode.__members__:
-                                        market_state.trading_mode = TradingMode[mode_str]
-                                        logger.warning(f"🤖 SUPERVISOR POLICY: Trading Mode -> {market_state.trading_mode.value}")
-                                    
-                                    if "buy_zone_max" in cmd and cmd["buy_zone_max"] is not None:
-                                        market_state.buy_zone_max = float(cmd["buy_zone_max"])
-                                    if "sell_zone_min" in cmd and cmd["sell_zone_min"] is not None:
-                                        market_state.sell_zone_min = float(cmd["sell_zone_min"])
+                                        market_state.trading_mode = TradingMode[
+                                            mode_str
+                                        ]
+                                        logger.warning(
+                                            f"🤖 SUPERVISOR POLICY: Trading Mode -> {market_state.trading_mode.value}"
+                                        )
+
+                                    if (
+                                        "buy_zone_max" in cmd
+                                        and cmd["buy_zone_max"] is not None
+                                    ):
+                                        market_state.buy_zone_max = float(
+                                            cmd["buy_zone_max"]
+                                        )
+                                    if (
+                                        "sell_zone_min" in cmd
+                                        and cmd["sell_zone_min"] is not None
+                                    ):
+                                        market_state.sell_zone_min = float(
+                                            cmd["sell_zone_min"]
+                                        )
                                 except Exception as p_err:
                                     logger.error(f"Error parsing trade policy: {p_err}")
 
@@ -119,10 +138,16 @@ class BotEngine:
                                 logger.warning("🛑 SUPERVISOR COMMAND: Entries Paused!")
                             elif cmd.get("action") == "RESUME_ENTRIES":
                                 market_state.entries_paused = False
-                                logger.warning("🟢 SUPERVISOR COMMAND: Entries Resumed!")
+                                logger.warning(
+                                    "🟢 SUPERVISOR COMMAND: Entries Resumed!"
+                                )
                             elif cmd.get("action") == "ADJUST_RISK":
-                                market_state.risk_multiplier = cmd.get("multiplier", 1.0)
-                                logger.warning(f"⚠️ SUPERVISOR COMMAND: Risk Multiplier set to {market_state.risk_multiplier}")
+                                market_state.risk_multiplier = cmd.get(
+                                    "multiplier", 1.0
+                                )
+                                logger.warning(
+                                    f"⚠️ SUPERVISOR COMMAND: Risk Multiplier set to {market_state.risk_multiplier}"
+                                )
                 except zmq.Again:
                     pass
                 except Exception as e:
@@ -154,10 +179,10 @@ class BotEngine:
                         # ILP Portfolio logging
                         eq = getattr(ms, "equity_now", 0.0) if ms else 0.0
                         self.quest_telemetry.log_portfolio_state(
-                            symbol=self.config.symbol, 
-                            equity=eq, 
-                            unrealized_pnl=self.position.state.unrealized_pnl, 
-                            position_qty=self.position.total_qty
+                            symbol=self.config.symbol,
+                            equity=eq,
+                            unrealized_pnl=self.position.state.unrealized_pnl,
+                            position_qty=self.position.total_qty,
                         )
                         last_heartbeat = now
                     await asyncio.sleep(0.01)
@@ -167,7 +192,7 @@ class BotEngine:
                 # Hub publishes whale, metrics, heartbeat events
                 # on the same ZMQ bus — skip those.
                 ev_type = tick.get("type", "") or tick.get("event_type", "")
-                
+
                 # ── Handle Liquidation Immediately ──
                 if ev_type == "liquidation":
                     l_side = tick.get("side", "N/A")
@@ -176,14 +201,20 @@ class BotEngine:
                     ms = self.cache._current_state
                     if ms:
                         ms.liquidations_1m += 1
-                    logger.warning(f"LIQUIDATION DETECTED: {l_side} {l_qty} BTC @ {l_price}")
+                    logger.warning(
+                        f"LIQUIDATION DETECTED: {l_side} {l_qty} BTC @ {l_price}"
+                    )
                     await asyncio.sleep(0.001)
                     continue
 
                 if ev_type not in (
-                    "KlineEvent", "kline",
-                    "TradeEvent", "trade", "MarketTrade",
-                    "depth", "OrderBookUpdate",  # ← L2 depth events
+                    "KlineEvent",
+                    "kline",
+                    "TradeEvent",
+                    "trade",
+                    "MarketTrade",
+                    "depth",
+                    "OrderBookUpdate",  # ← L2 depth events
                     "",  # allow untyped raw payloads
                 ):
                     await asyncio.sleep(0.001)
@@ -205,7 +236,7 @@ class BotEngine:
                     bids = tick.get("bids", [])
                     asks = tick.get("asks", [])
                     whale_walls = tick.get("whale_walls", [])
-                    
+
                     if bids and len(bids[0]) >= 2:
                         best_bid = float(bids[0][0])
                         best_bid_qty = float(bids[0][1])
@@ -267,10 +298,10 @@ class BotEngine:
                     "q": qty,
                     "T": timestamp * 1000,
                     "m": is_buyer_maker,
-                    "b": best_bid,     # Best bid price
-                    "a": best_ask,     # Best ask price
-                    "B": best_bid_qty, # Best bid qty
-                    "A": best_ask_qty, # Best ask qty
+                    "b": best_bid,  # Best bid price
+                    "a": best_ask,  # Best ask price
+                    "B": best_bid_qty,  # Best bid qty
+                    "A": best_ask_qty,  # Best ask qty
                     "W": whale_walls,  # List of WhaleWall dicts
                 }
 
@@ -291,7 +322,11 @@ class BotEngine:
                     )
 
                     # Update Maco-metrics (Volume Delta)
-                    if not is_depth and ev_type in ("trade", "TradeEvent", "MarketTrade", "") and qty > 0.0:
+                    if (
+                        not is_depth
+                        and ev_type in ("trade", "TradeEvent", "MarketTrade", "")
+                        and qty > 0.0
+                    ):
                         if is_buyer_maker:
                             market_state.volume_delta_1m -= qty
                         else:
@@ -309,11 +344,21 @@ class BotEngine:
                     if walls:
                         # Extract first wall's price info safely (handles both object and dict formats)
                         first_wall = walls[0]
-                        w_side = getattr(first_wall, "side", first_wall.get("side", "")) if isinstance(first_wall, dict) else getattr(first_wall, "side", getattr(first_wall, "side", ""))
+                        w_side = (
+                            getattr(first_wall, "side", first_wall.get("side", ""))
+                            if isinstance(first_wall, dict)
+                            else getattr(
+                                first_wall, "side", getattr(first_wall, "side", "")
+                            )
+                        )
                         if isinstance(first_wall, dict):
-                            w_side, w_price = first_wall.get("side", "?"), first_wall.get("price", 0.0)
+                            w_side, w_price = first_wall.get(
+                                "side", "?"
+                            ), first_wall.get("price", 0.0)
                         else:
-                            w_side, w_price = getattr(first_wall, "side", "?"), getattr(first_wall, "price", 0.0)
+                            w_side, w_price = getattr(first_wall, "side", "?"), getattr(
+                                first_wall, "price", 0.0
+                            )
                         walls_info = f" | Walls: {len(walls)} ({w_side}: {w_price})"
 
                     logger.info(
@@ -328,9 +373,14 @@ class BotEngine:
                     active_signal_name = "HOLD"
                     if action:
                         active_signal_name = action.action_type
-                        logger.warning(f"🚀 SIGNAL GENERATED: {action.action_type} @ {action.price} | Reason: {action.reason}")
+                        logger.warning(
+                            f"🚀 SIGNAL GENERATED: {action.action_type} @ {action.price} | Reason: {action.reason}"
+                        )
                         self.position.simulate_fill(
-                            action.price, action.qty, action.action_type, self.config.symbol
+                            action.price,
+                            action.qty,
+                            action.action_type,
+                            self.config.symbol,
                         )
                         await self.gateway.execute(action)
 
@@ -338,18 +388,32 @@ class BotEngine:
                     dist_pct = 0.0
                     if market_state.whale_walls:
                         closest_walls = sorted(
-                            market_state.whale_walls, 
-                            key=lambda w: abs((w.get("price", 0.0) if isinstance(w, dict) else getattr(w, "price", 0.0)) - market_state.last_price)
+                            market_state.whale_walls,
+                            key=lambda w: abs(
+                                (
+                                    w.get("price", 0.0)
+                                    if isinstance(w, dict)
+                                    else getattr(w, "price", 0.0)
+                                )
+                                - market_state.last_price
+                            ),
                         )
-                        n_price = closest_walls[0].get("price", 0.0) if isinstance(closest_walls[0], dict) else getattr(closest_walls[0], "price", 0.0)
+                        n_price = (
+                            closest_walls[0].get("price", 0.0)
+                            if isinstance(closest_walls[0], dict)
+                            else getattr(closest_walls[0], "price", 0.0)
+                        )
                         if market_state.last_price > 0:
-                            dist_pct = abs(n_price - market_state.last_price) / market_state.last_price
-                    
+                            dist_pct = (
+                                abs(n_price - market_state.last_price)
+                                / market_state.last_price
+                            )
+
                     await self.reporter.send_telemetry(
                         market_state=market_state,
                         ofi=feat_vec.ofi,
                         action=active_signal_name,
-                        closest_wall_dist_pct=dist_pct
+                        closest_wall_dist_pct=dist_pct,
                     )
 
                 # 5. Reporting (Throttled)
@@ -360,16 +424,16 @@ class BotEngine:
                         self.position.state.unrealized_pnl,
                         self.position.total_qty,
                     )
-                    
+
                     ms = self.cache._current_state
                     eq = getattr(ms, "equity_now", 0.0) if ms else 0.0
                     self.quest_telemetry.log_portfolio_state(
-                        symbol=self.config.symbol, 
-                        equity=eq, 
-                        unrealized_pnl=self.position.state.unrealized_pnl, 
-                        position_qty=self.position.total_qty
+                        symbol=self.config.symbol,
+                        equity=eq,
+                        unrealized_pnl=self.position.state.unrealized_pnl,
+                        position_qty=self.position.total_qty,
                     )
-                    
+
                     last_heartbeat = now
 
                 # Yield control to event loop
