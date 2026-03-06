@@ -326,7 +326,7 @@ with tab2:
 
     # Mode mapping for step chart visualization
     mode_map = {"SCALP": 4, "DCA": 3, "NEUTRAL": 2, "PASS": 1, "HALT": 0}
-    y_vals = [mode_map.get(m, 2) for m in df_llm["mode"]]
+    y_vals = [mode_map.get(m, 2) for m in df_llm["trading_mode"]]
 
     fig_llm.add_trace(
         go.Scatter(
