@@ -26,12 +26,23 @@ import zmq
 logger = logging.getLogger(__name__)
 
 TELEMETRY_ENDPOINT: str = "tcp://127.0.0.1:5557"
-EXPECTED_HEARTBEAT_KEYS: frozenset[str] = frozenset({
-    "source", "timestamp", "status", "pnl_session",
-})
-EXPECTED_TELEMETRY_KEYS: frozenset[str] = frozenset({
-    "service_id", "timestamp", "last_price", "ofi_1s", "active_signal",
-})
+EXPECTED_HEARTBEAT_KEYS: frozenset[str] = frozenset(
+    {
+        "source",
+        "timestamp",
+        "status",
+        "pnl_session",
+    }
+)
+EXPECTED_TELEMETRY_KEYS: frozenset[str] = frozenset(
+    {
+        "service_id",
+        "timestamp",
+        "last_price",
+        "ofi_1s",
+        "active_signal",
+    }
+)
 
 
 def probe_telemetry(timeout_s: int = 15) -> int:
@@ -46,8 +57,11 @@ def probe_telemetry(timeout_s: int = 15) -> int:
     sub.setsockopt_string(zmq.SUBSCRIBE, "telemetry")  # catches both topics
     sub.connect(TELEMETRY_ENDPOINT)
 
-    logger.info("Subscribed to %s — waiting %ds for heartbeat+telemetry...",
-                TELEMETRY_ENDPOINT, timeout_s)
+    logger.info(
+        "Subscribed to %s — waiting %ds for heartbeat+telemetry...",
+        TELEMETRY_ENDPOINT,
+        timeout_s,
+    )
 
     seen_heartbeat: bool = False
     seen_telemetry: bool = False
@@ -78,7 +92,8 @@ def probe_telemetry(timeout_s: int = 15) -> int:
                 else:
                     logger.info(
                         "✅  Heartbeat OK — source=%s status=%s pnl=%.4f",
-                        payload.get("source"), payload.get("status"),
+                        payload.get("source"),
+                        payload.get("status"),
                         payload.get("pnl_session", 0.0),
                     )
                     seen_heartbeat = True
@@ -109,7 +124,9 @@ def probe_telemetry(timeout_s: int = 15) -> int:
         if not seen_heartbeat:
             logger.error("❌  No heartbeat received on 'telemetry' topic")
         if not seen_telemetry:
-            logger.error("❌  No telemetry received on 'telemetry.ai_scalper_bot' topic")
+            logger.error(
+                "❌  No telemetry received on 'telemetry.ai_scalper_bot' topic"
+            )
         return 1
 
 

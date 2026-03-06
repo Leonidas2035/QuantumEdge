@@ -136,7 +136,7 @@ class GoogleClient:
             if response_schema is not None:
                 config_kwargs["response_mime_type"] = "application/json"
                 config_kwargs["response_schema"] = response_schema
-                
+
             config = types.GenerateContentConfig(**config_kwargs)
             response = self.client.models.generate_content(
                 model=model,

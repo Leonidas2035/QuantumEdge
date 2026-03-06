@@ -17,7 +17,9 @@ from quantum_edge_core.supervisor.supervisor.contracts.lockbot_control_v1 import
     build_command,
     validate_command,
 )
-from quantum_edge_core.supervisor.supervisor.contracts.lockbot_exec_v1 import ExecEnvelope
+from quantum_edge_core.supervisor.supervisor.contracts.lockbot_exec_v1 import (
+    ExecEnvelope,
+)
 
 
 class LockbotControlClient:

@@ -83,7 +83,7 @@ class SmartExecutor:
         remaining_qty = qty
         attempts = 0
         current_order_id = None
-        
+
         # Enforce Maker-Only (GTX) for LOW urgency (Front-Running)
         tif = "GTX" if urgency == "LOW" else "GTC"
 
@@ -145,7 +145,7 @@ class SmartExecutor:
 
             status = status_res.get("status")
             executed = float(status_res.get("executedQty", 0.0))
-            
+
             effective_rem = float(status_res.get("origQty", 0.0)) - executed
 
             if status == "FILLED" or effective_rem <= 0:
@@ -165,7 +165,7 @@ class SmartExecutor:
                     remaining_qty = effective_rem
                 else:
                     if urgency == "LOW":
-                        # Post-Only: if price hasn't moved, we don't spam cancels, 
+                        # Post-Only: if price hasn't moved, we don't spam cancels,
                         # just wait or rely on single attempt. We stop chasing.
                         await self._cancel_order(symbol, current_order_id)
                         remaining_qty = effective_rem
@@ -177,7 +177,9 @@ class SmartExecutor:
         # End of Loop
         if remaining_qty > 0:
             if urgency == "LOW":
-                logger.info("Maker-Only (LOW urgency) not filled. Canceling, NO market fallback.")
+                logger.info(
+                    "Maker-Only (LOW urgency) not filled. Canceling, NO market fallback."
+                )
                 return {"status": "CANCELED", "executedQty": qty - remaining_qty}
             else:
                 # Fallback Market

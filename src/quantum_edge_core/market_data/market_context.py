@@ -15,10 +15,11 @@ from typing import Any, Dict, Optional
 @dataclass
 class TimeframeSlope:
     """Linear regression slope for a single timeframe."""
-    interval: str       # e.g. "5m", "15m", "1h", "4h"
-    slope: float        # positive = bullish, negative = bearish
-    r_squared: float    # goodness of fit
-    candle_count: int   # datapoints used
+
+    interval: str  # e.g. "5m", "15m", "1h", "4h"
+    slope: float  # positive = bullish, negative = bearish
+    r_squared: float  # goodness of fit
+    candle_count: int  # datapoints used
 
 
 @dataclass

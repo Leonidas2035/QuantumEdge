@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import List, Optional
 from enum import Enum
 
+
 class TradingMode(str, Enum):
     SCALP = "scalp"
     DCA = "dca"

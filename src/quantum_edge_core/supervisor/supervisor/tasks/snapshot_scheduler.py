@@ -11,9 +11,17 @@ from typing import Any, Dict, List, Optional
 
 from quantum_edge_core.supervisor.supervisor.audit_report import load_events_for_date
 from quantum_edge_core.supervisor.supervisor.config import SnapshotSchedulerConfig
-from quantum_edge_core.supervisor.supervisor.events import BaseEvent, EventLogger, EventType
-from quantum_edge_core.supervisor.supervisor.llm.market_risk_monitor import MarketRiskMonitor
-from quantum_edge_core.supervisor.supervisor.llm.trading_behavior_analyzer import TradingBehaviorAnalyzer
+from quantum_edge_core.supervisor.supervisor.events import (
+    BaseEvent,
+    EventLogger,
+    EventType,
+)
+from quantum_edge_core.supervisor.supervisor.llm.market_risk_monitor import (
+    MarketRiskMonitor,
+)
+from quantum_edge_core.supervisor.supervisor.llm.trading_behavior_analyzer import (
+    TradingBehaviorAnalyzer,
+)
 from quantum_edge_core.supervisor.supervisor.llm.trend_evaluator import TrendEvaluator
 from quantum_edge_core.supervisor.supervisor.snapshot_models import SnapshotReport
 

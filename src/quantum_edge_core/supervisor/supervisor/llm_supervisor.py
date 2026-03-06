@@ -16,10 +16,21 @@ import re
 from typing import Any, Dict, Iterable, List, Optional, Tuple, Literal
 from pydantic import BaseModel, Field
 from quantum_edge_core.supervisor.supervisor.audit_report import load_events_for_date
-from quantum_edge_core.supervisor.supervisor.config import LlmSupervisorConfig, RiskConfig
-from quantum_edge_core.supervisor.supervisor.events import BaseEvent, EventType, EventLogger
-from quantum_edge_core.supervisor.supervisor.llm.chat_client import ChatCompletionsClient
+from quantum_edge_core.supervisor.supervisor.config import (
+    LlmSupervisorConfig,
+    RiskConfig,
+)
+from quantum_edge_core.supervisor.supervisor.events import (
+    BaseEvent,
+    EventType,
+    EventLogger,
+)
+from quantum_edge_core.supervisor.supervisor.llm.chat_client import (
+    ChatCompletionsClient,
+)
 from quantum_edge_core.supervisor.supervisor.state import RiskStateSnapshot
+
+ZmqPolicyPublisher = Any
 
 
 def _strip_markdown_fences(text: str) -> str:
@@ -35,9 +46,12 @@ class TradingMode(str, Enum):
     PASS = "pass"
     NEUTRAL = "neutral"
 
+
 class LlmTradingPolicy(BaseModel):
     reasoning: str = Field(description="Коротке пояснення рішення")
-    trading_mode: Literal['scalp', 'dca', 'pass', 'neutral'] = Field(description="Обов'язково маленькими літерами")
+    trading_mode: Literal["scalp", "dca", "pass", "neutral"] = Field(
+        description="Обов'язково маленькими літерами"
+    )
     risk_multiplier: float = Field(description="Від 0.0 до 1.0")
     buy_zone_max: float = Field(description="Максимальна ціна для покупки")
     sell_zone_min: float = Field(description="Мінімальна ціна для продажу")
@@ -89,7 +103,7 @@ class LlmSupervisorSummary:
     denied_orders: int
     denied_by_code: Dict[str, int]
     recent_trades: List[Dict[str, Any]]
-    
+
     # Telemetry
     ofi_1s: Optional[float] = None
     closest_wall_dist_pct: Optional[float] = None
@@ -124,10 +138,15 @@ class LlmSupervisor:
         self._logger.debug("LlmSupervisor initialized. enabled=%s", config.enabled)
 
     def run_check(
-        self, today: date, snapshot: RiskStateSnapshot, mode: str = "unknown",
+        self,
+        today: date,
+        snapshot: RiskStateSnapshot,
+        mode: str = "unknown",
         situation_text: str = "",
     ) -> Optional[LlmSupervisorAdvice]:
-        self._logger.debug("LlmSupervisor.run_check triggered. enabled=%s", self._config.enabled)
+        self._logger.debug(
+            "LlmSupervisor.run_check triggered. enabled=%s", self._config.enabled
+        )
         if not self._config.enabled:
             self._logger.info("LLM supervisor disabled; skipping.")
             return None
@@ -144,9 +163,13 @@ class LlmSupervisor:
         #     return None
 
         try:
-            summary = build_summary(snapshot, self._risk_config, events, self._config, mode)
+            summary = build_summary(
+                snapshot, self._risk_config, events, self._config, mode
+            )
             system_prompt, user_prompt = build_prompts(
-                summary, self._risk_config, self._config,
+                summary,
+                self._risk_config,
+                self._config,
                 situation_text=situation_text,
             )
         except Exception as e:
@@ -183,13 +206,18 @@ class LlmSupervisor:
         # ── Publish directive via ZMQ PUB → LockBot ──────────────────
         if self._policy_publisher is not None:
             import asyncio
+
             try:
                 loop = asyncio.get_event_loop()
                 if loop.is_running():
                     asyncio.ensure_future(
                         self._policy_publisher.publish_directive(
                             mode=advice.trading_mode.value,
-                            risk_multiplier=advice.risk_multiplier if advice.risk_multiplier is not None else 1.0,
+                            risk_multiplier=(
+                                advice.risk_multiplier
+                                if advice.risk_multiplier is not None
+                                else 1.0
+                            ),
                             reasoning=advice.reasoning,
                         )
                     )
@@ -197,7 +225,11 @@ class LlmSupervisor:
                     loop.run_until_complete(
                         self._policy_publisher.publish_directive(
                             mode=advice.trading_mode.value,
-                            risk_multiplier=advice.risk_multiplier if advice.risk_multiplier is not None else 1.0,
+                            risk_multiplier=(
+                                advice.risk_multiplier
+                                if advice.risk_multiplier is not None
+                                else 1.0
+                            ),
                             reasoning=advice.reasoning,
                         )
                     )
@@ -255,7 +287,11 @@ class LlmSupervisor:
                 trading_mode=trading_mode,
                 risk_multiplier=risk_multiplier,
                 reasoning=reasoning,
-                raw_response=str(policy.model_dump_json() if hasattr(policy, "model_dump_json") else {"reasoning": reasoning}),
+                raw_response=str(
+                    policy.model_dump_json()
+                    if hasattr(policy, "model_dump_json")
+                    else {"reasoning": reasoning}
+                ),
                 action=action,
                 comment=reasoning,
             )
@@ -367,7 +403,9 @@ def build_summary(
 
 
 def build_prompts(
-    summary: LlmSupervisorSummary, limits: RiskConfig, config: LlmSupervisorConfig,
+    summary: LlmSupervisorSummary,
+    limits: RiskConfig,
+    config: LlmSupervisorConfig,
     situation_text: str = "",
 ) -> Tuple[str, str]:
     system_prompt = (
@@ -375,7 +413,7 @@ def build_prompts(
         "Your primary task is to analyze real-time market data, technical indicators (TA), and microstructure to dictate the trading strategy for an execution bot.\n\n"
         "DATA INTERPRETATION RULES:\n"
         "1. Indicators (ta_1h, ta_5m): You will receive RSI (14), Bollinger Bands (20,2) position, and Trend (SMA50 vs SMA20).\n"
-        "   - \"Cold Start\": If TA values are `null`, it means the database is building history. Do not panic. Rely on microstructure (orderbook walls) and use NEUTRAL mode with risk_multiplier = 0.5.\n"
+        '   - "Cold Start": If TA values are `null`, it means the database is building history. Do not panic. Rely on microstructure (orderbook walls) and use NEUTRAL mode with risk_multiplier = 0.5.\n'
         "2. Derivatives: High `funding_rate` (>0.0001) means market is over-leveraged long (risk of squeeze).\n\n"
         "TRADING MODE DIRECTIVES:\n"
         "Choose strictly from ['scalp', 'dca', 'pass', 'neutral'].\n\n"
@@ -406,12 +444,26 @@ def build_prompts(
     trades_block = "\n".join(trades_lines) if trades_lines else "no trades"
 
     # Micro & Macro Context
-    ofi_str = f"{summary.ofi_1s:.2f}" if getattr(summary, 'ofi_1s', None) is not None else "0.00"
-    wall_str = f"{summary.closest_wall_dist_pct:.4f}" if getattr(summary, 'closest_wall_dist_pct', None) is not None else "0.0"
-    atr_str = f"{summary.atr:.2f}" if getattr(summary, 'atr', None) is not None else "0.0"
-    vd_str = f"{summary.volume_delta_1m:.2f}" if getattr(summary, 'volume_delta_1m', None) is not None else "0.0"
-    liqs = getattr(summary, 'liquidations_1m', 0) or 0
-    sig_str = getattr(summary, 'active_signal', 'HOLD') or 'HOLD'
+    ofi_str = (
+        f"{summary.ofi_1s:.2f}"
+        if getattr(summary, "ofi_1s", None) is not None
+        else "0.00"
+    )
+    wall_str = (
+        f"{summary.closest_wall_dist_pct:.4f}"
+        if getattr(summary, "closest_wall_dist_pct", None) is not None
+        else "0.0"
+    )
+    atr_str = (
+        f"{summary.atr:.2f}" if getattr(summary, "atr", None) is not None else "0.0"
+    )
+    vd_str = (
+        f"{summary.volume_delta_1m:.2f}"
+        if getattr(summary, "volume_delta_1m", None) is not None
+        else "0.0"
+    )
+    liqs = getattr(summary, "liquidations_1m", 0) or 0
+    sig_str = getattr(summary, "active_signal", "HOLD") or "HOLD"
     market_context = f"Ctx: OFI={ofi_str}, WallDist={wall_str}, Sig={sig_str} | ATR={atr_str}, VolDelta={vd_str}BTC, Liqs(1m)={liqs}."
 
     # State Analysis block (Phase 1: equity, margin, leverage)
@@ -545,7 +597,8 @@ def _run_standalone(args: argparse.Namespace) -> None:
 
     _logger.info(
         "Starting LLM Supervisor in mode=%s, command=%s …",
-        args.mode, args.command,
+        args.mode,
+        args.command,
     )
 
     # ── Phase 2: Import market data fetchers ─────────────────────────
@@ -589,19 +642,29 @@ def _run_standalone(args: argparse.Namespace) -> None:
         _logger.info("Situation text:\n%s", situation_text)
 
         advice = supervisor.run_check(
-            today=_date.today(), snapshot=snapshot, mode=args.mode,
+            today=_date.today(),
+            snapshot=snapshot,
+            mode=args.mode,
             situation_text=situation_text,
         )
         if advice:
             print("\n" + "=" * 60)
-            print(f"  [LLM DECISION] Mode: {advice.trading_mode.value} | Risk: {advice.risk_multiplier}")
+            print(
+                f"  [LLM DECISION] Mode: {advice.trading_mode.value} | Risk: {advice.risk_multiplier}"
+            )
             print(f'  [LLM REASONING] "{advice.reasoning}"')
             print("=" * 60 + "\n")
-            print(json.dumps({
-                "trading_mode": advice.trading_mode.value,
-                "risk_multiplier": advice.risk_multiplier,
-                "reasoning": advice.reasoning,
-            }, indent=2, ensure_ascii=False))
+            print(
+                json.dumps(
+                    {
+                        "trading_mode": advice.trading_mode.value,
+                        "risk_multiplier": advice.risk_multiplier,
+                        "reasoning": advice.reasoning,
+                    },
+                    indent=2,
+                    ensure_ascii=False,
+                )
+            )
         else:
             print("[LlmSupervisor] No advice returned (disabled or insufficient data).")
 
@@ -613,7 +676,8 @@ def _run_standalone(args: argparse.Namespace) -> None:
         sleep_sec = llm_cfg.check_interval_minutes * 60
         _logger.info(
             "[INFO] Sleeping for %d minutes (%d seconds) until next analysis...",
-            llm_cfg.check_interval_minutes, sleep_sec,
+            llm_cfg.check_interval_minutes,
+            sleep_sec,
         )
         _time.sleep(sleep_sec)
 

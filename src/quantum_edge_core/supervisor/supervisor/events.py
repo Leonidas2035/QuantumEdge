@@ -14,7 +14,10 @@ from typing import Any, Dict, Iterable, Mapping, Optional, TYPE_CHECKING
 
 if TYPE_CHECKING:
     from quantum_edge_core.supervisor.supervisor.process_manager import ProcessInfo
-    from quantum_edge_core.supervisor.supervisor.risk_engine import OrderRequest, RiskDecision
+    from quantum_edge_core.supervisor.supervisor.risk_engine import (
+        OrderRequest,
+        RiskDecision,
+    )
 
 from quantum_edge_core.supervisor.supervisor.snapshot_models import SnapshotReport
 from quantum_edge_core.supervisor.supervisor.tsdb.writer import TsdbWriter

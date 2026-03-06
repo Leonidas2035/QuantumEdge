@@ -16,7 +16,12 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 from quantum_edge_core.core.service import BaseService
 from quantum_edge_core.logging_setup import setup_logging
 from quantum_edge_core.utils.async_runner import run_service
-from quantum_edge_core.events import MarketTrade, KlineEvent, OrderBookUpdate, LiquidationEvent
+from quantum_edge_core.events import (
+    MarketTrade,
+    KlineEvent,
+    OrderBookUpdate,
+    LiquidationEvent,
+)
 
 from quantum_edge_core.market_data.account.account_state import (
     AccountState,
@@ -51,7 +56,6 @@ from quantum_edge_core.market_data.lockbot.engine import LockbotDerivedEngine
 from quantum_edge_core.market_data.lockbot.publisher import LockbotPublisher
 from quantum_edge_core.market_data.spool.status import summarize_spool
 from quantum_edge_core.market_data.tsdb.quest_writer import QuestILPWriter
-from quantum_edge_core.market_data.orderbook_aggregator import OrderBookAggregator
 
 # Forward references for type hinting (Legacy components)
 MicrostructureAnalyzer = Any
@@ -287,12 +291,16 @@ class MarketDataHubService(BaseService):
                         agg_trade_id=event.seq,
                         source="binance_ws",
                     )
-                if isinstance(event, (TradeEvent, MarketTrade, KlineEvent, OrderBookUpdate)):
+                if isinstance(
+                    event, (TradeEvent, MarketTrade, KlineEvent, OrderBookUpdate)
+                ):
                     # 4. Analytics — ONLY for trade-like events (not OrderBookUpdate)
                     if isinstance(event, (TradeEvent, MarketTrade)):
                         whale_event = self.alpha_engine.update_trade(event)
                         if whale_event:
-                            await self.publisher.publish("market.alpha.whale", whale_event)
+                            await self.publisher.publish(
+                                "market.alpha.whale", whale_event
+                            )
 
                     # 4b. Order Book Aggregation (Whale Wall Detection)
                     if isinstance(event, OrderBookUpdate):
@@ -364,7 +372,7 @@ class MarketDataHubService(BaseService):
         if ts_sec > 0:
             ts_ns = int(ts_sec * 1_000_000_000) + self._get_next_offset()
         else:
-            ts_ns_val = getattr(event, "ts_ns", None) # Legacy support
+            ts_ns_val = getattr(event, "ts_ns", None)  # Legacy support
             if ts_ns_val:
                 ts_ns = int(float(ts_ns_val)) + self._get_next_offset()
 
@@ -410,7 +418,10 @@ class MarketDataHubService(BaseService):
 
         self.logger.info(
             "PERSIST_OB: symbol=%s bids=%d asks=%d ts=%.3f base_ns=%s",
-            symbol, len(bids), len(asks), ts_sec,
+            symbol,
+            len(bids),
+            len(asks),
+            ts_sec,
             base_ts_ns,
         )
 
@@ -459,9 +470,7 @@ class MarketDataHubService(BaseService):
                 "PERSIST_OB: enqueued %d ILP rows for %s", row_offset, symbol
             )
         except Exception as exc:
-            self.logger.error(
-                "PERSIST_OB: FAILED — %s", exc, exc_info=True
-            )
+            self.logger.error("PERSIST_OB: FAILED — %s", exc, exc_info=True)
 
     def _persist_liquidation(self, event: Any) -> None:
         # Map liquidation event to ILP
@@ -473,7 +482,11 @@ class MarketDataHubService(BaseService):
         ts_sec = float(getattr(event, "timestamp", 0.0))
 
         # Convert epoch seconds to nanoseconds for ILP, add offset
-        ts_ns = int(ts_sec * 1_000_000_000) + self._get_next_offset() if ts_sec > 0 else None
+        ts_ns = (
+            int(ts_sec * 1_000_000_000) + self._get_next_offset()
+            if ts_sec > 0
+            else None
+        )
 
         self.writer.enqueue(
             table="liquidations",

@@ -70,10 +70,17 @@ def _build_test_app(tmp_root: Path):
         load_tsdb_config,
         load_tsdb_retention_config,
     )
-    from quantum_edge_core.supervisor.supervisor.config_loader import load_processes_spec
+    from quantum_edge_core.supervisor.supervisor.config_loader import (
+        load_processes_spec,
+    )
     from quantum_edge_core.supervisor.supervisor.guards import load_guard_config
-    from quantum_edge_core.supervisor.supervisor.policy_store import resolve_active_policy_path
-    from quantum_edge_core.supervisor.supervisor.regime_sm import load_directives_config, load_regime_config
+    from quantum_edge_core.supervisor.supervisor.policy_store import (
+        resolve_active_policy_path,
+    )
+    from quantum_edge_core.supervisor.supervisor.regime_sm import (
+        load_directives_config,
+        load_regime_config,
+    )
 
     paths = load_paths_config(ROOT / "config" / "paths.yaml")
     runtime_dir = tmp_root / "runtime"

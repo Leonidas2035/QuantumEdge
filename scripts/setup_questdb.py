@@ -56,7 +56,6 @@ TABLES = [
     ) TIMESTAMP(ts) PARTITION BY DAY WAL
     DEDUP UPSERT KEYS(symbol, ts);
     """,
-
     # --- orderbook_snapshots (L2 depth snapshots) ---
     """
     CREATE TABLE IF NOT EXISTS orderbook_snapshots (
@@ -107,6 +106,7 @@ def build_mat_view_sql(view_name: str, interval: str) -> str:
 # Main
 # ═══════════════════════════════════════════════════════════════════════════════
 
+
 def main():
     parser = argparse.ArgumentParser(description="QuestDB schema setup")
     parser.add_argument("--host", default="127.0.0.1")
@@ -127,7 +127,7 @@ def main():
             print(f"  ❌ ERROR: {result['error']}")
             errors += 1
         else:
-            print(f"  ✅ OK")
+            print("  ✅ OK")
 
     # 2. Create materialized views
     for view_name, interval in MTF_VIEWS.items():
@@ -138,7 +138,7 @@ def main():
             print(f"  ❌ ERROR: {result['error']}")
             errors += 1
         else:
-            print(f"  ✅ OK")
+            print("  ✅ OK")
 
     print("\n" + "=" * 60)
     if errors == 0:

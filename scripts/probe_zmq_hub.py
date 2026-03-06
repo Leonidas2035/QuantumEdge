@@ -42,8 +42,12 @@ def probe_hub(timeout_s: int = 10, expected_count: int = 5) -> int:
     sub.setsockopt_string(zmq.SUBSCRIBE, "")  # global subscription
     sub.connect(HUB_ENDPOINT)
 
-    logger.info("Connected to %s — waiting up to %ds for %d events...",
-                HUB_ENDPOINT, timeout_s, expected_count)
+    logger.info(
+        "Connected to %s — waiting up to %ds for %d events...",
+        HUB_ENDPOINT,
+        timeout_s,
+        expected_count,
+    )
 
     received: int = 0
     deadline: float = time.monotonic() + timeout_s
@@ -69,7 +73,10 @@ def probe_hub(timeout_s: int = 10, expected_count: int = 5) -> int:
             ev_type: str = payload.get("type", payload.get("event_type", "?"))
             logger.info(
                 "[%d/%d] topic=%-30s event_type=%-20s keys=%s",
-                received, expected_count, topic, ev_type,
+                received,
+                expected_count,
+                topic,
+                ev_type,
                 list(payload.keys())[:8],
             )
     except KeyboardInterrupt:
@@ -82,8 +89,12 @@ def probe_hub(timeout_s: int = 10, expected_count: int = 5) -> int:
         logger.info("✅  Hub probe PASSED — %d events collected", received)
         return 0
     else:
-        logger.error("❌  Hub probe FAILED — only %d/%d events in %ds",
-                      received, expected_count, timeout_s)
+        logger.error(
+            "❌  Hub probe FAILED — only %d/%d events in %ds",
+            received,
+            expected_count,
+            timeout_s,
+        )
         return 1
 
 

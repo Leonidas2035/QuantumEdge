@@ -113,9 +113,9 @@ class GeminiClient:
         effective_timeout = max(config.timeout_seconds, 60)
         if config.timeout_seconds < 60:
             self.logger.warning(
-                "Config timeout_seconds=%d is below Gemini minimum; "
-                "raised to %ds",
-                config.timeout_seconds, effective_timeout,
+                "Config timeout_seconds=%d is below Gemini minimum; " "raised to %ds",
+                config.timeout_seconds,
+                effective_timeout,
             )
         self._client = httpx.AsyncClient(timeout=effective_timeout)
 

@@ -53,8 +53,7 @@ class BinanceFuturesFeed(BaseFeed):
 
         # Per-symbol local order book managers
         self._lob: Dict[str, OrderBookManager] = {
-            s.upper(): OrderBookManager(symbol=s.upper())
-            for s in self.symbols
+            s.upper(): OrderBookManager(symbol=s.upper()) for s in self.symbols
         }
 
     # Binance IP ban / rate-limit HTTP codes
@@ -87,7 +86,9 @@ class BinanceFuturesFeed(BaseFeed):
                 else:
                     self.logger.error(
                         "WebSocket rejected (HTTP %d): %s. Retrying in %.1fs",
-                        exc.status_code, exc, retry_delay,
+                        exc.status_code,
+                        exc,
+                        retry_delay,
                     )
                     await self._sleep(retry_delay)
                     retry_delay = min(retry_delay * 2, 60.0)
@@ -123,9 +124,7 @@ class BinanceFuturesFeed(BaseFeed):
                     self.logger.debug("RAW WS: %s", str(msg)[:150])
                     await self._handle_message(msg)
                 except asyncio.TimeoutError:
-                    self.logger.warning(
-                        "No data received for 120s, reconnecting..."
-                    )
+                    self.logger.warning("No data received for 120s, reconnecting...")
                     return
 
     async def _handle_message(self, msg: str | bytes) -> None:
@@ -211,7 +210,7 @@ class BinanceFuturesFeed(BaseFeed):
 
         # 2. Get snapshot with whale walls (top 20 levels)
         snap_data = lob.get_snapshot(depth=20, wall_threshold=20.0)
-        
+
         walls = [
             WhaleWall(
                 priority="L0",
@@ -219,8 +218,9 @@ class BinanceFuturesFeed(BaseFeed):
                 seq=0,
                 side=w["side"],
                 price=w["price"],
-                quantity=w["quantity"]
-            ) for w in snap_data["whale_walls"]
+                quantity=w["quantity"],
+            )
+            for w in snap_data["whale_walls"]
         ]
 
         # 3. Emit enriched OrderBookUpdate

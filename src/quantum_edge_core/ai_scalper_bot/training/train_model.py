@@ -101,8 +101,10 @@ def train(
 
     logger.info(
         "[3/5] Split: Train=%d (%.0f%%) | Test=%d (%.0f%%)",
-        len(X_train), (1 - test_size) * 100,
-        len(X_test), test_size * 100,
+        len(X_train),
+        (1 - test_size) * 100,
+        len(X_test),
+        test_size * 100,
     )
 
     # ── 4. Train XGBoost ─────────────────────────────────────────
@@ -122,14 +124,15 @@ def train(
         objective="multi:softprob",
         num_class=3,
         eval_metric="mlogloss",
-        tree_method="hist",   # fast histogram-based
+        tree_method="hist",  # fast histogram-based
         random_state=random_state,
         verbosity=0,
         use_label_encoder=False,
     )
 
     model.fit(
-        X_train, y_train,
+        X_train,
+        y_train,
         eval_set=[(X_test, y_test)],
         verbose=False,
     )
@@ -142,7 +145,8 @@ def train(
 
     accuracy = accuracy_score(y_test, y_pred)
     report = classification_report(
-        y_test, y_pred,
+        y_test,
+        y_pred,
         target_names=["DOWN", "FLAT", "UP"],
         digits=4,
     )

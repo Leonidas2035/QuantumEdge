@@ -33,6 +33,7 @@ from quantum_edge_core.lock_bot.ddn.engine import (
     DDNIntent,
     DDNMarketSnapshot,
     DDNPositionSnapshot,
+    DDNDecision,
 )
 from quantum_edge_core.lock_bot.execution.ledger import (
     ExecutionLedger,
@@ -144,9 +145,8 @@ class LockBotService:
             self._account_state.equity = audit.total_margin_balance
             if audit.total_margin_balance > 0:
                 self._account_state.margin_usage = (
-                    (audit.total_margin_balance - audit.available_balance)
-                    / audit.total_margin_balance
-                )
+                    audit.total_margin_balance - audit.available_balance
+                ) / audit.total_margin_balance
 
             # Set initial DDN profile based on actual position status
             if audit.status == "LOCKED":
@@ -419,8 +419,16 @@ class LockBotService:
                 if self._market_state.mark_price is None:
                     self._market_state.mark_price = float(price)
         elif event_type in ("orderbook", "book_ticker", "depth"):
-            bid = payload.get("best_bid") or payload.get("b") or payload.get("bids", [[None]])[0][0]
-            ask = payload.get("best_ask") or payload.get("a") or payload.get("asks", [[None]])[0][0]
+            bid = (
+                payload.get("best_bid")
+                or payload.get("b")
+                or payload.get("bids", [[None]])[0][0]
+            )
+            ask = (
+                payload.get("best_ask")
+                or payload.get("a")
+                or payload.get("asks", [[None]])[0][0]
+            )
             if bid is not None:
                 self._market_state.best_bid = float(bid)
             if ask is not None:
@@ -543,7 +551,10 @@ class LockBotService:
             self._bot_state.ddn_band_high = decision.adjusted_band_high
 
         # Execute if DDN approves
-        if decision.verdict in ("ALLOW", "MODIFY", "PANIC_ONLY") and decision.order_plans:
+        if (
+            decision.verdict in ("ALLOW", "MODIFY", "PANIC_ONLY")
+            and decision.order_plans
+        ):
             self._execute_decision(decision, intent, now_ms)
 
     def _generate_trade_intent(self, now_ms: int) -> Optional[DDNIntent]:
@@ -721,7 +732,8 @@ class LockBotService:
         sock.connect(endpoint)
         logger.info(
             "[LockBot] Directive listener connected to %s (topic=%s)",
-            endpoint, topic,
+            endpoint,
+            topic,
         )
 
         while not self._stop.is_set():
@@ -748,7 +760,9 @@ class LockBotService:
             logger.info(
                 "[LockBot] Отримано нову директиву від Супервізора: "
                 "Mode=%s, Risk=%.2f, Reasoning='%s'",
-                mode, risk, reasoning,
+                mode,
+                risk,
+                reasoning,
             )
 
             self._apply_supervisor_directive(mode, risk)
@@ -778,7 +792,9 @@ class LockBotService:
             self._bot_state.regime = "TREND_DOWN"
             if self._bot_state.mode == "PAUSED":
                 self._bot_state.mode = "IDLE"
-            logger.info("[LockBot] DDN set to SHORT_ONLY: target=-0.1, band=[-0.2, 0.0]")
+            logger.info(
+                "[LockBot] DDN set to SHORT_ONLY: target=-0.1, band=[-0.2, 0.0]"
+            )
 
         elif mode == "NEUTRAL":
             self._bot_state.ddn_target = 0.0
@@ -796,7 +812,9 @@ class LockBotService:
             self._bot_state.ddn_band_high = 0.02
             self._bot_state.ddn_profile = "neutral"
             self._bot_state.mode = "PAUSED"
-            logger.info("[LockBot] DDN set to RISK_OFF: PAUSED, tight bands [-0.02, 0.02]")
+            logger.info(
+                "[LockBot] DDN set to RISK_OFF: PAUSED, tight bands [-0.02, 0.02]"
+            )
 
         elif mode in ("HALT", "PANIC_LOCK"):
             self._bot_state.ddn_target = 0.0

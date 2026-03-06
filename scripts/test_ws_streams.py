@@ -20,7 +20,9 @@ async def test_stream(label: str, url: str, max_msgs: int = 2, timeout: float = 
             while received < max_msgs:
                 remaining = timeout - (time.time() - t0)
                 if remaining <= 0:
-                    print(f"[{label}] ⏰ Timeout after {timeout}s — only got {received}/{max_msgs} messages")
+                    print(
+                        f"[{label}] ⏰ Timeout after {timeout}s — only got {received}/{max_msgs} messages"
+                    )
                     break
                 try:
                     msg = await asyncio.wait_for(ws.recv(), timeout=remaining)
@@ -32,9 +34,13 @@ async def test_stream(label: str, url: str, max_msgs: int = 2, timeout: float = 
                     break
             elapsed = time.time() - t0
             if received >= max_msgs:
-                print(f"[{label}] ✅ SUCCESS: received {received} messages in {elapsed:.1f}s")
+                print(
+                    f"[{label}] ✅ SUCCESS: received {received} messages in {elapsed:.1f}s"
+                )
             else:
-                print(f"[{label}] ❌ FAILED: only {received}/{max_msgs} messages in {elapsed:.1f}s")
+                print(
+                    f"[{label}] ❌ FAILED: only {received}/{max_msgs} messages in {elapsed:.1f}s"
+                )
     except Exception as exc:
         print(f"[{label}] ❌ Connection failed: {exc}")
 

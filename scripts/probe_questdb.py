@@ -28,7 +28,12 @@ HTTP_PORT: int = 9000
 PG_PORT: int = 8812
 
 # Tables that the system creates via ILP
-EXPECTED_TABLES: list[str] = ["trades", "klines_1m", "orderbook_snapshots", "liquidations"]
+EXPECTED_TABLES: list[str] = [
+    "trades",
+    "klines_1m",
+    "orderbook_snapshots",
+    "liquidations",
+]
 
 
 def check_tcp(host: str, port: int, label: str, timeout: float = 3.0) -> bool:
@@ -54,9 +59,7 @@ def check_http_tables() -> bool:
             return False
 
         data = json.loads(resp.read())
-        tables: list[str] = [
-            row[0] for row in data.get("dataset", [])
-        ]
+        tables: list[str] = [row[0] for row in data.get("dataset", [])]
         logger.info("QuestDB tables found: %s", tables)
 
         missing: list[str] = [t for t in EXPECTED_TABLES if t not in tables]

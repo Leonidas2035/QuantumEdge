@@ -82,9 +82,7 @@ class ChatCompletionsClient:
                 system_parts.append({"text": text})
             else:
                 gemini_role = "model" if role == "assistant" else "user"
-                contents.append(
-                    {"role": gemini_role, "parts": [{"text": text}]}
-                )
+                contents.append({"role": gemini_role, "parts": [{"text": text}]})
 
         payload_dict: dict = {
             "contents": contents,

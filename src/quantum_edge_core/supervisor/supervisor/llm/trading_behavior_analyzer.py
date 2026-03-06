@@ -9,8 +9,12 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 
 from quantum_edge_core.supervisor.supervisor.config import TradingBehaviorConfig
-from quantum_edge_core.supervisor.supervisor.llm.chat_client import ChatCompletionsClient
-from quantum_edge_core.supervisor.supervisor.utils.rate_limit import PerMinuteRateLimiter
+from quantum_edge_core.supervisor.supervisor.llm.chat_client import (
+    ChatCompletionsClient,
+)
+from quantum_edge_core.supervisor.supervisor.utils.rate_limit import (
+    PerMinuteRateLimiter,
+)
 
 
 @dataclass

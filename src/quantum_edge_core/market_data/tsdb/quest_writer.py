@@ -144,7 +144,9 @@ class QuestILPWriter:
             # 2. Batch read
             batch = []
             batch_size = 0
-            MAX_BATCH_BYTES = 65536  # Increased batch size to 64KB for faster DB ingestion
+            MAX_BATCH_BYTES = (
+                65536  # Increased batch size to 64KB for faster DB ingestion
+            )
 
             try:
                 # Wait for first item, but don't hang forever if stopping
@@ -157,7 +159,11 @@ class QuestILPWriter:
                     continue  # Just re-check stop_event and try again
 
                 # Opportunistic batching: drain as much as possible up to limit
-                while not self.queue.empty() and batch_size < MAX_BATCH_BYTES and len(batch) < 1000:
+                while (
+                    not self.queue.empty()
+                    and batch_size < MAX_BATCH_BYTES
+                    and len(batch) < 1000
+                ):
                     line = self.queue.get_nowait()
                     batch.append(line)
                     batch_size += len(line)
@@ -169,7 +175,7 @@ class QuestILPWriter:
                     self.logger.debug(
                         "ILP WRITE BATCH",
                         batch_lines=len(batch),
-                        batch_bytes=len(payload)
+                        batch_bytes=len(payload),
                     )
                     self.writer.write(payload)
                     await self.writer.drain()

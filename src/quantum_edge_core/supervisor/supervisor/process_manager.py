@@ -16,8 +16,16 @@ from pathlib import Path
 from typing import Dict, Optional
 
 from quantum_edge_core.supervisor.supervisor.config import PathsConfig, SupervisorConfig
-from quantum_edge_core.supervisor.supervisor.events import BaseEvent, EventLogger, EventType
-from quantum_edge_core.supervisor.supervisor.process_spec import HealthCheckSpec, ProcessSpec, ProcessStatus
+from quantum_edge_core.supervisor.supervisor.events import (
+    BaseEvent,
+    EventLogger,
+    EventType,
+)
+from quantum_edge_core.supervisor.supervisor.process_spec import (
+    HealthCheckSpec,
+    ProcessSpec,
+    ProcessStatus,
+)
 
 
 class ProcessState:

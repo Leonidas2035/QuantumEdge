@@ -25,7 +25,7 @@ BINANCE_KLINES_URL = "https://api.binance.com/api/v3/klines"
 DEFAULT_SYMBOL = "BTCUSDT"
 DEFAULT_INTERVAL = "1m"
 DEFAULT_DAYS = 7
-FUTURE_BARS = 5          # look-ahead: 5 minutes
+FUTURE_BARS = 5  # look-ahead: 5 minutes
 TARGET_THRESHOLD = 0.001  # 0.1% move → signal
 
 # Kline indices
@@ -35,6 +35,7 @@ _OPEN_TIME, _OPEN, _HIGH, _LOW, _CLOSE, _VOLUME = 0, 1, 2, 3, 4, 5
 # ═══════════════════════════════════════════════════════════════════
 # 1. Data Fetching (Binance public REST, no auth)
 # ═══════════════════════════════════════════════════════════════════
+
 
 def _fetch_klines_batch(
     symbol: str,
@@ -93,13 +94,18 @@ def fetch_klines(
     for col in ["open", "high", "low", "close", "volume"]:
         df[col] = df[col].astype(np.float64)
     df["open_time"] = pd.to_datetime(df["open_time"], unit="ms", utc=True)
-    df = df.drop_duplicates(subset="open_time").sort_values("open_time").reset_index(drop=True)
+    df = (
+        df.drop_duplicates(subset="open_time")
+        .sort_values("open_time")
+        .reset_index(drop=True)
+    )
     return df
 
 
 # ═══════════════════════════════════════════════════════════════════
 # 2. Feature Engineering (institutional-grade indicators)
 # ═══════════════════════════════════════════════════════════════════
+
 
 def _rsi(series: pd.Series, period: int = 14) -> pd.Series:
     delta = series.diff()
@@ -145,11 +151,14 @@ def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
     df["vroc_10"] = v.pct_change(10) * 100.0
 
     # ── ATR (14) ─────────────────────────────────────────────────
-    tr = pd.concat([
-        h - l,
-        (h - c.shift(1)).abs(),
-        (l - c.shift(1)).abs(),
-    ], axis=1).max(axis=1)
+    tr = pd.concat(
+        [
+            h - l,
+            (h - c.shift(1)).abs(),
+            (l - c.shift(1)).abs(),
+        ],
+        axis=1,
+    ).max(axis=1)
     df["atr_14"] = tr.rolling(14).mean()
 
     # ── Candle body ratio (body / wick → momentum gauge) ─────────
@@ -166,6 +175,7 @@ def engineer_features(df: pd.DataFrame) -> pd.DataFrame:
 # ═══════════════════════════════════════════════════════════════════
 # 3. Target Engineering (classification: up/down/flat)
 # ═══════════════════════════════════════════════════════════════════
+
 
 def create_target(
     df: pd.DataFrame,
@@ -225,19 +235,28 @@ def build_dataset(
     df = engineer_features(df)
 
     # 3. Labels
-    logger.info("[3/4] Creating target labels (future=%d bars, threshold=%.2f%%)...",
-                FUTURE_BARS, TARGET_THRESHOLD * 100)
+    logger.info(
+        "[3/4] Creating target labels (future=%d bars, threshold=%.2f%%)...",
+        FUTURE_BARS,
+        TARGET_THRESHOLD * 100,
+    )
     df = create_target(df)
 
     # 4. Clean NaN rows (from rolling windows + future shift)
     initial_len = len(df)
     df = df.dropna(subset=FEATURE_COLS + ["target"]).reset_index(drop=True)
-    logger.info("  Dropped %d rows with NaN → %d clean rows", initial_len - len(df), len(df))
+    logger.info(
+        "  Dropped %d rows with NaN → %d clean rows", initial_len - len(df), len(df)
+    )
 
     # Class balance
     counts = df["target"].value_counts().to_dict()
-    logger.info("  Class balance: UP=%d, FLAT=%d, DOWN=%d",
-                counts.get(1, 0), counts.get(0, 0), counts.get(-1, 0))
+    logger.info(
+        "  Class balance: UP=%d, FLAT=%d, DOWN=%d",
+        counts.get(1, 0),
+        counts.get(0, 0),
+        counts.get(-1, 0),
+    )
 
     # 5. Save
     out = Path(output_path)

@@ -10,7 +10,10 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Optional, Tuple
 
-from quantum_edge_core.supervisor.supervisor.config import MetaSupervisorConfig, PathsConfig
+from quantum_edge_core.supervisor.supervisor.config import (
+    MetaSupervisorConfig,
+    PathsConfig,
+)
 from quantum_edge_core.supervisor.supervisor.events import EventLogger
 from quantum_edge_core.supervisor import state as state_utils
 

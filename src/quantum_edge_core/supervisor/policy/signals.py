@@ -85,9 +85,7 @@ def collect_signals(
                 age = time.time() - float(last_seen)
                 if age < 30.0:
                     bot_running = True
-                    logger.debug(
-                        "bot_running override via telemetry (age=%.1fs)", age
-                    )
+                    logger.debug("bot_running override via telemetry (age=%.1fs)", age)
             except (TypeError, ValueError):
                 pass
 

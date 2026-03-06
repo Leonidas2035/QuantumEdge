@@ -80,12 +80,12 @@ class OrderBookManager:
         # Prune to max_levels (keep best prices)
         if len(self._bids) > self.max_levels:
             sorted_bids = sorted(self._bids.keys(), reverse=True)
-            for price in sorted_bids[self.max_levels:]:
+            for price in sorted_bids[self.max_levels :]:
                 del self._bids[price]
 
         if len(self._asks) > self.max_levels:
             sorted_asks = sorted(self._asks.keys())
-            for price in sorted_asks[self.max_levels:]:
+            for price in sorted_asks[self.max_levels :]:
                 del self._asks[price]
 
         if final_update_id:
@@ -127,11 +127,7 @@ class OrderBookManager:
             if qty >= wall_threshold:
                 whale_walls.append({"side": "ASK", "price": price, "quantity": qty})
 
-        return {
-            "bids": top_bids,
-            "asks": top_asks,
-            "whale_walls": whale_walls
-        }
+        return {"bids": top_bids, "asks": top_asks, "whale_walls": whale_walls}
 
     @property
     def mid_price(self) -> float:

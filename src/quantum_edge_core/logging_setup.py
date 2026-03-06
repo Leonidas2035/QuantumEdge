@@ -15,11 +15,9 @@ from pathlib import Path
 import structlog
 
 # Disk safety: hard limits for log rotation
-_LOG_MAX_BYTES: int = 52_428_800   # 50 MB
-_LOG_BACKUP_COUNT: int = 5         # 5 rotated files
-_LOG_FILE_PATH: str = os.getenv(
-    "QE_LOG_FILE", "logs/quantum_edge.log"
-)
+_LOG_MAX_BYTES: int = 52_428_800  # 50 MB
+_LOG_BACKUP_COUNT: int = 5  # 5 rotated files
+_LOG_FILE_PATH: str = os.getenv("QE_LOG_FILE", "logs/quantum_edge.log")
 
 
 def setup_logging() -> None:

@@ -47,6 +47,7 @@ _CLOSE_TIME = 6
 
 # ── Raw Data Fetching ────────────────────────────────────────────────
 
+
 def _fetch_klines(
     symbol: str,
     interval: str,
@@ -98,6 +99,7 @@ def fetch_multi_timeframe(
 
 # ── Token-Optimized Summary ──────────────────────────────────────────
 
+
 def _trend_direction(klines: List[list]) -> str:
     """Determine overall trend from N candles: UP, DOWN, or FLAT."""
 
@@ -134,7 +136,7 @@ def _summarize_timeframe(tf: str, klines: List[list]) -> str:
 
     o = float(closed[_OPEN])
     h = float(closed[_HIGH])
-    l = float(closed[_LOW])
+    low_price = float(closed[_LOW])
     c = float(closed[_CLOSE])
     vol = float(closed[_VOLUME])
 
@@ -150,7 +152,7 @@ def _summarize_timeframe(tf: str, klines: List[list]) -> str:
     change_pct = ((last_close - first_open) / first_open * 100) if first_open else 0
 
     return (
-        f"{tf}: O={o:.1f} H={h:.1f} L={l:.1f} C={c:.1f} | "
+        f"{tf}: O={o:.1f} H={h:.1f} L={low_price:.1f} C={c:.1f} | "
         f"Vol={total_vol:.1f} | Range=[{low_of_range:.1f}-{high_of_range:.1f}] | "
         f"Trend={trend} Chg={change_pct:+.2f}%"
     )
@@ -177,6 +179,7 @@ def format_situation_block(
 
 
 # ── Public API ───────────────────────────────────────────────────────
+
 
 def fetch_situation_summary(
     symbol: str = DEFAULT_SYMBOL,

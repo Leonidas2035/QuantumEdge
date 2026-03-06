@@ -76,8 +76,14 @@ class SupervisorReporter:
             },
             "errors": [],
             "atr": float(getattr(market_state, "atr", 0.0)) if market_state else 0.0,
-            "volume_delta_1m": float(getattr(market_state, "volume_delta_1m", 0.0)) if market_state else 0.0,
-            "liquidations_1m": int(getattr(market_state, "liquidations_1m", 0)) if market_state else 0,
+            "volume_delta_1m": (
+                float(getattr(market_state, "volume_delta_1m", 0.0))
+                if market_state
+                else 0.0
+            ),
+            "liquidations_1m": (
+                int(getattr(market_state, "liquidations_1m", 0)) if market_state else 0
+            ),
         }
 
         try:
@@ -99,7 +105,7 @@ class SupervisorReporter:
         Sends the scalper bot's detailed telemetry and active signals.
         """
         msg = {
-            "service_id": self.service_id, # normalized for supervisor ZmqHeartbeatSubscriber
+            "service_id": self.service_id,  # normalized for supervisor ZmqHeartbeatSubscriber
             "timestamp": time.time(),
             "last_price": getattr(market_state, "last_price", 0.0),
             "ofi_1s": ofi,
@@ -113,7 +119,9 @@ class SupervisorReporter:
         try:
             payload = ujson.dumps(msg)
             # Send using exact topic requested
-            await self.socket.send_multipart([b"telemetry.ai_scalper_bot", payload.encode("utf-8")])
+            await self.socket.send_multipart(
+                [b"telemetry.ai_scalper_bot", payload.encode("utf-8")]
+            )
         except Exception as e:
             logger.warning(f"Failed to send telemetry: {e}")
 
