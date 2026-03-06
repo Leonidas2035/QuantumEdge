@@ -248,8 +248,7 @@ class ProcessManager:
 
         # Step 5: Start AI Scalper Bot (after Hub ZMQ is ready)
         bot_script = (
-            self.project_root
-            / "src/quantum_edge_core/ai_scalper_bot/run_bot.py"
+            self.project_root / "src/quantum_edge_core/ai_scalper_bot/run_bot.py"
         )
         if bot_script.exists():
             self.start_service(
@@ -257,9 +256,7 @@ class ProcessManager:
                 [sys.executable, "-u", str(bot_script)],
             )
         else:
-            logger.warning(
-                f"ai_scalper_bot not found at {bot_script}. Skipping."
-            )
+            logger.warning(f"ai_scalper_bot not found at {bot_script}. Skipping.")
 
         logger.info("System startup complete. All services running.")
 
@@ -374,16 +371,27 @@ def dashboard_command(args):
         print("Streamlit not found. Please install requirements first.")
         return
 
-    dashboard_path = Path(__file__).resolve().parent / "src" / "quantum_edge_core" / "dashboard" / "app.py"
+    dashboard_path = (
+        Path(__file__).resolve().parent
+        / "src"
+        / "quantum_edge_core"
+        / "dashboard"
+        / "app.py"
+    )
     if not dashboard_path.exists():
         print(f"Error: Dashboard app not found at {dashboard_path}")
         return
 
     cmd = [
-        sys.executable, "-m", "streamlit", "run",
+        sys.executable,
+        "-m",
+        "streamlit",
+        "run",
         str(dashboard_path),
-        "--server.port", "8501",
-        "--server.headless", "true"
+        "--server.port",
+        "8501",
+        "--server.headless",
+        "true",
     ]
 
     # Launch detached

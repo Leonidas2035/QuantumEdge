@@ -47,6 +47,7 @@ _CLOSE_TIME = 6
 
 # ── Raw Data Fetching ────────────────────────────────────────────────
 
+
 def _fetch_klines(
     symbol: str,
     interval: str,
@@ -97,6 +98,7 @@ def fetch_multi_timeframe(
 
 
 # ── Token-Optimized Summary ──────────────────────────────────────────
+
 
 def _trend_direction(klines: List[list]) -> str:
     """Determine overall trend from N candles: UP, DOWN, or FLAT."""
@@ -177,6 +179,7 @@ def format_situation_block(
 
 
 # ── Public API ───────────────────────────────────────────────────────
+
 
 def fetch_situation_summary(
     symbol: str = DEFAULT_SYMBOL,

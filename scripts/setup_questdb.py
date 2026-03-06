@@ -56,7 +56,6 @@ TABLES = [
     ) TIMESTAMP(ts) PARTITION BY DAY WAL
     DEDUP UPSERT KEYS(symbol, ts);
     """,
-
     # --- orderbook_snapshots (L2 depth snapshots) ---
     """
     CREATE TABLE IF NOT EXISTS orderbook_snapshots (
@@ -106,6 +105,7 @@ def build_mat_view_sql(view_name: str, interval: str) -> str:
 # ═══════════════════════════════════════════════════════════════════════════════
 # Main
 # ═══════════════════════════════════════════════════════════════════════════════
+
 
 def main():
     parser = argparse.ArgumentParser(description="QuestDB schema setup")

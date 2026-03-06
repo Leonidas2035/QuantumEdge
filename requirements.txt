@@ -61,3 +61,5 @@ plotly
 psycopg2-binary
 streamlit-autorefresh
 pandas-ta
+psutil
+python-dotenv

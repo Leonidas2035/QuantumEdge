@@ -26,6 +26,7 @@ logger = logging.getLogger(__name__)
 
 # --- Database Setup ---
 
+
 def get_db_connection() -> Optional[psycopg2.extensions.connection]:
     """Get a connection to QuestDB, return None if unavailable. Read secrets from .env"""
     try:
@@ -34,12 +35,13 @@ def get_db_connection() -> Optional[psycopg2.extensions.connection]:
             port=int(os.getenv("QUESTDB_PORT", "8812")),
             dbname=os.getenv("QUESTDB_NAME", "qdb"),
             user=os.getenv("QUESTDB_USER", "admin"),
-            password=os.getenv("QUESTDB_PASSWORD", "")
+            password=os.getenv("QUESTDB_PASSWORD", "quest"),
         )
         return conn
     except Exception as e:
         logger.warning(f"Failed to connect to QuestDB: {e}")
         return None
+
 
 def fetch_data(query: str, fallback_func) -> tuple[pd.DataFrame, bool]:
     """Fetch data from QuestDB or use fallback function.
@@ -61,7 +63,9 @@ def fetch_data(query: str, fallback_func) -> tuple[pd.DataFrame, bool]:
     else:
         return fallback_func(), True
 
+
 # --- Mock Data Generators ---
+
 
 def get_mock_market_data() -> pd.DataFrame:
     """Generate mock 1-minute candlestick data for the last 24h."""
@@ -78,15 +82,18 @@ def get_mock_market_data() -> pd.DataFrame:
     opens[0] = prices[0]
     volumes = np.abs(np.random.normal(10, 5, len(timestamps)))
 
-    df = pd.DataFrame({
-        "timestamp": timestamps,
-        "open": opens,
-        "high": highs,
-        "low": lows,
-        "close": prices,
-        "volume": volumes
-    })
+    df = pd.DataFrame(
+        {
+            "timestamp": timestamps,
+            "open": opens,
+            "high": highs,
+            "low": lows,
+            "close": prices,
+            "volume": volumes,
+        }
+    )
     return df
+
 
 def get_mock_llm_advice() -> pd.DataFrame:
     """Generate mock LLM decisions."""
@@ -96,52 +103,61 @@ def get_mock_llm_advice() -> pd.DataFrame:
         "Trend alignment verified.",
         "Waiting for clearer signal.",
         "Market ranging.",
-        "Risk limits exceeded."
+        "Risk limits exceeded.",
     ]
 
     now = datetime.now()
-    timestamps = [now - timedelta(minutes=i*5) for i in range(19, -1, -1)]
+    timestamps = [now - timedelta(minutes=i * 5) for i in range(19, -1, -1)]
 
-    df = pd.DataFrame({
-        "time": timestamps,
-        "mode": np.random.choice(modes, 20),
-        "multiplier": np.random.uniform(0.5, 2.0, 20).round(2),
-        "reason": np.random.choice(reasons, 20)
-    })
+    df = pd.DataFrame(
+        {
+            "time": timestamps,
+            "mode": np.random.choice(modes, 20),
+            "multiplier": np.random.uniform(0.5, 2.0, 20).round(2),
+            "reason": np.random.choice(reasons, 20),
+        }
+    )
     return df
+
 
 def get_mock_trades() -> pd.DataFrame:
     """Generate mock executed trades."""
     sides = ["BUY", "SELL"]
     statuses = ["FILLED", "PARTIAL", "REJECTED"]
 
-    df = pd.DataFrame({
-        "client_oid": [f"ord_{i}" for i in range(100, 120)],
-        "side": np.random.choice(sides, 20),
-        "price": np.random.uniform(49000, 51000, 20).round(2),
-        "qty": np.random.uniform(0.01, 1.5, 20).round(3),
-        "status": np.random.choice(statuses, 20, p=[0.8, 0.1, 0.1])
-    })
+    df = pd.DataFrame(
+        {
+            "client_oid": [f"ord_{i}" for i in range(100, 120)],
+            "side": np.random.choice(sides, 20),
+            "price": np.random.uniform(49000, 51000, 20).round(2),
+            "qty": np.random.uniform(0.01, 1.5, 20).round(3),
+            "status": np.random.choice(statuses, 20, p=[0.8, 0.1, 0.1]),
+        }
+    )
     return df
+
 
 def get_mock_inventory() -> pd.DataFrame:
     """Generate mock inventory/equity data."""
     now = datetime.now()
-    timestamps = [now - timedelta(minutes=i*15) for i in range(95, -1, -1)]
+    timestamps = [now - timedelta(minutes=i * 15) for i in range(95, -1, -1)]
 
     equity = 10000 + np.cumsum(np.random.normal(0, 50, len(timestamps)))
 
-    df = pd.DataFrame({
-        "timestamp": timestamps,
-        "equity": equity,
-        "drawdown": (equity.max() - equity) / equity.max() * 100
-    })
+    df = pd.DataFrame(
+        {
+            "timestamp": timestamps,
+            "equity": equity,
+            "drawdown": (equity.max() - equity) / equity.max() * 100,
+        }
+    )
     return df
+
 
 def get_mock_orderbook() -> pd.DataFrame:
     """Generate mock orderbook heatmap data simulating depth across price levels and time."""
     now = datetime.now()
-    timestamps = [now - timedelta(seconds=i*5) for i in range(20, -1, -1)]
+    timestamps = [now - timedelta(seconds=i * 5) for i in range(20, -1, -1)]
     prices = np.linspace(49000, 51000, 50)
 
     records = []
@@ -151,20 +167,16 @@ def get_mock_orderbook() -> pd.DataFrame:
             # Random volumes with higher concentration near the mid price
             distance = abs(p - 50000)
             vol = np.random.lognormal(mean=1.5, sigma=1.0) * (5000 / (distance + 1))
-            records.append({
-                "timestamp": t,
-                "price": p,
-                "volume": vol,
-                "side": side
-            })
+            records.append({"timestamp": t, "price": p, "volume": vol, "side": side})
     df = pd.DataFrame(records)
 
     # Create some "whale walls" randomly
     whale_indices = np.random.choice(df.index, size=5, replace=False)
     for idx in whale_indices:
-        df.at[idx, 'volume'] = np.random.uniform(25, 50)
+        df.at[idx, "volume"] = np.random.uniform(25, 50)
 
     return df
+
 
 # --- Process Management ---
 
@@ -173,6 +185,7 @@ RUNTIME_DIR = PROJECT_ROOT / "runtime"
 
 # Ensure runtime dir exists
 RUNTIME_DIR.mkdir(parents=True, exist_ok=True)
+
 
 class ProcessManager:
     @staticmethod
@@ -214,7 +227,7 @@ class ProcessManager:
                     cwd=str(PROJECT_ROOT),
                     stdout=out,
                     stderr=subprocess.STDOUT,
-                    shell=False
+                    shell=False,
                 )
             ProcessManager.get_pid_file(name).write_text(str(proc.pid))
             return True
@@ -257,7 +270,9 @@ class ProcessManager:
             logger.error(f"Cold start failed: {e}")
             return False
 
+
 # --- ZMQ Control ---
+
 
 def send_halt_command():
     """Send HALT command to port 5558."""
@@ -266,13 +281,16 @@ def send_halt_command():
         socket = context.socket(zmq.PUB)
         socket.connect("tcp://127.0.0.1:5558")
         time.sleep(0.1)  # wait for connection
-        msg = json.dumps({"command": "HALT", "source": "dashboard", "timestamp": time.time()})
+        msg = json.dumps(
+            {"command": "HALT", "source": "dashboard", "timestamp": time.time()}
+        )
         socket.send_string(f"CONTROL {msg}")
         socket.close()
         return True
     except Exception as e:
         logger.error(f"Failed to send HALT: {e}")
         return False
+
 
 def force_apply_mode(mode: str):
     """Force apply a trading mode via ZMQ."""
@@ -289,7 +307,9 @@ def force_apply_mode(mode: str):
         logger.error(f"Failed to force mode {mode}: {e}")
         return False
 
+
 # --- Log Tailing ---
+
 
 def tail_log(filename: str, lines: int = 50) -> str:
     """Tail a log file from PROJECT_ROOT."""
@@ -298,12 +318,13 @@ def tail_log(filename: str, lines: int = 50) -> str:
         return f"File not found: {filepath}"
 
     try:
-        with open(filepath, 'r') as f:
+        with open(filepath, "r") as f:
             # Read last N lines efficiently or just readlines if small
             all_lines = f.readlines()
             return "".join(all_lines[-lines:])
     except Exception as e:
         return f"Error reading log: {e}"
+
 
 def clear_logs():
     """Clear the log files."""
