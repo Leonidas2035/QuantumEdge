@@ -51,7 +51,6 @@ from quantum_edge_core.market_data.lockbot.engine import LockbotDerivedEngine
 from quantum_edge_core.market_data.lockbot.publisher import LockbotPublisher
 from quantum_edge_core.market_data.spool.status import summarize_spool
 from quantum_edge_core.market_data.tsdb.quest_writer import QuestILPWriter
-from quantum_edge_core.market_data.orderbook_aggregator import OrderBookAggregator
 
 # Forward references for type hinting (Legacy components)
 MicrostructureAnalyzer = Any

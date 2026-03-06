@@ -127,7 +127,7 @@ def main():
             print(f"  ❌ ERROR: {result['error']}")
             errors += 1
         else:
-            print(f"  ✅ OK")
+            print("  ✅ OK")
 
     # 2. Create materialized views
     for view_name, interval in MTF_VIEWS.items():
@@ -138,7 +138,7 @@ def main():
             print(f"  ❌ ERROR: {result['error']}")
             errors += 1
         else:
-            print(f"  ✅ OK")
+            print("  ✅ OK")
 
     print("\n" + "=" * 60)
     if errors == 0:

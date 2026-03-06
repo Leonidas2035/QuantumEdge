@@ -21,6 +21,7 @@ from quantum_edge_core.supervisor.supervisor.events import BaseEvent, EventType,
 from quantum_edge_core.supervisor.supervisor.llm.chat_client import ChatCompletionsClient
 from quantum_edge_core.supervisor.supervisor.state import RiskStateSnapshot
 
+ZmqPolicyPublisher = Any
 
 def _strip_markdown_fences(text: str) -> str:
     """Remove ```json ... ``` wrappers that LLMs often add."""
