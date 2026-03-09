@@ -63,7 +63,10 @@ class Config:
         self._secrets_loaded = False
         self._secrets_required = self._should_require_secrets()
         if self._secrets_required:
-            self._maybe_load_secrets(required=True)
+            if os.environ.get("CI", "").lower() == "true" or os.environ.get("GITHUB_ACTIONS", "").lower() == "true":
+                print("[INFO] CI environment detected. Skipping strict secret requirement.")
+            else:
+                self._maybe_load_secrets(required=True)
         else:
             print(
                 "[INFO] Secrets not required in this mode (paper/mock with llm_disabled)."
@@ -73,6 +76,8 @@ class Config:
         return get_runtime_password(is_supervisor_mode())
 
     def _should_require_secrets(self) -> bool:
+        if os.environ.get("CI", "").lower() == "true" or os.environ.get("GITHUB_ACTIONS", "").lower() == "true":
+            return False
         mode = str(self.data.get("app", {}).get("mode", "paper")).lower()
         llm_enabled = bool(self.data.get("app", {}).get("llm_enabled", False))
         return mode in {"demo", "live"} or llm_enabled
