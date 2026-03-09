@@ -14,8 +14,13 @@ from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional
 
 import yaml
-from google import genai
-from google.genai import types
+
+try:
+    from google import genai
+    from google.genai import types
+except ImportError:
+    genai = None
+    types = None
 
 logger = logging.getLogger(__name__)
 
@@ -82,8 +87,14 @@ class GoogleClient:
         self.api_key_env = api_key_env
         self.logger = logger or logging.getLogger(__name__)
         self.api_key: str = _resolve_api_key(api_key_env)
-        self.client: genai.Client = genai.Client(api_key=self.api_key)
-        self.logger.info("GoogleClient initialised (genai SDK v2).")
+        if genai is None:
+            self.client = None
+            self.logger.warning(
+                "GoogleClient initialised, but 'google.genai' is missing."
+            )
+        else:
+            self.client: genai.Client = genai.Client(api_key=self.api_key)
+            self.logger.info("GoogleClient initialised (genai SDK v2).")
 
     # ---- async wrapper ----------------------------------------------------
 
