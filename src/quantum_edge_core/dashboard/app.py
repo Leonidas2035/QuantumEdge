@@ -283,6 +283,7 @@ with tab1:
     WHERE timestamp > now() - 24h AND symbol = 'BTCUSDT'
     SAMPLE BY {tf} ALIGN TO CALENDAR
     ORDER BY timestamp
+    LIMIT -1000
     """
 
     df, is_mock = fetch_data(sql_query, get_mock_market_data)
@@ -370,7 +371,7 @@ with tab1:
 # ─── Tab 2: LLM Supervisor Brain ─────────────────────────────────────
 with tab2:
     st.markdown("### AI Supervisor Reasoning History")
-    df_llm, is_llm_mock = fetch_data("SELECT * FROM llm_advice", get_mock_llm_advice)
+    df_llm, is_llm_mock = fetch_data("SELECT * FROM llm_advice LIMIT -100", get_mock_llm_advice)
 
     if df_llm.empty or "trading_mode" not in df_llm.columns:
         show_awaiting_data("Очікування перших рішень LLM Supervisor...")
@@ -428,7 +429,7 @@ with tab3:
     st.markdown("### Trade Executions")
 
     df_trades, is_trades_mock = fetch_data(
-        "SELECT * FROM realized_trades WHERE symbol = 'BTCUSDT' ORDER BY timestamp DESC LIMIT 200",
+        "SELECT * FROM realized_trades WHERE symbol = 'BTCUSDT' ORDER BY timestamp DESC LIMIT -100",
         get_mock_trades,
     )
 
@@ -438,7 +439,7 @@ with tab3:
         # Overlay trades on Candlestick
         st.markdown("#### Execution Overlay")
         df_market, _ = fetch_data(
-            "SELECT timestamp, first(price) AS open, max(price) AS high, min(price) AS low, last(price) AS close, sum(qty) AS volume FROM trades WHERE timestamp > now() - 24h AND symbol = 'BTCUSDT' SAMPLE BY 1m ALIGN TO CALENDAR ORDER BY timestamp",
+            "SELECT timestamp, first(price) AS open, max(price) AS high, min(price) AS low, last(price) AS close, sum(qty) AS volume FROM trades WHERE timestamp > now() - 24h AND symbol = 'BTCUSDT' SAMPLE BY 1m ALIGN TO CALENDAR ORDER BY timestamp LIMIT -1000",
             get_mock_market_data,
         )
 
@@ -540,7 +541,7 @@ with tab4:
 
     # Prefer portfolio_state (real telemetry), fallback to inventory mock
     df_eq, is_eq_mock = fetch_data(
-        "SELECT * FROM portfolio_state WHERE symbol = 'BTCUSDT' ORDER BY timestamp",
+        "SELECT * FROM portfolio_state WHERE symbol = 'BTCUSDT' ORDER BY timestamp LIMIT -100",
         get_mock_inventory,
     )
 
@@ -607,7 +608,7 @@ with tab4:
 # ─── Tab 5: Orderbook Heatmap ────────────────────────────────────────
 with tab5:
     st.markdown("### Orderbook Heatmap & Whale Walls")
-    df_ob, is_ob_mock = fetch_data("SELECT * FROM orderbook_snapshots", get_mock_orderbook)
+    df_ob, is_ob_mock = fetch_data("SELECT * FROM orderbook_snapshots LIMIT -1000", get_mock_orderbook)
 
     if df_ob.empty or "price" not in df_ob.columns or "volume" not in df_ob.columns:
         show_awaiting_data("Очікування даних OrderBook...")

@@ -58,7 +58,7 @@ class OrderBookAggregator:
             symbol: OrderBook(symbol) for symbol in config.symbols
         }
         self._running = False
-        self._publish_interval = max(self._config.publish_interval_ms / 1000.0, 0.05)
+        self._publish_interval = max(getattr(self._config, "publish_interval_ms", 100) / 1000.0, 0.05)
         self._stats = AggregatorStats()
         self._last_depth_ts: Dict[str, int] = {}
         self._last_walls_ts: Dict[str, int] = {}
