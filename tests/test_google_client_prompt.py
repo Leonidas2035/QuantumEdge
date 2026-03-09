@@ -1,6 +1,9 @@
 import os
 import unittest
 from unittest.mock import patch
+import pytest
+
+pytest.importorskip("google.genai")
 
 from quantum_edge_core.supervisor.supervisor.llm.google_client import GoogleClient
 
@@ -10,9 +13,8 @@ class TestGoogleClient(unittest.TestCase):
         # Set dummy key for validation
         os.environ["GOOGLE_API_KEY"] = "dummy"
 
-    @patch("google.generativeai.GenerativeModel")
-    @patch("google.generativeai.configure")
-    def test_generate_risk_query(self, mock_configure, mock_model):
+    @patch("google.genai.Client")
+    def test_generate_risk_query(self, mock_client):
         client = GoogleClient(api_key_env="TEST_KEY")
         context = {
             "mode": "SCALP",
