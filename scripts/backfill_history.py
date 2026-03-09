@@ -139,8 +139,11 @@ def write_ticks(ticks: List[Tuple]) -> int:
         return 0
 
     conn = psycopg2.connect(
-        host=DB_HOST, port=DB_PORT, dbname=DB_NAME,
-        user=DB_USER, password=DB_PASS,
+        host=DB_HOST,
+        port=DB_PORT,
+        dbname=DB_NAME,
+        user=DB_USER,
+        password=DB_PASS,
     )
     conn.autocommit = True
     cur = conn.cursor()
@@ -179,13 +182,17 @@ def main() -> None:
     logger.info("── Fetching 1H klines ──")
     klines_1h = fetch_klines("1h", start_ms, end_ms)
     ticks_1h = klines_to_ticks(klines_1h)
-    logger.info("Generated %d synthetic ticks from %d 1H klines", len(ticks_1h), len(klines_1h))
+    logger.info(
+        "Generated %d synthetic ticks from %d 1H klines", len(ticks_1h), len(klines_1h)
+    )
 
     # ── Step 2: Fetch 5M klines ──
     logger.info("── Fetching 5M klines ──")
     klines_5m = fetch_klines("5m", start_ms, end_ms)
     ticks_5m = klines_to_ticks(klines_5m)
-    logger.info("Generated %d synthetic ticks from %d 5M klines", len(ticks_5m), len(klines_5m))
+    logger.info(
+        "Generated %d synthetic ticks from %d 5M klines", len(ticks_5m), len(klines_5m)
+    )
 
     # ── Step 3: Merge and deduplicate by timestamp ──
     # 1H ticks provide the macro backbone; 5M ticks fill in the micro detail.
