@@ -112,7 +112,7 @@ def get_mock_llm_advice() -> pd.DataFrame:
     df = pd.DataFrame(
         {
             "time": timestamps,
-            "mode": np.random.choice(modes, 20),
+            "trading_mode": np.random.choice(modes, 20),
             "multiplier": np.random.uniform(0.5, 2.0, 20).round(2),
             "reason": np.random.choice(reasons, 20),
         }

@@ -56,6 +56,16 @@ st.markdown(
     }
     .status-up { color: #00e676; font-weight: bold; }
     .status-down { color: #ff5252; font-weight: bold; }
+    .awaiting-data {
+        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
+        border: 1px dashed rgba(0, 212, 170, 0.3);
+        border-radius: 12px;
+        padding: 40px 20px;
+        text-align: center;
+        margin: 20px 0;
+    }
+    .awaiting-data h3 { color: #00d4aa; margin-bottom: 8px; }
+    .awaiting-data p { color: #8899aa; font-size: 0.9em; }
     .stButton>button {
         width: 100%;
         border-radius: 6px;
@@ -88,6 +98,26 @@ def is_localhost() -> bool:
         return True  # Default to allowing if headers can't be fetched locally
     host = headers.get("Host", "")
     return host.startswith("localhost") or host.startswith("127.0.0.1")
+
+
+def show_awaiting_data(message: str = "Очікування перших даних...") -> None:
+    """Display a graceful 'awaiting data' placeholder instead of crashing."""
+    st.markdown(
+        f"""
+        <div class="awaiting-data">
+            <h3>⏳ {message}</h3>
+            <p>Система щойно запущена або таблиця ще порожня. Дані з'являться автоматично.</p>
+        </div>
+        """,
+        unsafe_allow_html=True,
+    )
+
+
+def safe_col(df: pd.DataFrame, col: str, default=None):
+    """Safely get a column from a DataFrame, returning default if missing."""
+    if col in df.columns:
+        return df[col]
+    return pd.Series([default] * len(df), name=col)
 
 
 # ─── Sidebar ─────────────────────────────────────────────────────────
@@ -177,37 +207,54 @@ with st.sidebar:
             st.error("Action denied: localhost only.")
 
     st.markdown("### Metrics Overview")
-    # Fetch real/mock data for dynamic metrics
-    df_inv, _ = fetch_data(
-        "SELECT * FROM inventory ORDER BY timestamp DESC LIMIT 2", get_mock_inventory
+
+    # ── Portfolio State from QuestDB (real telemetry) ──
+    df_portfolio, is_portfolio_mock = fetch_data(
+        "SELECT * FROM portfolio_state WHERE symbol = 'BTCUSDT' ORDER BY timestamp DESC LIMIT 2",
+        get_mock_inventory,
     )
-    df_llm, _ = fetch_data(
+
+    if not is_portfolio_mock and not df_portfolio.empty and len(df_portfolio) >= 2:
+        curr_eq = float(df_portfolio.iloc[0].get("equity", 0))
+        prev_eq = float(df_portfolio.iloc[1].get("equity", 0))
+        eq_pct = ((curr_eq - prev_eq) / prev_eq) * 100 if prev_eq > 0 else 0
+
+        curr_pnl = float(df_portfolio.iloc[0].get("unrealized_pnl", 0))
+        curr_qty = float(df_portfolio.iloc[0].get("position_qty", 0))
+
+        st.metric("Equity", f"${curr_eq:,.2f}", f"{eq_pct:+.2f}%")
+        st.metric("Unrealized PnL", f"${curr_pnl:,.2f}")
+        st.metric("Position", f"{curr_qty:+.4f} BTC")
+    else:
+        # Fallback to inventory table or mock
+        df_inv, _ = fetch_data(
+            "SELECT * FROM inventory ORDER BY timestamp DESC LIMIT 2", get_mock_inventory
+        )
+        if not df_inv.empty and len(df_inv) >= 2:
+            curr_eq = df_inv.iloc[0]["equity"]
+            prev_eq = df_inv.iloc[1]["equity"]
+            eq_pct = ((curr_eq - prev_eq) / prev_eq) * 100 if prev_eq > 0 else 0
+            st.metric("Equity", f"${curr_eq:,.2f}", f"{eq_pct:+.2f}%")
+
+            if "drawdown" in df_inv.columns:
+                curr_dd = df_inv.iloc[0]["drawdown"]
+                prev_dd = df_inv.iloc[1]["drawdown"]
+                dd_delta = curr_dd - prev_dd
+                st.metric(
+                    "Drawdown", f"{curr_dd:.2f}%", f"{dd_delta:+.2f}%", delta_color="inverse"
+                )
+        else:
+            st.metric("Equity", "—", "—")
+            st.metric("Drawdown", "—", "—")
+
+        st.metric("Unrealized PnL", "—", "—")
+
+    df_llm_sidebar, _ = fetch_data(
         "SELECT * FROM llm_advice ORDER BY time DESC LIMIT 1", get_mock_llm_advice
     )
 
-    if not df_inv.empty and len(df_inv) >= 2:
-        curr_eq = df_inv.iloc[0]["equity"]
-        prev_eq = df_inv.iloc[1]["equity"]
-        eq_pct = ((curr_eq - prev_eq) / prev_eq) * 100 if prev_eq > 0 else 0
-
-        curr_dd = df_inv.iloc[0]["drawdown"]
-        prev_dd = df_inv.iloc[1]["drawdown"]
-        dd_delta = curr_dd - prev_dd
-
-        st.metric("Equity", f"${curr_eq:,.2f}", f"{eq_pct:+.2f}%")
-        st.metric(
-            "Drawdown", f"{curr_dd:.2f}%", f"{dd_delta:+.2f}%", delta_color="inverse"
-        )
-    else:
-        st.metric("Equity", "—", "—")
-        st.metric("Drawdown", "—", "—")
-
-    st.metric(
-        "Unrealized PnL", "-$12.30", "-0.1%"
-    )  # Hard to mock dynamically without full position state
-
-    if not df_llm.empty:
-        curr_mult = df_llm.iloc[0]["multiplier"]
+    if not df_llm_sidebar.empty and "multiplier" in df_llm_sidebar.columns:
+        curr_mult = df_llm_sidebar.iloc[0]["multiplier"]
         st.metric("Risk Multiplier", f"{curr_mult}x")
     else:
         st.metric("Risk Multiplier", "—")
@@ -230,263 +277,324 @@ with tab1:
     st.markdown("### Market Overview (BTC/USDT)")
     tf = st.selectbox("Timeframe", ["1m", "5m", "15m"], index=0)
 
-    # Precise query as requested
-    sql_query = """
-    SELECT timestamp, first(price) AS open, max(high) AS high, min(low) AS low, last(price) AS close, sum(volume) AS volume
+    sql_query = f"""
+    SELECT timestamp, first(price) AS open, max(price) AS high, min(price) AS low, last(price) AS close, sum(qty) AS volume
     FROM trades
-    SAMPLE BY 1m ALIGN TO CALENDAR
-    WHERE timestamp > now() - 24h
+    WHERE timestamp > now() - 24h AND symbol = 'BTCUSDT'
+    SAMPLE BY {tf} ALIGN TO CALENDAR
     ORDER BY timestamp
     """
 
-    # Query logic simulated with fallback
     df, is_mock = fetch_data(sql_query, get_mock_market_data)
 
     if is_mock:
-        st.error("⚠️ Table not found — running in demo mode")
+        st.warning("⚠️ Дані з QuestDB недоступні — демо-режим")
 
-    # Calculate TA
-    df.ta.bbands(length=20, std=2, append=True)
-    try:
-        df.ta.supertrend(length=7, multiplier=3, append=True)
-    except Exception:
-        pass  # Handle case if ta not fully available
+    if df.empty or len(df) < 2:
+        show_awaiting_data("Очікування ринкових даних...")
+    else:
+        # Calculate TA
+        try:
+            df.ta.bbands(length=20, std=2, append=True)
+        except Exception:
+            pass
+        try:
+            df.ta.supertrend(length=7, multiplier=3, append=True)
+        except Exception:
+            pass
 
-    fig = make_subplots(
-        rows=2,
-        cols=1,
-        shared_xaxes=True,
-        vertical_spacing=0.03,
-        subplot_titles=("Price", "Volume"),
-        row_width=[0.2, 0.7],
-    )
-
-    # Candlesticks
-    fig.add_trace(
-        go.Candlestick(
-            x=df["timestamp"],
-            open=df["open"],
-            high=df["high"],
-            low=df["low"],
-            close=df["close"],
-            name="Price",
-        ),
-        row=1,
-        col=1,
-    )
-
-    # Bollinger Bands
-    if "BBL_20_2.0" in df.columns:
-        fig.add_trace(
-            go.Scatter(
-                x=df["timestamp"],
-                y=df["BBU_20_2.0"],
-                line=dict(color="gray", width=1, dash="dot"),
-                name="Upper BB",
-            ),
-            row=1,
-            col=1,
+        fig = make_subplots(
+            rows=2,
+            cols=1,
+            shared_xaxes=True,
+            vertical_spacing=0.03,
+            subplot_titles=("Price", "Volume"),
+            row_width=[0.2, 0.7],
         )
+
+        # Candlesticks
         fig.add_trace(
-            go.Scatter(
+            go.Candlestick(
                 x=df["timestamp"],
-                y=df["BBL_20_2.0"],
-                line=dict(color="gray", width=1, dash="dot"),
-                name="Lower BB",
-                fill="tonexty",
-                fillcolor="rgba(128,128,128,0.1)",
+                open=df["open"],
+                high=df["high"],
+                low=df["low"],
+                close=df["close"],
+                name="Price",
             ),
             row=1,
             col=1,
         )
 
-    # Volume
-    colors = [
-        "red" if row["open"] - row["close"] >= 0 else "green"
-        for index, row in df.iterrows()
-    ]
-    fig.add_trace(
-        go.Bar(x=df["timestamp"], y=df["volume"], marker_color=colors, name="Volume"),
-        row=2,
-        col=1,
-    )
+        # Bollinger Bands
+        if "BBL_20_2.0" in df.columns:
+            fig.add_trace(
+                go.Scatter(
+                    x=df["timestamp"],
+                    y=df["BBU_20_2.0"],
+                    line=dict(color="gray", width=1, dash="dot"),
+                    name="Upper BB",
+                ),
+                row=1,
+                col=1,
+            )
+            fig.add_trace(
+                go.Scatter(
+                    x=df["timestamp"],
+                    y=df["BBL_20_2.0"],
+                    line=dict(color="gray", width=1, dash="dot"),
+                    name="Lower BB",
+                    fill="tonexty",
+                    fillcolor="rgba(128,128,128,0.1)",
+                ),
+                row=1,
+                col=1,
+            )
 
-    fig.update_layout(
-        height=700, template="plotly_dark", xaxis_rangeslider_visible=False
-    )
-    st.plotly_chart(fig, use_container_width=True)
+        # Volume
+        colors = [
+            "red" if row["open"] - row["close"] >= 0 else "green"
+            for index, row in df.iterrows()
+        ]
+        fig.add_trace(
+            go.Bar(x=df["timestamp"], y=df["volume"], marker_color=colors, name="Volume"),
+            row=2,
+            col=1,
+        )
+
+        fig.update_layout(
+            height=700, template="plotly_dark", xaxis_rangeslider_visible=False
+        )
+        st.plotly_chart(fig, use_container_width=True)
 
 # ─── Tab 2: LLM Supervisor Brain ─────────────────────────────────────
 with tab2:
     st.markdown("### AI Supervisor Reasoning History")
-    df_llm, _ = fetch_data("SELECT * FROM llm_advice", get_mock_llm_advice)
+    df_llm, is_llm_mock = fetch_data("SELECT * FROM llm_advice", get_mock_llm_advice)
 
-    # Step chart
-    fig_llm = go.Figure()
+    if df_llm.empty or "trading_mode" not in df_llm.columns:
+        show_awaiting_data("Очікування перших рішень LLM Supervisor...")
+    else:
+        # Step chart
+        fig_llm = go.Figure()
 
-    # Mode mapping for step chart visualization
-    mode_map = {"SCALP": 4, "DCA": 3, "NEUTRAL": 2, "PASS": 1, "HALT": 0}
-    y_vals = [mode_map.get(m, 2) for m in df_llm["trading_mode"]]
+        # Mode mapping for step chart visualization
+        mode_map = {"SCALP": 4, "DCA": 3, "NEUTRAL": 2, "PASS": 1, "HALT": 0,
+                     "scalp": 4, "dca": 3, "neutral": 2, "pass": 1}
+        y_vals = [mode_map.get(str(m).strip(), 2) for m in df_llm["trading_mode"]]
 
-    fig_llm.add_trace(
-        go.Scatter(
-            x=df_llm["time"],
-            y=y_vals,
-            mode="lines+markers",
-            line_shape="hv",
-            name="Trading Mode",
-            text=df_llm["reason"],
-            hovertemplate="<b>%{text}</b><br>Mode Level: %{y}<extra></extra>",
+        fig_llm.add_trace(
+            go.Scatter(
+                x=safe_col(df_llm, "time"),
+                y=y_vals,
+                mode="lines+markers",
+                line_shape="hv",
+                name="Trading Mode",
+                text=safe_col(df_llm, "reason", ""),
+                hovertemplate="<b>%{text}</b><br>Mode Level: %{y}<extra></extra>",
+            )
         )
-    )
 
-    # Overlay risk multiplier
-    fig_llm.add_trace(
-        go.Scatter(
-            x=df_llm["time"],
-            y=df_llm["multiplier"],
-            mode="lines",
-            line=dict(color="orange", dash="dash"),
-            name="Risk Multiplier",
-            yaxis="y2",
+        # Overlay risk multiplier
+        if "multiplier" in df_llm.columns:
+            fig_llm.add_trace(
+                go.Scatter(
+                    x=safe_col(df_llm, "time"),
+                    y=df_llm["multiplier"],
+                    mode="lines",
+                    line=dict(color="orange", dash="dash"),
+                    name="Risk Multiplier",
+                    yaxis="y2",
+                )
+            )
+
+        fig_llm.update_layout(
+            height=400,
+            template="plotly_dark",
+            yaxis=dict(
+                title="Mode",
+                tickvals=[0, 1, 2, 3, 4],
+                ticktext=["HALT", "PASS", "NEUTRAL", "DCA", "SCALP"],
+            ),
+            yaxis2=dict(title="Multiplier", overlaying="y", side="right"),
         )
-    )
+        st.plotly_chart(fig_llm, use_container_width=True)
 
-    fig_llm.update_layout(
-        height=400,
-        template="plotly_dark",
-        yaxis=dict(
-            title="Mode",
-            tickvals=[0, 1, 2, 3, 4],
-            ticktext=["HALT", "PASS", "NEUTRAL", "DCA", "SCALP"],
-        ),
-        yaxis2=dict(title="Multiplier", overlaying="y", side="right"),
-    )
-    st.plotly_chart(fig_llm, use_container_width=True)
-
-    st.markdown("#### Latest 20 Decisions")
-    st.dataframe(df_llm.head(20), use_container_width=True)
+        st.markdown("#### Latest 20 Decisions")
+        st.dataframe(df_llm.head(20), use_container_width=True)
 
 # ─── Tab 3: Execution & Trades ───────────────────────────────────────
 with tab3:
     st.markdown("### Trade Executions")
 
-    df_trades, _ = fetch_data("SELECT * FROM executed_trades", get_mock_trades)
-
-    # Overlay trades on Candlestick
-    st.markdown("#### Execution Overlay")
-    df_market, _ = fetch_data(
-        "SELECT timestamp, first(price) AS open, max(high) AS high, min(low) AS low, last(price) AS close, sum(volume) AS volume FROM trades SAMPLE BY 1m ALIGN TO CALENDAR WHERE timestamp > now() - 24h ORDER BY timestamp",
-        get_mock_market_data,
+    df_trades, is_trades_mock = fetch_data(
+        "SELECT * FROM realized_trades WHERE symbol = 'BTCUSDT' ORDER BY timestamp DESC LIMIT 200",
+        get_mock_trades,
     )
 
-    fig_overlay = go.Figure()
-    fig_overlay.add_trace(
-        go.Candlestick(
-            x=df_market["timestamp"],
-            open=df_market["open"],
-            high=df_market["high"],
-            low=df_market["low"],
-            close=df_market["close"],
-            name="Price",
+    if df_trades.empty or len(df_trades) < 1:
+        show_awaiting_data("Очікування перших виконаних угод...")
+    else:
+        # Overlay trades on Candlestick
+        st.markdown("#### Execution Overlay")
+        df_market, _ = fetch_data(
+            "SELECT timestamp, first(price) AS open, max(price) AS high, min(price) AS low, last(price) AS close, sum(qty) AS volume FROM trades WHERE timestamp > now() - 24h AND symbol = 'BTCUSDT' SAMPLE BY 1m ALIGN TO CALENDAR ORDER BY timestamp",
+            get_mock_market_data,
         )
-    )
 
-    # Mocking timestamps for trades to overlay on the chart properly
-    if "timestamp" not in df_trades.columns:
-        market_len = len(df_market)
-        df_trades["timestamp"] = [
-            (
-                df_market["timestamp"].iloc[-min((i + 1) * 5, market_len)]
-                if market_len > 0
-                else pd.Timestamp.now()
+        fig_overlay = go.Figure()
+
+        if not df_market.empty:
+            fig_overlay.add_trace(
+                go.Candlestick(
+                    x=df_market["timestamp"],
+                    open=df_market["open"],
+                    high=df_market["high"],
+                    low=df_market["low"],
+                    close=df_market["close"],
+                    name="Price",
+                )
             )
-            for i in range(len(df_trades))
-        ]
 
-    buys_df = df_trades[df_trades["side"] == "BUY"]
-    sells_df = df_trades[df_trades["side"] == "SELL"]
+        # Mocking timestamps for trades to overlay on the chart properly
+        if "timestamp" not in df_trades.columns:
+            market_len = len(df_market)
+            df_trades["timestamp"] = [
+                (
+                    df_market["timestamp"].iloc[-min((i + 1) * 5, market_len)]
+                    if market_len > 0
+                    else pd.Timestamp.now()
+                )
+                for i in range(len(df_trades))
+            ]
 
-    fig_overlay.add_trace(
-        go.Scatter(
-            x=buys_df["timestamp"],
-            y=buys_df["price"],
-            mode="markers",
-            marker=dict(color="green", size=12, symbol="triangle-up"),
-            name="Buy Execution",
+        buys_df = df_trades[df_trades["side"] == "BUY"]
+        sells_df = df_trades[df_trades["side"] == "SELL"]
+
+        fig_overlay.add_trace(
+            go.Scatter(
+                x=buys_df["timestamp"] if "timestamp" in buys_df.columns else [],
+                y=buys_df["price"],
+                mode="markers",
+                marker=dict(color="green", size=12, symbol="triangle-up"),
+                name="Buy Execution",
+            )
         )
-    )
 
-    fig_overlay.add_trace(
-        go.Scatter(
-            x=sells_df["timestamp"],
-            y=sells_df["price"],
-            mode="markers",
-            marker=dict(color="red", size=12, symbol="triangle-down"),
-            name="Sell Execution",
+        fig_overlay.add_trace(
+            go.Scatter(
+                x=sells_df["timestamp"] if "timestamp" in sells_df.columns else [],
+                y=sells_df["price"],
+                mode="markers",
+                marker=dict(color="red", size=12, symbol="triangle-down"),
+                name="Sell Execution",
+            )
         )
-    )
 
-    fig_overlay.update_layout(
-        height=500, template="plotly_dark", xaxis_rangeslider_visible=False
-    )
-    st.plotly_chart(fig_overlay, use_container_width=True)
-
-    col_skew, col_pos = st.columns(2)
-
-    buys = len(df_trades[df_trades["side"] == "BUY"])
-    sells = len(df_trades[df_trades["side"] == "SELL"])
-    total = max(1, buys + sells)
-    buy_pct = buys / total * 100
-
-    skew_color = "red" if abs(buy_pct - 50) > 20 else "green"
-
-    with col_skew:
-        st.markdown(
-            f"#### Skew: <span style='color:{skew_color}'>Buy {buy_pct:.0f}% / Sell {100-buy_pct:.0f}%</span>",
-            unsafe_allow_html=True,
+        fig_overlay.update_layout(
+            height=500, template="plotly_dark", xaxis_rangeslider_visible=False
         )
-    with col_pos:
-        st.markdown("#### Current Position: 0.45 BTC")
+        st.plotly_chart(fig_overlay, use_container_width=True)
 
-    st.dataframe(df_trades, use_container_width=True)
+        col_skew, col_pos = st.columns(2)
+
+        buys = len(buys_df)
+        sells = len(sells_df)
+        total = max(1, buys + sells)
+        buy_pct = buys / total * 100
+
+        skew_color = "red" if abs(buy_pct - 50) > 20 else "green"
+
+        with col_skew:
+            st.markdown(
+                f"#### Skew: <span style='color:{skew_color}'>Buy {buy_pct:.0f}% / Sell {100-buy_pct:.0f}%</span>",
+                unsafe_allow_html=True,
+            )
+        with col_pos:
+            # Show real position from portfolio_state if available
+            df_pos, is_pos_mock = fetch_data(
+                "SELECT position_qty FROM portfolio_state WHERE symbol = 'BTCUSDT' ORDER BY timestamp DESC LIMIT 1",
+                lambda: pd.DataFrame({"position_qty": [0.0]}),
+            )
+            pos_qty = float(df_pos.iloc[0]["position_qty"]) if not df_pos.empty else 0.0
+            pos_color = "green" if pos_qty > 0 else ("red" if pos_qty < 0 else "gray")
+            st.markdown(
+                f"#### Position: <span style='color:{pos_color}'>{pos_qty:+.4f} BTC</span>",
+                unsafe_allow_html=True,
+            )
+
+        # Show realized PnL summary
+        if "realized_pnl" in df_trades.columns:
+            total_pnl = df_trades["realized_pnl"].sum()
+            pnl_color = "green" if total_pnl >= 0 else "red"
+            st.markdown(
+                f"**Total Realized PnL:** <span style='color:{pnl_color};font-size:1.2em;font-weight:bold'>${total_pnl:+,.2f}</span>",
+                unsafe_allow_html=True,
+            )
+
+        st.dataframe(df_trades, use_container_width=True)
 
 # ─── Tab 4: Inventory & Risk ─────────────────────────────────────────
 with tab4:
     st.markdown("### Portfolio Equity & Risk Curve")
 
-    df_inv, _ = fetch_data("SELECT * FROM inventory", get_mock_inventory)
-
-    fig_eq = make_subplots(specs=[[{"secondary_y": True}]])
-
-    fig_eq.add_trace(
-        go.Scatter(
-            x=df_inv["timestamp"], y=df_inv["equity"], name="Equity", fill="tozeroy"
-        ),
-        secondary_y=False,
+    # Prefer portfolio_state (real telemetry), fallback to inventory mock
+    df_eq, is_eq_mock = fetch_data(
+        "SELECT * FROM portfolio_state WHERE symbol = 'BTCUSDT' ORDER BY timestamp",
+        get_mock_inventory,
     )
 
-    fig_eq.add_trace(
-        go.Scatter(
-            x=df_inv["timestamp"],
-            y=df_inv["drawdown"],
-            name="Drawdown %",
-            line=dict(color="red"),
-        ),
-        secondary_y=True,
-    )
+    if df_eq.empty or len(df_eq) < 2:
+        show_awaiting_data("Очікування даних портфеля...")
+    else:
+        fig_eq = make_subplots(specs=[[{"secondary_y": True}]])
 
-    # Add risk lines
-    max_eq = df_inv["equity"].max()
-    fig_eq.add_hline(
-        y=max_eq * 0.95,
-        line_dash="dash",
-        line_color="orange",
-        annotation_text="Max Daily Loss Limit",
-    )
+        eq_col = "equity" if "equity" in df_eq.columns else "close"
+        ts_col = "timestamp"
 
-    fig_eq.update_layout(height=500, template="plotly_dark")
-    st.plotly_chart(fig_eq, use_container_width=True)
+        fig_eq.add_trace(
+            go.Scatter(
+                x=df_eq[ts_col], y=df_eq[eq_col], name="Equity", fill="tozeroy"
+            ),
+            secondary_y=False,
+        )
+
+        # Unrealized PnL as a secondary axis
+        if "unrealized_pnl" in df_eq.columns:
+            fig_eq.add_trace(
+                go.Scatter(
+                    x=df_eq[ts_col],
+                    y=df_eq["unrealized_pnl"],
+                    name="Unrealized PnL",
+                    line=dict(color="cyan", dash="dot"),
+                ),
+                secondary_y=True,
+            )
+
+        # Drawdown if available (from inventory)
+        if "drawdown" in df_eq.columns:
+            fig_eq.add_trace(
+                go.Scatter(
+                    x=df_eq[ts_col],
+                    y=df_eq["drawdown"],
+                    name="Drawdown %",
+                    line=dict(color="red"),
+                ),
+                secondary_y=True,
+            )
+
+        # Add risk lines
+        max_eq = df_eq[eq_col].max()
+        if max_eq and max_eq > 0:
+            fig_eq.add_hline(
+                y=max_eq * 0.95,
+                line_dash="dash",
+                line_color="orange",
+                annotation_text="Max Daily Loss Limit",
+            )
+
+        fig_eq.update_layout(height=500, template="plotly_dark")
+        st.plotly_chart(fig_eq, use_container_width=True)
 
     kill_switch_active = False
     status_color = "red" if kill_switch_active else "green"
@@ -499,53 +607,56 @@ with tab4:
 # ─── Tab 5: Orderbook Heatmap ────────────────────────────────────────
 with tab5:
     st.markdown("### Orderbook Heatmap & Whale Walls")
-    df_ob, _ = fetch_data("SELECT * FROM orderbook_snapshots", get_mock_orderbook)
+    df_ob, is_ob_mock = fetch_data("SELECT * FROM orderbook_snapshots", get_mock_orderbook)
 
-    # Pivot dataframe for Heatmap
-    heatmap_data = df_ob.pivot_table(
-        index="price", columns="timestamp", values="volume", fill_value=0
-    )
-    heatmap_data = heatmap_data.sort_index(ascending=True)
-
-    fig_ob = go.Figure(
-        data=go.Heatmap(
-            z=heatmap_data.values,
-            x=heatmap_data.columns,
-            y=heatmap_data.index,
-            colorscale="Viridis",
-            colorbar=dict(title="Volume"),
+    if df_ob.empty or "price" not in df_ob.columns or "volume" not in df_ob.columns:
+        show_awaiting_data("Очікування даних OrderBook...")
+    else:
+        # Pivot dataframe for Heatmap
+        heatmap_data = df_ob.pivot_table(
+            index="price", columns="timestamp", values="volume", fill_value=0
         )
-    )
+        heatmap_data = heatmap_data.sort_index(ascending=True)
 
-    # Highlight whales (Volume >= 20)
-    whales = df_ob[df_ob["volume"] >= 20]
-    if not whales.empty:
-        fig_ob.add_trace(
-            go.Scatter(
-                x=whales["timestamp"],
-                y=whales["price"],
-                mode="markers+text",
-                marker=dict(
-                    color="yellow",
-                    size=8,
-                    symbol="star",
-                    line=dict(color="red", width=1),
-                ),
-                text=[f"{v:.0f} BTC" for v in whales["volume"]],
-                textposition="top right",
-                name="Whale Walls >= 20 BTC",
-                textfont=dict(color="yellow"),
+        fig_ob = go.Figure(
+            data=go.Heatmap(
+                z=heatmap_data.values,
+                x=heatmap_data.columns,
+                y=heatmap_data.index,
+                colorscale="Viridis",
+                colorbar=dict(title="Volume"),
             )
         )
 
-    fig_ob.update_layout(
-        height=600,
-        template="plotly_dark",
-        yaxis_title="Price",
-        xaxis_title="Time",
-        showlegend=False,
-    )
-    st.plotly_chart(fig_ob, use_container_width=True)
+        # Highlight whales (Volume >= 20)
+        whales = df_ob[df_ob["volume"] >= 20]
+        if not whales.empty:
+            fig_ob.add_trace(
+                go.Scatter(
+                    x=whales["timestamp"],
+                    y=whales["price"],
+                    mode="markers+text",
+                    marker=dict(
+                        color="yellow",
+                        size=8,
+                        symbol="star",
+                        line=dict(color="red", width=1),
+                    ),
+                    text=[f"{v:.0f} BTC" for v in whales["volume"]],
+                    textposition="top right",
+                    name="Whale Walls >= 20 BTC",
+                    textfont=dict(color="yellow"),
+                )
+            )
+
+        fig_ob.update_layout(
+            height=600,
+            template="plotly_dark",
+            yaxis_title="Price",
+            xaxis_title="Time",
+            showlegend=False,
+        )
+        st.plotly_chart(fig_ob, use_container_width=True)
 
 # ─── Tab 6: Live Logs & Diagnostics ──────────────────────────────────
 with tab6:
