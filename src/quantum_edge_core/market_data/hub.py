@@ -139,9 +139,7 @@ class MarketDataHubService(BaseService):
             self.feeds = [BinanceFuturesFeed(self.config, self.bus)]
 
         self.alpha_engine = AlphaEngine(symbol="BTCUSDT")  # Default symbol
-        self.ob_aggregator = OrderBookAggregator(
-            wall_threshold_btc=20.0, max_depth_pct=2.0
-        )
+        self.ob_aggregator = OrderBookAggregator(self.config, self.publisher, self.bus, self.snapshot_cache)
         self.last_metrics_pub = 0.0
         self._last_mid_price: float = 0.0  # Cache for OB aggregator
 
