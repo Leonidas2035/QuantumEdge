@@ -7,7 +7,7 @@ import random
 from contextlib import suppress
 import time
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 
 from quantum_edge_core.market_data.bus.event_bus import EventBus
 from quantum_edge_core.market_data.config import OrderbookConfig
@@ -121,6 +121,15 @@ class OrderBookAggregator:
             return
         book.apply_delta(bids, asks)
         self._stats.orderbook_updates_total += 1
+
+    def process_book(
+        self,
+        bids: List[List[float]],
+        asks: List[List[float]],
+        current_price: float,
+    ) -> Dict[str, Any]:
+        """Provides backward compatibility with the legacy order book format."""
+        return {"bids": bids, "asks": asks}
 
     def _next_seq(self, symbol: str, event_type: str) -> int:
         return self._bus.assign_sequence(symbol, event_type)

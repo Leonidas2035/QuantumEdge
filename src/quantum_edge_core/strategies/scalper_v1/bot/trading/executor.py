@@ -354,6 +354,8 @@ class BinanceDemoExecutor:
         time_in_force: Optional[str] = None,
         post_only: bool = False,
     ):
+        if qty <= 0:
+            return None
         if not await self.initialize():
             return None
         symbol = symbol.upper()

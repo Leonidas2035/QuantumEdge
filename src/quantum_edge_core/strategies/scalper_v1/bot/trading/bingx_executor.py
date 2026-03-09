@@ -267,6 +267,8 @@ class BingXDemoExecutor:
         price: Optional[float] = None,
         client_order_id: Optional[str] = None,
     ):
+        if qty <= 0:
+            return None
         if not await self.initialize():
             return None
         symbol = normalize_symbol(symbol)
