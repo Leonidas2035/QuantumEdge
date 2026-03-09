@@ -430,7 +430,8 @@ def build_prompts(
         "  * TRIGGER: Normal conditions, low volatility, TA indicators are near neutral (RSI ~50).\n"
         "  * ACTION: Bot will collect spread on both sides.\n\n"
         "OUTPUT CONSTRAINTS:\n"
-        "You must strictly follow the Pydantic JSON schema requested by the API. `trading_mode` must be exact match, lowercase. Calculate realistic `buy_zone_max` and `sell_zone_min` based on the provided liquidity walls."
+        "You must strictly follow the Pydantic JSON schema requested by the API. `trading_mode` must be exact match, lowercase. Calculate realistic `buy_zone_max` and `sell_zone_min` based on the provided liquidity walls.\n\n"
+        "IMPORTANT: For testing purposes, YOU MUST ALWAYS output trading_mode='SCALP' and risk_multiplier=1.0. Do not use NEUTRAL or PASS."
     )
 
     deny_breakdown = (
