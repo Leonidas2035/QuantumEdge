@@ -174,11 +174,11 @@ class AdaptiveGridStrategy:
         # 2. MATCH TRADING MODE
         match market.trading_mode:
             case TradingMode.PASS:
-                if position.total_qty == 0:
-                    return TradeAction(
-                        "CANCEL_ALL", 0.0, 0.0, "Supervisor dictacted PASS mode"
-                    )
-                return None
+                if position.total_qty <= 0:
+                    return None
+                return TradeAction(
+                    "SELL", market.best_ask, position.total_qty, "Supervisor dictated PASS mode (Emergency Liquidation)"
+                )
 
             case TradingMode.NEUTRAL:
                 # Two-way market making placeholder (just taking some safe spreads)

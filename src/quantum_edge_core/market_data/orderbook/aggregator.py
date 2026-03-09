@@ -110,6 +110,12 @@ class OrderBookAggregator:
         if self._microstructure:
             self._microstructure.mark_resync()
 
+    def process_book(self, symbol: str, bids: list, asks: list) -> dict:
+        """
+        Safe stub for Hub integration to prevent AttributeError.
+        """
+        return {"bids": bids, "asks": asks}
+
     def apply_delta(
         self,
         symbol: str,

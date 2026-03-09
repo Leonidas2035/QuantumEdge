@@ -107,14 +107,20 @@ class BotEngine:
                                 )
 
                                 try:
-                                    mode_str = str(cmd["trading_mode"]).upper()
+                                    mode_str = cmd.get("trading_mode", "PASS")
+                                    if mode_str:
+                                        mode_str = str(mode_str).upper()
+                                    else:
+                                        mode_str = "PASS"
+
                                     if mode_str in TradingMode.__members__:
-                                        market_state.trading_mode = TradingMode[
-                                            mode_str
-                                        ]
-                                        logger.warning(
-                                            f"🤖 SUPERVISOR POLICY: Trading Mode -> {market_state.trading_mode.value}"
-                                        )
+                                        market_state.trading_mode = TradingMode[mode_str]
+                                    else:
+                                        market_state.trading_mode = TradingMode.PASS
+
+                                    logger.warning(
+                                        f"🤖 SUPERVISOR POLICY: Trading Mode -> {market_state.trading_mode.value}"
+                                    )
 
                                     if (
                                         "buy_zone_max" in cmd
@@ -372,17 +378,20 @@ class BotEngine:
                     # 4. Execution (PaperTrader — Shadow Mode)
                     active_signal_name = "HOLD"
                     if action:
-                        active_signal_name = action.action_type
-                        logger.warning(
-                            f"🚀 SIGNAL GENERATED: {action.action_type} @ {action.price} | Reason: {action.reason}"
-                        )
-                        self.position.simulate_fill(
-                            action.price,
-                            action.qty,
-                            action.action_type,
-                            self.config.symbol,
-                        )
-                        await self.gateway.execute(action)
+                        if action.qty <= 0:
+                            logger.debug("Position already flat or zero-volume order, skipping execution.")
+                        else:
+                            active_signal_name = action.action_type
+                            logger.warning(
+                                f"🚀 SIGNAL GENERATED: {action.action_type} @ {action.price} | Reason: {action.reason}"
+                            )
+                            self.position.simulate_fill(
+                                action.price,
+                                action.qty,
+                                action.action_type,
+                                self.config.symbol,
+                            )
+                            await self.gateway.execute(action)
 
                     # 4.5 Telemetry publishing
                     dist_pct = 0.0

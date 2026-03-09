@@ -1,3 +1,4 @@
+from quantum_edge_core.ai_scalper_bot.bot.core.models import TradingMode
 import pytest
 
 from quantum_edge_core.ai_scalper_bot.bot.core.models import MarketState
@@ -53,7 +54,8 @@ def test_position_weighted_avg():
     assert dd == pytest.approx(0.0526, abs=0.0001)
 
 
-def test_position_sell_reduction():
+@pytest.mark.asyncio
+async def test_position_sell_reduction():
     pm = PositionManager()
     pm.simulate_fill(100.0, 2.0, "BUY")
 
@@ -90,11 +92,15 @@ def test_strategy_entry_ofi():
     atr = 1.0
 
     # 1. Low OFI - No Action
-    action = strat.decide(create_state(100), create_features(ofi=2.0), atr, pm)
+    state1 = create_state(100)
+    state1.trading_mode = TradingMode.SCALP
+    action = strat.decide(state1, create_features(ofi=2.0), atr, pm)
     assert action is None
 
     # 2. High OFI - BUY
-    action = strat.decide(create_state(100), create_features(ofi=6.0), atr, pm)
+    state2 = create_state(100)
+    state2.trading_mode = TradingMode.DCA
+    action = strat.decide(state2, create_features(ofi=6.0), atr, pm)
     assert isinstance(action, TradeAction)
     assert action.action_type == "BUY"
 
@@ -125,11 +131,15 @@ def test_strategy_dca_atr():
 
     # 1. Small Drop (95) -> Gap needed = 2.0 * 5.0 = 10.0.
     # 100 - 95 = 5. Not enough drop.
-    action = strat.decide(create_state(95), create_features(), atr, pm)
+    state = create_state(95)
+    state.trading_mode = TradingMode.SCALP
+    action = strat.decide(state, create_features(), atr, pm)
     assert action is None
 
     # 2. Large Drop (89) -> 11 drop. > 10. DCA Trigger.
-    action = strat.decide(create_state(89), create_features(), atr, pm)
+    state_dca = create_state(89)
+    state_dca.trading_mode = TradingMode.DCA
+    action = strat.decide(state_dca, create_features(), atr, pm)
     assert isinstance(action, TradeAction)
     assert action.action_type == "BUY"
     assert "DCA Step" in action.reason

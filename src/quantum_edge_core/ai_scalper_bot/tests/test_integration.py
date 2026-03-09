@@ -19,7 +19,12 @@ from quantum_edge_core.ai_scalper_bot.bot.execution.strategy_core import TradeAc
 @pytest.mark.asyncio
 async def test_gateway_signature():
     """Test HMAC signature generation."""
-    gw = BinanceExecutionGateway(dry_run=True)
+    class MockConfig:
+        symbol = "BTCUSDT"
+        binance_api_key = "test"
+        binance_secret = "test"
+        use_testnet = True
+    gw = BinanceExecutionGateway(MockConfig())
     gw.secret_key = "secret"
     params = {"symbol": "BTCUSDT", "param": "value"}
     sig = gw._sign(params)
@@ -28,7 +33,12 @@ async def test_gateway_signature():
 
 @pytest.mark.asyncio
 async def test_gateway_execute_dry_run():
-    gw = BinanceExecutionGateway(dry_run=True)
+    class MockConfig:
+        symbol = "BTCUSDT"
+        binance_api_key = "test"
+        binance_secret = "test"
+        use_testnet = True
+    gw = BinanceExecutionGateway(MockConfig())
     action = TradeAction("BUY", 50000, 0.1, "Test")
     res = await gw.execute(action)
     assert res is True
@@ -37,7 +47,12 @@ async def test_gateway_execute_dry_run():
 @pytest.mark.asyncio
 async def test_gateway_execute_network_mock():
     """Verify network call structure in non-dry-run."""
-    gw = BinanceExecutionGateway(dry_run=False)
+    class MockConfig:
+        symbol = "BTCUSDT"
+        binance_api_key = "test"
+        binance_secret = "test"
+        use_testnet = True
+    gw = BinanceExecutionGateway(MockConfig())
     gw.api_key = "key"
     gw.secret_key = "secret"
 
@@ -85,7 +100,7 @@ async def test_reporter_heartbeat():
 
     await reporter.send_heartbeat(BotState.IDLE, 100.0, 0.5)
 
-    reporter.socket.send_string.assert_called_once()
+    reporter.socket.send_multipart.assert_called_once()
     call_args = reporter.socket.send_string.call_args[0][0]
     assert "heartbeat" in call_args
     assert "IDLE" in call_args
@@ -94,8 +109,7 @@ async def test_reporter_heartbeat():
 @pytest.mark.asyncio
 async def test_bot_engine_loop_flow():
     """Test one iteration of the main loop logic."""
-    config = {"dry_run": True}
-    engine = BotEngine(config)
+    engine = BotEngine()
 
     # Mock I/O
     engine.market_stream = MagicMock()
