@@ -61,7 +61,9 @@ async def fetch_historical_klines(
         return data
 
 
-async def backfill_klines(symbol: str, interval: str, limit: int, host: str = "127.0.0.1", port: int = 9009) -> None:
+async def backfill_klines(
+    symbol: str, interval: str, limit: int, host: str = "127.0.0.1", port: int = 9009
+) -> None:
     """Fetch and write klines to QuestDB."""
     async with aiohttp.ClientSession() as session:
         klines = await fetch_historical_klines(session, symbol, interval, limit)
@@ -73,7 +75,9 @@ async def backfill_klines(symbol: str, interval: str, limit: int, host: str = "1
     writer = QuestILPWriter(host=host, port=port)
     await writer.connect()
 
-    logger.info("Enqueuing historical klines to QuestDB", count=len(klines), symbol=symbol)
+    logger.info(
+        "Enqueuing historical klines to QuestDB", count=len(klines), symbol=symbol
+    )
 
     for k in klines:
         # Binance Kline REST API Response Format:
@@ -127,6 +131,7 @@ async def backfill_klines(symbol: str, interval: str, limit: int, host: str = "1
     await writer.stop()
     logger.info("Backfill complete.", symbol=symbol, interval=interval, limit=limit)
 
+
 def main() -> None:
     """CLI Entry point for backfiller."""
     setup_logging()
@@ -175,6 +180,7 @@ def main() -> None:
             port=args.port,
         )
     )
+
 
 if __name__ == "__main__":
     main()

@@ -2,6 +2,10 @@ import os
 import unittest
 from unittest.mock import patch
 
+import pytest
+
+pytest.importorskip("google.genai")
+
 from quantum_edge_core.supervisor.supervisor.llm.google_client import GoogleClient
 
 
