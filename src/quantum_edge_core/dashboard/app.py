@@ -228,7 +228,8 @@ with st.sidebar:
     else:
         # Fallback to inventory table or mock
         df_inv, _ = fetch_data(
-            "SELECT * FROM inventory ORDER BY timestamp DESC LIMIT 2", get_mock_inventory
+            "SELECT * FROM inventory ORDER BY timestamp DESC LIMIT 2",
+            get_mock_inventory,
         )
         if not df_inv.empty and len(df_inv) >= 2:
             curr_eq = df_inv.iloc[0]["equity"]
@@ -241,7 +242,10 @@ with st.sidebar:
                 prev_dd = df_inv.iloc[1]["drawdown"]
                 dd_delta = curr_dd - prev_dd
                 st.metric(
-                    "Drawdown", f"{curr_dd:.2f}%", f"{dd_delta:+.2f}%", delta_color="inverse"
+                    "Drawdown",
+                    f"{curr_dd:.2f}%",
+                    f"{dd_delta:+.2f}%",
+                    delta_color="inverse",
                 )
         else:
             st.metric("Equity", "—", "—")
@@ -358,7 +362,9 @@ with tab1:
             for index, row in df.iterrows()
         ]
         fig.add_trace(
-            go.Bar(x=df["timestamp"], y=df["volume"], marker_color=colors, name="Volume"),
+            go.Bar(
+                x=df["timestamp"], y=df["volume"], marker_color=colors, name="Volume"
+            ),
             row=2,
             col=1,
         )
@@ -371,7 +377,9 @@ with tab1:
 # ─── Tab 2: LLM Supervisor Brain ─────────────────────────────────────
 with tab2:
     st.markdown("### AI Supervisor Reasoning History")
-    df_llm, is_llm_mock = fetch_data("SELECT * FROM llm_advice LIMIT -100", get_mock_llm_advice)
+    df_llm, is_llm_mock = fetch_data(
+        "SELECT * FROM llm_advice LIMIT -100", get_mock_llm_advice
+    )
 
     if df_llm.empty or "trading_mode" not in df_llm.columns:
         show_awaiting_data("Очікування перших рішень LLM Supervisor...")
@@ -380,8 +388,17 @@ with tab2:
         fig_llm = go.Figure()
 
         # Mode mapping for step chart visualization
-        mode_map = {"SCALP": 4, "DCA": 3, "NEUTRAL": 2, "PASS": 1, "HALT": 0,
-                     "scalp": 4, "dca": 3, "neutral": 2, "pass": 1}
+        mode_map = {
+            "SCALP": 4,
+            "DCA": 3,
+            "NEUTRAL": 2,
+            "PASS": 1,
+            "HALT": 0,
+            "scalp": 4,
+            "dca": 3,
+            "neutral": 2,
+            "pass": 1,
+        }
         y_vals = [mode_map.get(str(m).strip(), 2) for m in df_llm["trading_mode"]]
 
         fig_llm.add_trace(
@@ -554,9 +571,7 @@ with tab4:
         ts_col = "timestamp"
 
         fig_eq.add_trace(
-            go.Scatter(
-                x=df_eq[ts_col], y=df_eq[eq_col], name="Equity", fill="tozeroy"
-            ),
+            go.Scatter(x=df_eq[ts_col], y=df_eq[eq_col], name="Equity", fill="tozeroy"),
             secondary_y=False,
         )
 
@@ -608,7 +623,9 @@ with tab4:
 # ─── Tab 5: Orderbook Heatmap ────────────────────────────────────────
 with tab5:
     st.markdown("### Orderbook Heatmap & Whale Walls")
-    df_ob, is_ob_mock = fetch_data("SELECT * FROM orderbook_snapshots LIMIT -1000", get_mock_orderbook)
+    df_ob, is_ob_mock = fetch_data(
+        "SELECT * FROM orderbook_snapshots LIMIT -1000", get_mock_orderbook
+    )
 
     if df_ob.empty or "price" not in df_ob.columns or "volume" not in df_ob.columns:
         show_awaiting_data("Очікування даних OrderBook...")
