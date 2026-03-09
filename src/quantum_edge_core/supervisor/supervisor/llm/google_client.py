@@ -86,7 +86,15 @@ class GoogleClient:
     ) -> None:
         self.api_key_env = api_key_env
         self.logger = logger or logging.getLogger(__name__)
-        self.api_key: str = _resolve_api_key(api_key_env)
+        try:
+            self.api_key: str = _resolve_api_key(api_key_env)
+        except ValueError as exc:
+            if genai is None:
+                self.api_key = ""
+                self.logger.warning("No API key found, but 'google.genai' is missing anyway. Proceeding.")
+            else:
+                raise exc
+
         if genai is None:
             self.client = None
             self.logger.warning(
