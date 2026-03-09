@@ -19,11 +19,13 @@ from quantum_edge_core.ai_scalper_bot.bot.execution.strategy_core import TradeAc
 @pytest.mark.asyncio
 async def test_gateway_signature():
     """Test HMAC signature generation."""
+
     class MockConfig:
         symbol = "BTCUSDT"
         binance_api_key = "test"
         binance_secret = "test"
         use_testnet = True
+
     gw = BinanceExecutionGateway(MockConfig())
     gw.secret_key = "secret"
     params = {"symbol": "BTCUSDT", "param": "value"}
@@ -38,6 +40,7 @@ async def test_gateway_execute_dry_run():
         binance_api_key = "test"
         binance_secret = "test"
         use_testnet = True
+
     gw = BinanceExecutionGateway(MockConfig())
     action = TradeAction("BUY", 50000, 0.1, "Test")
     res = await gw.execute(action)
@@ -47,11 +50,13 @@ async def test_gateway_execute_dry_run():
 @pytest.mark.asyncio
 async def test_gateway_execute_network_mock():
     """Verify network call structure in non-dry-run."""
+
     class MockConfig:
         symbol = "BTCUSDT"
         binance_api_key = "test"
         binance_secret = "test"
         use_testnet = True
+
     gw = BinanceExecutionGateway(MockConfig())
     gw.api_key = "key"
     gw.secret_key = "secret"

@@ -114,7 +114,9 @@ class BotEngine:
                                         mode_str = "PASS"
 
                                     if mode_str in TradingMode.__members__:
-                                        market_state.trading_mode = TradingMode[mode_str]
+                                        market_state.trading_mode = TradingMode[
+                                            mode_str
+                                        ]
                                     else:
                                         market_state.trading_mode = TradingMode.PASS
 
@@ -379,7 +381,9 @@ class BotEngine:
                     active_signal_name = "HOLD"
                     if action:
                         if action.qty <= 0:
-                            logger.debug("Position already flat or zero-volume order, skipping execution.")
+                            logger.debug(
+                                "Position already flat or zero-volume order, skipping execution."
+                            )
                         else:
                             active_signal_name = action.action_type
                             logger.warning(

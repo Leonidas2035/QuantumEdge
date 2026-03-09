@@ -177,7 +177,10 @@ class AdaptiveGridStrategy:
                 if position.total_qty <= 0:
                     return None
                 return TradeAction(
-                    "SELL", market.best_ask, position.total_qty, "Supervisor dictated PASS mode (Emergency Liquidation)"
+                    "SELL",
+                    market.best_ask,
+                    position.total_qty,
+                    "Supervisor dictated PASS mode (Emergency Liquidation)",
                 )
 
             case TradingMode.NEUTRAL:
