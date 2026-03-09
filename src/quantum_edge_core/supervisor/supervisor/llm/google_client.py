@@ -91,7 +91,9 @@ class GoogleClient:
         except ValueError as exc:
             if genai is None:
                 self.api_key = ""
-                self.logger.warning("No API key found, but 'google.genai' is missing anyway. Proceeding.")
+                self.logger.warning(
+                    "No API key found, but 'google.genai' is missing anyway. Proceeding."
+                )
             else:
                 raise exc
 
