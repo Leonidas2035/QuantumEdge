@@ -11,12 +11,35 @@ from __future__ import annotations
 import json
 import logging
 import os
-from typing import List, Mapping
+from typing import Any, Dict, List, Mapping, Optional
 from urllib import error, request
 
 
 def _is_gemini_url(url: str) -> bool:
     return "generativelanguage.googleapis.com" in url
+
+
+def _schema_to_dict(response_schema: Any) -> Dict[str, Any] | None:
+    """Convert a Pydantic model class or dict to a JSON Schema dict.
+
+    Accepts:
+      - A Pydantic BaseModel **class** (not instance) → calls .model_json_schema()
+      - A plain dict → returned as-is
+      - None → returns None
+    """
+    if response_schema is None:
+        return None
+    # Pydantic v2 model class
+    if hasattr(response_schema, "model_json_schema"):
+        return response_schema.model_json_schema()
+    # Pydantic v1 model class
+    if hasattr(response_schema, "schema"):
+        return response_schema.schema()
+    if isinstance(response_schema, dict):
+        return response_schema
+    raise TypeError(
+        f"response_schema must be a Pydantic model class or dict, got {type(response_schema)}"
+    )
 
 
 class ChatCompletionsClient:
@@ -37,17 +60,22 @@ class ChatCompletionsClient:
         messages: List[Mapping[str, str]],
         temperature: float,
         timeout_seconds: float,
+        response_schema: Any | None = None,
     ) -> str:
         api_key = os.environ.get(self.api_key_env)
         if not api_key:
             raise RuntimeError(f"API key env var {self.api_key_env} not set")
 
+        schema_dict = _schema_to_dict(response_schema)
+
         if _is_gemini_url(self.api_url):
             return self._complete_gemini(
-                model, messages, temperature, timeout_seconds, api_key
+                model, messages, temperature, timeout_seconds, api_key,
+                schema_dict=schema_dict,
             )
         return self._complete_openai(
-            model, messages, temperature, timeout_seconds, api_key
+            model, messages, temperature, timeout_seconds, api_key,
+            schema_dict=schema_dict,
         )
 
     # ── Google Gemini ────────────────────────────────────────────────
@@ -59,6 +87,8 @@ class ChatCompletionsClient:
         temperature: float,
         timeout_seconds: float,
         api_key: str,
+        *,
+        schema_dict: Dict[str, Any] | None = None,
     ) -> str:
         # Build Gemini REST URL.
         # If the config URL already contains the model and method, use as-is.
@@ -73,8 +103,8 @@ class ChatCompletionsClient:
 
         # Convert OpenAI messages to Gemini "contents" format.
         # Gemini uses: system_instruction + contents[{role, parts}]
-        system_parts = []
-        contents = []
+        system_parts: list[dict[str, str]] = []
+        contents: list[dict[str, Any]] = []
         for msg in messages:
             role = msg.get("role", "user")
             text = msg.get("content", "")
@@ -84,11 +114,18 @@ class ChatCompletionsClient:
                 gemini_role = "model" if role == "assistant" else "user"
                 contents.append({"role": gemini_role, "parts": [{"text": text}]})
 
+        gen_config: Dict[str, Any] = {
+            "temperature": temperature,
+        }
+
+        # ── Structured Output (JSON Schema) ──────────────────
+        if schema_dict is not None:
+            gen_config["responseMimeType"] = "application/json"
+            gen_config["responseSchema"] = schema_dict
+
         payload_dict: dict = {
             "contents": contents,
-            "generationConfig": {
-                "temperature": temperature,
-            },
+            "generationConfig": gen_config,
         }
         if system_parts:
             payload_dict["systemInstruction"] = {
@@ -135,14 +172,27 @@ class ChatCompletionsClient:
         temperature: float,
         timeout_seconds: float,
         api_key: str,
+        *,
+        schema_dict: Dict[str, Any] | None = None,
     ) -> str:
-        payload = json.dumps(
-            {
-                "model": model,
-                "messages": messages,
-                "temperature": temperature,
+        payload_dict: Dict[str, Any] = {
+            "model": model,
+            "messages": messages,
+            "temperature": temperature,
+        }
+
+        # ── Structured Output (JSON Schema) ──────────────────
+        if schema_dict is not None:
+            payload_dict["response_format"] = {
+                "type": "json_schema",
+                "json_schema": {
+                    "name": "trading_decision",
+                    "schema": schema_dict,
+                    "strict": True,
+                },
             }
-        ).encode("utf-8")
+
+        payload = json.dumps(payload_dict).encode("utf-8")
 
         req = request.Request(
             self.api_url,
