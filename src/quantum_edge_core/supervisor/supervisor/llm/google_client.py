@@ -93,7 +93,9 @@ class GoogleClient:
             self.logger.info("GoogleClient initialised (genai SDK v2).")
         else:
             self.client = None
-            self.logger.warning("google.genai SDK not installed. GoogleClient will operate in degraded/mock mode.")
+            self.logger.warning(
+                "google.genai SDK not installed. GoogleClient will operate in degraded/mock mode."
+            )
 
     # ---- async wrapper ----------------------------------------------------
 
