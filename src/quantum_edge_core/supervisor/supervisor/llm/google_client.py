@@ -89,7 +89,9 @@ class GoogleClient:
         self.logger = logger or logging.getLogger(__name__)
         self.api_key: str = _resolve_api_key(api_key_env)
         if genai is None:
-            self.logger.warning("google.genai SDK not installed. GoogleClient will operate in degraded/mock mode.")
+            self.logger.warning(
+                "google.genai SDK not installed. GoogleClient will operate in degraded/mock mode."
+            )
             self.client = None
         else:
             self.client: Optional[genai.Client] = genai.Client(api_key=self.api_key)
