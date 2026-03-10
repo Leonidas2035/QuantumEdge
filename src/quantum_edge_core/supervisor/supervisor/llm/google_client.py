@@ -90,10 +90,12 @@ class GoogleClient:
         self.api_key: str = _resolve_api_key(api_key_env)
 
         if genai is None:
-            self.logger.warning("google.genai SDK is missing. GoogleClient will be disabled.")
-            self.client = None
+            self.logger.warning(
+                "google.genai SDK is missing. GoogleClient will be disabled."
+            )
+            self.client: Any = None
         else:
-            self.client = genai.Client(api_key=self.api_key)
+            self.client: Any = genai.Client(api_key=self.api_key)
             self.logger.info("GoogleClient initialised (genai SDK v2).")
 
     # ---- async wrapper ----------------------------------------------------
