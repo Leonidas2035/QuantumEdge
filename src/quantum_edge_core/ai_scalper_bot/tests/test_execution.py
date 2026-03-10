@@ -1,6 +1,6 @@
 import pytest
 
-from quantum_edge_core.ai_scalper_bot.bot.core.models import MarketState
+from quantum_edge_core.ai_scalper_bot.bot.core.models import MarketState, TradingMode
 from quantum_edge_core.ai_scalper_bot.bot.features.facade import FeatureVector
 from quantum_edge_core.ai_scalper_bot.bot.execution.volatility import OnlineVolatility
 from quantum_edge_core.ai_scalper_bot.bot.execution.position import PositionManager
@@ -72,6 +72,7 @@ def create_state(price):
         best_ask=price,
         best_bid_qty=1,
         best_ask_qty=1,
+        trading_mode=TradingMode.DCA,
     )
 
 
@@ -125,7 +126,8 @@ def test_strategy_dca_atr():
 
     # 1. Small Drop (95) -> Gap needed = 2.0 * 5.0 = 10.0.
     # 100 - 95 = 5. Not enough drop.
-    action = strat.decide(create_state(95), create_features(), atr, pm)
+    state = create_state(95)
+    action = strat.decide(state, create_features(), atr, pm)
     assert action is None
 
     # 2. Large Drop (89) -> 11 drop. > 10. DCA Trigger.

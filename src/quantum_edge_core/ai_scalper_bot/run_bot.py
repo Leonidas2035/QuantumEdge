@@ -107,7 +107,9 @@ class BotEngine:
                                 )
 
                                 try:
-                                    mode_str = str(cmd["trading_mode"]).upper()
+                                    mode_str = str(
+                                        cmd.get("trading_mode", "PASS")
+                                    ).upper()
                                     if mode_str in TradingMode.__members__:
                                         market_state.trading_mode = TradingMode[
                                             mode_str
