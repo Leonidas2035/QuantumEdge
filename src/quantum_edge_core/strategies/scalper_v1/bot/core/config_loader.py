@@ -6,7 +6,9 @@ from dataclasses import dataclass
 
 import yaml
 
-from bot.core.secret_store import (
+import logging
+
+from quantum_edge_core.strategies.scalper_v1.bot.core.secret_store import (
     SecretsFileNotFound,
     SecretsIntegrityError,
     SecretsNotAvailableError,
@@ -14,6 +16,8 @@ from bot.core.secret_store import (
     is_supervisor_mode,
     load_secrets,
 )
+
+logger = logging.getLogger(__name__)
 
 try:
     from tools.qe_config import get_qe_config, get_qe_paths
@@ -57,7 +61,7 @@ class Config:
                 Path(env_runtime_dir) / "bot_status.json"
             )
 
-        print(f"[INFO] Config loaded from: {self.config_path}")
+        logger.info(f"Config loaded from: {self.config_path}")
 
         self.secrets: Dict[str, str] = {}
         self._secrets_loaded = False
@@ -65,8 +69,8 @@ class Config:
         if self._secrets_required:
             self._maybe_load_secrets(required=True)
         else:
-            print(
-                "[INFO] Secrets not required in this mode (paper/mock with llm_disabled)."
+            logger.info(
+                "Secrets not required in this mode (paper/mock with llm_disabled)."
             )
 
     def _prompt_password(self) -> str:
@@ -94,7 +98,7 @@ class Config:
         return any(os.getenv(k) for k in key_candidates)
 
     def _fail(self, message: str) -> None:
-        print(f"[ERROR] {message}", file=sys.stderr)
+        logger.error(message)
         raise SystemExit(1)
 
     def _maybe_load_secrets(self, required: bool = False) -> None:
