@@ -61,8 +61,9 @@ class OrderBookManager:
                 continue
             price = float(level[0])
             qty = float(level[1])
-            if qty <= 0.0:
-                self._bids.pop(price, None)
+            if qty == 0.0:
+                if price in self._bids:
+                    del self._bids[price]
             else:
                 self._bids[price] = qty
 
@@ -72,8 +73,9 @@ class OrderBookManager:
                 continue
             price = float(level[0])
             qty = float(level[1])
-            if qty <= 0.0:
-                self._asks.pop(price, None)
+            if qty == 0.0:
+                if price in self._asks:
+                    del self._asks[price]
             else:
                 self._asks[price] = qty
 

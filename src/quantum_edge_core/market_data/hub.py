@@ -211,6 +211,12 @@ class MarketDataHubService(BaseService):
         self.logger.info("Initializing MarketDataHub")
         if self.writer:
             await self.writer.connect()
+
+            # Historical warm start backfill
+            from quantum_edge_core.market_data.warm_start import run_warm_start
+
+            await run_warm_start(self.alpha_engine.symbol, self.writer)
+
         if self.orderbook:
             await self.orderbook.start()
         await self._status_reporter.start()
