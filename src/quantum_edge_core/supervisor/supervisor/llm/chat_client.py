@@ -70,11 +70,19 @@ class ChatCompletionsClient:
 
         if _is_gemini_url(self.api_url):
             return self._complete_gemini(
-                model, messages, temperature, timeout_seconds, api_key,
+                model,
+                messages,
+                temperature,
+                timeout_seconds,
+                api_key,
                 schema_dict=schema_dict,
             )
         return self._complete_openai(
-            model, messages, temperature, timeout_seconds, api_key,
+            model,
+            messages,
+            temperature,
+            timeout_seconds,
+            api_key,
             schema_dict=schema_dict,
         )
 
