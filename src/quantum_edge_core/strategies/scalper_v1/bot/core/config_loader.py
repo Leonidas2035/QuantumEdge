@@ -4,9 +4,9 @@ from pathlib import Path
 from typing import Any, Dict, Optional
 from dataclasses import dataclass
 
-import yaml
-
 import logging
+
+import yaml
 
 from quantum_edge_core.strategies.scalper_v1.bot.core.secret_store import (
     SecretsFileNotFound,
@@ -20,7 +20,7 @@ from quantum_edge_core.strategies.scalper_v1.bot.core.secret_store import (
 logger = logging.getLogger(__name__)
 
 try:
-    from tools.qe_config import get_qe_config, get_qe_paths
+    from quantum_edge_infra.tools.qe_config import get_qe_config, get_qe_paths
 except Exception:  # pragma: no cover - fallback for legacy runs
     get_qe_config = None
     get_qe_paths = None
