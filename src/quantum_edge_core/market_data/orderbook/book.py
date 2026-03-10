@@ -13,15 +13,16 @@ class OrderBookSide:
         self._descending = descending
 
     def update(self, price: float, qty: float) -> None:
-        if qty <= 0:
-            self._levels.pop(price, None)
+        if qty == 0.0:
+            if price in self._levels:
+                del self._levels[price]
             return
         self._levels[price] = qty
 
     def snapshot(self, levels: Iterable[Tuple[float, float]]) -> None:
         self._levels.clear()
         for price, qty in levels:
-            if qty <= 0:
+            if qty == 0.0:
                 continue
             self._levels[price] = qty
 

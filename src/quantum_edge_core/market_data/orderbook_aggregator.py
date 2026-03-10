@@ -102,14 +102,16 @@ class OrderBookAggregator:
         cumulative_qty = 0.0
         max_depth_boundary = current_price * (self.max_depth_pct / 100.0)
 
-        for level in levels:
+        for idx, level in enumerate(levels):
+            if idx >= len(levels):
+                break
+
             if len(level) < 2:
                 continue
 
             price, qty = float(level[0]), float(level[1])
 
             # Distance from current price
-            # wall_dist_pct = ((wall_price - current_price) / current_price) * 100
             dist_pct = ((price - current_price) / current_price) * 100.0
 
             # Check depth boundary (±max_depth_pct)
