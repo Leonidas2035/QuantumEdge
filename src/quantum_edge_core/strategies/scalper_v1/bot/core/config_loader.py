@@ -1,3 +1,4 @@
+import logging
 import os
 import sys
 from pathlib import Path
@@ -20,6 +21,8 @@ try:
 except Exception:  # pragma: no cover - fallback for legacy runs
     get_qe_config = None
     get_qe_paths = None
+
+logger = logging.getLogger(__name__)
 
 
 class Config:
@@ -99,6 +102,13 @@ class Config:
 
     def _maybe_load_secrets(self, required: bool = False) -> None:
         if self._secrets_loaded:
+            return
+
+        if os.getenv("CI") == "true" or os.getenv("MARKET_DATA_MODE") == "mock":
+            logger.warning("CI/Mock mode detected. Using dummy API keys.")
+            self.secrets["BINANCE_API_KEY"] = "dummy_ci_key"
+            self.secrets["BINANCE_API_SECRET"] = "dummy_ci_secret"
+            self._secrets_loaded = True
             return
 
         secrets_file = self.root / "config" / "secrets.enc"
