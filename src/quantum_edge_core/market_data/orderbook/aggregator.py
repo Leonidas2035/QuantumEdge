@@ -122,6 +122,9 @@ class OrderBookAggregator:
         book.apply_delta(bids, asks)
         self._stats.orderbook_updates_total += 1
 
+    def process_book(self, symbol: str, bids: list, asks: list) -> dict:
+        return {"bids": bids, "asks": asks}
+
     def _next_seq(self, symbol: str, event_type: str) -> int:
         return self._bus.assign_sequence(symbol, event_type)
 
