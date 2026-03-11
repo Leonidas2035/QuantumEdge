@@ -1,3 +1,5 @@
+from decimal import Decimal
+
 """
 Position Manager.
 Tracks the virtual state of the bot's position (Inventory).
@@ -9,10 +11,12 @@ from dataclasses import dataclass
 
 @dataclass
 class PositionState:
-    avg_price: float = 0.0
-    total_qty: float = 0.0  # Base asset (e.g. BTC)
-    quote_balance: float = 10000.0  # Simulated quote asset (e.g. USDT) for SPOT
-    unrealized_pnl: float = 0.0
+    avg_price: Decimal = Decimal("0.0")
+    total_qty: Decimal = Decimal("0.0")  # Base asset (e.g. BTC)
+    quote_balance: Decimal = Decimal(
+        "10000.0"
+    )  # Simulated quote asset (e.g. USDT) for SPOT
+    unrealized_pnl: Decimal = Decimal("0.0")
 
 
 class PositionManager:
@@ -33,7 +37,7 @@ class PositionManager:
         self.telemetry = QuestDbTelemetry()
 
     def simulate_fill(
-        self, price: float, qty: float, side: str, symbol: str = "BTCUSDT"
+        self, price: Decimal, qty: Decimal, side: str, symbol: str = "BTCUSDT"
     ):
         """
         Updates the position state assuming a fill occurred.
@@ -63,9 +67,9 @@ class PositionManager:
                     symbol, side, price, qty, realized_pnl
                 )
 
-            new_qty = max(0.0, self.state.total_qty - qty)
-            if new_qty == 0:
-                self.state.avg_price = 0.0
+            new_qty = max(Decimal("0.0"), self.state.total_qty - qty)
+            if new_qty == Decimal("0.0"):
+                self.state.avg_price = Decimal("0.0")
 
             self.state.total_qty = new_qty
 
@@ -82,13 +86,13 @@ class PositionManager:
             # For now, let's just track it as a special state or ignore effect on 'Long' Avg Price.
             pass
 
-    def get_drawdown_pct(self, current_price: float) -> float:
+    def get_drawdown_pct(self, current_price: Decimal) -> Decimal:
         """
         Calculates negative drift percentage from average entry.
         Returns positive float for drawdown (e.g. 0.02 for -2%).
         """
         if self.state.total_qty == 0 or self.state.avg_price == 0:
-            return 0.0
+            return Decimal("0.0")
 
         # Drawdown = (Entry - Current) / Entry
         # If Price is higher (Profit), result is negative.

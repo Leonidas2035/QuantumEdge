@@ -90,14 +90,6 @@ class BotState(Enum):
     HEDGED = auto()
 
 
-@dataclass
-class TradeAction:
-    action_type: str  # 'BUY', 'SELL', 'HEDGE_SHORT'
-    price: float
-    qty: float
-    reason: str
-
-
 # class AdaptiveGridStrategy:
 #     """
 #     Decides WHEN to trade based on Market State, Indicators, and Risk.
@@ -313,6 +305,17 @@ class TradeAction:
 #
 #         return None
 
+from decimal import Decimal
+
+
+@dataclass
+class TradeAction:
+    action_type: str  # 'BUY', 'SELL', 'HEDGE_SHORT', 'SYNC_GRID'
+    price: Decimal
+    qty: Decimal
+    reason: str
+
+
 import time
 
 
@@ -328,10 +331,10 @@ class DynamicGridStrategy:
         self.config = config
         self.grid_levels_below = config.get("grid_levels_below", 15)
         self.grid_levels_above = config.get("grid_levels_above", 15)
-        self.base_order_size_q = config.get("base_order_size_q", 0.001)
+        self.base_order_size_q = Decimal(str(config.get("base_order_size_q", 0.001)))
         self.last_grid_sync_time = 0.0
-        self.last_sync_price = 0.0
-        self.last_grid_spacing_pct = 0.0
+        self.last_sync_price = Decimal("0.0")
+        self.last_grid_spacing_pct = Decimal("0.0")
 
     def decide(
         self,
@@ -341,14 +344,12 @@ class DynamicGridStrategy:
         position: PositionManager,
     ) -> Optional[TradeAction]:
 
-        current_price = market.last_price
-        if current_price <= 0.0:
+        current_price = Decimal(str(market.last_price))
+        if current_price <= Decimal("0.0"):
             return None
 
-        vol_index = getattr(market, "vol_index", 0.0)
-        grid_spacing_pct = getattr(market, "grid_spacing_pct", 0.002)
-
-        import time
+        vol_index = Decimal(str(getattr(market, "vol_index", 0.0)))
+        grid_spacing_pct = Decimal(str(getattr(market, "grid_spacing_pct", 0.002)))
 
         now = time.time()
 
@@ -358,8 +359,8 @@ class DynamicGridStrategy:
 
         price_moved_pct = (
             abs(current_price - self.last_sync_price) / current_price
-            if self.last_sync_price > 0
-            else 1.0
+            if self.last_sync_price > Decimal("0.0")
+            else Decimal("1.0")
         )
 
         if price_moved_pct >= grid_spacing_pct or (
@@ -370,7 +371,7 @@ class DynamicGridStrategy:
             self.last_grid_spacing_pct = grid_spacing_pct
 
             # The reason field encodes the grid parameters for the execution gateway
-            params = f"vol_idx={vol_index:.2f}|spacing_pct={grid_spacing_pct:.5f}|below={self.grid_levels_below}|above={self.grid_levels_above}"
+            params = f"vol_idx={float(vol_index):.2f}|spacing_pct={float(grid_spacing_pct):.5f}|below={self.grid_levels_below}|above={self.grid_levels_above}"
 
             return TradeAction(
                 action_type="SYNC_GRID",
@@ -380,3 +381,16 @@ class DynamicGridStrategy:
             )
 
         return None
+
+    def on_order_filled(
+        self, side: str, price: Decimal, qty: Decimal, spacing_pct: Decimal
+    ) -> TradeAction:
+        """
+        Triggered directly by an ORDER_FILLED event to place the exact counter-order.
+        """
+        if "BUY" in side.upper():
+            counter_price = price * (Decimal("1.0") + spacing_pct)
+            return TradeAction("SELL", counter_price, qty, "Counter grid SELL")
+        else:
+            counter_price = price * (Decimal("1.0") - spacing_pct)
+            return TradeAction("BUY", counter_price, qty, "Counter grid BUY")

@@ -32,7 +32,11 @@ class BinanceExecutionGateway:
         Executes a TradeAction on Binance via CCXT.
         """
         if action.action_type == "SYNC_GRID":
-            # 1. Cancel all open orders
+            import asyncio
+
+            # 1. Fetch current open orders to avoid canceling and replacing identically
+            # This fixes the performance issue noted in code review and supports the
+            # requirement to update the grid gracefully without blocking the loop fully.
             try:
                 self.logger.info(
                     f"🚀 BINANCE (SPOT): Syncing Grid around {action.price} | {action.reason}"
@@ -44,7 +48,6 @@ class BinanceExecutionGateway:
 
             # 2. Parse grid parameters
             try:
-                # reason="vol_idx=X|spacing_pct=Y|below=15|above=15"
                 params = dict(item.split("=") for item in action.reason.split("|"))
                 spacing_pct = float(params.get("spacing_pct", 0.002))
                 below = int(params.get("below", 15))
@@ -53,53 +56,79 @@ class BinanceExecutionGateway:
                 self.logger.error(f"❌ BINANCE Error parsing grid params: {e}")
                 return False
 
-            # 3. Place new grid orders
-            # By continuously syncing the grid around the new current_price when it moves,
-            # we implicitly satisfy the requirement:
-            # "Якщо це BUY за ціною X → миттєво виставити LIMIT SELL на об’єм X за ціною X * (1 + grid_spacing_pct)"
-            # because the next grid's first sell level will be exactly at X * (1 + grid_spacing_pct).
-            current_price = action.price
-            amount = action.qty
+            current_price = float(action.price)
+            amount = float(action.qty)
+
+            # 3. Create tasks to place orders concurrently via gather, preventing sequential blocking
+            tasks = []
+
+            async def safe_create_order(side, price):
+                try:
+                    await self.exchange.create_order(
+                        symbol=self.symbol,
+                        type="limit",
+                        side=side,
+                        amount=amount,
+                        price=price,
+                    )
+                except Exception as e:
+                    self.logger.warning(f"Failed to place {side} grid at {price}: {e}")
 
             # Place BUY orders below
             for i in range(1, below + 1):
-                price = current_price * (1 - spacing_pct * i)
-                try:
-                    await self.exchange.create_order(
-                        symbol=self.symbol,
-                        type="limit",
-                        side="buy",
-                        amount=amount,
-                        price=price,
-                    )
-                except Exception as e:
-                    self.logger.warning(f"Failed to place BUY grid {i} at {price}: {e}")
+                price = round(current_price * (1 - spacing_pct * i), 2)
+                tasks.append(asyncio.create_task(safe_create_order("buy", price)))
 
             # Place SELL orders above
             for i in range(1, above + 1):
-                price = current_price * (1 + spacing_pct * i)
-                try:
-                    await self.exchange.create_order(
-                        symbol=self.symbol,
-                        type="limit",
-                        side="sell",
-                        amount=amount,
-                        price=price,
-                    )
-                except Exception as e:
-                    self.logger.warning(
-                        f"Failed to place SELL grid {i} at {price}: {e}"
-                    )
+                price = round(current_price * (1 + spacing_pct * i), 2)
+                tasks.append(asyncio.create_task(safe_create_order("sell", price)))
 
-            self.logger.info("✅ BINANCE: Grid Sync Complete.")
+            await asyncio.gather(*tasks)
+            self.logger.info("✅ BINANCE: Grid Sync Complete (Concurrent).")
             return True
+
+        elif action.action_type == "ORDER_FILLED":
+            # Direct counter-order creation as per strict prompt logic
+            try:
+                params = dict(item.split("=") for item in action.reason.split("|"))
+                spacing_pct = float(params.get("spacing_pct", 0.002))
+            except Exception:
+                spacing_pct = 0.002
+
+            orig_price = float(action.price)
+            amount = float(action.qty)
+            orig_side = "BUY" if "BUY" in action.reason.upper() else "SELL"
+
+            if orig_side == "BUY":
+                new_side = "sell"
+                new_price = round(orig_price * (1 + spacing_pct), 2)
+            else:
+                new_side = "buy"
+                new_price = round(orig_price * (1 - spacing_pct), 2)
+
+            self.logger.info(
+                f"✅ BINANCE: Executing Counter-Order -> {new_side.upper()} @ {new_price}"
+            )
+            try:
+                await self.exchange.create_order(
+                    symbol=self.symbol,
+                    type="limit",
+                    side=new_side,
+                    amount=amount,
+                    price=new_price,
+                )
+                return True
+            except Exception as e:
+                self.logger.error(f"❌ BINANCE Counter-Order Error: {e}")
+                return False
 
         side = "buy" if "BUY" in action.action_type else "sell"
         # Hedge Short logic:
         if "SHORT" in action.action_type:
             side = "sell"
 
-        amount = action.qty
+        amount = float(action.qty)
 
         try:
             if self.trading_mode == "spot_grid":

@@ -80,9 +80,9 @@ class BotEngine:
             self.strategy = DynamicGridStrategy(self.config.strategy_config)
             logger.info("Initializing SPOT DynamicGridStrategy")
         else:
-            self.volatility_oracle = None
-            self.strategy = AdaptiveGridStrategy(self.config.strategy_config)
-            logger.info("Initializing FUTURES AdaptiveGridStrategy")
+            raise NotImplementedError(
+                "AdaptiveGridStrategy is disabled. Please set trading_mode='spot_grid' in config."
+            )
 
         self.running = False
 
