@@ -78,6 +78,12 @@ class ZmqPolicyPublisher:
         reasoning: str,
         buy_zone_max: float = 0.0,
         sell_zone_min: float = 0.0,
+        market_regime: str = "ranging",
+        grid_bias: str = "neutral",
+        recommended_grid_top: float = 0.0,
+        recommended_grid_bottom: float = 0.0,
+        capital_exposure_pct: float = 1.0,
+        grid_spacing_multiplier: float = 1.0,
     ) -> None:
         """Backward-compatible wrapper: builds TradingPolicy and publishes."""
         policy = TradingPolicy(
@@ -87,6 +93,12 @@ class ZmqPolicyPublisher:
             buy_zone_max=buy_zone_max,
             sell_zone_min=sell_zone_min,
             reasoning=reasoning,
+            market_regime=market_regime,
+            grid_bias=grid_bias,
+            recommended_grid_top=recommended_grid_top,
+            recommended_grid_bottom=recommended_grid_bottom,
+            capital_exposure_pct=capital_exposure_pct,
+            grid_spacing_multiplier=grid_spacing_multiplier,
         )
         await self.publish_policy(policy)
 

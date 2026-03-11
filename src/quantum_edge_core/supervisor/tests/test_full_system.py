@@ -5,7 +5,7 @@ Verifies the integration of Context Builder, Risk Engine, Policy Manager, and IP
 
 import time
 import pytest
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, AsyncMock, patch
 
 from quantum_edge_core.supervisor.service import AsyncSupervisor
 from quantum_edge_core.supervisor.domain.models import RiskLevel
@@ -24,13 +24,15 @@ def mock_zmq():
 def mock_gemini():
     with patch("quantum_edge_core.supervisor.service.GeminiClient") as mock_client:
         mock_instance = MagicMock()
-        mock_instance.safe_analyze_risk.return_value = {
-            "action": "CONTINUE",
-            "sentiment": "bullish",
-            "confidence": 0.9,
-            "reasoning": "Market looks good",
-            "regime": "TREND",
-        }
+        mock_instance.safe_analyze_risk = AsyncMock(
+            return_value={
+                "action": "CONTINUE",
+                "sentiment": "bullish",
+                "confidence": 0.9,
+                "reasoning": "Market looks good",
+                "regime": "TREND",
+            }
+        )
         mock_client.return_value = mock_instance
         yield mock_instance
 

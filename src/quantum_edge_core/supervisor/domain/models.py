@@ -5,8 +5,10 @@ Defines the strict contracts for Risk and Policy.
 
 from __future__ import annotations
 from dataclasses import dataclass, field
+from decimal import Decimal
 from enum import Enum, auto
-from typing import Dict, Any
+from typing import Dict, Any, Literal, Optional
+from pydantic import BaseModel
 
 # --- Enums ---
 
@@ -54,6 +56,15 @@ class PortfolioState:
 # --- Decision Outputs ---
 
 
+class LlmGridPolicy(BaseModel):
+    market_regime: Literal["ranging", "bull_run", "bear_panic", "high_vol_shock"]
+    grid_bias: Literal["neutral", "bullish", "bearish", "defensive"]
+    recommended_grid_top: Decimal
+    recommended_grid_bottom: Decimal
+    capital_exposure_pct: float
+    grid_spacing_multiplier: float
+
+
 @dataclass
 class RiskVerdict:
     level: RiskLevel
@@ -84,6 +95,8 @@ class PolicyContract:
     # Overrides
     close_only: bool = False
 
+    grid_policy: Optional[LlmGridPolicy] = None
+
     def to_dict(self) -> Dict[str, Any]:
         return {
             "mode": self.mode.value,
@@ -99,4 +112,5 @@ class PolicyContract:
                 "confidence": self.ai_confidence,
                 "reasoning": self.ai_reasoning,
             },
+            "grid_policy": self.grid_policy.model_dump() if self.grid_policy else None,
         }

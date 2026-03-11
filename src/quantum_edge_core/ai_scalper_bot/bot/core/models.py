@@ -81,3 +81,9 @@ class MarketState:
     sell_zone_min: float = 0.0
     vol_index: float = 0.0
     grid_spacing_pct: float = 0.002
+    market_regime: str = "ranging"
+    grid_bias: str = "neutral"
+    grid_top: float = 0.0
+    grid_bottom: float = 0.0
+    capital_exposure_pct: float = 1.0
+    grid_spacing_multiplier: float = 1.0
