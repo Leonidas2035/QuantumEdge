@@ -334,6 +334,8 @@ class DynamicGridStrategy:
         self.last_grid_sync_time = 0.0
         self.last_sync_price = Decimal("0.0")
         self.last_grid_spacing_pct = Decimal("0.0")
+        self.last_regime: Optional[str] = None
+        self.last_bias: Optional[str] = None
 
     def decide(
         self,
@@ -381,25 +383,30 @@ class DynamicGridStrategy:
 
         now = time.time()
 
-        # Trigger sync if:
-        # 1. Price moved by more than 1 grid step from last sync price
-        # 2. Or it's been more than 60 seconds (periodic cleanup)
+        regime = getattr(market, "market_regime", "ranging")
+        bias = getattr(market, "grid_bias", "neutral")
 
-        price_moved_pct = (
-            abs(current_price - self.last_sync_price) / current_price
-            if self.last_sync_price > Decimal("0.0")
-            else Decimal("1.0")
-        )
+        # Check conditions for SYNC_GRID
+        is_initial_start = self.last_sync_price == Decimal("0.0")
+        macro_changed = (
+            self.last_regime is not None and regime != self.last_regime
+        ) or (self.last_bias is not None and bias != self.last_bias)
 
-        if price_moved_pct >= grid_spacing_pct or (
-            now - self.last_grid_sync_time > 60.0
-        ):
+        # Calculate price movement relative to last sync price
+        price_moved_pct = Decimal("0.0")
+        if not is_initial_start:
+            price_moved_pct = (
+                abs(current_price - self.last_sync_price) / self.last_sync_price
+            )
+
+        out_of_bounds = price_moved_pct > grid_spacing_pct
+
+        if is_initial_start or macro_changed or out_of_bounds:
             self.last_grid_sync_time = now
             self.last_sync_price = current_price
             self.last_grid_spacing_pct = grid_spacing_pct
-
-            regime = getattr(market, "market_regime", "ranging")
-            bias = getattr(market, "grid_bias", "neutral")
+            self.last_regime = regime
+            self.last_bias = bias
 
             # The reason field encodes the grid parameters for the execution gateway
             params = f"regime={regime}|bias={bias}|vol_idx={float(vol_index):.2f}|spacing_pct={float(grid_spacing_pct):.5f}|below={self.grid_levels_below}|above={self.grid_levels_above}"
