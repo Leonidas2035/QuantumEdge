@@ -12,9 +12,12 @@ from quantum_edge_core.ai_scalper_bot.bot.core.config import Config
 from quantum_edge_core.ai_scalper_bot.bot.core.orderbook import OrderBookCache
 from quantum_edge_core.ai_scalper_bot.bot.features.facade import FeatureEngine
 from quantum_edge_core.ai_scalper_bot.bot.execution.strategy_core import (
-    AdaptiveGridStrategy,
+    DynamicGridStrategy,
 )
 from quantum_edge_core.ai_scalper_bot.bot.execution.volatility import OnlineVolatility
+from quantum_edge_core.ai_scalper_bot.bot.execution.volatility_oracle import (
+    VolatilityOracle,
+)
 from quantum_edge_core.ai_scalper_bot.bot.execution.position import PositionManager
 from quantum_edge_core.ai_scalper_bot.bot.infrastructure.zmq_adapter import ZmqSubStream
 from quantum_edge_core.ai_scalper_bot.bot.infrastructure.paper_trader import (
@@ -70,7 +73,16 @@ class BotEngine:
         self.volatility = OnlineVolatility(
             alpha=self.config.strategy_config.get("atr_alpha", 0.01)
         )
-        self.strategy = AdaptiveGridStrategy(self.config.strategy_config)
+
+        trading_mode = getattr(self.config, "trading_mode", "scalper_v1")
+        if trading_mode == "spot_grid":
+            self.volatility_oracle = VolatilityOracle(self.config.strategy_config)
+            self.strategy = DynamicGridStrategy(self.config.strategy_config)
+            logger.info("Initializing SPOT DynamicGridStrategy")
+        else:
+            self.volatility_oracle = None
+            self.strategy = AdaptiveGridStrategy(self.config.strategy_config)
+            logger.info("Initializing FUTURES AdaptiveGridStrategy")
 
         self.running = False
 
@@ -338,6 +350,25 @@ class BotEngine:
                     feat_vec = self.features.update(tick_obj, market_state)
                     atr_val = self.volatility.update(market_state.last_price)
                     market_state.atr = atr_val
+
+                    if getattr(self, "volatility_oracle", None):
+                        # Use kline close to update oracle, or fallback to last_price
+                        kline = tick.get("k")
+                        if (
+                            kline and isinstance(kline, dict) and kline.get("x")
+                        ):  # x=is_closed
+                            self.volatility_oracle.add_close_price(
+                                float(kline.get("c", market_state.last_price))
+                            )
+
+                        market_state.vol_index = (
+                            self.volatility_oracle.calculate_volatility_index()
+                        )
+                        market_state.grid_spacing_pct = (
+                            self.volatility_oracle.get_dynamic_grid_spacing(
+                                market_state.vol_index
+                            )
+                        )
 
                     # 3. Decision
                     # Format log with walls info

@@ -25,6 +25,14 @@ class PaperTrader:
         logger.info("PaperTrader initialised (Shadow Mode) — no live orders")
 
     async def execute(self, action: TradeAction) -> bool:
+        if action.action_type == "SYNC_GRID":
+            logger.info(
+                f"✅ PAPER TRADE: Grid Synced around {action.price} | {action.reason}"
+            )
+            # In a full paper trader, we would maintain an internal virtual order book
+            # and simulate fills based on tick data. For now we just log the sync.
+            return True
+
         side = "BUY" if "BUY" in action.action_type else "SELL"
         fill_id = str(uuid.uuid4())[:8]
         fill = {

@@ -10,17 +10,20 @@ from dataclasses import dataclass
 @dataclass
 class PositionState:
     avg_price: float = 0.0
-    total_qty: float = 0.0
+    total_qty: float = 0.0  # Base asset (e.g. BTC)
+    quote_balance: float = 10000.0  # Simulated quote asset (e.g. USDT) for SPOT
     unrealized_pnl: float = 0.0
 
 
 class PositionManager:
     """
-    Manages the internal position state.
+    Manages the internal position state (Inventory).
+    Adapted for SPOT trading (tracks base/quote balances).
     """
 
-    def __init__(self):
+    def __init__(self, mode: str = "scalper_v1"):
         self.state = PositionState()
+        self.mode = mode
 
         # Initialize telemetry explicitly (lazy) to prevent cyclic imports
         from quantum_edge_core.ai_scalper_bot.bot.infrastructure.questdb_telemetry import (
@@ -40,7 +43,7 @@ class PositionManager:
             qty: Fill quantity (always positive).
             side: 'BUY' or 'SELL'.
         """
-        if side == "BUY":
+        if side == "BUY" or "BUY" in side:
             # Weighted Average Price logic
             total_cost = (self.state.avg_price * self.state.total_qty) + (price * qty)
             new_qty = self.state.total_qty + qty
@@ -48,11 +51,12 @@ class PositionManager:
             self.state.avg_price = total_cost / new_qty if new_qty > 0 else 0.0
             self.state.total_qty = new_qty
 
-        elif side == "SELL":
-            # FIFO / Partial Reduction (Avg Entry usually doesn't change on reduction unless LIFO specified)
-            # Standard accounting: Selling reduces quantity but keeps Avg Entry Price same.
+            # Reduce quote balance for SPOT
+            if self.mode == "spot_grid":
+                self.state.quote_balance -= price * qty
 
-            # Pnl realization (for long positions, PnL = (Exit - Entry) * Qty)
+        elif side == "SELL" or "SELL" in side:
+            # Pnl realization
             if self.state.total_qty > 0 and self.state.avg_price > 0:
                 realized_pnl = (price - self.state.avg_price) * qty
                 self.telemetry.log_realized_trade(
@@ -64,6 +68,10 @@ class PositionManager:
                 self.state.avg_price = 0.0
 
             self.state.total_qty = new_qty
+
+            # Increase quote balance for SPOT
+            if self.mode == "spot_grid":
+                self.state.quote_balance += price * qty
 
         elif side == "HEDGE_SHORT":
             # In a Hedged state, we might effectively zero out delta.
