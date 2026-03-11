@@ -1,3 +1,4 @@
+import asyncio
 import ccxt.async_support as ccxt
 import logging
 from quantum_edge_core.ai_scalper_bot.bot.execution.strategy_core import TradeAction
@@ -32,7 +33,6 @@ class BinanceExecutionGateway:
         Executes a TradeAction on Binance via CCXT.
         """
         if action.action_type == "SYNC_GRID":
-            import asyncio
 
             # 1. Fetch current open orders to avoid canceling and replacing identically
             # This fixes the performance issue noted in code review and supports the

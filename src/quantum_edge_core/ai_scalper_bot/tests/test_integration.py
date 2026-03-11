@@ -1,4 +1,5 @@
 import pytest
+
 pytestmark = pytest.mark.skip(reason="Tests designed for old Scalper/Futures gateway")
 import pytest
 from unittest.mock import MagicMock, AsyncMock

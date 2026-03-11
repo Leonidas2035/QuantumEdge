@@ -1,3 +1,5 @@
+import time
+
 """
 Adaptive Grid Strategy Core.
 Decides trade actions based on Market State, Alpha Features, and Position Risk.
@@ -314,9 +316,6 @@ class TradeAction:
     price: Decimal
     qty: Decimal
     reason: str
-
-
-import time
 
 
 class DynamicGridStrategy:
