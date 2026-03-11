@@ -24,13 +24,15 @@ def mock_zmq():
 def mock_gemini():
     with patch("quantum_edge_core.supervisor.service.GeminiClient") as mock_client:
         mock_instance = MagicMock()
-        mock_instance.safe_analyze_risk = AsyncMock(return_value={
-            "action": "CONTINUE",
-            "sentiment": "bullish",
-            "confidence": 0.9,
-            "reasoning": "Market looks good",
-            "regime": "TREND",
-        })
+        mock_instance.safe_analyze_risk = AsyncMock(
+            return_value={
+                "action": "CONTINUE",
+                "sentiment": "bullish",
+                "confidence": 0.9,
+                "reasoning": "Market looks good",
+                "regime": "TREND",
+            }
+        )
         mock_client.return_value = mock_instance
         yield mock_instance
 
