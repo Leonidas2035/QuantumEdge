@@ -46,6 +46,7 @@ class TradingMode(str, Enum):
     DCA = "dca"
     PASS = "pass"
     NEUTRAL = "neutral"
+    SPOT_GRID = "spot_grid"
 
 
 # Keep legacy LlmAction for backward compat with EventLogger

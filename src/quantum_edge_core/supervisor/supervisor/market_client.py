@@ -207,3 +207,20 @@ def mock_situation_summary(symbol: str = DEFAULT_SYMBOL) -> str:
         f"  5m: O=96820.0 H=96900.0 L=96780.0 C=96850.0 | "
         f"Vol=280.8 | Range=[96750.0-96920.0] | Trend=FLAT Chg=+0.03%"
     )
+
+def get_current_price(
+    symbol: str = DEFAULT_SYMBOL,
+    timeout: float = 10.0,
+) -> float:
+    """Fetch the latest price for the symbol from Binance public API."""
+    url = f"https://api.binance.com/api/v3/ticker/price?symbol={symbol}"
+    req = request.Request(url, headers={"Accept": "application/json"})
+
+    try:
+        with request.urlopen(req, timeout=timeout) as resp:
+            body = resp.read().decode("utf-8")
+            data = json.loads(body)
+            return float(data["price"])
+    except Exception as exc:
+        logger.warning("Failed to fetch %s current price: %s", symbol, exc)
+        return 96000.0  # Fallback rough value or you can throw
