@@ -174,7 +174,9 @@ class LlmSupervisor:
             return None
 
         try:
-            self._logger.info(f"Sending prompt to Gemini (length: {len(user_prompt)}):\n{user_prompt[:500]}...")
+            self._logger.info(
+                f"Sending prompt to Gemini (length: {len(user_prompt)}):\n{user_prompt[:500]}..."
+            )
             raw = self.call_llm(system_prompt, user_prompt)
         except Exception as exc:
             self._logger.error("LLM call failed: %s", exc)
@@ -263,7 +265,9 @@ class LlmSupervisor:
         )
 
     def parse_advice(self, payload: Any) -> LlmSupervisorAdvice:
-        raw_payload_text = repr(payload.text) if hasattr(payload, 'text') else repr(payload)
+        raw_payload_text = (
+            repr(payload.text) if hasattr(payload, "text") else repr(payload)
+        )
         self._logger.info(f"RAW LLM RESPONSE (full):\n{raw_payload_text}")
         self._logger.info(f"RAW LLM RESPONSE type: {type(payload)}")
 
@@ -309,13 +313,22 @@ class LlmSupervisor:
                 comment=reasoning,
             )
         except json.JSONDecodeError as exc:
-            self._logger.error(f"JSON DECODE ERROR: {str(exc)}\nRaw string:\n{raw_payload_text}", exc_info=True)
+            self._logger.error(
+                f"JSON DECODE ERROR: {str(exc)}\nRaw string:\n{raw_payload_text}",
+                exc_info=True,
+            )
             reasoning = f"Failed to parse LLM response (JSONDecodeError): {exc}"
         except ValidationError as exc:
-            self._logger.error(f"Pydantic VALIDATION ERROR: {str(exc)}\nRaw:\n{raw_payload_text}", exc_info=True)
+            self._logger.error(
+                f"Pydantic VALIDATION ERROR: {str(exc)}\nRaw:\n{raw_payload_text}",
+                exc_info=True,
+            )
             reasoning = f"Failed to parse LLM response (ValidationError): {exc}"
         except Exception as exc:
-            self._logger.error(f"UNEXPECTED PARSE ERROR: {str(exc)}\nRaw response:\n{repr(payload)}\nRaw json string:\n{raw_payload_text}", exc_info=True)
+            self._logger.error(
+                f"UNEXPECTED PARSE ERROR: {str(exc)}\nRaw response:\n{repr(payload)}\nRaw json string:\n{raw_payload_text}",
+                exc_info=True,
+            )
             reasoning = f"Failed to parse LLM response: {exc}"
 
         return LlmSupervisorAdvice(
