@@ -14,7 +14,7 @@ from enum import Enum
 from pathlib import Path
 import re
 from typing import Any, Dict, Iterable, List, Optional, Tuple, Literal
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, ValidationError
 from quantum_edge_core.supervisor.supervisor.audit_report import load_events_for_date
 from quantum_edge_core.supervisor.supervisor.config import (
     LlmSupervisorConfig,
@@ -174,6 +174,9 @@ class LlmSupervisor:
             return None
 
         try:
+            self._logger.info(
+                f"Sending prompt to Gemini (length: {len(user_prompt)}):\n{user_prompt[:500]}..."
+            )
             raw = self.call_llm(system_prompt, user_prompt)
         except Exception as exc:
             self._logger.error("LLM call failed: %s", exc)
@@ -262,9 +265,14 @@ class LlmSupervisor:
         )
 
     def parse_advice(self, payload: Any) -> LlmSupervisorAdvice:
+        raw_payload_text = (
+            repr(payload.text) if hasattr(payload, "text") else repr(payload)
+        )
+        self._logger.info(f"RAW LLM RESPONSE (full):\n{raw_payload_text}")
+        self._logger.info(f"RAW LLM RESPONSE type: {type(payload)}")
+
         try:
-            # If payload is mostly the text when schema fails, try json loads
-            # But normally google_client returns `response.parsed` which is already the LlmGridPolicy object
+            self._logger.debug("Attempting to parse LLM response as JSON...")
             if isinstance(payload, str):
                 cleaned = _strip_markdown_fences(payload)
                 raw_dict = json.loads(cleaned)
@@ -275,7 +283,9 @@ class LlmSupervisor:
                 # Dict or other mapping returned
                 policy = LlmGridPolicy(**payload)
 
-            trading_mode = TradingMode.DCA
+            self._logger.info("Policy parsed successfully")
+
+            trading_mode = TradingMode.SPOT_GRID
 
             risk_multiplier = 1.0
 
@@ -302,21 +312,39 @@ class LlmSupervisor:
                 action=action,
                 comment=reasoning,
             )
-        except Exception as exc:
-            return LlmSupervisorAdvice(
-                trading_mode=TradingMode.NEUTRAL,
-                risk_multiplier=1.0,
-                reasoning=f"Failed to parse LLM response: {exc}",
-                raw_response=str(payload),
-                market_regime="ranging",
-                grid_bias="neutral",
-                recommended_grid_top=0.0,
-                recommended_grid_bottom=0.0,
-                capital_exposure_pct=1.0,
-                grid_spacing_multiplier=1.0,
-                action=LlmAction.UNSPECIFIED,
-                comment=f"Failed to parse LLM response: {exc}",
+        except json.JSONDecodeError as exc:
+            self._logger.error(
+                f"JSON DECODE ERROR: {str(exc)}\nRaw string:\n{raw_payload_text}",
+                exc_info=True,
             )
+            reasoning = f"Failed to parse LLM response (JSONDecodeError): {exc}"
+        except ValidationError as exc:
+            self._logger.error(
+                f"Pydantic VALIDATION ERROR: {str(exc)}\nRaw:\n{raw_payload_text}",
+                exc_info=True,
+            )
+            reasoning = f"Failed to parse LLM response (ValidationError): {exc}"
+        except Exception as exc:
+            self._logger.error(
+                f"UNEXPECTED PARSE ERROR: {str(exc)}\nRaw response:\n{repr(payload)}\nRaw json string:\n{raw_payload_text}",
+                exc_info=True,
+            )
+            reasoning = f"Failed to parse LLM response: {exc}"
+
+        return LlmSupervisorAdvice(
+            trading_mode=TradingMode.SPOT_GRID,
+            risk_multiplier=1.0,
+            reasoning=reasoning,
+            raw_response=raw_payload_text,
+            market_regime="ranging",
+            grid_bias="neutral",
+            recommended_grid_top=0.0,
+            recommended_grid_bottom=0.0,
+            capital_exposure_pct=1.0,
+            grid_spacing_multiplier=1.0,
+            action=LlmAction.UNSPECIFIED,
+            comment=reasoning,
+        )
 
 
 def build_summary(
