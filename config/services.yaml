@@ -1,6 +1,7 @@
 services:
   bot:
-    id: "ai_scalper_bot"  # The ONLY place this ID is defined
+    id: "ai_scalper_bot"
+    trading_mode: "spot_grid"  # The ONLY place this ID is defined
     zmq:
       telemetry_port: 5557
       policy_port: 5558

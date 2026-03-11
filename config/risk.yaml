@@ -21,3 +21,5 @@ max_drawdown_pct: 0.10           # Max drawdown as fraction of peak equity (10%)
 # ── Position Sizing ──────────────────────────────────────────────
 max_notional_per_symbol: 10000.0 # Max notional exposure per symbol (USDT)
 max_leverage: 5.0                # Max leverage multiplier
+
+risk_management_enabled: false

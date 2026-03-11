@@ -17,6 +17,7 @@ class Config:
         self.service_id = os.getenv("QE_BOT_ID", "ai_scalper_bot")
         self.telemetry_port = int(os.getenv("QE_BOT_TELEMETRY_PORT", "5557"))
         self.policy_port = int(os.getenv("QE_BOT_POLICY_PORT", "5558"))
+        self.trading_mode = "spot_grid"
 
         if "QE_BOT_ID" not in os.environ:
             self._load_from_services_yaml()
@@ -38,6 +39,12 @@ class Config:
             "safety_order_multiplier": 1.5,
             "hedge_trigger_dd": 0.02,
             "grid_step_atr_mult": 2.0,
+            # Grid Config
+            "grid_min_spacing_pct": 0.002,  # 0.2%
+            "grid_max_spacing_pct": 0.01,  # 1.0%
+            "volatility_window_days": 7,
+            "grid_levels_below": 15,  # кількість ордерів нижче поточної ціни
+            "grid_levels_above": 15,  # кількість ордерів вище поточної ціни
         }
 
     def _load_from_services_yaml(self):
@@ -48,6 +55,7 @@ class Config:
                     data = yaml.safe_load(f)
                     bot_cfg = data.get("services", {}).get("bot", {})
                     self.service_id = bot_cfg.get("id", self.service_id)
+                    self.trading_mode = bot_cfg.get("trading_mode", self.trading_mode)
                     zmq = bot_cfg.get("zmq", {})
                     self.telemetry_port = int(
                         zmq.get("telemetry_port", self.telemetry_port)

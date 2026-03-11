@@ -79,3 +79,5 @@ class MarketState:
     trading_mode: TradingMode = TradingMode.PASS
     buy_zone_max: float = 0.0
     sell_zone_min: float = 0.0
+    vol_index: float = 0.0
+    grid_spacing_pct: float = 0.002

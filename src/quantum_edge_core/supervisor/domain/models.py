@@ -34,6 +34,7 @@ class RiskConfig:
     max_leverage: float = 20.0
     max_open_orders: int = 10
     max_exposure_notional: float = 50000.0
+    risk_management_enabled: bool = True
 
 
 @dataclass

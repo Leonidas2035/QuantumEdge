@@ -24,6 +24,11 @@ class HardRiskEngine:
         """
         Pure function: (State, Config) -> Verdict.
         """
+        if not getattr(config, "risk_management_enabled", True):
+            return RiskVerdict(
+                RiskLevel.NORMAL, "Risk Management Disabled (Grid Mode)", "NONE"
+            )
+
         reasons = []
         level = RiskLevel.NORMAL
         action = "NONE"

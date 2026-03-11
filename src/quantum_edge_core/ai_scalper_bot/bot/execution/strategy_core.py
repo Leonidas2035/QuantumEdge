@@ -1,3 +1,5 @@
+import time
+
 """
 Adaptive Grid Strategy Core.
 Decides trade actions based on Market State, Alpha Features, and Position Risk.
@@ -90,57 +92,248 @@ class BotState(Enum):
     HEDGED = auto()
 
 
+# class AdaptiveGridStrategy:
+#     """
+#     Decides WHEN to trade based on Market State, Indicators, and Risk.
+#     Adapts grid spacing using ATR (Volatility).
+#     """
+#
+#     def __init__(self, config: Dict[str, Any]):
+#         """
+#         Args:
+#             config: Strategy configuration dictionary.
+#                     Required: 'base_order_size_q', 'safety_order_multiplier',
+#                               'hedge_trigger_dd', 'grid_step_atr_mult', 'take_profit_pct', 'ofi_entry_threshold'.
+#         """
+#         self.state = BotState.IDLE
+#         self.config = config
+#         self.last_buy_price: float = 0.0
+#
+#         # Feature state
+#         self.mid_prices = collections.deque(maxlen=100)
+#         self.prev_bid_qty = 0.0
+#         self.prev_ask_qty = 0.0
+#
+#         # Load ML model
+#         self.model = None
+#         model_path = "models/xgboost_alpha.json"
+#         if os.path.exists(model_path):
+#             try:
+#                 self.model = xgb.XGBClassifier()
+#                 self.model.load_model(model_path)
+#                 logger.info("[StrategyCore] Loaded XGBoost model from %s", model_path)
+#             except Exception as e:
+#                 logger.error("[StrategyCore] Error loading model: %s", e)
+#                 logger.warning(
+#                     "[!] УВАГА: XGBoost модель не завантажилася (%s). "
+#                     "Бот працює в Fallback режимі!",
+#                     model_path,
+#                 )
+#         else:
+#             logger.warning(
+#                 "[!] УВАГА: XGBoost модель не знайдено (%s). "
+#                 "Бот працює в Fallback режимі!",
+#                 model_path,
+#             )
+#
+#     def decide(
+#         self,
+#         market: MarketState,
+#         features: FeatureVector,
+#         atr: float,
+#         position: PositionManager,
+#     ) -> Optional[TradeAction]:
+#         current_price = market.last_price
+#
+#         # --- ML Feature Pipeline (OFI) ---
+#         self.mid_prices.append((market.best_bid + market.best_ask) / 2.0)
+#         self.prev_bid_qty = market.best_bid_qty
+#         self.prev_ask_qty = market.best_ask_qty
+#
+#         # 0. State Transition Check
+#         if position.total_qty == 0 and self.state == BotState.LONG_ACCUMULATION:
+#             self.state = BotState.IDLE
+#         elif position.total_qty > 0 and self.state == BotState.IDLE:
+#             self.state = BotState.LONG_ACCUMULATION
+#
+#         # 1. Hedge Trigger (Safety)
+#         if position.total_qty > 0 and self.state != BotState.HEDGED:
+#             dd = position.get_drawdown_pct(current_price)
+#             if dd > self.config.get("hedge_trigger_dd", 0.02):
+#                 self.state = BotState.HEDGED
+#                 return TradeAction(
+#                     "HEDGE_SHORT", market.best_bid, position.total_qty, "DD Hedge"
+#                 )
+#
+#         # 2. MATCH TRADING MODE
+#         match market.trading_mode:
+#             case TradingMode.PASS:
+#                 if position.total_qty <= 0:
+#                     logger.info("Position is zero, skipping liquidation.")
+#                     return None
+#                 return TradeAction(
+#                     "SELL",
+#                     market.best_ask,
+#                     position.total_qty,
+#                     "Supervisor dictacted PASS mode",
+#                 )
+#
+#             case TradingMode.NEUTRAL:
+#                 # Two-way market making placeholder (just taking some safe spreads)
+#                 if self.state == BotState.IDLE and abs(features.ofi) > 0.5:
+#                     qty = (
+#                         self.config.get("base_order_size_q", 0.01)
+#                         * market.risk_multiplier
+#                     )
+#                     side = (
+#                         "BUY" if features.ofi > 0 else "SELL"
+#                     )  # Simplified for neutral
+#                     if side == "BUY":
+#                         self.last_buy_price = market.best_bid
+#                         return TradeAction(
+#                             "BUY", market.best_bid, qty, "Neutral MM Buy"
+#                         )
+#                     else:
+#                         return None  # Shorting not fully implemented yet in position manager
+#
+#                 if self.state == BotState.LONG_ACCUMULATION:
+#                     tp_price = position.avg_price * (
+#                         1 + getattr(self, "take_profit_pct", 0.005)
+#                     )
+#                     if current_price >= tp_price:
+#                         return TradeAction(
+#                             "SELL", market.best_ask, position.total_qty, "Neutral MM TP"
+#                         )
+#                 return None
+#
+#             case TradingMode.SCALP:
+#                 qty = (
+#                     self.config.get("base_order_size_q", 0.01) * market.risk_multiplier
+#                 )
+#
+#                 if self.state == BotState.IDLE:
+#                     # SCALP: Use limit orders strictly inside buy zone
+#                     if (
+#                         getattr(market, "buy_zone_max", 0.0) > 0
+#                         and current_price < market.buy_zone_max
+#                     ):
+#                         # Front-run L2 wall
+#                         l2_bids = getattr(
+#                             market, "whale_walls", []
+#                         )  # Mocking whale walls as L2
+#                         # Build a mock bid book from walls for the frontrunner if real l2_bids is missing
+#                         walls = [
+#                             (w.get("price", 0), w.get("vol", 0))
+#                             for w in (l2_bids or [])
+#                             if w.get("side") == "BID"
+#                         ]
+#
+#                         entry_price = (
+#                             find_frontrun_price(walls, market.buy_zone_max)
+#                             if walls
+#                             else market.best_bid
+#                         )
+#                         if entry_price:
+#                             self.last_buy_price = entry_price
+#                             return TradeAction(
+#                                 "BUY", entry_price, qty, "SCALP Limit Entry"
+#                             )
+#
+#                 elif self.state == BotState.LONG_ACCUMULATION:
+#                     # Aggressive TP inside Sell Zone
+#                     if (
+#                         getattr(market, "sell_zone_min", 0.0) > 0
+#                         and current_price >= market.sell_zone_min
+#                     ):
+#                         return TradeAction(
+#                             "SELL", market.best_ask, position.total_qty, "SCALP Zone TP"
+#                         )
+#
+#                     # Or fallback aggressive TP
+#                     tp_price = position.avg_price * 1.002
+#                     if current_price >= tp_price:
+#                         return TradeAction(
+#                             "SELL",
+#                             market.best_ask,
+#                             position.total_qty,
+#                             "SCALP Quick TP",
+#                         )
+#
+#                 return None
+#
+#             case TradingMode.DCA:
+#                 qty = (
+#                     self.config.get("base_order_size_q", 0.01) * market.risk_multiplier
+#                 )
+#
+#                 if self.state == BotState.IDLE:
+#                     # Initial entry setup
+#                     if features.ofi > 0:
+#                         self.last_buy_price = market.best_bid
+#                         return TradeAction(
+#                             "BUY", market.best_bid, qty, "DCA Initial Entry"
+#                         )
+#
+#                 elif self.state == BotState.LONG_ACCUMULATION:
+#                     # Micro-Stop based on OFI (Signs of dumping)
+#                     if features.ofi < -2.0:
+#                         logger.warning(
+#                             "[DCA] OFI collapsed (%.2f)! Micro-stop active.",
+#                             features.ofi,
+#                         )
+#                         return TradeAction(
+#                             "CANCEL_ALL", 0.0, 0.0, "DCA Micro-Stop: OFI Dump"
+#                         )
+#
+#                     # DCA accumulation
+#                     gap = atr * self.config.get("grid_step_atr_mult", 2.0)
+#                     if current_price <= (self.last_buy_price - gap):
+#                         self.last_buy_price = current_price
+#                         return TradeAction(
+#                             "BUY",
+#                             market.best_bid,
+#                             qty * 1.5,
+#                             f"DCA Step (Gap {gap:.2f})",
+#                         )
+#
+#                     # Standard TP
+#                     tp_price = position.avg_price * 1.01
+#                     if current_price >= tp_price:
+#                         return TradeAction(
+#                             "SELL", market.best_ask, position.total_qty, "DCA Target TP"
+#                         )
+#
+#                 return None
+#
+#         return None
+
+from decimal import Decimal
+
+
 @dataclass
 class TradeAction:
-    action_type: str  # 'BUY', 'SELL', 'HEDGE_SHORT'
-    price: float
-    qty: float
+    action_type: str  # 'BUY', 'SELL', 'HEDGE_SHORT', 'SYNC_GRID'
+    price: Decimal
+    qty: Decimal
     reason: str
 
 
-class AdaptiveGridStrategy:
+class DynamicGridStrategy:
     """
-    Decides WHEN to trade based on Market State, Indicators, and Risk.
-    Adapts grid spacing using ATR (Volatility).
+    Continuous Grid Maker for SPOT.
+    Places Limit orders around the current price based on dynamic volatility.
+    Risk Management and Stop-Loss are fully disabled.
     """
 
     def __init__(self, config: Dict[str, Any]):
-        """
-        Args:
-            config: Strategy configuration dictionary.
-                    Required: 'base_order_size_q', 'safety_order_multiplier',
-                              'hedge_trigger_dd', 'grid_step_atr_mult', 'take_profit_pct', 'ofi_entry_threshold'.
-        """
         self.state = BotState.IDLE
         self.config = config
-        self.last_buy_price: float = 0.0
-
-        # Feature state
-        self.mid_prices = collections.deque(maxlen=100)
-        self.prev_bid_qty = 0.0
-        self.prev_ask_qty = 0.0
-
-        # Load ML model
-        self.model = None
-        model_path = "models/xgboost_alpha.json"
-        if os.path.exists(model_path):
-            try:
-                self.model = xgb.XGBClassifier()
-                self.model.load_model(model_path)
-                logger.info("[StrategyCore] Loaded XGBoost model from %s", model_path)
-            except Exception as e:
-                logger.error("[StrategyCore] Error loading model: %s", e)
-                logger.warning(
-                    "[!] УВАГА: XGBoost модель не завантажилася (%s). "
-                    "Бот працює в Fallback режимі!",
-                    model_path,
-                )
-        else:
-            logger.warning(
-                "[!] УВАГА: XGBoost модель не знайдено (%s). "
-                "Бот працює в Fallback режимі!",
-                model_path,
-            )
+        self.grid_levels_below = config.get("grid_levels_below", 15)
+        self.grid_levels_above = config.get("grid_levels_above", 15)
+        self.base_order_size_q = Decimal(str(config.get("base_order_size_q", 0.001)))
+        self.last_grid_sync_time = 0.0
+        self.last_sync_price = Decimal("0.0")
+        self.last_grid_spacing_pct = Decimal("0.0")
 
     def decide(
         self,
@@ -149,166 +342,54 @@ class AdaptiveGridStrategy:
         atr: float,
         position: PositionManager,
     ) -> Optional[TradeAction]:
-        current_price = market.last_price
 
-        # --- ML Feature Pipeline (OFI) ---
-        self.mid_prices.append((market.best_bid + market.best_ask) / 2.0)
-        self.prev_bid_qty = market.best_bid_qty
-        self.prev_ask_qty = market.best_ask_qty
+        current_price = Decimal(str(market.last_price))
+        if current_price <= Decimal("0.0"):
+            return None
 
-        # 0. State Transition Check
-        if position.total_qty == 0 and self.state == BotState.LONG_ACCUMULATION:
-            self.state = BotState.IDLE
-        elif position.total_qty > 0 and self.state == BotState.IDLE:
-            self.state = BotState.LONG_ACCUMULATION
+        vol_index = Decimal(str(getattr(market, "vol_index", 0.0)))
+        grid_spacing_pct = Decimal(str(getattr(market, "grid_spacing_pct", 0.002)))
 
-        # 1. Hedge Trigger (Safety)
-        if position.total_qty > 0 and self.state != BotState.HEDGED:
-            dd = position.get_drawdown_pct(current_price)
-            if dd > self.config.get("hedge_trigger_dd", 0.02):
-                self.state = BotState.HEDGED
-                return TradeAction(
-                    "HEDGE_SHORT", market.best_bid, position.total_qty, "DD Hedge"
-                )
+        now = time.time()
 
-        # 2. MATCH TRADING MODE
-        match market.trading_mode:
-            case TradingMode.PASS:
-                if position.total_qty <= 0:
-                    logger.info("Position is zero, skipping liquidation.")
-                    return None
-                return TradeAction(
-                    "SELL",
-                    market.best_ask,
-                    position.total_qty,
-                    "Supervisor dictacted PASS mode",
-                )
+        # Trigger sync if:
+        # 1. Price moved by more than 1 grid step from last sync price
+        # 2. Or it's been more than 60 seconds (periodic cleanup)
 
-            case TradingMode.NEUTRAL:
-                # Two-way market making placeholder (just taking some safe spreads)
-                if self.state == BotState.IDLE and abs(features.ofi) > 0.5:
-                    qty = (
-                        self.config.get("base_order_size_q", 0.01)
-                        * market.risk_multiplier
-                    )
-                    side = (
-                        "BUY" if features.ofi > 0 else "SELL"
-                    )  # Simplified for neutral
-                    if side == "BUY":
-                        self.last_buy_price = market.best_bid
-                        return TradeAction(
-                            "BUY", market.best_bid, qty, "Neutral MM Buy"
-                        )
-                    else:
-                        return None  # Shorting not fully implemented yet in position manager
+        price_moved_pct = (
+            abs(current_price - self.last_sync_price) / current_price
+            if self.last_sync_price > Decimal("0.0")
+            else Decimal("1.0")
+        )
 
-                if self.state == BotState.LONG_ACCUMULATION:
-                    tp_price = position.avg_price * (
-                        1 + getattr(self, "take_profit_pct", 0.005)
-                    )
-                    if current_price >= tp_price:
-                        return TradeAction(
-                            "SELL", market.best_ask, position.total_qty, "Neutral MM TP"
-                        )
-                return None
+        if price_moved_pct >= grid_spacing_pct or (
+            now - self.last_grid_sync_time > 60.0
+        ):
+            self.last_grid_sync_time = now
+            self.last_sync_price = current_price
+            self.last_grid_spacing_pct = grid_spacing_pct
 
-            case TradingMode.SCALP:
-                qty = (
-                    self.config.get("base_order_size_q", 0.01) * market.risk_multiplier
-                )
+            # The reason field encodes the grid parameters for the execution gateway
+            params = f"vol_idx={float(vol_index):.2f}|spacing_pct={float(grid_spacing_pct):.5f}|below={self.grid_levels_below}|above={self.grid_levels_above}"
 
-                if self.state == BotState.IDLE:
-                    # SCALP: Use limit orders strictly inside buy zone
-                    if (
-                        getattr(market, "buy_zone_max", 0.0) > 0
-                        and current_price < market.buy_zone_max
-                    ):
-                        # Front-run L2 wall
-                        l2_bids = getattr(
-                            market, "whale_walls", []
-                        )  # Mocking whale walls as L2
-                        # Build a mock bid book from walls for the frontrunner if real l2_bids is missing
-                        walls = [
-                            (w.get("price", 0), w.get("vol", 0))
-                            for w in (l2_bids or [])
-                            if w.get("side") == "BID"
-                        ]
-
-                        entry_price = (
-                            find_frontrun_price(walls, market.buy_zone_max)
-                            if walls
-                            else market.best_bid
-                        )
-                        if entry_price:
-                            self.last_buy_price = entry_price
-                            return TradeAction(
-                                "BUY", entry_price, qty, "SCALP Limit Entry"
-                            )
-
-                elif self.state == BotState.LONG_ACCUMULATION:
-                    # Aggressive TP inside Sell Zone
-                    if (
-                        getattr(market, "sell_zone_min", 0.0) > 0
-                        and current_price >= market.sell_zone_min
-                    ):
-                        return TradeAction(
-                            "SELL", market.best_ask, position.total_qty, "SCALP Zone TP"
-                        )
-
-                    # Or fallback aggressive TP
-                    tp_price = position.avg_price * 1.002
-                    if current_price >= tp_price:
-                        return TradeAction(
-                            "SELL",
-                            market.best_ask,
-                            position.total_qty,
-                            "SCALP Quick TP",
-                        )
-
-                return None
-
-            case TradingMode.DCA:
-                qty = (
-                    self.config.get("base_order_size_q", 0.01) * market.risk_multiplier
-                )
-
-                if self.state == BotState.IDLE:
-                    # Initial entry setup
-                    if features.ofi > 0:
-                        self.last_buy_price = market.best_bid
-                        return TradeAction(
-                            "BUY", market.best_bid, qty, "DCA Initial Entry"
-                        )
-
-                elif self.state == BotState.LONG_ACCUMULATION:
-                    # Micro-Stop based on OFI (Signs of dumping)
-                    if features.ofi < -2.0:
-                        logger.warning(
-                            "[DCA] OFI collapsed (%.2f)! Micro-stop active.",
-                            features.ofi,
-                        )
-                        return TradeAction(
-                            "CANCEL_ALL", 0.0, 0.0, "DCA Micro-Stop: OFI Dump"
-                        )
-
-                    # DCA accumulation
-                    gap = atr * self.config.get("grid_step_atr_mult", 2.0)
-                    if current_price <= (self.last_buy_price - gap):
-                        self.last_buy_price = current_price
-                        return TradeAction(
-                            "BUY",
-                            market.best_bid,
-                            qty * 1.5,
-                            f"DCA Step (Gap {gap:.2f})",
-                        )
-
-                    # Standard TP
-                    tp_price = position.avg_price * 1.01
-                    if current_price >= tp_price:
-                        return TradeAction(
-                            "SELL", market.best_ask, position.total_qty, "DCA Target TP"
-                        )
-
-                return None
+            return TradeAction(
+                action_type="SYNC_GRID",
+                price=current_price,
+                qty=self.base_order_size_q,
+                reason=params,
+            )
 
         return None
+
+    def on_order_filled(
+        self, side: str, price: Decimal, qty: Decimal, spacing_pct: Decimal
+    ) -> TradeAction:
+        """
+        Triggered directly by an ORDER_FILLED event to place the exact counter-order.
+        """
+        if "BUY" in side.upper():
+            counter_price = price * (Decimal("1.0") + spacing_pct)
+            return TradeAction("SELL", counter_price, qty, "Counter grid SELL")
+        else:
+            counter_price = price * (Decimal("1.0") - spacing_pct)
+            return TradeAction("BUY", counter_price, qty, "Counter grid BUY")
