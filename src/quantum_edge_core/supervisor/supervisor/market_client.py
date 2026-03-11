@@ -208,6 +208,7 @@ def mock_situation_summary(symbol: str = DEFAULT_SYMBOL) -> str:
         f"Vol=280.8 | Range=[96750.0-96920.0] | Trend=FLAT Chg=+0.03%"
     )
 
+
 def get_current_price(
     symbol: str = DEFAULT_SYMBOL,
     timeout: float = 10.0,
