@@ -48,18 +48,6 @@ class TradingMode(str, Enum):
     NEUTRAL = "neutral"
 
 
-from decimal import Decimal
-
-
-class LlmGridPolicy(BaseModel):
-    market_regime: Literal["ranging", "bull_run", "bear_panic", "high_vol_shock"]
-    grid_bias: Literal["neutral", "bullish", "bearish", "defensive"]
-    recommended_grid_top: Decimal
-    recommended_grid_bottom: Decimal
-    capital_exposure_pct: float
-    grid_spacing_multiplier: float
-
-
 # Keep legacy LlmAction for backward compat with EventLogger
 class LlmAction(str, Enum):
     OK = "OK"
