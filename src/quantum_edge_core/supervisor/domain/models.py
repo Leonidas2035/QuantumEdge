@@ -24,6 +24,7 @@ class TradingMode(str, Enum):
     DCA = "dca"
     PASS = "pass"
     NEUTRAL = "neutral"
+    SPOT_GRID = "spot_grid"
 
 
 # --- Config & State ---
