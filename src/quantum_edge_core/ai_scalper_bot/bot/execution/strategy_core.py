@@ -388,13 +388,16 @@ class DynamicGridStrategy:
 
         # Check conditions for SYNC_GRID
         is_initial_start = self.last_sync_price == Decimal("0.0")
-        macro_changed = (self.last_regime is not None and regime != self.last_regime) or \
-                        (self.last_bias is not None and bias != self.last_bias)
+        macro_changed = (
+            self.last_regime is not None and regime != self.last_regime
+        ) or (self.last_bias is not None and bias != self.last_bias)
 
         # Calculate price movement relative to last sync price
         price_moved_pct = Decimal("0.0")
         if not is_initial_start:
-            price_moved_pct = abs(current_price - self.last_sync_price) / self.last_sync_price
+            price_moved_pct = (
+                abs(current_price - self.last_sync_price) / self.last_sync_price
+            )
 
         out_of_bounds = price_moved_pct > grid_spacing_pct
 
