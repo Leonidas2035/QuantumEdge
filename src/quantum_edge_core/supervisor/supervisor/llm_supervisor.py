@@ -29,6 +29,7 @@ from quantum_edge_core.supervisor.supervisor.llm.chat_client import (
     ChatCompletionsClient,
 )
 from quantum_edge_core.supervisor.supervisor.state import RiskStateSnapshot
+from quantum_edge_core.supervisor.domain.models import LlmGridPolicy
 
 ZmqPolicyPublisher = Any
 
@@ -47,15 +48,16 @@ class TradingMode(str, Enum):
     NEUTRAL = "neutral"
 
 
-class LlmTradingPolicy(BaseModel):
-    reasoning: str = Field(description="Коротке пояснення рішення")
-    trading_mode: Literal["scalp", "dca", "pass", "neutral"] = Field(
-        description="Обов'язково маленькими літерами"
-    )
-    risk_multiplier: float = Field(description="Від 0.0 до 1.0")
-    buy_zone_max: float = Field(description="Максимальна ціна для покупки")
-    sell_zone_min: float = Field(description="Мінімальна ціна для продажу")
-    emergency_action: str = Field(description="NONE або CLOSE_ALL")
+from decimal import Decimal
+
+
+class LlmGridPolicy(BaseModel):
+    market_regime: Literal["ranging", "bull_run", "bear_panic", "high_vol_shock"]
+    grid_bias: Literal["neutral", "bullish", "bearish", "defensive"]
+    recommended_grid_top: Decimal
+    recommended_grid_bottom: Decimal
+    capital_exposure_pct: float
+    grid_spacing_multiplier: float
 
 
 # Keep legacy LlmAction for backward compat with EventLogger
@@ -83,6 +85,12 @@ class LlmSupervisorAdvice:
     risk_multiplier: Optional[float]
     reasoning: str
     raw_response: str
+    market_regime: str = "ranging"
+    grid_bias: str = "neutral"
+    recommended_grid_top: float = 0.0
+    recommended_grid_bottom: float = 0.0
+    capital_exposure_pct: float = 1.0
+    grid_spacing_multiplier: float = 1.0
     # Legacy compat
     action: LlmAction = LlmAction.UNSPECIFIED
     comment: str = ""
@@ -219,6 +227,12 @@ class LlmSupervisor:
                                 else 1.0
                             ),
                             reasoning=advice.reasoning,
+                            market_regime=advice.market_regime,
+                            grid_bias=advice.grid_bias,
+                            recommended_grid_top=advice.recommended_grid_top,
+                            recommended_grid_bottom=advice.recommended_grid_bottom,
+                            capital_exposure_pct=advice.capital_exposure_pct,
+                            grid_spacing_multiplier=advice.grid_spacing_multiplier,
                         )
                     )
                 else:
@@ -231,6 +245,12 @@ class LlmSupervisor:
                                 else 1.0
                             ),
                             reasoning=advice.reasoning,
+                            market_regime=advice.market_regime,
+                            grid_bias=advice.grid_bias,
+                            recommended_grid_top=advice.recommended_grid_top,
+                            recommended_grid_bottom=advice.recommended_grid_bottom,
+                            capital_exposure_pct=advice.capital_exposure_pct,
+                            grid_spacing_multiplier=advice.grid_spacing_multiplier,
                         )
                     )
             except Exception as exc:
@@ -249,36 +269,28 @@ class LlmSupervisor:
             ],
             temperature=0,
             timeout_seconds=timeout,
-            response_schema=LlmTradingPolicy,
+            response_schema=LlmGridPolicy,
         )
 
     def parse_advice(self, payload: Any) -> LlmSupervisorAdvice:
         try:
             # If payload is mostly the text when schema fails, try json loads
-            # But normally google_client returns `response.parsed` which is already the LlmTradingPolicy object
+            # But normally google_client returns `response.parsed` which is already the LlmGridPolicy object
             if isinstance(payload, str):
                 cleaned = _strip_markdown_fences(payload)
                 raw_dict = json.loads(cleaned)
-                policy = LlmTradingPolicy(**raw_dict)
-            elif isinstance(payload, LlmTradingPolicy):
+                policy = LlmGridPolicy(**raw_dict)
+            elif isinstance(payload, LlmGridPolicy):
                 policy = payload
             else:
                 # Dict or other mapping returned
-                policy = LlmTradingPolicy(**payload)
+                policy = LlmGridPolicy(**payload)
 
-            # Parse trading_mode (Phase 3)
-            mode_raw = str(policy.trading_mode).lower()
-            try:
-                trading_mode = TradingMode(mode_raw)
-            except ValueError:
-                trading_mode = TradingMode.NEUTRAL
+            trading_mode = TradingMode.DCA
 
-            # Parse risk_multiplier
-            risk_multiplier = policy.risk_multiplier
-            if risk_multiplier is not None:
-                risk_multiplier = max(0.0, min(1.0, float(risk_multiplier)))
+            risk_multiplier = 1.0
 
-            reasoning = str(policy.reasoning or "")
+            reasoning = "LLM Grid Policy parsed"
 
             # Legacy action mapping
             action = _trading_mode_to_action(trading_mode)
@@ -292,15 +304,27 @@ class LlmSupervisor:
                     if hasattr(policy, "model_dump_json")
                     else {"reasoning": reasoning}
                 ),
+                market_regime=policy.market_regime,
+                grid_bias=policy.grid_bias,
+                recommended_grid_top=float(policy.recommended_grid_top),
+                recommended_grid_bottom=float(policy.recommended_grid_bottom),
+                capital_exposure_pct=float(policy.capital_exposure_pct),
+                grid_spacing_multiplier=float(policy.grid_spacing_multiplier),
                 action=action,
                 comment=reasoning,
             )
         except Exception as exc:
             return LlmSupervisorAdvice(
                 trading_mode=TradingMode.NEUTRAL,
-                risk_multiplier=None,
+                risk_multiplier=1.0,
                 reasoning=f"Failed to parse LLM response: {exc}",
                 raw_response=str(payload),
+                market_regime="ranging",
+                grid_bias="neutral",
+                recommended_grid_top=0.0,
+                recommended_grid_bottom=0.0,
+                capital_exposure_pct=1.0,
+                grid_spacing_multiplier=1.0,
                 action=LlmAction.UNSPECIFIED,
                 comment=f"Failed to parse LLM response: {exc}",
             )

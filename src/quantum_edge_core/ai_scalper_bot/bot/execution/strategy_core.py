@@ -347,8 +347,37 @@ class DynamicGridStrategy:
         if current_price <= Decimal("0.0"):
             return None
 
+        grid_bottom = Decimal(str(getattr(market, "grid_bottom", 0.0)))
+        grid_top = Decimal(str(getattr(market, "grid_top", 0.0)))
+
+        # Boundary Guard
+        if grid_bottom > 0 and grid_top > 0:
+            if current_price < grid_bottom or current_price > grid_top:
+                logger.info(
+                    "[GRID] Price %s out of bounds [%s, %s]. Paused.",
+                    current_price,
+                    grid_bottom,
+                    grid_top,
+                )
+                market.entries_paused = True
+                return None
+
         vol_index = Decimal(str(getattr(market, "vol_index", 0.0)))
-        grid_spacing_pct = Decimal(str(getattr(market, "grid_spacing_pct", 0.002)))
+        base_grid_spacing = Decimal(str(getattr(market, "grid_spacing_pct", 0.002)))
+        spacing_mult = Decimal(str(getattr(market, "grid_spacing_multiplier", 1.0)))
+        grid_spacing_pct = base_grid_spacing * spacing_mult
+
+        exposure_pct = Decimal(str(getattr(market, "capital_exposure_pct", 1.0)))
+        quote_balance = position.state.quote_balance
+        levels = Decimal(str(self.grid_levels_below + self.grid_levels_above))
+
+        # Adjust order size dynamically bounded by capital exposure
+        if quote_balance > 0 and levels > 0:
+            max_qty_quote = (quote_balance * exposure_pct) / levels
+            max_qty_base = max_qty_quote / current_price
+            self.base_order_size_q = min(
+                Decimal(str(self.config.get("base_order_size_q", 0.001))), max_qty_base
+            )
 
         now = time.time()
 
@@ -369,8 +398,11 @@ class DynamicGridStrategy:
             self.last_sync_price = current_price
             self.last_grid_spacing_pct = grid_spacing_pct
 
+            regime = getattr(market, "market_regime", "ranging")
+            bias = getattr(market, "grid_bias", "neutral")
+
             # The reason field encodes the grid parameters for the execution gateway
-            params = f"vol_idx={float(vol_index):.2f}|spacing_pct={float(grid_spacing_pct):.5f}|below={self.grid_levels_below}|above={self.grid_levels_above}"
+            params = f"regime={regime}|bias={bias}|vol_idx={float(vol_index):.2f}|spacing_pct={float(grid_spacing_pct):.5f}|below={self.grid_levels_below}|above={self.grid_levels_above}"
 
             return TradeAction(
                 action_type="SYNC_GRID",
