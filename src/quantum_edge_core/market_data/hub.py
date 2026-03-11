@@ -317,7 +317,7 @@ class MarketDataHubService(BaseService):
                             mid = (float(bids[0][0]) + float(asks[0][0])) / 2.0
                             self._last_mid_price = mid
                         walls = self.ob_aggregator.process_book(
-                            bids, asks, self._last_mid_price
+                            getattr(event, "symbol", "unknown"), bids, asks
                         )
                         if any(v != 0.0 for v in walls.values()):
                             await self.publisher.publish("market.walls", walls)

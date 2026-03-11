@@ -123,7 +123,23 @@ class OrderBookAggregator:
         self._stats.orderbook_updates_total += 1
 
     def process_book(self, symbol: str, bids: list, asks: list) -> dict:
-        return {"bids": bids, "asks": asks}
+        safe_bids = []
+        for level in bids:
+            try:
+                if len(level) >= 2:
+                    safe_bids.append([float(level[0]), float(level[1])])
+            except (ValueError, IndexError):
+                continue
+
+        safe_asks = []
+        for level in asks:
+            try:
+                if len(level) >= 2:
+                    safe_asks.append([float(level[0]), float(level[1])])
+            except (ValueError, IndexError):
+                continue
+
+        return {"bids": safe_bids, "asks": safe_asks}
 
     def _next_seq(self, symbol: str, event_type: str) -> int:
         return self._bus.assign_sequence(symbol, event_type)
