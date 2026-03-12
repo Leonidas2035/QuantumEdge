@@ -34,7 +34,9 @@ class BinanceExecutionGateway:
         """
         if action.action_type == "CANCEL_ALL":
             try:
-                self.logger.info(f"🚀 BINANCE: Canceling all open orders for {self.symbol} | {action.reason}")
+                self.logger.info(
+                    f"🚀 BINANCE: Canceling all open orders for {self.symbol} | {action.reason}"
+                )
                 await self.exchange.cancel_all_orders(symbol=self.symbol)
                 return True
             except Exception as e:

@@ -366,6 +366,9 @@ class DynamicDCAStrategy:
         if current_price <= Decimal("0.0"):
             return None
 
+        if now < self.flash_crash_pause_until:
+            return None
+
         # Flash Crash Protection (Price Velocity)
         self.price_buffer.append((now, float(current_price)))
         if len(self.price_buffer) >= 2:
@@ -375,7 +378,7 @@ class DynamicDCAStrategy:
                 velocity_pct = velocity / self.price_buffer[0][1]
 
                 # Check threshold: > 0.5% per sec
-                if abs(velocity_pct) > 0.005 and now >= getattr(self, "flash_crash_pause_until", 0):
+                if abs(velocity_pct) > 0.005:
                     logger.warning(
                         "[FLASH CRASH] Velocity = %.3f%% — halting entries for 60s",
                         velocity_pct * 100,
@@ -387,9 +390,6 @@ class DynamicDCAStrategy:
                         qty=Decimal("0.0"),
                         reason="Flash Crash Protection",
                     )
-
-        if now < self.flash_crash_pause_until:
-            return None
 
         # Update Volatility Oracle
         self.vol_oracle.add_close_price(float(current_price))
@@ -452,7 +452,9 @@ class DynamicDCAStrategy:
         out_of_bounds = price_moved_abs > (current_price * self.grid_spacing_pct)
 
         if is_initial_start or macro_changed or out_of_bounds:
-            logger.info(f"GRID_SYNCED: regime={regime} top={grid_top} bottom={grid_bottom}")
+            logger.info(
+                f"GRID_SYNCED: regime={regime} top={grid_top} bottom={grid_bottom}"
+            )
             self.last_grid_sync_time = now
             self.last_sync_price = current_price
             self.last_regime = regime
@@ -466,8 +468,8 @@ class DynamicDCAStrategy:
                 qty=self.base_order_size_q,
                 reason=params,
             )
-
-        return None
+        else:
+            return None
 
     def on_order_filled(
         self, side: str, price: Decimal, qty: Decimal, spacing_pct: Decimal
