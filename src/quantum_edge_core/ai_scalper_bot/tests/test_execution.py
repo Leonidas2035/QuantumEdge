@@ -98,9 +98,9 @@ def test_strategy_dynamic_dca_flash_crash():
     pm = PositionManager()
 
     # Add a price 10 seconds ago
-    strat.price_buffer.append((time.time() - 10, 105.0))
+    strat.price_buffer.append((time.time() - 10, 106.0))
 
-    # Sudden drop to 100.0
+    # Sudden drop to 100.0 (> 0.5% per sec threshold)
     action = strat.decide(create_state(100.0), create_features(), 1.0, pm)
     assert action is not None
     assert action.action_type == "CANCEL_ALL"

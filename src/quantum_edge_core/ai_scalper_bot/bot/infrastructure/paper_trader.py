@@ -25,6 +25,10 @@ class PaperTrader:
         logger.info("PaperTrader initialised (Shadow Mode) — no live orders")
 
     async def execute(self, action: TradeAction) -> bool:
+        if action.action_type == "CANCEL_ALL":
+            logger.info(f"✅ PAPER TRADE: Canceled all open orders | {action.reason}")
+            return True
+
         if action.action_type == "SYNC_GRID":
             logger.info(
                 f"✅ PAPER TRADE: Grid Synced around {action.price} | {action.reason}"
