@@ -394,7 +394,7 @@ class BotEngine:
                             )
                         walls_info = f" | Walls: {len(walls)} ({w_side}: {w_price})"
 
-                    logger.info(
+                    logger.debug(
                         f"TICK: Price={market_state.last_price:.2f}, OFI={feat_vec.ofi:.4f}, ATR={atr_val:.4f}, B={market_state.best_bid_qty}, A={market_state.best_ask_qty}{walls_info}"
                     )
 
