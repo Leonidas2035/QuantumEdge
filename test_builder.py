@@ -1,9 +1,12 @@
 import asyncio
 import logging
-from quantum_edge_core.supervisor.supervisor.market_context_builder import MarketContextBuilder
+from quantum_edge_core.supervisor.supervisor.market_context_builder import (
+    MarketContextBuilder,
+)
 from quantum_edge_core.supervisor.supervisor.state import RiskStateSnapshot
 
 logging.basicConfig(level=logging.INFO)
+
 
 async def test():
     builder = MarketContextBuilder()
@@ -15,10 +18,11 @@ async def test():
         max_equity_intraday=10500.0,
         min_equity_intraday=10000.0,
         halted=False,
-        halt_reason=""
+        halt_reason="",
     )
     res = await builder.build_context("BTCUSDT", mock_state)
     print("OUTPUT JSON:", res)
+
 
 if __name__ == "__main__":
     asyncio.run(test())

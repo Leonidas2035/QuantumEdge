@@ -12,7 +12,7 @@ from quantum_edge_core.ai_scalper_bot.bot.core.config import Config
 from quantum_edge_core.ai_scalper_bot.bot.core.orderbook import OrderBookCache
 from quantum_edge_core.ai_scalper_bot.bot.features.facade import FeatureEngine
 from quantum_edge_core.ai_scalper_bot.bot.execution.strategy_core import (
-    DynamicGridStrategy,
+    DynamicDCAStrategy,
 )
 from quantum_edge_core.ai_scalper_bot.bot.execution.volatility import OnlineVolatility
 from quantum_edge_core.ai_scalper_bot.bot.execution.volatility_oracle import (
@@ -77,8 +77,8 @@ class BotEngine:
         trading_mode = getattr(self.config, "trading_mode", "scalper_v1")
         if trading_mode == "spot_grid":
             self.volatility_oracle = VolatilityOracle(self.config.strategy_config)
-            self.strategy = DynamicGridStrategy(self.config.strategy_config)
-            logger.info("Initializing SPOT DynamicGridStrategy")
+            self.strategy = DynamicDCAStrategy(self.config.strategy_config)
+            logger.info("Initializing SPOT DynamicDCAStrategy")
         else:
             raise NotImplementedError(
                 "AdaptiveGridStrategy is disabled. Please set trading_mode='spot_grid' in config."
