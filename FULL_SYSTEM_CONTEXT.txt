@@ -15,7 +15,7 @@
   ██      ██   ██ ██    ██ ██
   ███████ ██████   ██████  ███████
 
-  AI-Driven High-Frequency Trading Infrastructure
+  AI-Driven Continuous Spot Grid DCA Infrastructure
 
 
 
@@ -253,7 +253,6 @@ QuantumEdge/                       # Project Root ($QE_ROOT)
 
   Requires: BINANCE_API_KEY, BINANCE_API_SECRET
   Config: config/services.yaml, ai_scalper_bot/bot/core/config.py (BotConfig)
-  Models: models/xgboost_alpha.json (optional — falls back to OFI logic)
 
   ── 4. Orchestrator (All-In-One) ───────────────────────────────────
   cd $QE_ROOT
@@ -521,19 +520,47 @@ QuantumEdge/                       # Project Root ($QE_ROOT)
      - CPU bound (backtests, ML training): multiprocessing
      - NEVER mix threading with asyncio without proper bridges.
 
-  7. ZMQ PATTERNS
+  7. DYNAMIC SPOT GRID (MODULE DETAILS)
+     - Aggregator (`aggregator.py`):
+       Processes L2 Order Book data and streams updates. It calculates mid-price (`mid = (best_bid + best_ask) / 2.0`) and spread, and extracts whale walls based on quantity thresholds. Polling frequency has been reduced to 1 Hz to prevent system overload (OOM issues). Data is published via ZeroMQ to downstream services.
+
+     - Volatility Oracle (`volatility_oracle.py`):
+       Maintains a rolling 7-day window of 1-minute close prices (up to 10080 data points).
+       Calculates `returns = ln(P_t / P_{t-1})`.
+       Standard deviation of returns is scaled to a percentage.
+       Vol Index normalizes standard deviation: `vol_index = min(max(std_dev / 2.5, 0.0), 1.0)`.
+       Grid spacing dynamically updates: `grid_spacing = min_spacing + vol_index * (max_spacing - min_spacing)`.
+
+     - Dynamic Grid Strategy (`strategy_core.py`):
+       Focuses on Continuous Maker Grid logic for SPOT markets.
+       * Order generation uses `SYNC_GRID` events. The bot evaluates price boundaries: pauses entry if `price < grid_bottom` or `price > grid_top`.
+       * Adjusts order sizes up to `max_qty_base` calculated from `quote_balance * exposure_pct / total_levels`.
+       * Re-syncs grid when:
+         - Initial sync (no prior price).
+         - Macro regime or bias change from the supervisor.
+         - Price drifts beyond `grid_spacing_pct` from `last_sync_price`.
+       * `on_order_filled` directly generates counter-orders (BUY triggers a SELL, SELL triggers a BUY) offset by `grid_spacing_pct` to capture spread automatically.
+
+     - LLM Supervisor (`supervisor.py` & JSON schema):
+       Acts as a Macro-Economist, operating on a 5-minute cycle analyzing OHLCV candles (4h, 1h, 5m).
+       Issues `LlmGridPolicy` JSON payloads specifying:
+       - `trading_mode`: Defines state (e.g., `SPOT_GRID`).
+       - `recommended_grid_top` / `recommended_grid_bottom`: Hard boundaries within which the grid operates.
+       - `bias` / `market_regime`: Drives directional bias or grid adjustments based on broader market trends.
+
+  8. ZMQ PATTERNS
      - Hub → Bot: PUB/SUB on port 5555 (market data)
      - Bot → Supervisor: PUB/SUB on port 5557 (telemetry)
      - Supervisor → Bot: PUB/SUB on port 5558 (policy commands)
      - ALWAYS close ZMQ sockets on shutdown.
      - Set HWM (high water mark) to prevent memory leaks.
 
-  8. TESTING
+  9. TESTING
      - paper_trading=True by default unless explicitly overridden.
      - All exchange operations must use client-generated IDs (client_oid).
      - Mock Binance API in tests — never call live endpoints.
 
-  9. KILL SWITCH
+  10. KILL SWITCH
      - If drawdown > MAX_LIMIT or heartbeat lost > timeout: HALT immediately.
      - Implemented in: supervisor/domain/risk.py (HardRiskEngine)
      - Triggered by: supervisor/service.py (monitor_loop)
