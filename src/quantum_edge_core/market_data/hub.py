@@ -6,8 +6,10 @@ import argparse
 import asyncio
 import json
 import logging
+import logging.config
 import sys
 import time
+import yaml
 from contextlib import suppress
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional, Tuple
@@ -108,6 +110,16 @@ class StatusReporter:
             json.dump(payload, fh, indent=2)
 
 
+def cleanup_old_logs(days: int = 14):
+    logger = logging.getLogger("quantum_edge_core.market_data.hub")
+    for log_file in Path(".").glob("*.log.*"):
+        if log_file.stat().st_mtime < (time.time() - days * 86400):
+            try:
+                log_file.unlink()
+            except OSError as e:
+                logger.warning(f"Failed to delete old log {log_file}: {e}")
+
+
 class MarketDataHubService(BaseService):
     """Service orchestrating the data-plane components."""
 
@@ -206,9 +218,14 @@ class MarketDataHubService(BaseService):
 
     async def run(self) -> None:
         """Main service loop."""
-        setup_logging()
-        # logging.basicConfig removed - using structslog via setup_logging()
+        # Note: In an ideal scenario we would remove setup_logging() if it conflicts,
+        # but dictConfig overrides what setup_logging typically configures anyway.
+        logging.config.dictConfig(
+            yaml.safe_load(Path("config/logging.yaml").read_text(encoding="utf-8"))
+        )
+        self.logger = logging.getLogger("quantum_edge_core.market_data.hub")
         self.logger.info("Initializing MarketDataHub")
+        cleanup_old_logs()
         if self.writer:
             await self.writer.connect()
 

@@ -6,11 +6,13 @@ import argparse
 import hashlib
 import json
 import logging
+import logging.config
 import os
 import signal
 import sys
 import time
 import uuid
+import yaml
 from datetime import datetime, date, timezone
 from pathlib import Path
 from typing import Optional, Mapping, Any, Dict, List
@@ -2489,6 +2491,16 @@ def _compute_lag(value: Optional[str], now: float) -> Optional[int]:
     return max(0, int(now - ts))
 
 
+def cleanup_old_logs(days: int = 14):
+    logger = logging.getLogger("quantum_edge_core.supervisor")
+    for log_file in Path(".").glob("*.log.*"):
+        if log_file.stat().st_mtime < (time.time() - days * 86400):
+            try:
+                log_file.unlink()
+            except OSError as e:
+                logger.warning(f"Failed to delete old log {log_file}: {e}")
+
+
 def _discover_project_root(start: Path) -> Path:
     """Walk up from *start* to find the QuantumEdge project root.
 
@@ -2546,6 +2558,11 @@ def main(argv: Optional[list[str]] = None) -> None:
     )
     if not supervisor_config_path.exists():
         supervisor_config_path = supervisor_config_dir / "supervisor.yaml"
+
+    logging.config.dictConfig(
+        yaml.safe_load(Path("config/logging.yaml").read_text(encoding="utf-8"))
+    )
+    cleanup_old_logs()
 
     try:
         app = build_app(

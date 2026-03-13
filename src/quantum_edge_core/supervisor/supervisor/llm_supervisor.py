@@ -6,12 +6,15 @@ import argparse
 import json
 import os
 import sys
+import time
 import traceback
 import logging
+import logging.config
+import yaml
+from pathlib import Path
 from dataclasses import dataclass
 from datetime import date
 from enum import Enum
-from pathlib import Path
 import re
 from typing import Any, Dict, Iterable, List, Optional, Tuple, Literal
 from pydantic import BaseModel, Field, ValidationError
@@ -536,6 +539,16 @@ def build_prompts(
     return system_prompt, user_prompt
 
 
+def cleanup_old_logs(days: int = 14):
+    logger = logging.getLogger("quantum_edge_core.supervisor")
+    for log_file in Path(".").glob("*.log.*"):
+        if log_file.stat().st_mtime < (time.time() - days * 86400):
+            try:
+                log_file.unlink()
+            except OSError as e:
+                logger.warning(f"Failed to delete old log {log_file}: {e}")
+
+
 def _parse_cli_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
     """Parse CLI arguments for standalone LLM supervisor execution."""
     parser = argparse.ArgumentParser(
@@ -726,11 +739,10 @@ def _run_standalone(args: argparse.Namespace) -> None:
 
 if __name__ == "__main__":
     # ── Configure logging first ──────────────────────────────────────
-    logging.basicConfig(
-        level=logging.DEBUG,
-        format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
-        stream=sys.stdout,
+    logging.config.dictConfig(
+        yaml.safe_load(Path("config/logging.yaml").read_text(encoding="utf-8"))
     )
+    cleanup_old_logs()
 
     try:
         cli_args = _parse_cli_args()

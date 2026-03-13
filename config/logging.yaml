@@ -1,23 +1,62 @@
 version: 1
-disable_existing_loggers: False
+disable_existing_loggers: false
+
 formatters:
-  standard:
-    format: "%(asctime)s [%(levelname)s] %(name)s: %(message)s"
+  detailed:
+    format: "%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+
 handlers:
   console:
     class: logging.StreamHandler
-    formatter: standard
     level: INFO
-    stream: ext://sys.stdout
-  file:
-    class: logging.handlers.RotatingFileHandler
-    formatter: standard
+    formatter: detailed
+
+  bot_file:
+    class: logging.handlers.TimedRotatingFileHandler
+    filename: bot.log
+    when: midnight          # ротація щодня о 00:00
+    interval: 1
+    backupCount: 7          # зберігаємо 7 днів (тиждень)
+    encoding: utf-8
+    formatter: detailed
+
+  hub_file:
+    class: logging.handlers.TimedRotatingFileHandler
+    filename: hub.log
+    when: midnight
+    backupCount: 7
+    encoding: utf-8
+    formatter: detailed
+
+  supervisor_file:
+    class: logging.handlers.TimedRotatingFileHandler
+    filename: supervisor.log
+    when: midnight
+    backupCount: 7
+    encoding: utf-8
+    formatter: detailed
+
+  dashboard_file:
+    class: logging.handlers.TimedRotatingFileHandler
+    filename: dashboard.log
+    when: midnight
+    backupCount: 7
+    encoding: utf-8
+    formatter: detailed
+
+loggers:
+  QuantumEdgeBot:
     level: INFO
-    filename: "logs/quantum_edge.log"
-    mode: "a"
-    encoding: "utf-8"
-    maxBytes: 52428800
-    backupCount: 5
-root:
-  level: INFO
-  handlers: [console, file]
+    handlers: [console, bot_file]
+    propagate: false
+  quantum_edge_core.market_data.hub:
+    level: INFO
+    handlers: [console, hub_file]
+    propagate: false
+  quantum_edge_core.supervisor:
+    level: INFO
+    handlers: [console, supervisor_file]
+    propagate: false
+  __main__:
+    level: INFO
+    handlers: [console, dashboard_file]
