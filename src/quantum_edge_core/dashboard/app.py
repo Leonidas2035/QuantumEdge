@@ -196,7 +196,7 @@ with st.sidebar:
     st.markdown("</div>", unsafe_allow_html=True)
 
     st.markdown("### Manual Override")
-    mode = st.selectbox("Trading Mode", ["SCALP", "DCA", "PASS", "NEUTRAL"])
+    mode = st.selectbox("Trading Mode", ["SCALP", "DCA", "PASS", "NEUTRAL"], index=1)
     if st.button("Force Apply Mode"):
         if is_localhost():
             if force_apply_mode(mode):
