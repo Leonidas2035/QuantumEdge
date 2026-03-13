@@ -76,7 +76,7 @@ class MarketState:
     volume_delta_1m: float = 0.0
     liquidations_1m: int = 0
     atr: float = 0.0
-    trading_mode: TradingMode = TradingMode.PASS
+    trading_mode: TradingMode = TradingMode.DCA
     buy_zone_max: float = 0.0
     sell_zone_min: float = 0.0
     vol_index: float = 0.0
