@@ -6,7 +6,10 @@ Target Exchange: BingX (Integration Phase)
 
 import asyncio
 import logging
+import logging.config
 import time
+import yaml
+from pathlib import Path
 
 from quantum_edge_core.ai_scalper_bot.bot.core.config import Config
 from quantum_edge_core.ai_scalper_bot.bot.core.orderbook import OrderBookCache
@@ -31,10 +34,19 @@ from quantum_edge_core.ai_scalper_bot.bot.infrastructure.questdb_telemetry impor
 )
 
 # Configure Logging
-logging.basicConfig(
-    level=logging.INFO, format="%(asctime)s - %(name)s - %(levelname)s - %(message)s"
+logging.config.dictConfig(
+    yaml.safe_load(Path("config/logging.yaml").read_text(encoding="utf-8"))
 )
 logger = logging.getLogger("QuantumEdgeBot")
+
+
+def cleanup_old_logs(days: int = 14):
+    for log_file in Path(".").glob("*.log.*"):
+        if log_file.stat().st_mtime < (time.time() - days * 86400):
+            try:
+                log_file.unlink()
+            except OSError as e:
+                logger.warning(f"Failed to delete old log {log_file}: {e}")
 
 
 class BotEngine:
@@ -487,6 +499,7 @@ class BotEngine:
 
 
 if __name__ == "__main__":
+    cleanup_old_logs()
     bot = BotEngine()
     try:
         asyncio.run(bot.run())
