@@ -327,7 +327,7 @@ class DynamicDCAStrategy:
     """
 
     def __init__(self, config: Dict[str, Any]):
-        self.state = BotState.IDLE
+        self.state = BotState.RUNNING  # IRON LOCK: always start active
         self.config = config
         self.grid_levels_below = config.get("grid_levels_below", 15)
         self.grid_levels_above = config.get("grid_levels_above", 15)
