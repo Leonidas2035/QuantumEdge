@@ -9,20 +9,34 @@ and maintains a lightweight fill history for auditing.
 import logging
 import time
 import uuid
-from typing import List, Dict, Any
+from decimal import Decimal
+from typing import List, Dict, Any, Optional
 
 from quantum_edge_core.ai_scalper_bot.bot.execution.strategy_core import TradeAction
 
 logger = logging.getLogger("PaperTrader")
 
+# ── Hardcoded fallback for paper mode ────────────────────────────────
+PAPER_FALLBACK_BALANCE_USDT: float = 10_000.0
+
 
 class PaperTrader:
     """Drop-in replacement for BinanceExecutionGateway."""
 
-    def __init__(self, config=None):
-        self.symbol = config.symbol if config else "BTCUSDT"
+    def __init__(self, config: Optional[Any] = None) -> None:
+        self.symbol: str = config.symbol if config else "BTCUSDT"
         self.fills: List[Dict[str, Any]] = []
-        logger.info("PaperTrader initialised (Shadow Mode) — no live orders")
+
+        # ── Paper balance bootstrap ──────────────────────────────
+        # After a DB wipe the balance is 0.  For paper mode we
+        # inject a hardcoded fallback so grid volume is never zero.
+        self.quote_balance: Decimal = Decimal(str(PAPER_FALLBACK_BALANCE_USDT))
+
+        logger.info(
+            "PaperTrader initialised (Shadow Mode) — "
+            "fallback USDT balance: %.2f — no live orders",
+            float(self.quote_balance),
+        )
 
     async def execute(self, action: TradeAction) -> bool:
         if action.action_type == "CANCEL_ALL":
@@ -50,18 +64,25 @@ class PaperTrader:
         }
         self.fills.append(fill)
 
+        # Track quote balance for paper fills
+        if side == "BUY":
+            self.quote_balance -= Decimal(str(action.price)) * Decimal(str(action.qty))
+        else:
+            self.quote_balance += Decimal(str(action.price)) * Decimal(str(action.qty))
+
         logger.info(
-            "✅ PAPER TRADE EXECUTED: %s %.4f %s @ %.2f [%s] (id=%s)",
+            "✅ PAPER TRADE EXECUTED: %s %.4f %s @ %.2f [%s] (id=%s) | bal=%.2f",
             side,
             action.qty,
             self.symbol,
             action.price,
             action.reason,
             fill_id,
+            float(self.quote_balance),
         )
         return True
 
-    async def close(self):
+    async def close(self) -> None:
         logger.info(
             "PaperTrader closed. Total fills: %d",
             len(self.fills),

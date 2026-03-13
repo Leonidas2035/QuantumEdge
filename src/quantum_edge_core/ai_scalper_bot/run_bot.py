@@ -76,7 +76,14 @@ class BotEngine:
 
         # 2. Memory (State)
         self.cache = OrderBookCache()
-        self.position = PositionManager()
+        self.position = PositionManager(
+            mode=getattr(self.config, "trading_mode", "scalper_v1"),
+            initial_quote_balance=float(self.gateway.quote_balance),
+        )
+        logger.info(
+            "PositionManager initialised with quote_balance=%.2f",
+            float(self.position.state.quote_balance),
+        )
 
         # 3. Logic (Features & Strategy)
         self.features = FeatureEngine(
@@ -103,6 +110,19 @@ class BotEngine:
             f">>> Bot Engine STARTING Main Loop... Target: {self.config.symbol}"
         )
         self.running = True
+
+        # ── Broadcast initial state to Dashboard ──────────────
+        await self.reporter.send_initial_state(
+            equity=float(self.position.state.quote_balance),
+            trading_mode=getattr(self.config, "trading_mode", "spot_grid"),
+        )
+        # Also log initial portfolio to QuestDB
+        self.quest_telemetry.log_portfolio_state(
+            symbol=self.config.symbol,
+            equity=float(self.position.state.quote_balance),
+            unrealized_pnl=0.0,
+            position_qty=0.0,
+        )
 
         last_heartbeat = 0.0
         last_1m_reset = time.time()
@@ -196,14 +216,16 @@ class BotEngine:
                     now = time.time()
                     if now - last_heartbeat >= 1.0:
                         ms = self.cache._current_state
+                        eq = float(self.position.state.quote_balance)
                         await self.reporter.send_heartbeat(
                             self.strategy.state,
                             self.position.state.unrealized_pnl,
                             self.position.total_qty,
                             market_state=ms,
+                            equity=eq,
+                            trading_mode=getattr(self.config, "trading_mode", "spot_grid"),
                         )
                         # ILP Portfolio logging
-                        eq = getattr(ms, "equity_now", 0.0) if ms else 0.0
                         self.quest_telemetry.log_portfolio_state(
                             symbol=self.config.symbol,
                             equity=eq,
@@ -464,14 +486,15 @@ class BotEngine:
                 # 5. Reporting (Throttled)
                 now = time.time()
                 if now - last_heartbeat >= 1.0:
+                    eq = float(self.position.state.quote_balance)
                     await self.reporter.send_heartbeat(
                         self.strategy.state,
                         self.position.state.unrealized_pnl,
                         self.position.total_qty,
+                        equity=eq,
+                        trading_mode=getattr(self.config, "trading_mode", "spot_grid"),
                     )
 
-                    ms = self.cache._current_state
-                    eq = getattr(ms, "equity_now", 0.0) if ms else 0.0
                     self.quest_telemetry.log_portfolio_state(
                         symbol=self.config.symbol,
                         equity=eq,

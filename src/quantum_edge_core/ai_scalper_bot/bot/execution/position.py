@@ -25,9 +25,17 @@ class PositionManager:
     Adapted for SPOT trading (tracks base/quote balances).
     """
 
-    def __init__(self, mode: str = "scalper_v1"):
+    def __init__(
+        self,
+        mode: str = "scalper_v1",
+        initial_quote_balance: float | None = None,
+    ) -> None:
         self.state = PositionState()
         self.mode = mode
+
+        # Override default quote_balance if caller provides one
+        if initial_quote_balance is not None and initial_quote_balance > 0:
+            self.state.quote_balance = Decimal(str(initial_quote_balance))
 
         # Initialize telemetry explicitly (lazy) to prevent cyclic imports
         from quantum_edge_core.ai_scalper_bot.bot.infrastructure.questdb_telemetry import (
