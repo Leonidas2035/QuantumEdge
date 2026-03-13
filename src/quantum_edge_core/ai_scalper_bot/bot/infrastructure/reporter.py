@@ -35,6 +35,39 @@ class SupervisorReporter:
             logger.error(f"Failed to bind SupervisorReporter: {e}")
             raise
 
+    async def send_initial_state(
+        self,
+        equity: float,
+        trading_mode: str = "spot_grid",
+    ) -> None:
+        """
+        Broadcast initial bot state immediately after Paper balance bootstrap.
+        Ensures the Dashboard sees RUNNING + correct equity on first sync.
+        """
+        msg = {
+            "source": self.service_id,
+            "timestamp": time.time(),
+            "status": "RUNNING",
+            "equity": equity,
+            "trading_mode": trading_mode,
+            "pnl_session": 0.0,
+            "drawdown_pct": 0.0,
+            "min_equity_intraday": equity,
+            "halt_reason": None,
+            "metrics": {"active_positions_count": 0, "cpu_usage": 0.0},
+            "errors": [],
+        }
+        try:
+            payload = ujson.dumps(msg)
+            await self.socket.send_multipart([b"telemetry", payload.encode("utf-8")])
+            logger.info(
+                "Broadcasted initial state: equity=%.2f, status=RUNNING, mode=%s",
+                equity,
+                trading_mode,
+            )
+        except Exception as e:
+            logger.warning(f"Failed to broadcast initial state: {e}")
+
     async def send_heartbeat(
         self,
         state: BotState,
@@ -44,6 +77,8 @@ class SupervisorReporter:
         market_state: Any = None,
         min_equity_intraday: float | None = None,
         halt_reason: str | None = None,
+        equity: float = 0.0,
+        trading_mode: str = "spot_grid",
     ):
         """
         Sends a JSON heartbeat packet.
@@ -75,6 +110,8 @@ class SupervisorReporter:
                 "cpu_usage": 0.0,
             },
             "errors": [],
+            "equity": equity,
+            "trading_mode": trading_mode,
             "atr": float(getattr(market_state, "atr", 0.0)) if market_state else 0.0,
             "volume_delta_1m": (
                 float(getattr(market_state, "volume_delta_1m", 0.0))
