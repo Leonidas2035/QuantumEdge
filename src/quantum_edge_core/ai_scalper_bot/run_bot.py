@@ -369,6 +369,19 @@ class BotEngine:
                 self.cache.update(norm_tick)
                 market_state = self.cache._current_state
 
+                # === IRON LOCK: Execution Engine must stay RUNNING forever ===
+                # Hub can send status/entries_paused fields that overwrite our
+                # internal state.  We forcibly reset them every tick.
+                if market_state:
+                    market_state.entries_paused = False
+                if self.strategy.state not in (BotState.RUNNING, BotState.LONG_ACCUMULATION, BotState.HEDGED):
+                    self.strategy.state = BotState.RUNNING
+                if hasattr(self, 'gateway') and getattr(self.gateway, 'status', '') != "RUNNING":
+                    logger.warning("IRON LOCK activated: forcing gateway RUNNING")
+                    self.gateway.status = "RUNNING"
+                    self.gateway.entries_paused = False
+                # ============================================================
+
                 if market_state:
                     from quantum_edge_core.ai_scalper_bot.bot.core.models import (
                         MarketTick,
