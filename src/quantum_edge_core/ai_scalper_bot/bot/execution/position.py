@@ -95,6 +95,11 @@ class PositionManager:
             pass
 
     def calculate_order_qty(self, price: float) -> float:
+        """Calculate BTC order quantity for a single grid level.
+
+        Returns base-asset qty rounded to 4 decimals with a floor of
+        0.0001 BTC (Binance Spot LOT_SIZE minimum for BTCUSDT).
+        """
         import logging
 
         logger = logging.getLogger("PositionManager")
@@ -102,11 +107,33 @@ class PositionManager:
             logger.warning("ZERO BALANCE — using fallback")
             self.state.quote_balance = Decimal("10000.0")
 
-        exposure_pct = Decimal(str(getattr(self, "exposure_pct", 1.0)))
-        total_levels = Decimal(str(getattr(self, "total_levels", 30)))
+        if price <= 0:
+            logger.error("ZERO PRICE passed to calculate_order_qty!")
+            return 0.0001
 
-        qty = (self.state.quote_balance * exposure_pct) / total_levels
-        return float(max(qty, Decimal("0.00001")))
+        exposure_pct = Decimal(str(getattr(self, "exposure_pct", 0.5)))
+        total_levels = Decimal(str(getattr(self, "total_levels", 30)))
+        price_d = Decimal(str(price))
+
+        capital_per_level = (self.state.quote_balance * exposure_pct) / total_levels
+        raw_qty = capital_per_level / price_d
+
+        # Round to 4 decimals (BTC precision) and enforce minimum
+        qty = float(raw_qty.quantize(Decimal("0.0001")))
+        qty = max(qty, 0.0001)  # Binance LOT_SIZE minimum for BTCUSDT
+
+        logger.info(
+            "QTY_CALC: bal=%.2f | exposure=%.2f | levels=%d | capital/lvl=%.2f | "
+            "price=%.2f | raw=%.6f → final_qty=%.6f",
+            float(self.state.quote_balance),
+            float(exposure_pct),
+            int(total_levels),
+            float(capital_per_level),
+            price,
+            float(raw_qty),
+            qty,
+        )
+        return qty
 
     def get_drawdown_pct(self, current_price: Decimal) -> Decimal:
         """
