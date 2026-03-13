@@ -44,6 +44,14 @@ class PaperTrader:
         )
 
     async def execute(self, action: TradeAction) -> bool:
+        if self.quote_balance <= 0:
+            logger.error("INSUFFICIENT BALANCE DETECTED — forcing fallback $10k")
+            self.quote_balance = Decimal(str(PAPER_FALLBACK_BALANCE_USDT))
+
+        if action.qty <= 0:
+            logger.error("ZERO QTY — skipping execution")
+            return False
+
         if action.action_type == "CANCEL_ALL":
             logger.info(f"✅ PAPER TRADE: Canceled all open orders | {action.reason}")
             return True
@@ -76,14 +84,7 @@ class PaperTrader:
             self.quote_balance += Decimal(str(action.price)) * Decimal(str(action.qty))
 
         logger.info(
-            "✅ PAPER TRADE EXECUTED: %s %.4f %s @ %.2f [%s] (id=%s) | bal=%.2f",
-            side,
-            action.qty,
-            self.symbol,
-            action.price,
-            action.reason,
-            fill_id,
-            float(self.quote_balance),
+            f"PAPER TRADE EXECUTED: {side} {action.qty:.6f} @ {action.price:.2f} | new_balance={float(self.quote_balance):.2f}"
         )
         return True
 

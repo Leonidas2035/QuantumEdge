@@ -440,6 +440,10 @@ class DynamicDCAStrategy:
             risk_amount = quote_balance * risk_percent * fractional_kelly
             self.base_order_size_q = risk_amount / current_price
 
+        logger.info(
+            f"DEBUG BALANCE: quote_balance={float(quote_balance):.2f} | risk_percent={float(risk_percent)}"
+        )
+
         # Check conditions for SYNC_GRID
         is_initial_start = self.last_sync_price == Decimal("0.0")
         macro_changed = (
@@ -454,6 +458,22 @@ class DynamicDCAStrategy:
         out_of_bounds = price_moved_abs > (current_price * self.grid_spacing_pct)
 
         if is_initial_start or macro_changed or out_of_bounds:
+            total_levels = self.grid_levels_below + self.grid_levels_above
+            logger.info(
+                f"DEBUG SYNC_GRID: {total_levels} levels | top={grid_top:.2f} | bottom={grid_bottom:.2f}"
+            )
+
+            # Debug candidate orders conceptually for SYNC_GRID block
+            logger.info(
+                f"DEBUG ORDER CANDIDATE #0: SYNC_GRID @ {current_price:.2f} | qty={self.base_order_size_q:.6f} | reason='calculated'"
+            )
+
+            if self.base_order_size_q <= Decimal("0.000001"):
+                logger.error(
+                    f"CRITICAL: qty={self.base_order_size_q} — order SKIPPED! (balance too low or zero)"
+                )
+                return None
+
             logger.info(
                 f"GRID_SYNCED: regime={regime} top={grid_top} bottom={grid_bottom}"
             )

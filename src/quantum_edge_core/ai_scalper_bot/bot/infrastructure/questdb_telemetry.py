@@ -25,7 +25,9 @@ class QuestDbTelemetry:
             sock.sendall(payload.encode("utf-8"))
             sock.close()
         except Exception as e:
-            self.logger.debug(f"Failed to send telemetry to QuestDB: {e}")
+            self.logger.error(
+                f"QuestDB write failed: {e} — continuing with memory balance"
+            )
 
     async def _send_payload_async(self, payload: str):
         """Fire and forget wrapper around the synchronous socket block."""
