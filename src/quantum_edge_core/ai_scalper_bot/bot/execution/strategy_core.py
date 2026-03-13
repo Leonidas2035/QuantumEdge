@@ -87,6 +87,8 @@ def find_frontrun_price(
 
 
 class BotState(Enum):
+    STOPPED = auto()
+    RUNNING = auto()
     IDLE = auto()
     LONG_ACCUMULATION = auto()
     HEDGED = auto()

@@ -27,6 +27,10 @@ class PaperTrader:
         self.symbol: str = config.symbol if config else "BTCUSDT"
         self.fills: List[Dict[str, Any]] = []
 
+        # ── Auto-start: paper mode is ALWAYS running ────────────
+        self.status: str = "RUNNING"
+        self.entries_paused: bool = False
+
         # ── Paper balance bootstrap ──────────────────────────────
         # After a DB wipe the balance is 0.  For paper mode we
         # inject a hardcoded fallback so grid volume is never zero.
@@ -34,7 +38,8 @@ class PaperTrader:
 
         logger.info(
             "PaperTrader initialised (Shadow Mode) — "
-            "fallback USDT balance: %.2f — no live orders",
+            "status=%s, fallback USDT balance: %.2f — no live orders",
+            self.status,
             float(self.quote_balance),
         )
 
