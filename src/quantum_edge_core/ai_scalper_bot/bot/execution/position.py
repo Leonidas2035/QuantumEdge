@@ -94,6 +94,20 @@ class PositionManager:
             # For now, let's just track it as a special state or ignore effect on 'Long' Avg Price.
             pass
 
+    def calculate_order_qty(self, price: float) -> float:
+        import logging
+
+        logger = logging.getLogger("PositionManager")
+        if self.state.quote_balance <= 0:
+            logger.warning("ZERO BALANCE — using fallback")
+            self.state.quote_balance = Decimal("10000.0")
+
+        exposure_pct = Decimal(str(getattr(self, "exposure_pct", 1.0)))
+        total_levels = Decimal(str(getattr(self, "total_levels", 30)))
+
+        qty = (self.state.quote_balance * exposure_pct) / total_levels
+        return float(max(qty, Decimal("0.00001")))
+
     def get_drawdown_pct(self, current_price: Decimal) -> Decimal:
         """
         Calculates negative drift percentage from average entry.

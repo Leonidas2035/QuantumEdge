@@ -440,6 +440,10 @@ class DynamicDCAStrategy:
             risk_amount = quote_balance * risk_percent * fractional_kelly
             self.base_order_size_q = risk_amount / current_price
 
+        logger.info(
+            f"DEBUG BALANCE: quote_balance={float(quote_balance):.2f} | risk_percent={float(risk_percent)}"
+        )
+
         # Check conditions for SYNC_GRID
         is_initial_start = self.last_sync_price == Decimal("0.0")
         macro_changed = (
@@ -454,6 +458,37 @@ class DynamicDCAStrategy:
         out_of_bounds = price_moved_abs > (current_price * self.grid_spacing_pct)
 
         if is_initial_start or macro_changed or out_of_bounds:
+            grid = self.calculate_grid_prices(
+                current_price, calculated_atr, spacing_mult, self.gamma
+            )
+            prices = grid["bids"] + grid["asks"]
+            total_levels = len(prices)
+
+            logger.info(
+                f"DEBUG SYNC_GRID: {total_levels} levels | top={grid_top:.2f} | bottom={grid_bottom:.2f}"
+            )
+            current_balance = float(position.state.quote_balance)
+            logger.info(
+                f"DEBUG BALANCE: quote_balance={current_balance:.2f} | risk_percent={float(risk_percent)}"
+            )
+
+            for i, price in enumerate(prices):
+                # Calculate qty safely using position manager
+                qty = position.calculate_order_qty(float(price))
+                side = "BUY" if price in grid["bids"] else "SELL"
+
+                logger.info(
+                    f"DEBUG ORDER CANDIDATE #{i}: {side} @ {float(price):.2f} | qty={qty:.6f} | reason='calculated'"
+                )
+
+                if qty <= 0.000001:
+                    logger.error(
+                        f"CRITICAL: qty={qty} — order SKIPPED! (balance too low or zero)"
+                    )
+                    continue
+
+                # Note: Paper trader execution happens at the gateway level based on the SYNC_GRID action
+
             logger.info(
                 f"GRID_SYNCED: regime={regime} top={grid_top} bottom={grid_bottom}"
             )

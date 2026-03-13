@@ -235,7 +235,9 @@ class BotEngine:
                             self.position.total_qty,
                             market_state=ms,
                             equity=eq,
-                            trading_mode=getattr(self.config, "trading_mode", "spot_grid"),
+                            trading_mode=getattr(
+                                self.config, "trading_mode", "spot_grid"
+                            ),
                         )
                         # ILP Portfolio logging
                         self.quest_telemetry.log_portfolio_state(
@@ -374,9 +376,16 @@ class BotEngine:
                 # internal state.  We forcibly reset them every tick.
                 if market_state:
                     market_state.entries_paused = False
-                if self.strategy.state not in (BotState.RUNNING, BotState.LONG_ACCUMULATION, BotState.HEDGED):
+                if self.strategy.state not in (
+                    BotState.RUNNING,
+                    BotState.LONG_ACCUMULATION,
+                    BotState.HEDGED,
+                ):
                     self.strategy.state = BotState.RUNNING
-                if hasattr(self, 'gateway') and getattr(self.gateway, 'status', '') != "RUNNING":
+                if (
+                    hasattr(self, "gateway")
+                    and getattr(self.gateway, "status", "") != "RUNNING"
+                ):
                     logger.warning("IRON LOCK activated: forcing gateway RUNNING")
                     self.gateway.status = "RUNNING"
                     self.gateway.entries_paused = False
