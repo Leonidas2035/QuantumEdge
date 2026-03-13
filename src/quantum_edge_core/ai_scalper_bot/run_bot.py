@@ -15,6 +15,7 @@ from quantum_edge_core.ai_scalper_bot.bot.core.config import Config
 from quantum_edge_core.ai_scalper_bot.bot.core.orderbook import OrderBookCache
 from quantum_edge_core.ai_scalper_bot.bot.features.facade import FeatureEngine
 from quantum_edge_core.ai_scalper_bot.bot.execution.strategy_core import (
+    BotState,
     DynamicDCAStrategy,
 )
 from quantum_edge_core.ai_scalper_bot.bot.execution.volatility import OnlineVolatility
@@ -110,6 +111,17 @@ class BotEngine:
             f">>> Bot Engine STARTING Main Loop... Target: {self.config.symbol}"
         )
         self.running = True
+
+        # ── AUTO-START: Force RUNNING state on boot ───────────
+        self.strategy.state = BotState.RUNNING
+        self.gateway.status = "RUNNING"
+        self.gateway.entries_paused = False
+        logger.info(
+            "Auto-start: strategy.state=%s, gateway.status=%s, entries_paused=%s",
+            self.strategy.state.name,
+            self.gateway.status,
+            self.gateway.entries_paused,
+        )
 
         # ── Broadcast initial state to Dashboard ──────────────
         await self.reporter.send_initial_state(
