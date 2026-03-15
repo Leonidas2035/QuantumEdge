@@ -431,17 +431,27 @@ class DynamicDCAStrategy:
             * self.grid_spacing_multiplier
         )
 
-        # Money Management
-        risk_percent = Decimal(str(self.config.get("risk_percent", 0.01)))
-        fractional_kelly = Decimal(str(self.config.get("fractional_kelly", 0.25)))
+        # ── Money Management: DCA Grid Qty ──────────────────────
+        exposure_pct = Decimal(str(self.config.get("exposure_pct", 0.5)))
         quote_balance = position.state.quote_balance
+        if quote_balance <= 0:
+            quote_balance = Decimal("10000.0")
 
-        if quote_balance > 0:
-            risk_amount = quote_balance * risk_percent * fractional_kelly
-            self.base_order_size_q = risk_amount / current_price
+        total_levels = Decimal(str(self.grid_levels_below + self.grid_levels_above))
+        capital_per_level = (quote_balance * exposure_pct) / total_levels
+        grid_qty = capital_per_level / current_price
+
+        # Round to 4 decimals and enforce Binance Spot minimum (0.001 BTC)
+        grid_qty = grid_qty.quantize(Decimal("0.0001"))
+        grid_qty = max(grid_qty, Decimal("0.001"))
+
+        self.base_order_size_q = grid_qty
 
         logger.info(
-            f"DEBUG BALANCE: quote_balance={float(quote_balance):.2f} | risk_percent={float(risk_percent)}"
+            "[DCA QTY CALC] quote_balance=%.2f | exposure=%.2f | levels=%d | "
+            "capital/lvl=%.2f | price=%.2f | grid_qty=%.6f",
+            float(quote_balance), float(exposure_pct), int(total_levels),
+            float(capital_per_level), float(current_price), float(grid_qty),
         )
 
         # Check conditions for SYNC_GRID
@@ -461,48 +471,41 @@ class DynamicDCAStrategy:
             grid = self.calculate_grid_prices(
                 current_price, calculated_atr, spacing_mult, self.gamma
             )
-            prices = grid["bids"] + grid["asks"]
-            total_levels = len(prices)
+            bid_prices = grid["bids"]
+            ask_prices = grid["asks"]
+            all_prices = bid_prices + ask_prices
 
-            logger.info(
-                f"DEBUG SYNC_GRID: {total_levels} levels | top={grid_top:.2f} | bottom={grid_bottom:.2f}"
-            )
-            current_balance = float(position.state.quote_balance)
-            logger.info(
-                f"DEBUG BALANCE: quote_balance={current_balance:.2f} | risk_percent={float(risk_percent)}"
-            )
-
-            for i, price in enumerate(prices):
-                # Calculate qty safely using position manager
-                qty = position.calculate_order_qty(float(price))
-                side = "BUY" if price in grid["bids"] else "SELL"
-
+            # Per-level diagnostic
+            for i, lvl_price in enumerate(all_prices):
+                side = "BUY" if lvl_price in bid_prices else "SELL"
                 logger.info(
-                    f"DEBUG ORDER CANDIDATE #{i}: {side} @ {float(price):.2f} | qty={qty:.6f} | reason='calculated'"
+                    "GRID ORDER #%d: %s @ %.2f | qty=%.6f BTC",
+                    i, side, float(lvl_price), float(grid_qty),
                 )
 
-                if qty <= 0.000001:
-                    logger.error(
-                        f"CRITICAL: qty={qty} — order SKIPPED! (balance too low or zero)"
-                    )
-                    continue
-
-                # Note: Paper trader execution happens at the gateway level based on the SYNC_GRID action
-
-            logger.info(
-                f"GRID_SYNCED: regime={regime} top={grid_top} bottom={grid_bottom}"
+            logger.warning(
+                "!!! DCA GRID COMPILED SUCCESSFULLY: %d orders | "
+                "qty_per_level=%.6f BTC | capital/lvl=%.2f USDT | "
+                "price=%.2f | regime=%s | bias=%s !!!",
+                len(all_prices), float(grid_qty), float(capital_per_level),
+                float(current_price), regime, bias,
             )
+
             self.last_grid_sync_time = now
             self.last_sync_price = current_price
             self.last_regime = regime
             self.last_bias = bias
 
-            params = f"regime={regime}|bias={bias}|atr={float(calculated_atr):.2f}|gamma={self.gamma}|mult={float(spacing_mult):.2f}"
+            params = (
+                f"regime={regime}|bias={bias}|atr={float(calculated_atr):.2f}"
+                f"|gamma={self.gamma}|mult={float(spacing_mult):.2f}"
+                f"|qty={float(grid_qty):.6f}|levels={len(all_prices)}"
+            )
 
             return TradeAction(
                 action_type="SYNC_GRID",
                 price=current_price,
-                qty=self.base_order_size_q,
+                qty=grid_qty,
                 reason=params,
             )
         else:
