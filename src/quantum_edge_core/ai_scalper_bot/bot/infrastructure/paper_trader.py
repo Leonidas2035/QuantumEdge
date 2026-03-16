@@ -51,9 +51,7 @@ class PaperTrader:
             float(self.quote_balance),
         )
 
-    async def execute(
-        self, action: Union[TradeAction, List[TradeAction]]
-    ) -> bool:
+    async def execute(self, action: Union[TradeAction, List[TradeAction]]) -> bool:
         """Execute a single action or a batch of grid orders."""
         # ── Handle list of orders (DCA Grid batch) ───────────────
         if isinstance(action, list):
@@ -64,7 +62,8 @@ class PaperTrader:
                     placed += 1
             logger.warning(
                 "!!! GRID BATCH COMPLETE: %d/%d orders placed !!!",
-                placed, len(action),
+                placed,
+                len(action),
             )
             return placed > 0
 
@@ -82,7 +81,8 @@ class PaperTrader:
             self.open_orders.clear()
             logger.info(
                 "✅ PAPER TRADE: Canceled %d open orders | %s",
-                cancelled, action.reason,
+                cancelled,
+                action.reason,
             )
             return True
 
@@ -145,8 +145,11 @@ class PaperTrader:
         logger.warning(
             "!!! SYNC_GRID EXPANDED: %d LIMIT orders placed | "
             "center=%.2f | qty=%.6f BTC | spacing=%.4f%% | %s !!!",
-            placed, float(center_price), float(qty),
-            float(spacing_pct * 100), action.reason,
+            placed,
+            float(center_price),
+            float(qty),
+            float(spacing_pct * 100),
+            action.reason,
         )
         return placed > 0
 
@@ -157,7 +160,8 @@ class PaperTrader:
 
         if qty <= 0 or qty < Decimal("0.0001"):
             logger.error(
-                "ORDER SKIPPED: qty=%.6f is below minimum!", float(qty),
+                "ORDER SKIPPED: qty=%.6f is below minimum!",
+                float(qty),
             )
             return False
 
@@ -189,13 +193,19 @@ class PaperTrader:
 
         logger.info(
             "ORDER PLACED: %s %.6f %s @ %.2f | reason=%s | bal=%.2f (id=%s)",
-            side, float(qty), self.symbol, float(price),
-            action.reason, float(self.quote_balance), fill_id,
+            side,
+            float(qty),
+            self.symbol,
+            float(price),
+            action.reason,
+            float(self.quote_balance),
+            fill_id,
         )
         return True
 
     async def close(self) -> None:
         logger.info(
             "PaperTrader closed. Total fills: %d, open orders: %d",
-            len(self.fills), len(self.open_orders),
+            len(self.fills),
+            len(self.open_orders),
         )

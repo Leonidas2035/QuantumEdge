@@ -450,8 +450,12 @@ class DynamicDCAStrategy:
         logger.info(
             "[DCA QTY CALC] quote_balance=%.2f | exposure=%.2f | levels=%d | "
             "capital/lvl=%.2f | price=%.2f | grid_qty=%.6f",
-            float(quote_balance), float(exposure_pct), int(total_levels),
-            float(capital_per_level), float(current_price), float(grid_qty),
+            float(quote_balance),
+            float(exposure_pct),
+            int(total_levels),
+            float(capital_per_level),
+            float(current_price),
+            float(grid_qty),
         )
 
         # Check conditions for SYNC_GRID
@@ -480,15 +484,22 @@ class DynamicDCAStrategy:
                 side = "BUY" if lvl_price in bid_prices else "SELL"
                 logger.info(
                     "GRID ORDER #%d: %s @ %.2f | qty=%.6f BTC",
-                    i, side, float(lvl_price), float(grid_qty),
+                    i,
+                    side,
+                    float(lvl_price),
+                    float(grid_qty),
                 )
 
             logger.warning(
                 "!!! DCA GRID COMPILED SUCCESSFULLY: %d orders | "
                 "qty_per_level=%.6f BTC | capital/lvl=%.2f USDT | "
                 "price=%.2f | regime=%s | bias=%s !!!",
-                len(all_prices), float(grid_qty), float(capital_per_level),
-                float(current_price), regime, bias,
+                len(all_prices),
+                float(grid_qty),
+                float(capital_per_level),
+                float(current_price),
+                regime,
+                bias,
             )
 
             self.last_grid_sync_time = now

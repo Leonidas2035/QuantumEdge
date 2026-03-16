@@ -222,7 +222,11 @@ with st.sidebar:
         "WHERE symbol = 'BTCUSDT' AND timestamp > now() - 5m",
         lambda: pd.DataFrame({"last_price": [0.0]}),
     )
-    live_price = float(df_last_price.iloc[0].get("last_price", 0)) if not df_last_price.empty else 0.0
+    live_price = (
+        float(df_last_price.iloc[0].get("last_price", 0))
+        if not df_last_price.empty
+        else 0.0
+    )
 
     if not is_portfolio_mock and not df_portfolio.empty and len(df_portfolio) >= 2:
         curr_eq = float(df_portfolio.iloc[0].get("equity", 0))

@@ -16,11 +16,24 @@ class BinanceExecutionGateway:
         if self.trading_mode == "spot_grid":
             options = {"defaultType": "spot"}
 
+        # Determine testnet routing
+        api_key = (
+            config.binance_testnet_api_key
+            if config.use_testnet
+            else config.binance_api_key
+        )
+        secret = (
+            config.binance_testnet_secret
+            if config.use_testnet
+            else config.binance_secret
+        )
+
         self.exchange = ccxt.binance(
             {
-                "apiKey": config.binance_api_key,
-                "secret": config.binance_secret,
+                "apiKey": api_key,
+                "secret": secret,
                 "options": options,
+                "enableRateLimit": True,
             }
         )
 
@@ -28,13 +41,30 @@ class BinanceExecutionGateway:
             self.exchange.set_sandbox_mode(True)
             self.logger.warning("⚠️ RUNNING IN BINANCE TESTNET MODE")
 
-    async def execute(self, action: TradeAction) -> bool:
+    async def execute(self, action: TradeAction | list[TradeAction]) -> bool:
         """
-        Executes a TradeAction on Binance via CCXT.
+        Executes a single TradeAction or a list of TradeActions on Binance via CCXT.
+        """
+        if isinstance(action, list):
+            placed = 0
+            for order in action:
+                result = await self._execute_single(order)
+                if result:
+                    placed += 1
+            self.logger.warning(
+                f"!!! GRID BATCH COMPLETE: {placed}/{len(action)} orders placed !!!"
+            )
+            return placed > 0
+
+        return await self._execute_single(action)
+
+    async def _execute_single(self, action: TradeAction) -> bool:
+        """
+        Executes a single TradeAction on Binance via CCXT.
         """
         if action.action_type == "CANCEL_ALL":
             try:
-                self.logger.info(
+                self.logger.warning(
                     f"🚀 BINANCE: Canceling all open orders for {self.symbol} | {action.reason}"
                 )
                 await self.exchange.cancel_all_orders(symbol=self.symbol)
@@ -49,7 +79,7 @@ class BinanceExecutionGateway:
             # This fixes the performance issue noted in code review and supports the
             # requirement to update the grid gracefully without blocking the loop fully.
             try:
-                self.logger.info(
+                self.logger.warning(
                     f"🚀 BINANCE (SPOT): Syncing Grid around {action.price} | {action.reason}"
                 )
                 await self.exchange.cancel_all_orders(symbol=self.symbol)
@@ -96,7 +126,7 @@ class BinanceExecutionGateway:
                 tasks.append(asyncio.create_task(safe_create_order("sell", price)))
 
             await asyncio.gather(*tasks)
-            self.logger.info("✅ BINANCE: Grid Sync Complete (Concurrent).")
+            self.logger.warning("✅ BINANCE: Grid Sync Complete (Concurrent).")
             return True
 
         elif action.action_type == "ORDER_FILLED":
@@ -118,7 +148,7 @@ class BinanceExecutionGateway:
                 new_side = "buy"
                 new_price = round(orig_price * (1 - spacing_pct), 2)
 
-            self.logger.info(
+            self.logger.warning(
                 f"✅ BINANCE: Executing Counter-Order -> {new_side.upper()} @ {new_price}"
             )
             try:
@@ -145,7 +175,7 @@ class BinanceExecutionGateway:
             if self.trading_mode == "spot_grid":
                 # Fallback for manual or single LIMIT orders
                 price = action.price
-                self.logger.info(
+                self.logger.warning(
                     f"🚀 BINANCE (SPOT): Sending Maker Limit {side.upper()} {amount} {self.symbol} @ {price}..."
                 )
                 order = await self.exchange.create_order(
@@ -156,7 +186,7 @@ class BinanceExecutionGateway:
                     price=price,
                 )
             else:
-                self.logger.info(
+                self.logger.warning(
                     f"🚀 BINANCE (FUTURES): Sending Market {side.upper()} {amount} {self.symbol}..."
                 )
                 # Execute Market Order
@@ -164,7 +194,7 @@ class BinanceExecutionGateway:
                     symbol=self.symbol, type="market", side=side, amount=amount
                 )
 
-            self.logger.info(f"✅ BINANCE: Order Filled! ID: {order['id']}")
+            self.logger.warning(f"✅ BINANCE: Order Filled! ID: {order['id']}")
             return True
 
         except Exception as e:
