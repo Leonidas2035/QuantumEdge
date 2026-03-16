@@ -8,7 +8,13 @@ class Config:
         # --- BINANCE CREDENTIALS ---
         self.binance_api_key = os.getenv("BINANCE_API_KEY", "")
         self.binance_secret = os.getenv("BINANCE_API_SECRET", "")
-        self.use_testnet = os.getenv("BINANCE_TESTNET", "1") in {"1", "true", "True"}
+
+        self.binance_testnet_api_key = os.getenv("BINANCE_TESTNET_API_KEY", "")
+        self.binance_testnet_secret = os.getenv("BINANCE_TESTNET_SECRET_KEY", "")
+
+        # Determine testnet routing
+        use_testnet_env = os.getenv("USE_TESTNET", os.getenv("BINANCE_TESTNET", "1"))
+        self.use_testnet = str(use_testnet_env).lower() in {"1", "true", "t"}
 
         # --- SYSTEM PORTS ---
         self.market_data_port = int(os.getenv("MARKET_DATA_ZMQ_PORT", "5555"))
