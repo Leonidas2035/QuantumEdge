@@ -17,8 +17,16 @@ class BinanceExecutionGateway:
             options = {"defaultType": "spot"}
 
         # Determine testnet routing
-        api_key = config.binance_testnet_api_key if config.use_testnet else config.binance_api_key
-        secret = config.binance_testnet_secret if config.use_testnet else config.binance_secret
+        api_key = (
+            config.binance_testnet_api_key
+            if config.use_testnet
+            else config.binance_api_key
+        )
+        secret = (
+            config.binance_testnet_secret
+            if config.use_testnet
+            else config.binance_secret
+        )
 
         self.exchange = ccxt.binance(
             {
