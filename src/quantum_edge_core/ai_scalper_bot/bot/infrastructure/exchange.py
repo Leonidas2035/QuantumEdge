@@ -41,7 +41,9 @@ class BinanceExecutionGateway:
             self.exchange.set_sandbox_mode(True)
             self.logger.warning("⚠️ RUNNING IN BINANCE TESTNET MODE")
 
-    async def execute(self, action: TradeAction | list[TradeAction]) -> bool:
+    from typing import Union, List
+
+    async def execute(self, action: Union[TradeAction, List[TradeAction]]) -> bool:
         """
         Executes a single TradeAction or a list of TradeActions on Binance via CCXT.
         """
@@ -105,12 +107,15 @@ class BinanceExecutionGateway:
 
             async def safe_create_order(side, price):
                 try:
-                    await self.exchange.create_order(
+                    order = await self.exchange.create_order(
                         symbol=self.symbol,
                         type="limit",
                         side=side,
                         amount=amount,
                         price=price,
+                    )
+                    self.logger.warning(
+                        f"🟢 TESTNET ORDER PLACED: {side.upper()} {amount} BTC @ {price} | API ID: {order.get('id')}"
                     )
                 except Exception as e:
                     self.logger.warning(f"Failed to place {side} grid at {price}: {e}")
@@ -152,12 +157,15 @@ class BinanceExecutionGateway:
                 f"✅ BINANCE: Executing Counter-Order -> {new_side.upper()} @ {new_price}"
             )
             try:
-                await self.exchange.create_order(
+                order = await self.exchange.create_order(
                     symbol=self.symbol,
                     type="limit",
                     side=new_side,
                     amount=amount,
                     price=new_price,
+                )
+                self.logger.warning(
+                    f"🟢 TESTNET ORDER PLACED: {new_side.upper()} {amount} BTC @ {new_price} | API ID: {order.get('id')}"
                 )
                 return True
             except Exception as e:
@@ -185,6 +193,9 @@ class BinanceExecutionGateway:
                     amount=amount,
                     price=price,
                 )
+                self.logger.warning(
+                    f"🟢 TESTNET ORDER PLACED: {side.upper()} {amount} BTC @ {price} | API ID: {order.get('id')}"
+                )
             else:
                 self.logger.warning(
                     f"🚀 BINANCE (FUTURES): Sending Market {side.upper()} {amount} {self.symbol}..."
@@ -192,6 +203,9 @@ class BinanceExecutionGateway:
                 # Execute Market Order
                 order = await self.exchange.create_order(
                     symbol=self.symbol, type="market", side=side, amount=amount
+                )
+                self.logger.warning(
+                    f"🟢 TESTNET ORDER PLACED: {side.upper()} {amount} BTC @ MARKET | API ID: {order.get('id')}"
                 )
 
             self.logger.warning(f"✅ BINANCE: Order Filled! ID: {order['id']}")
