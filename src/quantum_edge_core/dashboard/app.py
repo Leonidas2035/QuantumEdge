@@ -210,9 +210,19 @@ with st.sidebar:
 
     # ── Portfolio State from QuestDB (real telemetry) ──
     df_portfolio, is_portfolio_mock = fetch_data(
-        "SELECT * FROM portfolio_state WHERE symbol = 'BTCUSDT' ORDER BY timestamp DESC LIMIT 2",
+        "SELECT timestamp, symbol, equity, unrealized_pnl, position_qty "
+        "FROM portfolio_state WHERE symbol = 'BTCUSDT' "
+        "ORDER BY timestamp DESC LIMIT 2",
         get_mock_inventory,
     )
+
+    # Fetch latest price for live Unrealized PnL calculation
+    df_last_price, _ = fetch_data(
+        "SELECT last(price) AS last_price FROM trades "
+        "WHERE symbol = 'BTCUSDT' AND timestamp > now() - 5m",
+        lambda: pd.DataFrame({"last_price": [0.0]}),
+    )
+    live_price = float(df_last_price.iloc[0].get("last_price", 0)) if not df_last_price.empty else 0.0
 
     if not is_portfolio_mock and not df_portfolio.empty and len(df_portfolio) >= 2:
         curr_eq = float(df_portfolio.iloc[0].get("equity", 0))
@@ -225,6 +235,8 @@ with st.sidebar:
         st.metric("Equity", f"${curr_eq:,.2f}", f"{eq_pct:+.2f}%")
         st.metric("Unrealized PnL", f"${curr_pnl:,.2f}")
         st.metric("Position", f"{curr_qty:+.4f} BTC")
+        if live_price > 0:
+            st.caption(f"Last Price: ${live_price:,.2f}")
     else:
         # Fallback to inventory table or mock
         df_inv, _ = fetch_data(
@@ -446,7 +458,9 @@ with tab3:
     st.markdown("### Trade Executions")
 
     df_trades, is_trades_mock = fetch_data(
-        "SELECT * FROM realized_trades WHERE symbol = 'BTCUSDT' ORDER BY timestamp DESC LIMIT -100",
+        "SELECT timestamp, symbol, side, price, qty, realized_pnl "
+        "FROM realized_trades WHERE symbol = 'BTCUSDT' "
+        "ORDER BY timestamp DESC LIMIT -100",
         get_mock_trades,
     )
 
