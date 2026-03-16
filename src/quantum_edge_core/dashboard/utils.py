@@ -121,17 +121,28 @@ def get_mock_llm_advice() -> pd.DataFrame:
 
 
 def get_mock_trades() -> pd.DataFrame:
-    """Generate mock executed trades."""
+    """Generate mock executed trades matching QuestDB realized_trades schema."""
     sides = ["BUY", "SELL"]
-    statuses = ["FILLED", "PARTIAL", "REJECTED"]
+    now = datetime.now()
+    timestamps = [now - timedelta(minutes=i * 3) for i in range(19, -1, -1)]
+    prices = np.random.uniform(49000, 51000, 20).round(2)
+    qtys = np.random.uniform(0.001, 0.05, 20).round(4)
+    # Simulate realized PnL: buys have 0, sells have small +/- values
+    side_arr = np.random.choice(sides, 20)
+    pnl_arr = np.where(
+        side_arr == "SELL",
+        np.random.uniform(-50, 100, 20).round(2),
+        0.0,
+    )
 
     df = pd.DataFrame(
         {
-            "client_oid": [f"ord_{i}" for i in range(100, 120)],
-            "side": np.random.choice(sides, 20),
-            "price": np.random.uniform(49000, 51000, 20).round(2),
-            "qty": np.random.uniform(0.01, 1.5, 20).round(3),
-            "status": np.random.choice(statuses, 20, p=[0.8, 0.1, 0.1]),
+            "timestamp": timestamps,
+            "symbol": ["BTCUSDT"] * 20,
+            "side": side_arr,
+            "price": prices,
+            "qty": qtys,
+            "realized_pnl": pnl_arr,
         }
     )
     return df
