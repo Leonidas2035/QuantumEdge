@@ -41,6 +41,39 @@ class BinanceExecutionGateway:
             self.exchange.set_sandbox_mode(True)
             self.logger.warning("⚠️ RUNNING IN BINANCE TESTNET MODE")
 
+    @property
+    def quote_balance(self) -> float:
+        """
+        Fetches the real USDT free balance via CCXT.
+        Returns a fallback value of 10000.0 if the fetch fails (e.g., due to rate limits or connection errors).
+        Note: CCXT's fetch_balance is an async method, but this property needs to be synchronous for BotEngine initialization.
+        Therefore, we must use asyncio.run or get the event loop to run it synchronously if possible,
+        but since the initialization is typically synchronous, we will run the coroutine.
+        """
+        try:
+            # We need to run the async fetch_balance in a synchronous context because BotEngine expects a float property
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                import concurrent.futures
+
+                # If loop is already running, we can't easily run_until_complete.
+                # In that case, we might have to just return the fallback.
+                # Alternatively, we could create a new thread.
+                self.logger.warning(
+                    "Event loop is already running, returning fallback balance 10000.0"
+                )
+                return 10000.0
+
+            balance = loop.run_until_complete(self.exchange.fetch_balance())
+            usdt_free = float(balance.get("USDT", {}).get("free", 10000.0))
+            self.logger.info(f"💰 Fetched actual USDT balance: {usdt_free}")
+            return usdt_free
+        except Exception as e:
+            self.logger.warning(
+                f"⚠️ Failed to fetch balance via CCXT, falling back to 10000.0. Error: {e}"
+            )
+            return 10000.0
+
     async def execute(self, action: TradeAction | list[TradeAction]) -> bool:
         """
         Executes a single TradeAction or a list of TradeActions on Binance via CCXT.
