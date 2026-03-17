@@ -112,6 +112,9 @@ class BinanceExecutionGateway:
                         amount=amount,
                         price=price,
                     )
+                    self.logger.warning(
+                        f"✅ REAL TESTNET ORDER PLACED: {side.upper()} {amount:.6f} @ {price:.2f}"
+                    )
                 except Exception as e:
                     self.logger.warning(f"Failed to place {side} grid at {price}: {e}")
 
@@ -159,6 +162,9 @@ class BinanceExecutionGateway:
                     amount=amount,
                     price=new_price,
                 )
+                self.logger.warning(
+                    f"✅ REAL TESTNET ORDER PLACED: {new_side.upper()} {amount:.6f} @ {new_price:.2f}"
+                )
                 return True
             except Exception as e:
                 self.logger.error(f"❌ BINANCE Counter-Order Error: {e}")
@@ -195,6 +201,9 @@ class BinanceExecutionGateway:
                 )
 
             self.logger.warning(f"✅ BINANCE: Order Filled! ID: {order['id']}")
+            self.logger.warning(
+                f"✅ REAL TESTNET ORDER PLACED: {side.upper()} {amount:.6f} @ {price if self.trading_mode == 'spot_grid' else 'market'}"
+            )
             return True
 
         except Exception as e:

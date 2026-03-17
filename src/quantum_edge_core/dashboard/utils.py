@@ -68,125 +68,35 @@ def fetch_data(query: str, fallback_func) -> tuple[pd.DataFrame, bool]:
 
 
 def get_mock_market_data() -> pd.DataFrame:
-    """Generate mock 1-minute candlestick data for the last 24h."""
-    now = datetime.now()
-    timestamps = [now - timedelta(minutes=i) for i in range(24 * 60 - 1, -1, -1)]
-
-    np.random.seed(int(time.time() * 100) % 10000)
-    returns = np.random.normal(0, 0.001, len(timestamps))
-    prices = 50000 * np.exp(np.cumsum(returns))
-
-    highs = prices * (1 + np.abs(np.random.normal(0, 0.002, len(timestamps))))
-    lows = prices * (1 - np.abs(np.random.normal(0, 0.002, len(timestamps))))
-    opens = np.roll(prices, 1)
-    opens[0] = prices[0]
-    volumes = np.abs(np.random.normal(10, 5, len(timestamps)))
-
-    df = pd.DataFrame(
-        {
-            "timestamp": timestamps,
-            "open": opens,
-            "high": highs,
-            "low": lows,
-            "close": prices,
-            "volume": volumes,
-        }
-    )
-    return df
+    """Return empty dataframe instead of mock market data."""
+    logger.warning("QuestDB empty after wipe. Showing BLANK table (no mock data!)")
+    return pd.DataFrame(columns=["timestamp", "open", "high", "low", "close", "volume"])
 
 
 def get_mock_llm_advice() -> pd.DataFrame:
-    """Generate mock LLM decisions."""
-    modes = ["SCALP", "DCA", "PASS", "NEUTRAL", "HALT"]
-    reasons = [
-        "High volatility detected.",
-        "Trend alignment verified.",
-        "Waiting for clearer signal.",
-        "Market ranging.",
-        "Risk limits exceeded.",
-    ]
-
-    now = datetime.now()
-    timestamps = [now - timedelta(minutes=i * 5) for i in range(19, -1, -1)]
-
-    df = pd.DataFrame(
-        {
-            "time": timestamps,
-            "trading_mode": np.random.choice(modes, 20),
-            "multiplier": np.random.uniform(0.5, 2.0, 20).round(2),
-            "reason": np.random.choice(reasons, 20),
-        }
-    )
-    return df
+    """Return empty dataframe instead of mock LLM advice."""
+    logger.warning("QuestDB empty after wipe. Showing BLANK table (no mock data!)")
+    return pd.DataFrame(columns=["time", "trading_mode", "multiplier", "reason"])
 
 
 def get_mock_trades() -> pd.DataFrame:
-    """Generate mock executed trades matching QuestDB realized_trades schema."""
-    sides = ["BUY", "SELL"]
-    now = datetime.now()
-    timestamps = [now - timedelta(minutes=i * 3) for i in range(19, -1, -1)]
-    prices = np.random.uniform(49000, 51000, 20).round(2)
-    qtys = np.random.uniform(0.001, 0.05, 20).round(4)
-    # Simulate realized PnL: buys have 0, sells have small +/- values
-    side_arr = np.random.choice(sides, 20)
-    pnl_arr = np.where(
-        side_arr == "SELL",
-        np.random.uniform(-50, 100, 20).round(2),
-        0.0,
+    """Return empty dataframe instead of mock trades data."""
+    logger.warning("QuestDB empty after wipe. Showing BLANK table (no mock data!)")
+    return pd.DataFrame(
+        columns=["timestamp", "symbol", "side", "price", "qty", "realized_pnl"]
     )
-
-    df = pd.DataFrame(
-        {
-            "timestamp": timestamps,
-            "symbol": ["BTCUSDT"] * 20,
-            "side": side_arr,
-            "price": prices,
-            "qty": qtys,
-            "realized_pnl": pnl_arr,
-        }
-    )
-    return df
 
 
 def get_mock_inventory() -> pd.DataFrame:
-    """Generate mock inventory/equity data."""
-    now = datetime.now()
-    timestamps = [now - timedelta(minutes=i * 15) for i in range(95, -1, -1)]
-
-    equity = 10000 + np.cumsum(np.random.normal(0, 50, len(timestamps)))
-
-    df = pd.DataFrame(
-        {
-            "timestamp": timestamps,
-            "equity": equity,
-            "drawdown": (equity.max() - equity) / equity.max() * 100,
-        }
-    )
-    return df
+    """Return empty dataframe instead of mock inventory data."""
+    logger.warning("QuestDB empty after wipe. Showing BLANK table (no mock data!)")
+    return pd.DataFrame(columns=["timestamp", "equity", "drawdown"])
 
 
 def get_mock_orderbook() -> pd.DataFrame:
-    """Generate mock orderbook heatmap data simulating depth across price levels and time."""
-    now = datetime.now()
-    timestamps = [now - timedelta(seconds=i * 5) for i in range(20, -1, -1)]
-    prices = np.linspace(49000, 51000, 50)
-
-    records = []
-    for t in timestamps:
-        for p in prices:
-            side = "BID" if p < 50000 else "ASK"
-            # Random volumes with higher concentration near the mid price
-            distance = abs(p - 50000)
-            vol = np.random.lognormal(mean=1.5, sigma=1.0) * (5000 / (distance + 1))
-            records.append({"timestamp": t, "price": p, "volume": vol, "side": side})
-    df = pd.DataFrame(records)
-
-    # Create some "whale walls" randomly
-    whale_indices = np.random.choice(df.index, size=5, replace=False)
-    for idx in whale_indices:
-        df.at[idx, "volume"] = np.random.uniform(25, 50)
-
-    return df
+    """Return empty dataframe instead of mock orderbook data."""
+    logger.warning("QuestDB empty after wipe. Showing BLANK table (no mock data!)")
+    return pd.DataFrame(columns=["timestamp", "price", "volume", "side"])
 
 
 # --- Process Management ---

@@ -60,7 +60,25 @@ class BotEngine:
             endpoint=f"tcp://127.0.0.1:{self.config.market_data_port}",
             topic="",  # Global subscription — receive ALL topics from Hub
         )
-        self.gateway = PaperTrader(self.config)
+        import os
+
+        execution_mode = os.getenv("EXECUTION_MODE", "paper").lower()
+        use_testnet = os.getenv("USE_TESTNET", "False").lower() == "true"
+
+        if execution_mode == "live":
+            logger.warning(
+                "🚀 FORCING LIVE EXECUTION (Testnet)"
+                if use_testnet
+                else "🚀 FORCING LIVE EXECUTION (Production)"
+            )
+            from quantum_edge_core.ai_scalper_bot.bot.infrastructure.exchange import (
+                BinanceExecutionGateway,
+            )
+
+            self.gateway = BinanceExecutionGateway(self.config)
+        else:
+            self.gateway = PaperTrader(self.config)
+
         self.reporter = SupervisorReporter(
             pub_endpoint=f"tcp://*:{self.config.telemetry_port}",
             service_id=self.config.service_id,
