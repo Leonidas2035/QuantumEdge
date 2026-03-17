@@ -29,6 +29,13 @@ class PaperTrader:
     """Drop-in replacement for BinanceExecutionGateway."""
 
     def __init__(self, config: Optional[Any] = None) -> None:
+        import os
+
+        if os.getenv("EXECUTION_MODE", "").lower() == "live":
+            logger.error(
+                "PAPERTRADER STILL ACTIVE IN LIVE MODE! This should never happen!"
+            )
+
         self.symbol: str = config.symbol if config else "BTCUSDT"
         self.fills: List[Dict[str, Any]] = []
         self.open_orders: List[Dict[str, Any]] = []
