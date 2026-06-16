@@ -27,6 +27,8 @@ data/
 config/secrets.yaml
 config/api_keys.json
 scripts/secrets.enc
+config/secrets.local.env
+**/secrets.local.env
 
 # Temporary output
 output/
