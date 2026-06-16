@@ -1,0 +1,17 @@
+# Core runtime dependencies shared across the monorepo.
+# Keep this list minimal and derived from actual imports.
+
+PyYAML>=6.0
+requests
+websockets>=11.0
+numpy
+pandas
+python-binance
+xgboost
+cryptography>=42.0.0
+msgspec>=0.18.0
+httpx>=0.26.0
+fastapi>=0.110.0
+uvicorn>=0.27.0
+psycopg>=3.1.0
+questdb-ingress>=1.0.0

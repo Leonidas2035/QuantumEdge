@@ -1,0 +1,4 @@
+# Developer/test-only dependencies.
+pytest
+ruff==0.7.4
+black==24.4.2

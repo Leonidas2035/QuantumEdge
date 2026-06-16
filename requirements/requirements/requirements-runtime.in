@@ -1,0 +1,11 @@
+# Bot runtime dependencies only (lean install).
+# Keep this list minimal and derived from actual runtime imports.
+
+PyYAML>=6.0
+requests
+websockets>=11.0
+numpy
+pandas
+python-binance
+xgboost
+cryptography>=42.0.0
