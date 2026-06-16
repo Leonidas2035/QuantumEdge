@@ -7,7 +7,7 @@ from typing import Any, Dict, Optional
 
 import yaml
 
-from tools.qe_paths import find_repo_root, get_paths
+from quantum_edge_infra.tools.qe_paths import find_repo_root, get_paths
 
 
 def _find_qe_root() -> Path:

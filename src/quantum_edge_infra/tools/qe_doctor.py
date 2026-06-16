@@ -11,8 +11,8 @@ from typing import Any, Dict, List, Optional
 from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
-from tools.qe_config_loader import load_yaml
-from tools.qe_paths import ensure_dirs, get_paths
+from quantum_edge_infra.tools.qe_config_loader import load_yaml
+from quantum_edge_infra.tools.qe_paths import ensure_dirs, get_paths
 
 
 @dataclass
