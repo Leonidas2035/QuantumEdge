@@ -7,7 +7,7 @@ import logging
 from typing import Dict, Any, Optional
 
 import pandas as pd
-import pandas_ta as ta
+# import pandas_ta as ta
 
 from quantum_edge_core.supervisor.supervisor.state import RiskStateSnapshot
 

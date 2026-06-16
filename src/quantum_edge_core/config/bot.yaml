@@ -40,8 +40,8 @@ binance_demo:
 bingx_demo:
   enabled: true
   symbols: ["BTC-USDT"]
-  allow_trading_demo: false
-  allow_place_test_order: false
+  allow_trading_demo: true
+  allow_place_test_order: true
   healthcheck_only: false
   recv_window: 5000
   max_notional_per_trade: 50
@@ -119,7 +119,7 @@ microstructure:
   publish_topic_suffix: "microstructure.v1"
 
 spot_scalper:
-  enabled: false
+  enabled: true
   symbols: ["BTCUSDT"]
   thresholds:
     max_spread_bps: 2.0

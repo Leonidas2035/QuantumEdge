@@ -21,7 +21,7 @@ bot_config: "config/bot.yaml"
 
 bot:
   env_file: "config/secrets.local.env"
-  auto_start: true
+  auto_start: false
   restart:
     enabled: true
     max_retries: 5
@@ -70,6 +70,7 @@ llm:
     open_sec: 120
 
 google_api:
+  enabled: false
   api_key_env: "GOOGLE_API_KEY"
   model: "gemini-1.5-flash"
   timeout_sec: 5

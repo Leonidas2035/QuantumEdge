@@ -81,7 +81,7 @@ def setup_logging() -> None:
     root_logger.handlers = [console_handler, file_handler]
 
     # Set default level (can be controlled via env var in future)
-    root_logger.setLevel(logging.INFO)
+    root_logger.setLevel(logging.DEBUG)
 
     # Redirect standard logging to structlog is implicit via Handler/Formatter above,
     # but we prevent duplicate logs if needed.

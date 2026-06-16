@@ -7,7 +7,7 @@ import time
 from urllib.parse import urlparse
 
 import pandas as pd
-import pandas_ta as ta
+# import pandas_ta as ta
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import streamlit as st
