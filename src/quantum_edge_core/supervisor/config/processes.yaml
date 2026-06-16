@@ -22,8 +22,8 @@ processes:
     ports: [8700, 5555]
   ai_scalper_bot:
     enabled: true
-    cwd: "src/quantum_edge_core/strategies/scalper_v1"
-    cmd: ["python", "run_bot.py"]
+    cwd: "."
+    cmd: ["python", "-m", "quantum_edge_core.ai_scalper_bot.run_bot"]
     env:
       QE_MODE: "scalp"
     healthcheck:

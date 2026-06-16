@@ -257,8 +257,11 @@ class BingXExecution:
             "GET", "/openApi/swap/v2/user/balance", params={}, signed=True
         )
         items = data.get("balances") if isinstance(data, dict) else data
-        if not isinstance(items, list):
-            items = data.get("result") if isinstance(data, dict) else []
+        if not isinstance(items, list) and isinstance(data, dict):
+            if "balance" in data:
+                items = [data["balance"]]
+            else:
+                items = data.get("result") if isinstance(data, dict) else []
         results: List[Balance] = []
         if not isinstance(items, list):
             return results
@@ -267,7 +270,10 @@ class BingXExecution:
                 continue
             asset = str(entry.get("asset") or entry.get("currency") or "")
             available = float(
-                entry.get("availableBalance") or entry.get("available") or 0.0
+                entry.get("availableBalance")
+                or entry.get("available")
+                or entry.get("availableMargin")
+                or 0.0
             )
             total = float(
                 entry.get("balance")

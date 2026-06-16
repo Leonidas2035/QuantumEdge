@@ -11,6 +11,7 @@ Supports:
 - SYNC_GRID expansion into individual LIMIT orders
 """
 
+import os
 import logging
 import time
 import uuid
@@ -22,7 +23,7 @@ from quantum_edge_core.ai_scalper_bot.bot.execution.strategy_core import TradeAc
 logger = logging.getLogger("PaperTrader")
 
 # ── Hardcoded fallback for paper mode ────────────────────────────────
-PAPER_FALLBACK_BALANCE_USDT: float = 10_000.0
+PAPER_FALLBACK_BALANCE_USDT: float = float(os.getenv("PAPER_TRADER_START_BALANCE", "10000.0"))
 
 
 class PaperTrader:

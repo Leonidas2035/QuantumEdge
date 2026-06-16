@@ -5,16 +5,27 @@ from pathlib import Path
 
 class Config:
     def __init__(self):
-        # --- BINANCE CREDENTIALS ---
+        # --- BINANCE CREDENTIALS (Legacy) ---
         self.binance_api_key = os.getenv("BINANCE_API_KEY", "")
         self.binance_secret = os.getenv("BINANCE_API_SECRET", "")
 
         self.binance_testnet_api_key = os.getenv("BINANCE_TESTNET_API_KEY", "")
         self.binance_testnet_secret = os.getenv("BINANCE_TESTNET_SECRET_KEY", "")
 
+        # --- BINGX CREDENTIALS ---
+        self.bingx_api_key = os.getenv("BINGX_API_KEY", "")
+        self.bingx_secret = os.getenv("BINGX_SECRET", "")
+
+        self.bingx_testnet_api_key = os.getenv("BINGX_TESTNET_API_KEY", "")
+        self.bingx_testnet_secret = os.getenv("BINGX_TESTNET_SECRET", "")
+
         # Determine testnet routing
         use_testnet_env = os.getenv("USE_TESTNET", os.getenv("BINANCE_TESTNET", "1"))
         self.use_testnet = str(use_testnet_env).lower() in {"1", "true", "t"}
+
+        # Execution mode: paper | bingx | binance
+        self.execution_mode = os.getenv("EXECUTION_MODE", "paper").lower()
+        self.bingx_position_mode = os.getenv("BINGX_POSITION_MODE", "hedge").lower()
 
         # --- SYSTEM PORTS ---
         self.market_data_port = int(os.getenv("MARKET_DATA_ZMQ_PORT", "5555"))

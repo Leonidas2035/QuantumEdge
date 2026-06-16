@@ -60,7 +60,9 @@ class PositionManager:
             total_cost = (self.state.avg_price * self.state.total_qty) + (price * qty)
             new_qty = self.state.total_qty + qty
 
-            self.state.avg_price = total_cost / new_qty if new_qty > 0 else 0.0
+            self.state.avg_price = (
+                total_cost / new_qty if new_qty > 0 else Decimal("0.0")
+            )
             self.state.total_qty = new_qty
 
             # Reduce quote balance for SPOT
@@ -148,7 +150,7 @@ class PositionManager:
         # If Price is lower (Loss), result is positive.
 
         raw_diff = (self.state.avg_price - current_price) / self.state.avg_price
-        return max(0.0, raw_diff)
+        return max(Decimal("0.0"), raw_diff)
 
     @property
     def total_qty(self) -> float:

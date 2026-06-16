@@ -1,4 +1,4 @@
-﻿# Supervisor runtime configuration.
+# Supervisor runtime configuration.
 
 mode: "paper"  # paper | demo | off
 exchange: bingx_swap   # optional: set to "bingx_swap" to pass EXCHANGE env to QuantumEdge
@@ -47,10 +47,10 @@ policy:
 
 llm:
   enabled: true
-  model: "gemini-3.1-flash-lite-preview"
-  api_url: "https://generativelanguage.googleapis.com/v1beta/models"
-  api_key_env: "GOOGLE_API_KEY"
-  timeout_sec: 4
+  model: "hermes"
+  api_url: "hermes"
+  api_key_env: "HERMES"
+  timeout_sec: 60
   temperature: 0.1
   circuit_breaker:
     failures: 3

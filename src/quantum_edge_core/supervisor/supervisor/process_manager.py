@@ -348,7 +348,7 @@ class ProcessManager:
             if name.lower() == "bot":
                 return name
         for name in names:
-            if name.lower().startswith("bot"):
+            if "bot" in name.lower():
                 return name
         return names[0] if names else None
 
@@ -366,6 +366,9 @@ class ProcessManager:
         spec = runtime.spec
         log_handle = self._open_log_file(spec.name)
         cmd = list(spec.cmd)
+        if cmd and cmd[0] in ("python", "python3"):
+            import sys
+            cmd[0] = sys.executable
         env = os.environ.copy()
         env.update(spec.env)
         env["RUN_ID"] = self._run_id

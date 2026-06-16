@@ -437,6 +437,8 @@ class DynamicDCAStrategy:
         quote_balance = position.state.quote_balance
         if quote_balance <= 0:
             quote_balance = Decimal("10000.0")
+        else:
+            quote_balance = Decimal(str(quote_balance))
 
         total_levels = Decimal(str(self.grid_levels_below + self.grid_levels_above))
         capital_per_level = (quote_balance * exposure_pct) / total_levels

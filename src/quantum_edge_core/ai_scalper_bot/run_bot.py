@@ -69,14 +69,24 @@ class BotEngine:
         )
         import os
 
-        execution_mode = os.getenv("EXECUTION_MODE", "paper").lower()
-        use_testnet = os.getenv("USE_TESTNET", "False").lower() == "true"
+        execution_mode = getattr(self.config, "execution_mode", "paper").lower()
+        use_testnet = getattr(self.config, "use_testnet", False)
 
-        if execution_mode == "live":
+        if execution_mode == "bingx":
             logger.warning(
-                "🚀 FORCING LIVE EXECUTION (Testnet)"
+                "🚀 BINGX EXECUTION MODE"
+                + (" (VST Demo)" if use_testnet else " (MAINNET - REAL MONEY)")
+            )
+            from quantum_edge_core.ai_scalper_bot.bot.infrastructure.bingx_gateway import (
+                BingXExecutionGateway,
+            )
+
+            self.gateway = BingXExecutionGateway(self.config)
+        elif execution_mode == "live":
+            logger.warning(
+                "🚀 FORCING LIVE EXECUTION (Testnet - Binance)"
                 if use_testnet
-                else "🚀 FORCING LIVE EXECUTION (Production)"
+                else "🚀 FORCING LIVE EXECUTION (Production - Binance)"
             )
             from quantum_edge_core.ai_scalper_bot.bot.infrastructure.exchange import (
                 BinanceExecutionGateway,
@@ -209,6 +219,17 @@ class BotEngine:
             self.gateway.status,
             self.gateway.entries_paused,
         )
+
+        # ── Fetch actual balance from exchange (async, now that loop is running) ───────────
+        if hasattr(self.gateway, "fetch_balance_async"):
+            actual_balance = await self.gateway.fetch_balance_async()
+            # Update PositionManager with real balance
+            from decimal import Decimal
+
+            self.position.state.quote_balance = Decimal(str(actual_balance))
+            logger.info(
+                f"💰 PositionManager updated with real balance: {actual_balance:.2f}"
+            )
 
         # ── Broadcast initial state to Dashboard ──────────────
         await self.reporter.send_initial_state(
