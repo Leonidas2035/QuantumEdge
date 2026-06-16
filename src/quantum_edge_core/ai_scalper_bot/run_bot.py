@@ -51,6 +51,13 @@ def cleanup_old_logs(days: int = 14):
 
 
 class BotEngine:
+    """Main bot engine with Supervisor-respecting command handling.
+
+    The bot honours ``PAUSE_ENTRIES`` / ``RESUME_ENTRIES`` directives
+    from the Supervisor.  The previous "Iron Lock" pattern that forcibly
+    reset those flags on every tick has been removed.
+    """
+
     def __init__(self):
         logger.info("Initializing QuantumEdge AI Scalper (Binance Edition)...")
         self.config = Config()
@@ -90,7 +97,7 @@ class BotEngine:
 
         self.zmq_ctx = zmq.Context()
         self.cmd_sub = self.zmq_ctx.socket(zmq.SUB)
-        self.cmd_sub.connect("tcp://127.0.0.1:5558")
+        self.cmd_sub.connect(f"tcp://127.0.0.1:{self.config.policy_port}")
         self.cmd_sub.subscribe(f"command.{self.config.service_id}".encode("utf-8"))
 
         # 2. Memory (State)
@@ -124,7 +131,69 @@ class BotEngine:
 
         self.running = False
 
-    async def run(self):
+    # ── Supervisor command handler ────────────────────────────────
+    def handle_supervisor_command(self, cmd: dict) -> None:
+        """Process a single command dict from the Supervisor command bus.
+
+        Supported actions:
+        - ``PAUSE_ENTRIES``: halt all new entries until ``RESUME_ENTRIES``.
+        - ``RESUME_ENTRIES``: re-enable entries after a pause.
+        - ``ADJUST_RISK``: set ``market_state.risk_multiplier``.
+        - ``trading_mode`` field: switch the active ``TradingMode``.
+        """
+        market_state = self.cache._current_state
+
+        action: str = cmd.get("action", "")
+
+        if action == "PAUSE_ENTRIES":
+            self.gateway.entries_paused = True
+            self.strategy.state = BotState.PAUSED
+            if market_state:
+                market_state.entries_paused = True
+            logger.warning("🛑 Bot State set to PAUSED by Supervisor.")
+            return
+
+        if action == "RESUME_ENTRIES":
+            self.gateway.entries_paused = False
+            self.strategy.state = BotState.RUNNING
+            if market_state:
+                market_state.entries_paused = False
+            logger.warning("🟢 Bot State set to RUNNING by Supervisor.")
+            return
+
+        if action == "ADJUST_RISK":
+            multiplier = float(cmd.get("multiplier", 1.0))
+            if market_state:
+                market_state.risk_multiplier = multiplier
+            logger.warning(
+                "⚠️ SUPERVISOR COMMAND: Risk Multiplier set to %s",
+                multiplier,
+            )
+            return
+
+        # ── Trading mode / zone updates (no action field) ─────────
+        if market_state and "trading_mode" in cmd:
+            from quantum_edge_core.ai_scalper_bot.bot.core.models import (
+                TradingMode,
+            )
+
+            try:
+                mode_str = str(cmd.get("trading_mode", "PASS")).upper()
+                if mode_str in TradingMode.__members__:
+                    market_state.trading_mode = TradingMode[mode_str]
+                    logger.warning(
+                        "🤖 SUPERVISOR POLICY: Trading Mode -> %s",
+                        market_state.trading_mode.value,
+                    )
+
+                if "buy_zone_max" in cmd and cmd["buy_zone_max"] is not None:
+                    market_state.buy_zone_max = float(cmd["buy_zone_max"])
+                if "sell_zone_min" in cmd and cmd["sell_zone_min"] is not None:
+                    market_state.sell_zone_min = float(cmd["sell_zone_min"])
+            except Exception as parse_err:
+                logger.error("Error parsing trade policy: %s", parse_err)
+
+    async def run(self) -> None:
         logger.info(
             f">>> Bot Engine STARTING Main Loop... Target: {self.config.symbol}"
         )
@@ -173,61 +242,11 @@ class BotEngine:
                     while True:
                         topic, msg = self.cmd_sub.recv_multipart(zmq.NOBLOCK)
                         cmd = json.loads(msg.decode("utf-8"))
-                        market_state = self.cache._current_state
-                        if market_state:
-                            if "trading_mode" in cmd:
-                                from quantum_edge_core.ai_scalper_bot.bot.core.models import (
-                                    TradingMode,
-                                )
-
-                                try:
-                                    mode_str = str(
-                                        cmd.get("trading_mode", "PASS")
-                                    ).upper()
-                                    if mode_str in TradingMode.__members__:
-                                        market_state.trading_mode = TradingMode[
-                                            mode_str
-                                        ]
-                                        logger.warning(
-                                            f"🤖 SUPERVISOR POLICY: Trading Mode -> {market_state.trading_mode.value}"
-                                        )
-
-                                    if (
-                                        "buy_zone_max" in cmd
-                                        and cmd["buy_zone_max"] is not None
-                                    ):
-                                        market_state.buy_zone_max = float(
-                                            cmd["buy_zone_max"]
-                                        )
-                                    if (
-                                        "sell_zone_min" in cmd
-                                        and cmd["sell_zone_min"] is not None
-                                    ):
-                                        market_state.sell_zone_min = float(
-                                            cmd["sell_zone_min"]
-                                        )
-                                except Exception as p_err:
-                                    logger.error(f"Error parsing trade policy: {p_err}")
-
-                            if cmd.get("action") == "PAUSE_ENTRIES":
-                                market_state.entries_paused = True
-                                logger.warning("🛑 SUPERVISOR COMMAND: Entries Paused!")
-                            elif cmd.get("action") == "RESUME_ENTRIES":
-                                market_state.entries_paused = False
-                                logger.warning(
-                                    "🟢 SUPERVISOR COMMAND: Entries Resumed!"
-                                )
-                            elif cmd.get("action") == "ADJUST_RISK":
-                                market_state.risk_multiplier = cmd.get(
-                                    "multiplier", 1.0
-                                )
-                                logger.warning(
-                                    f"⚠️ SUPERVISOR COMMAND: Risk Multiplier set to {market_state.risk_multiplier}"
-                                )
+                        self.handle_supervisor_command(cmd)
                 except zmq.Again:
                     pass
                 except Exception as e:
-                    logger.error(f"Error processing command bus: {e}")
+                    logger.error("Error processing command bus: %s", e)
 
                 # ── 0.5 Rolling 1M State Reset ──
                 now_reset = time.time()
@@ -389,25 +408,9 @@ class BotEngine:
                 self.cache.update(norm_tick)
                 market_state = self.cache._current_state
 
-                # === IRON LOCK: Execution Engine must stay RUNNING forever ===
-                # Hub can send status/entries_paused fields that overwrite our
-                # internal state.  We forcibly reset them every tick.
-                if market_state:
-                    market_state.entries_paused = False
-                if self.strategy.state not in (
-                    BotState.RUNNING,
-                    BotState.LONG_ACCUMULATION,
-                    BotState.HEDGED,
-                ):
-                    self.strategy.state = BotState.RUNNING
-                if (
-                    hasattr(self, "gateway")
-                    and getattr(self.gateway, "status", "") != "RUNNING"
-                ):
-                    logger.warning("IRON LOCK activated: forcing gateway RUNNING")
-                    self.gateway.status = "RUNNING"
-                    self.gateway.entries_paused = False
-                # ============================================================
+                # NOTE: Iron Lock block removed — Supervisor directives
+                # (PAUSE_ENTRIES / RESUME_ENTRIES) are now persistent
+                # across ticks.  See handle_supervisor_command().
 
                 if market_state:
                     from quantum_edge_core.ai_scalper_bot.bot.core.models import (

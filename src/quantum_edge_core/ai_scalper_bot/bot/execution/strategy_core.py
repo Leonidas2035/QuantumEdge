@@ -90,6 +90,7 @@ class BotState(Enum):
     STOPPED = auto()
     RUNNING = auto()
     IDLE = auto()
+    PAUSED = auto()
     LONG_ACCUMULATION = auto()
     HEDGED = auto()
 
