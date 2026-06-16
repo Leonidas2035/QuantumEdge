@@ -2,14 +2,14 @@
 # Controls periodic AI moderation of trading behavior.
 
 enabled: true
-api_url: "https://generativelanguage.googleapis.com/v1beta/models"
-model: "gemini-3.1-flash-lite-preview"
-api_key_env: "GOOGLE_API_KEY"
+api_url: "hermes"
+model: "hermes"
+api_key_env: "HERMES"
 check_interval_minutes: 1
 min_order_decisions: 0      # ЗМІНЕНО ДЛЯ UAT: дозволяє LLM аналізувати відразу
 max_events_in_summary: 50
 max_trades_in_table: 20
-timeout_seconds: 20
+timeout_seconds: 60
 dry_run: false              # КРИТИЧНО ДЛЯ UAT: дозволяє відправляти команди (Command Bus)
 
 trust_policy:

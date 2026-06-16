@@ -1,7 +1,7 @@
 enabled: true
-api_url: "https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent"
-model: "gemini-3-flash-preview"
-api_key_env: "GOOGLE_API_KEY"
+api_url: "hermes"
+model: "hermes"
+api_key_env: "HERMES"
 check_interval_minutes: 5
 min_order_decisions: 1
 max_events_in_summary: 50

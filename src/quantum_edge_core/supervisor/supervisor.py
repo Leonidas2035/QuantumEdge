@@ -81,7 +81,9 @@ from quantum_edge_core.supervisor.supervisor.audit_report import (
 )
 from quantum_edge_core.supervisor.supervisor.llm_supervisor import LlmSupervisor
 
-from quantum_edge_core.supervisor.supervisor.llm.google_client import GoogleClient
+from quantum_edge_core.supervisor.supervisor.llm.chat_client import (
+    ChatCompletionsClient,
+)
 from quantum_edge_core.supervisor.supervisor.llm.trend_evaluator import TrendEvaluator
 from quantum_edge_core.supervisor.supervisor.llm.market_risk_monitor import (
     MarketRiskMonitor,
@@ -314,7 +316,11 @@ class SupervisorApp:
             if hasattr(cfg, "model") and "gpt" in cfg.model.lower():
                 cfg.model = "gemini-2.0-flash"
 
-        self.llm_client = GoogleClient(logger=self.logger)
+        self.llm_client = ChatCompletionsClient(
+            api_url=llm_config.api_url,
+            api_key_env=llm_config.api_key_env,
+            logger=self.logger,
+        )
         self.llm_supervisor = LlmSupervisor(
             llm_config,
             risk_config,

@@ -62,11 +62,20 @@ class ChatCompletionsClient:
         timeout_seconds: float,
         response_schema: Any | None = None,
     ) -> str:
+        schema_dict = _schema_to_dict(response_schema)
+
+        if self.api_url == "hermes":
+            return self._complete_hermes(
+                model,
+                messages,
+                temperature,
+                timeout_seconds,
+                schema_dict=schema_dict,
+            )
+
         api_key = os.environ.get(self.api_key_env)
         if not api_key:
             raise RuntimeError(f"API key env var {self.api_key_env} not set")
-
-        schema_dict = _schema_to_dict(response_schema)
 
         if _is_gemini_url(self.api_url):
             return self._complete_gemini(
@@ -85,6 +94,56 @@ class ChatCompletionsClient:
             api_key,
             schema_dict=schema_dict,
         )
+
+    # ── Hermes CLI ───────────────────────────────────────────────────
+
+    def _complete_hermes(
+        self,
+        model: str,
+        messages: List[Mapping[str, str]],
+        temperature: float,
+        timeout_seconds: float,
+        *,
+        schema_dict: Dict[str, Any] | None = None,
+    ) -> str:
+        # Build prompt from messages
+        prompt_parts = []
+        for msg in messages:
+            role = msg.get("role", "user").upper()
+            content = msg.get("content", "")
+            prompt_parts.append(f"### {role}:\n{content}")
+
+        prompt_str = "\n\n".join(prompt_parts)
+
+        if schema_dict is not None:
+            prompt_str += (
+                f"\n\nCRITICAL: You must respond ONLY with a valid JSON object matching this schema:\n"
+                f"{json.dumps(schema_dict, indent=2)}\n"
+                f"Do not include any other text, markdown fences, or comments. Raw JSON only."
+            )
+
+        import subprocess
+
+        # Call the user's local hermes command
+        cmd = ["/home/korben/.local/bin/hermes", "-z", prompt_str]
+        if model and model != "hermes":
+            cmd.extend(["--model", model])
+
+        try:
+            # Run with timeout to prevent hangs
+            res = subprocess.run(
+                cmd, capture_output=True, text=True, timeout=timeout_seconds or 60.0
+            )
+            if res.returncode != 0:
+                self.logger.error("Hermes CLI error: %s", res.stderr)
+                raise RuntimeError(f"Hermes CLI failed: {res.stderr}")
+            return res.stdout.strip()
+        except subprocess.TimeoutExpired as exc:
+            self.logger.error("Hermes CLI timed out after %s seconds", timeout_seconds)
+            raise RuntimeError("Hermes CLI execution timed out") from exc
+        except Exception as exc:
+            self.logger.error("Failed to run Hermes CLI: %s", exc)
+            raise RuntimeError(f"Failed to execute Hermes CLI: {exc}") from exc
 
     # ── Google Gemini ────────────────────────────────────────────────
 
