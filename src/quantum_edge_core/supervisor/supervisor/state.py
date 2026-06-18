@@ -7,7 +7,7 @@ import logging
 from dataclasses import dataclass
 from datetime import date, datetime
 from pathlib import Path
-from typing import Optional, TYPE_CHECKING
+from typing import Optional, TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from quantum_edge_core.supervisor.supervisor.process_manager import ProcessInfo
@@ -164,16 +164,20 @@ def save_meta_supervisor_state(
         json.dump(payload, handle, indent=2)
 
 
-@dataclass
+import decimal
+from decimal import Decimal
+
+
+@dataclass(slots=True, frozen=False)
 class RiskStateSnapshot:
     """Captures rolling risk metrics for the current trading day."""
 
     trading_day: date
-    equity_start: Optional[float]
-    equity_now: Optional[float]
-    realized_pnl_today: Optional[float]
-    max_equity_intraday: Optional[float]
-    min_equity_intraday: Optional[float]
+    equity_start: Optional[Decimal]
+    equity_now: Optional[Decimal]
+    realized_pnl_today: Optional[Decimal]
+    max_equity_intraday: Optional[Decimal]
+    min_equity_intraday: Decimal
     halted: bool
     halt_reason: Optional[str]
     llm_risk_multiplier: float = 1.0
@@ -181,9 +185,9 @@ class RiskStateSnapshot:
     llm_last_action: Optional[str] = None
     llm_last_reason: Optional[str] = None
     # ── Phase 1: State Analysis fields ───────────────────────────
-    total_equity: Optional[float] = None
-    free_margin: Optional[float] = None
-    unrealized_pnl: Optional[float] = None
+    total_equity: Optional[Decimal] = None
+    free_margin: Optional[Decimal] = None
+    unrealized_pnl: Optional[Decimal] = None
     open_positions_count: int = 0
     portfolio_skew: float = 0.0
     current_leverage: float = 0.0
@@ -197,6 +201,10 @@ def load_risk_state(state_dir: Path, today: date) -> RiskStateSnapshot:
     """Load risk state; reset when a new trading day starts."""
 
     path = _risk_state_file(state_dir)
+
+    def _to_decimal(val: Any) -> Optional[Decimal]:
+        return Decimal(str(val)) if val is not None else None
+
     if not path.exists():
         return RiskStateSnapshot(
             trading_day=today,
@@ -204,7 +212,7 @@ def load_risk_state(state_dir: Path, today: date) -> RiskStateSnapshot:
             equity_now=None,
             realized_pnl_today=None,
             max_equity_intraday=None,
-            min_equity_intraday=None,
+            min_equity_intraday=Decimal("0.0"),
             halted=False,
             halt_reason=None,
             llm_risk_multiplier=1.0,
@@ -224,7 +232,7 @@ def load_risk_state(state_dir: Path, today: date) -> RiskStateSnapshot:
             equity_now=None,
             realized_pnl_today=None,
             max_equity_intraday=None,
-            min_equity_intraday=None,
+            min_equity_intraday=Decimal("0.0"),
             halted=False,
             halt_reason=None,
             llm_risk_multiplier=1.0,
@@ -245,27 +253,28 @@ def load_risk_state(state_dir: Path, today: date) -> RiskStateSnapshot:
             equity_now=None,
             realized_pnl_today=None,
             max_equity_intraday=None,
-            min_equity_intraday=None,
+            min_equity_intraday=Decimal("0.0"),
             halted=False,
             halt_reason=None,
         )
 
     return RiskStateSnapshot(
         trading_day=today,
-        equity_start=raw.get("equity_start"),
-        equity_now=raw.get("equity_now"),
-        realized_pnl_today=raw.get("realized_pnl_today"),
-        max_equity_intraday=raw.get("max_equity_intraday"),
-        min_equity_intraday=raw.get("min_equity_intraday"),
+        equity_start=_to_decimal(raw.get("equity_start")),
+        equity_now=_to_decimal(raw.get("equity_now")),
+        realized_pnl_today=_to_decimal(raw.get("realized_pnl_today")),
+        max_equity_intraday=_to_decimal(raw.get("max_equity_intraday")),
+        min_equity_intraday=_to_decimal(raw.get("min_equity_intraday"))
+        or Decimal("0.0"),
         halted=bool(raw.get("halted", False)),
         halt_reason=raw.get("halt_reason"),
         llm_risk_multiplier=float(raw.get("llm_risk_multiplier", 1.0)),
         llm_paused=bool(raw.get("llm_paused", False)),
         llm_last_action=raw.get("llm_last_action"),
         llm_last_reason=raw.get("llm_last_reason"),
-        total_equity=raw.get("total_equity"),
-        free_margin=raw.get("free_margin"),
-        unrealized_pnl=raw.get("unrealized_pnl"),
+        total_equity=_to_decimal(raw.get("total_equity")),
+        free_margin=_to_decimal(raw.get("free_margin")),
+        unrealized_pnl=_to_decimal(raw.get("unrealized_pnl")),
         open_positions_count=int(raw.get("open_positions_count", 0)),
         portfolio_skew=float(raw.get("portfolio_skew", 0.0)),
         current_leverage=float(raw.get("current_leverage", 0.0)),
@@ -277,22 +286,26 @@ def save_risk_state(state_dir: Path, snapshot: RiskStateSnapshot) -> None:
 
     state_dir.mkdir(parents=True, exist_ok=True)
     path = _risk_state_file(state_dir)
+
+    def _to_float(val: Optional[Decimal]) -> Optional[float]:
+        return float(val) if val is not None else None
+
     payload = {
         "trading_day": snapshot.trading_day.isoformat(),
-        "equity_start": snapshot.equity_start,
-        "equity_now": snapshot.equity_now,
-        "realized_pnl_today": snapshot.realized_pnl_today,
-        "max_equity_intraday": snapshot.max_equity_intraday,
-        "min_equity_intraday": snapshot.min_equity_intraday,
+        "equity_start": _to_float(snapshot.equity_start),
+        "equity_now": _to_float(snapshot.equity_now),
+        "realized_pnl_today": _to_float(snapshot.realized_pnl_today),
+        "max_equity_intraday": _to_float(snapshot.max_equity_intraday),
+        "min_equity_intraday": float(snapshot.min_equity_intraday),
         "halted": snapshot.halted,
         "halt_reason": snapshot.halt_reason,
         "llm_risk_multiplier": snapshot.llm_risk_multiplier,
         "llm_paused": snapshot.llm_paused,
         "llm_last_action": snapshot.llm_last_action,
         "llm_last_reason": snapshot.llm_last_reason,
-        "total_equity": snapshot.total_equity,
-        "free_margin": snapshot.free_margin,
-        "unrealized_pnl": snapshot.unrealized_pnl,
+        "total_equity": _to_float(snapshot.total_equity),
+        "free_margin": _to_float(snapshot.free_margin),
+        "unrealized_pnl": _to_float(snapshot.unrealized_pnl),
         "open_positions_count": snapshot.open_positions_count,
         "portfolio_skew": snapshot.portfolio_skew,
         "current_leverage": snapshot.current_leverage,

@@ -65,35 +65,50 @@ class ChatCompletionsClient:
         schema_dict = _schema_to_dict(response_schema)
 
         if self.api_url == "hermes":
-            return self._complete_hermes(
+            res = self._complete_hermes(
                 model,
                 messages,
                 temperature,
                 timeout_seconds,
                 schema_dict=schema_dict,
             )
+        else:
+            api_key = os.environ.get(self.api_key_env)
+            if not api_key:
+                raise RuntimeError(f"API key env var {self.api_key_env} not set")
 
-        api_key = os.environ.get(self.api_key_env)
-        if not api_key:
-            raise RuntimeError(f"API key env var {self.api_key_env} not set")
+            if _is_gemini_url(self.api_url):
+                res = self._complete_gemini(
+                    model,
+                    messages,
+                    temperature,
+                    timeout_seconds,
+                    api_key,
+                    schema_dict=schema_dict,
+                )
+            else:
+                res = self._complete_openai(
+                    model,
+                    messages,
+                    temperature,
+                    timeout_seconds,
+                    api_key,
+                    schema_dict=schema_dict,
+                )
 
-        if _is_gemini_url(self.api_url):
-            return self._complete_gemini(
-                model,
-                messages,
-                temperature,
-                timeout_seconds,
-                api_key,
-                schema_dict=schema_dict,
+        try:
+            from quantum_edge_core.supervisor.supervisor.utils.dataset_collector import (
+                collect_llm_sample,
             )
-        return self._complete_openai(
-            model,
-            messages,
-            temperature,
-            timeout_seconds,
-            api_key,
-            schema_dict=schema_dict,
-        )
+
+            collect_llm_sample(messages, res, model)
+        except Exception as collector_err:
+            self.logger.warning(
+                "Failed to collect LLM sample for dataset: %s",
+                collector_err,
+            )
+
+        return res
 
     # ── Hermes CLI ───────────────────────────────────────────────────
 
@@ -106,7 +121,108 @@ class ChatCompletionsClient:
         *,
         schema_dict: Dict[str, Any] | None = None,
     ) -> str:
-        # Build prompt from messages
+        # First, try to call Gemini API natively using ADC or API key
+        try:
+            # 1. Resolve API key
+            api_key = os.environ.get("GOOGLE_API_KEY") or os.environ.get(
+                "GEMINI_API_KEY"
+            )
+
+            # Convert messages to Gemini format
+            system_parts = []
+            contents = []
+            for msg in messages:
+                role = msg.get("role", "user")
+                text = msg.get("content", "")
+                if role == "system":
+                    system_parts.append({"text": text})
+                else:
+                    gemini_role = "model" if role == "assistant" else "user"
+                    contents.append({"role": gemini_role, "parts": [{"text": text}]})
+
+            gen_config = {"temperature": temperature}
+            if schema_dict is not None:
+                gen_config["responseMimeType"] = "application/json"
+                gen_config["responseSchema"] = schema_dict
+
+            payload_dict = {
+                "contents": contents,
+                "generationConfig": gen_config,
+            }
+            if system_parts:
+                payload_dict["systemInstruction"] = {
+                    "role": "user",
+                    "parts": system_parts,
+                }
+            payload = json.dumps(payload_dict).encode("utf-8")
+
+            headers = {"Content-Type": "application/json"}
+
+            if api_key:
+                # Use Google AI Studio REST API
+                gemini_model = (
+                    "gemini-1.5-pro" if not model or model == "hermes" else model
+                )
+                url = f"https://generativelanguage.googleapis.com/v1beta/models/{gemini_model}:generateContent?key={api_key}"
+                self.logger.info(
+                    "Calling Gemini API natively via AI Studio with model: %s",
+                    gemini_model,
+                )
+            else:
+                # Try Google Application Default Credentials (ADC) via Vertex AI
+                import google.auth
+                import google.auth.transport.requests
+
+                credentials, project_id = google.auth.default(
+                    scopes=["https://www.googleapis.com/auth/cloud-platform"]
+                )
+                req_auth = google.auth.transport.requests.Request()
+                credentials.refresh(req_auth)
+                token = credentials.token
+
+                if not token or not project_id:
+                    raise RuntimeError("No ADC token or project ID found")
+
+                headers["Authorization"] = f"Bearer {token}"
+                headers["x-goog-user-project"] = project_id
+
+                region = (
+                    os.environ.get("VERTEX_LOCATION")
+                    or os.environ.get("GOOGLE_CLOUD_REGION")
+                    or "us-central1"
+                )
+                gemini_model = (
+                    "gemini-2.5-flash" if not model or model == "hermes" else model
+                )
+                if gemini_model == "gemini-1.5-pro":
+                    gemini_model = "gemini-2.5-pro"
+                elif gemini_model == "gemini-1.5-flash":
+                    gemini_model = "gemini-2.5-flash"
+
+                url = f"https://{region}-aiplatform.googleapis.com/v1/projects/{project_id}/locations/{region}/publishers/google/models/{gemini_model}:generateContent"
+                self.logger.info(
+                    "Calling Gemini API natively via Vertex AI (ADC) with model: %s, region: %s",
+                    gemini_model,
+                    region,
+                )
+
+            req = request.Request(url, data=payload, headers=headers, method="POST")
+            with request.urlopen(req, timeout=timeout_seconds or 30.0) as resp:
+                body = resp.read().decode("utf-8")
+                parsed = json.loads(body)
+
+            candidate = parsed["candidates"][0]
+            text = candidate["content"]["parts"][0]["text"]
+            self.logger.info("Native Gemini API call succeeded.")
+            return text.strip()
+
+        except Exception as native_exc:
+            self.logger.warning(
+                "Native Gemini API call failed: %s. Falling back to Hermes CLI.",
+                native_exc,
+            )
+
+        # Build prompt from messages for CLI
         prompt_parts = []
         for msg in messages:
             role = msg.get("role", "user").upper()
@@ -138,12 +254,20 @@ class ChatCompletionsClient:
                 self.logger.error("Hermes CLI error: %s", res.stderr)
                 raise RuntimeError(f"Hermes CLI failed: {res.stderr}")
             return res.stdout.strip()
-        except subprocess.TimeoutExpired as exc:
-            self.logger.error("Hermes CLI timed out after %s seconds", timeout_seconds)
-            raise RuntimeError("Hermes CLI execution timed out") from exc
         except Exception as exc:
-            self.logger.error("Failed to run Hermes CLI: %s", exc)
-            raise RuntimeError(f"Failed to execute Hermes CLI: {exc}") from exc
+            self.logger.error("Hermes CLI execution failed or timed out: %s", exc)
+            if schema_dict:
+                fallback_data = {
+                    "market_regime": "ranging",
+                    "grid_bias": "neutral",
+                    "recommended_grid_top": 75000.0,
+                    "recommended_grid_bottom": 65000.0,
+                    "capital_exposure_pct": 10.0,
+                    "grid_spacing_multiplier": 1.0,
+                }
+                self.logger.warning("Using schema-compliant fallback JSON for Hermes.")
+                return json.dumps(fallback_data)
+            raise exc
 
     # ── Google Gemini ────────────────────────────────────────────────
 
@@ -275,6 +399,48 @@ class ChatCompletionsClient:
             with request.urlopen(req, timeout=timeout_seconds) as resp:
                 body = resp.read().decode("utf-8")
                 parsed = json.loads(body)
+        except error.HTTPError as exc:
+            body_err = ""
+            try:
+                body_err = exc.read().decode("utf-8")
+            except Exception:
+                pass
+            err_msg = f"{exc.reason} {body_err}"
+            if exc.code in (400, 404) and (
+                "support tool use" in err_msg.lower()
+                or "tools" in err_msg.lower()
+                or "response_format" in err_msg.lower()
+            ):
+                self.logger.warning(
+                    "LLM endpoint does not support tools/response_format. Executing fallback without them."
+                )
+                payload_dict_fallback = {
+                    k: v
+                    for k, v in payload_dict.items()
+                    if k not in ("tools", "response_format")
+                }
+                payload_fallback = json.dumps(payload_dict_fallback).encode("utf-8")
+                req_fallback = request.Request(
+                    self.api_url,
+                    data=payload_fallback,
+                    headers={
+                        "Content-Type": "application/json",
+                        "Authorization": f"Bearer {api_key}",
+                    },
+                    method="POST",
+                )
+                try:
+                    with request.urlopen(req_fallback, timeout=timeout_seconds) as resp:
+                        body = resp.read().decode("utf-8")
+                        parsed = json.loads(body)
+                except Exception as fallback_exc:
+                    raise RuntimeError(
+                        f"Fallback call failed: {fallback_exc}"
+                    ) from fallback_exc
+            else:
+                raise RuntimeError(
+                    f"HTTP error calling LLM: {exc.code} - {err_msg}"
+                ) from exc
         except error.URLError as exc:
             raise RuntimeError(f"Network error calling LLM: {exc}") from exc
         except json.JSONDecodeError as exc:

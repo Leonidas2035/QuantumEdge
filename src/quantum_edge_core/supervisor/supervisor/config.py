@@ -93,17 +93,21 @@ class SupervisorConfig:
     )
 
 
-@dataclass
+import decimal
+from decimal import Decimal
+
+
+@dataclass(slots=True)
 class RiskConfig:
     """Global risk parameters applied by the RiskEngine."""
 
     currency: str
-    max_daily_loss_abs: float
-    max_daily_loss_pct: Optional[float]
-    max_drawdown_abs: Optional[float]
-    max_drawdown_pct: Optional[float]
-    max_notional_per_symbol: float
-    max_leverage: float
+    max_daily_loss_abs: Decimal
+    max_daily_loss_pct: Optional[Decimal]
+    max_drawdown_abs: Optional[Decimal]
+    max_drawdown_pct: Optional[Decimal]
+    max_notional_per_symbol: Decimal
+    max_leverage: Decimal
 
 
 @dataclass
@@ -617,22 +621,25 @@ def load_risk_config(path: Path) -> RiskConfig:
 
     raw = _load_yaml(path)
     currency = raw.get("currency", "USDT")
-    max_daily_loss_abs = float(raw.get("max_daily_loss_abs", 0.0))
+    max_daily_loss_abs = raw.get("max_daily_loss_abs", 0.0)
     max_daily_loss_pct = raw.get("max_daily_loss_pct")
     max_drawdown_abs = raw.get("max_drawdown_abs")
     max_drawdown_pct = raw.get("max_drawdown_pct")
-    max_notional_per_symbol = float(raw.get("max_notional_per_symbol", 0.0))
-    max_leverage = float(raw.get("max_leverage", 0.0))
+    max_notional_per_symbol = raw.get("max_notional_per_symbol", 0.0)
+    max_leverage = raw.get("max_leverage", 0.0)
 
     def _validate_positive(
-        val: Optional[float], name: str, allow_zero: bool = False
-    ) -> Optional[float]:
+        val: Optional[Any], name: str, allow_zero: bool = False
+    ) -> Optional[Decimal]:
         if val is None:
             return None
-        val_f = float(val)
-        if val_f < 0 or (not allow_zero and val_f == 0):
-            raise ValueError(f"{name} must be positive")
-        return val_f
+        try:
+            val_d = Decimal(str(val))
+        except (ValueError, TypeError, decimal.InvalidOperation) as exc:
+            raise ValueError(f"Invalid decimal value for {name}: {exc}")
+        if val_d < 0 or (not allow_zero and val_d == 0):
+            raise ValueError(f"{name} must be positive, got {val_d}")
+        return val_d
 
     max_daily_loss_abs = _validate_positive(max_daily_loss_abs, "max_daily_loss_abs")
     max_daily_loss_pct = _validate_positive(

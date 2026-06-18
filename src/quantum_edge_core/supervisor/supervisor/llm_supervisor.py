@@ -14,9 +14,11 @@ import yaml
 from pathlib import Path
 from dataclasses import dataclass
 from datetime import date
+from decimal import Decimal
 from enum import Enum
 import re
-from typing import Any, Dict, Iterable, List, Optional, Tuple, Literal
+import msgspec
+from typing import Any, Dict, Iterable, List, Optional, Tuple, Literal, Mapping
 from pydantic import BaseModel, Field, ValidationError
 from quantum_edge_core.supervisor.supervisor.audit_report import load_events_for_date
 from quantum_edge_core.supervisor.supervisor.config import (
@@ -28,9 +30,340 @@ from quantum_edge_core.supervisor.supervisor.events import (
     EventType,
     EventLogger,
 )
-from quantum_edge_core.supervisor.supervisor.llm.chat_client import (
-    ChatCompletionsClient,
-)
+
+
+def _schema_to_dict(response_schema: Any) -> Dict[str, Any] | None:
+    """Convert a Pydantic model class or dict to a JSON Schema dict."""
+    if response_schema is None:
+        return None
+    if hasattr(response_schema, "model_json_schema"):
+        return response_schema.model_json_schema()
+    if hasattr(response_schema, "schema"):
+        return response_schema.schema()
+    if isinstance(response_schema, dict):
+        return response_schema
+    raise TypeError(
+        f"response_schema must be a Pydantic model class or dict, got {type(response_schema)}"
+    )
+
+
+class GeminiPart(msgspec.Struct):
+    text: str
+
+
+class GeminiContent(msgspec.Struct):
+    parts: list[GeminiPart]
+
+
+class GeminiRequest(msgspec.Struct):
+    contents: list[GeminiContent]
+
+
+class GeminiResponsePart(msgspec.Struct):
+    text: str
+
+
+class GeminiResponseContent(msgspec.Struct):
+    parts: list[GeminiResponsePart]
+
+
+class GeminiCandidate(msgspec.Struct):
+    content: GeminiResponseContent
+
+
+class GeminiResponse(msgspec.Struct):
+    candidates: list[GeminiCandidate]
+
+
+class ChatCompletionsClient:
+    """Refactored ChatCompletionsClient to call Google Gemini API natively using httpx.AsyncClient."""
+
+    def __init__(
+        self, api_url: str, api_key_env: str, logger: logging.Logger | None = None
+    ) -> None:
+        self.api_url = api_url
+        self.api_key_env = api_key_env
+        self.logger = logger or logging.getLogger(__name__)
+
+    async def complete_async(
+        self,
+        model: str,
+        messages: List[Mapping[str, str]],
+        temperature: float,
+        timeout_seconds: float,
+        response_schema: Any | None = None,
+    ) -> str:
+        import os
+        import httpx
+        import msgspec
+        import asyncio
+
+        # If calling Hermes local CLI
+        if self.api_url == "hermes" or model == "hermes":
+            self.logger.info("Calling local Hermes CLI in oneshot mode")
+            system_text = ""
+            user_texts = []
+            for msg in messages:
+                role = msg.get("role", "user")
+                content = msg.get("content", "")
+                if role == "system":
+                    system_text = content
+                else:
+                    user_texts.append(content)
+
+            prompt_data = ""
+            if system_text:
+                prompt_data += f"System Instructions:\n{system_text}\n\n"
+            prompt_data += "\n\n".join(user_texts)
+
+            if response_schema is not None:
+                schema_dict = _schema_to_dict(response_schema)
+                prompt_data += (
+                    f"\n\nCRITICAL: Respond ONLY with a valid JSON object matching this schema:\n"
+                    f"{json.dumps(schema_dict, indent=2)}\n"
+                    f"Do not include any other text, markdown fences, or comments. Raw JSON only."
+                )
+
+            # Run /home/korben/.local/bin/hermes with --ignore-rules to avoid pollution
+            cmd = [
+                "/home/korben/.local/bin/hermes",
+                "--ignore-rules",
+                "-z",
+                prompt_data,
+            ]
+
+            proc = await asyncio.create_subprocess_exec(
+                *cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            stdout, stderr = await proc.communicate()
+
+            if proc.returncode != 0:
+                err_msg = stderr.decode("utf-8", errors="ignore")
+                self.logger.error("Hermes CLI oneshot call failed: %s", err_msg)
+                raise RuntimeError(
+                    f"Hermes CLI returned non-zero code {proc.returncode}: {err_msg}"
+                )
+
+            result_str = stdout.decode("utf-8", errors="ignore").strip()
+            self.logger.info(
+                "Hermes CLI oneshot call successful. Result length: %d", len(result_str)
+            )
+
+            try:
+                from quantum_edge_core.supervisor.supervisor.utils.dataset_collector import (
+                    collect_llm_sample,
+                )
+
+                collect_llm_sample(messages, result_str, model)
+            except Exception as collector_err:
+                self.logger.warning(
+                    "Failed to collect LLM sample for dataset: %s",
+                    collector_err,
+                )
+
+            return result_str
+
+        # 1. Resolve API key
+        api_key = (
+            os.environ.get("GOOGLE_API_KEY")
+            or os.environ.get("GEMINI_API_KEY")
+            or os.environ.get(self.api_key_env)
+        )
+        if not api_key:
+            raise RuntimeError(
+                "GOOGLE_API_KEY or GEMINI_API_KEY environment variable is not set"
+            )
+
+        is_gemini = "generativelanguage.googleapis.com" in self.api_url
+
+        if not is_gemini:
+            # OpenAI-compatible route
+            self.logger.info(
+                "Calling OpenAI-compatible API at url: %s with model: %s",
+                self.api_url,
+                model,
+            )
+            payload_dict = {
+                "model": model,
+                "messages": messages,
+                "temperature": temperature,
+            }
+            if response_schema is not None:
+                schema_dict = _schema_to_dict(response_schema)
+                payload_dict["response_format"] = {
+                    "type": "json_schema",
+                    "json_schema": {
+                        "name": "trading_decision",
+                        "schema": schema_dict,
+                        "strict": True,
+                    },
+                }
+
+            async with httpx.AsyncClient(timeout=timeout_seconds or 60.0) as client:
+                headers = {
+                    "Content-Type": "application/json",
+                    "Authorization": f"Bearer {api_key}",
+                }
+                response = await client.post(
+                    self.api_url, json=payload_dict, headers=headers
+                )
+
+                # Check for 400/404 tool calling unsupported error and retry
+                if response.status_code in (400, 404) and (
+                    "support tool use" in response.text.lower()
+                    or "tools" in response.text.lower()
+                    or "response_format" in response.text.lower()
+                ):
+                    self.logger.warning(
+                        "LLM endpoint does not support tools/response_format. Retrying fallback without them."
+                    )
+                    payload_fallback = {
+                        k: v
+                        for k, v in payload_dict.items()
+                        if k not in ("tools", "response_format")
+                    }
+                    response = await client.post(
+                        self.api_url, json=payload_fallback, headers=headers
+                    )
+
+                if response.status_code != 200:
+                    self.logger.error(
+                        "OpenAI-compatible API call failed with status %d: %s",
+                        response.status_code,
+                        response.text,
+                    )
+                    raise RuntimeError(
+                        f"OpenAI-compatible API returned status code {response.status_code}: {response.text}"
+                    )
+
+                resp_json = response.json()
+                result_str = resp_json["choices"][0]["message"]["content"].strip()
+
+            try:
+                from quantum_edge_core.supervisor.supervisor.utils.dataset_collector import (
+                    collect_llm_sample,
+                )
+
+                collect_llm_sample(messages, result_str, model)
+            except Exception as collector_err:
+                self.logger.warning("Failed to collect LLM sample: %s", collector_err)
+
+            return result_str
+
+        # 2. Build model and URL for native Gemini
+        model_name = model if model and model != "hermes" else "gemini-3-flash-preview"
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
+
+        # 3. Construct prompt data from messages
+        system_text = ""
+        user_texts = []
+        for msg in messages:
+            role = msg.get("role", "user")
+            content = msg.get("content", "")
+            if role == "system":
+                system_text = content
+            else:
+                user_texts.append(content)
+
+        prompt_data = ""
+        if system_text:
+            prompt_data += f"System Instructions:\n{system_text}\n\n"
+        prompt_data += "\n\n".join(user_texts)
+
+        # 4. Include response schema in prompt if provided
+        if response_schema is not None:
+            schema_dict = _schema_to_dict(response_schema)
+            prompt_data += (
+                f"\n\nCRITICAL: Respond ONLY with a valid JSON object matching this schema:\n"
+                f"{json.dumps(schema_dict, indent=2)}\n"
+                f"Do not include any other text, markdown fences, or comments. Raw JSON only."
+            )
+
+        # Construct request payload
+        req_part = GeminiPart(text=prompt_data)
+        req_content = GeminiContent(parts=[req_part])
+        req_payload = GeminiRequest(contents=[req_content])
+
+        # Serialize payload using msgspec
+        payload_bytes = msgspec.json.encode(req_payload)
+
+        self.logger.info("Calling native Gemini API at model: %s", model_name)
+
+        # 6. Send request via httpx.AsyncClient with timeout=60.0
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            headers = {"Content-Type": "application/json"}
+            response = await client.post(url, content=payload_bytes, headers=headers)
+
+            if response.status_code != 200:
+                self.logger.error(
+                    "Gemini API call failed with status %d: %s",
+                    response.status_code,
+                    response.text,
+                )
+                raise RuntimeError(
+                    f"Gemini API returned status code {response.status_code}: {response.text}"
+                )
+
+            response_data = response.content
+
+        try:
+            resp_payload = msgspec.json.decode(response_data, type=GeminiResponse)
+            text_result = resp_payload.candidates[0].content.parts[0].text
+            result_str = text_result.strip()
+
+            try:
+                from quantum_edge_core.supervisor.supervisor.utils.dataset_collector import (
+                    collect_llm_sample,
+                )
+
+                collect_llm_sample(messages, result_str, model)
+            except Exception as collector_err:
+                self.logger.warning(
+                    "Failed to collect LLM sample for dataset: %s",
+                    collector_err,
+                )
+
+            return result_str
+        except Exception as exc:
+            self.logger.error("Failed to parse Gemini response: %s", exc)
+            raise RuntimeError(f"Unexpected Gemini response structure: {exc}") from exc
+
+    def complete(
+        self,
+        model: str,
+        messages: List[Mapping[str, str]],
+        temperature: float,
+        timeout_seconds: float,
+        response_schema: Any | None = None,
+    ) -> str:
+        # Run the async complete method synchronously using thread pool/event loop helper
+        import asyncio
+        import concurrent.futures
+
+        coro = self.complete_async(
+            model=model,
+            messages=messages,
+            temperature=temperature,
+            timeout_seconds=timeout_seconds,
+            response_schema=response_schema,
+        )
+
+        try:
+            loop = asyncio.get_event_loop()
+        except RuntimeError:
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+
+        if loop.is_running():
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                future = executor.submit(lambda: asyncio.run(coro))
+                return future.result()
+        else:
+            return loop.run_until_complete(coro)
+
+
 from quantum_edge_core.supervisor.supervisor.state import RiskStateSnapshot
 from quantum_edge_core.supervisor.domain.models import LlmGridPolicy
 
@@ -79,10 +412,10 @@ class LlmSupervisorAdvice:
     raw_response: str
     market_regime: str = "ranging"
     grid_bias: str = "neutral"
-    recommended_grid_top: float = 0.0
-    recommended_grid_bottom: float = 0.0
-    capital_exposure_pct: float = 1.0
-    grid_spacing_multiplier: float = 1.0
+    recommended_grid_top: Decimal = Decimal("0.0")
+    recommended_grid_bottom: Decimal = Decimal("0.0")
+    capital_exposure_pct: Decimal = Decimal("1.0")
+    grid_spacing_multiplier: Decimal = Decimal("1.0")
     # Legacy compat
     action: LlmAction = LlmAction.UNSPECIFIED
     comment: str = ""
@@ -95,10 +428,10 @@ class LlmSupervisorSummary:
     halted: bool
     llm_paused: bool
     llm_risk_multiplier: float
-    equity_now: Optional[float]
-    realized_pnl_today: Optional[float]
-    daily_loss: Optional[float]
-    drawdown: Optional[float]
+    equity_now: Optional[Decimal]
+    realized_pnl_today: Optional[Decimal]
+    daily_loss: Optional[Decimal]
+    drawdown: Optional[Decimal]
     allowed_orders: int
     denied_orders: int
     denied_by_code: Dict[str, int]
@@ -224,10 +557,14 @@ class LlmSupervisor:
                             reasoning=advice.reasoning,
                             market_regime=advice.market_regime,
                             grid_bias=advice.grid_bias,
-                            recommended_grid_top=advice.recommended_grid_top,
-                            recommended_grid_bottom=advice.recommended_grid_bottom,
-                            capital_exposure_pct=advice.capital_exposure_pct,
-                            grid_spacing_multiplier=advice.grid_spacing_multiplier,
+                            recommended_grid_top=float(advice.recommended_grid_top),
+                            recommended_grid_bottom=float(
+                                advice.recommended_grid_bottom
+                            ),
+                            capital_exposure_pct=float(advice.capital_exposure_pct),
+                            grid_spacing_multiplier=float(
+                                advice.grid_spacing_multiplier
+                            ),
                         )
                     )
                 else:
@@ -242,10 +579,14 @@ class LlmSupervisor:
                             reasoning=advice.reasoning,
                             market_regime=advice.market_regime,
                             grid_bias=advice.grid_bias,
-                            recommended_grid_top=advice.recommended_grid_top,
-                            recommended_grid_bottom=advice.recommended_grid_bottom,
-                            capital_exposure_pct=advice.capital_exposure_pct,
-                            grid_spacing_multiplier=advice.grid_spacing_multiplier,
+                            recommended_grid_top=float(advice.recommended_grid_top),
+                            recommended_grid_bottom=float(
+                                advice.recommended_grid_bottom
+                            ),
+                            capital_exposure_pct=float(advice.capital_exposure_pct),
+                            grid_spacing_multiplier=float(
+                                advice.grid_spacing_multiplier
+                            ),
                         )
                     )
             except Exception as exc:
@@ -308,10 +649,10 @@ class LlmSupervisor:
                 ),
                 market_regime=policy.market_regime,
                 grid_bias=policy.grid_bias,
-                recommended_grid_top=float(policy.recommended_grid_top),
-                recommended_grid_bottom=float(policy.recommended_grid_bottom),
-                capital_exposure_pct=float(policy.capital_exposure_pct),
-                grid_spacing_multiplier=float(policy.grid_spacing_multiplier),
+                recommended_grid_top=Decimal(str(policy.recommended_grid_top)),
+                recommended_grid_bottom=Decimal(str(policy.recommended_grid_bottom)),
+                capital_exposure_pct=Decimal(str(policy.capital_exposure_pct)),
+                grid_spacing_multiplier=Decimal(str(policy.grid_spacing_multiplier)),
                 action=action,
                 comment=reasoning,
             )
@@ -341,10 +682,10 @@ class LlmSupervisor:
             raw_response=raw_payload_text,
             market_regime="ranging",
             grid_bias="neutral",
-            recommended_grid_top=0.0,
-            recommended_grid_bottom=0.0,
-            capital_exposure_pct=1.0,
-            grid_spacing_multiplier=1.0,
+            recommended_grid_top=Decimal("0.0"),
+            recommended_grid_bottom=Decimal("0.0"),
+            capital_exposure_pct=Decimal("1.0"),
+            grid_spacing_multiplier=Decimal("1.0"),
             action=LlmAction.UNSPECIFIED,
             comment=reasoning,
         )
@@ -579,19 +920,13 @@ def _parse_cli_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
 def _run_standalone(args: argparse.Namespace) -> None:
     """Run a single LLM risk check from the command line."""
     from datetime import date as _date
+    import asyncio
+    from quantum_edge_core.supervisor.supervisor.policy_publisher import (
+        ZmqPolicyPublisher,
+    )
+    from quantum_edge_core.supervisor.monitor import ZmqHeartbeatSubscriber
 
     config_dir = Path(args.config_dir)
-
-    # ── Pre-flight: API key ──────────────────────────────────────────
-    api_key_env = os.getenv("GOOGLE_API_KEY") or os.getenv("GEMINI_API_KEY")
-    if not api_key_env:
-        print(
-            "[!] ПОМИЛКА: Не встановлено GOOGLE_API_KEY або GEMINI_API_KEY.\n"
-            "    Встановіть змінну середовища і спробуйте знову:\n"
-            "    export GOOGLE_API_KEY=<your-key>",
-            file=sys.stderr,
-        )
-        sys.exit(1)
 
     # ── Load configs ─────────────────────────────────────────────────
     llm_config_path = config_dir / "llm_supervisor.yaml"
@@ -618,8 +953,39 @@ def _run_standalone(args: argparse.Namespace) -> None:
     llm_cfg = load_llm_supervisor_config(llm_config_path)
     risk_cfg = load_risk_config(risk_config_path)
 
-    # ── Build supervisor ─────────────────────────────────────────────
+    # ── Pre-flight: API key ──────────────────────────────────────────
+    if llm_cfg.api_url != "hermes" and llm_cfg.model != "hermes":
+        api_key_env = (
+            os.getenv("GOOGLE_API_KEY")
+            or os.getenv("GEMINI_API_KEY")
+            or os.getenv(llm_cfg.api_key_env)
+        )
+        if not api_key_env:
+            print(
+                "[!] ПОМИЛКА: Не встановлено GOOGLE_API_KEY або GEMINI_API_KEY.\n"
+                "    Встановіть змінну середовища і спробуйте знову:\n"
+                "    export GOOGLE_API_KEY=<your-key>",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+
+    # ── Build ZMQ Sockets (ZMQ Safety) ───────────────────────────────
     _logger = logging.getLogger("LlmSupervisor")
+    policy_publisher = ZmqPolicyPublisher(bind_url="tcp://*:5558")
+    heartbeat_subscriber = ZmqHeartbeatSubscriber(endpoint="tcp://127.0.0.1:5557")
+
+    try:
+        loop = asyncio.get_event_loop()
+    except RuntimeError:
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+
+    if loop.is_running():
+        loop.create_task(policy_publisher.start())
+    else:
+        loop.run_until_complete(policy_publisher.start())
+
+    # ── Build supervisor ─────────────────────────────────────────────
     events_dir = Path("runtime") / "events"
     events_dir.mkdir(parents=True, exist_ok=True)
 
@@ -628,23 +994,24 @@ def _run_standalone(args: argparse.Namespace) -> None:
         risk_config=risk_cfg,
         events_dir=events_dir,
         logger=_logger,
+        policy_publisher=policy_publisher,
     )
 
     # ── Build a realistic test snapshot ────────────────────────────────
     snapshot = RiskStateSnapshot(
         trading_day=_date.today(),
-        equity_start=10000.0,
-        equity_now=9985.0,
-        realized_pnl_today=-15.5,
-        max_equity_intraday=10050.0,
-        min_equity_intraday=9970.0,
+        equity_start=Decimal("10000.0"),
+        equity_now=Decimal("9985.0"),
+        realized_pnl_today=Decimal("-15.5"),
+        max_equity_intraday=Decimal("10050.0"),
+        min_equity_intraday=Decimal("9970.0"),
         halted=False,
         halt_reason=None,
         llm_risk_multiplier=1.0,
         llm_paused=False,
-        total_equity=10000.0,
-        free_margin=9500.0,
-        unrealized_pnl=-15.5,
+        total_equity=Decimal("10000.0"),
+        free_margin=Decimal("9500.0"),
+        unrealized_pnl=Decimal("-15.5"),
         open_positions_count=1,
         portfolio_skew=0.5,
         current_leverage=1.2,
@@ -668,73 +1035,80 @@ def _run_standalone(args: argparse.Namespace) -> None:
     is_continuous = args.command == "run-foreground"
     cycle = 0
 
-    while True:
-        cycle += 1
-        _logger.info("═" * 50)
-        _logger.info("Analysis cycle #%d started.", cycle)
+    try:
+        while True:
+            cycle += 1
+            _logger.info("═" * 50)
+            _logger.info("Analysis cycle #%d started.", cycle)
 
-        # Refresh snapshot date (handles midnight rollover)
-        snapshot.trading_day = _date.today()
+            # Refresh snapshot date (handles midnight rollover)
+            snapshot.trading_day = _date.today()
 
-        # Fetch market data
-        if args.mode == "demo":
-            situation_text = mock_situation_summary()
-        else:
-            try:
-                situation_text = fetch_situation_summary()
-                _logger.info("Fetched live OHLCV from Binance.")
-            except Exception as exc:
-                _logger.critical(
-                    "CRITICAL: Failed to fetch live market data from Binance: %s. "
-                    "Skipping this cycle — REFUSING to feed fake data to LLM.",
-                    exc,
-                )
-                if not is_continuous:
-                    raise
-                _time.sleep(10)
-                continue
+            # Fetch market data
+            if args.mode == "demo":
+                situation_text = mock_situation_summary()
+            else:
+                try:
+                    situation_text = fetch_situation_summary()
+                    _logger.info("Fetched live OHLCV from Binance.")
+                except Exception as exc:
+                    _logger.critical(
+                        "CRITICAL: Failed to fetch live market data from Binance: %s. "
+                        "Skipping this cycle — REFUSING to feed fake data to LLM.",
+                        exc,
+                    )
+                    if not is_continuous:
+                        raise
+                    _time.sleep(10)
+                    continue
 
-        _logger.info("Situation text:\n%s", situation_text)
+            _logger.info("Situation text:\n%s", situation_text)
 
-        advice = supervisor.run_check(
-            today=_date.today(),
-            snapshot=snapshot,
-            mode=args.mode,
-            situation_text=situation_text,
-        )
-        if advice:
-            print("\n" + "=" * 60)
-            print(
-                f"  [LLM DECISION] Mode: {advice.trading_mode.value} | Risk: {advice.risk_multiplier}"
+            advice = supervisor.run_check(
+                today=_date.today(),
+                snapshot=snapshot,
+                mode=args.mode,
+                situation_text=situation_text,
             )
-            print(f'  [LLM REASONING] "{advice.reasoning}"')
-            print("=" * 60 + "\n")
-            print(
-                json.dumps(
-                    {
-                        "trading_mode": advice.trading_mode.value,
-                        "risk_multiplier": advice.risk_multiplier,
-                        "reasoning": advice.reasoning,
-                    },
-                    indent=2,
-                    ensure_ascii=False,
+            if advice:
+                print("\n" + "=" * 60)
+                print(
+                    f"  [LLM DECISION] Mode: {advice.trading_mode.value} | Risk: {advice.risk_multiplier}"
                 )
+                print(f'  [LLM REASONING] "{advice.reasoning}"')
+                print("=" * 60 + "\n")
+                print(
+                    json.dumps(
+                        {
+                            "trading_mode": advice.trading_mode.value,
+                            "risk_multiplier": advice.risk_multiplier,
+                            "reasoning": advice.reasoning,
+                        },
+                        indent=2,
+                        ensure_ascii=False,
+                    )
+                )
+            else:
+                print(
+                    "[LlmSupervisor] No advice returned (disabled or insufficient data)."
+                )
+
+            # ── Exit or sleep ────────────────────────────────────────────
+            if not is_continuous:
+                _logger.info("Single check complete (check-once mode). Exiting.")
+                break
+
+            sleep_sec = llm_cfg.check_interval_minutes * 60
+            _logger.info(
+                "[INFO] Sleeping for %d minutes (%d seconds) until next analysis...",
+                llm_cfg.check_interval_minutes,
+                sleep_sec,
             )
-        else:
-            print("[LlmSupervisor] No advice returned (disabled or insufficient data).")
-
-        # ── Exit or sleep ────────────────────────────────────────────
-        if not is_continuous:
-            _logger.info("Single check complete (check-once mode). Exiting.")
-            break
-
-        sleep_sec = llm_cfg.check_interval_minutes * 60
-        _logger.info(
-            "[INFO] Sleeping for %d minutes (%d seconds) until next analysis...",
-            llm_cfg.check_interval_minutes,
-            sleep_sec,
-        )
-        _time.sleep(sleep_sec)
+            _time.sleep(sleep_sec)
+    finally:
+        policy_publisher.close()
+        heartbeat_subscriber.close()
+        _logger.info("ZMQ sockets on 5557/5558 closed successfully (ZMQ Safety).")
 
 
 if __name__ == "__main__":
