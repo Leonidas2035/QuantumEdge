@@ -50,4 +50,5 @@ RUN chown -R quantum:quantum /app
 USER quantum
 
 # Default command (can be overridden in compose)
-CMD ["python", "src/quantum_edge_core/supervisor/service.py"]
+CMD ["python", "/home/korben/.hermes/hermes/service.py"]
+

@@ -235,20 +235,20 @@ QuantumEdge/                       # Project Root ($QE_ROOT)
 
   ── 2. SupervisorAgent (Control Plane) ─────────────────────────────
   # Full supervisor with CLI:
-  cd $QE_ROOT/src/quantum_edge_core/supervisor
-  python3 supervisor.py run-foreground
+  cd /home/korben/.hermes/hermes
+  PYTHONPATH=/home/korben/QuantumEdge-main/src:/home/korben/.hermes python3 supervisor.py run-foreground
 
   # Or with mode override:
-  python3 supervisor.py run-foreground --mode paper
+  PYTHONPATH=/home/korben/QuantumEdge-main/src:/home/korben/.hermes python3 supervisor.py run-foreground --mode paper
 
   # Standalone LLM check:
-  python3 -m quantum_edge_core.supervisor.supervisor.llm_supervisor run-foreground --mode demo
+  PYTHONPATH=/home/korben/QuantumEdge-main/src:/home/korben/.hermes python3 -m hermes.supervisor.llm_supervisor run-foreground --mode demo
 
   # Other commands:
-  python3 supervisor.py start|stop|status|audit|llm-check|snapshot
+  PYTHONPATH=/home/korben/QuantumEdge-main/src:/home/korben/.hermes python3 supervisor.py start|stop|status|audit|llm-check|snapshot
 
   Requires: GOOGLE_API_KEY (for LLM), config/supervisor.yaml
-  Config: src/quantum_edge_core/supervisor/config/*.yaml
+  Config: /home/korben/.hermes/hermes/config/*.yaml
 
   ── 3. AI Scalper Bot (Execution Plane) ────────────────────────────
   cd $QE_ROOT
