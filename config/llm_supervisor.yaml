@@ -1,7 +1,7 @@
 enabled: true
-api_url: "https://generativelanguage.googleapis.com/v1beta/models"
-model: "gemini-3-flash-preview"
-api_key_env: "GOOGLE_API_KEY"
+api_url: "https://openrouter.ai/api/v1/chat/completions"
+model: "nousresearch/hermes-3-llama-3.1-405b:free"
+api_key_env: "OPENROUTER_API_KEY"
 check_interval_minutes: 5
 min_order_decisions: 1
 max_events_in_summary: 50

@@ -919,6 +919,9 @@ def _parse_cli_args(argv: Optional[list[str]] = None) -> argparse.Namespace:
 
 def _run_standalone(args: argparse.Namespace) -> None:
     """Run a single LLM risk check from the command line."""
+    from dotenv import load_dotenv
+
+    load_dotenv()
     from datetime import date as _date
     import asyncio
     from quantum_edge_core.supervisor.supervisor.policy_publisher import (
