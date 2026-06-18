@@ -32,19 +32,30 @@ from quantum_edge_core.supervisor.supervisor.events import (
 )
 
 
+def _clean_schema(schema: Any) -> Any:
+    """Recursively remove regex 'pattern' keys from JSON schema to prevent look-around errors in grammar parsers."""
+    if isinstance(schema, dict):
+        return {k: _clean_schema(v) for k, v in schema.items() if k != "pattern"}
+    elif isinstance(schema, list):
+        return [_clean_schema(item) for item in schema]
+    return schema
+
+
 def _schema_to_dict(response_schema: Any) -> Dict[str, Any] | None:
     """Convert a Pydantic model class or dict to a JSON Schema dict."""
     if response_schema is None:
         return None
     if hasattr(response_schema, "model_json_schema"):
-        return response_schema.model_json_schema()
-    if hasattr(response_schema, "schema"):
-        return response_schema.schema()
-    if isinstance(response_schema, dict):
-        return response_schema
-    raise TypeError(
-        f"response_schema must be a Pydantic model class or dict, got {type(response_schema)}"
-    )
+        raw_schema = response_schema.model_json_schema()
+    elif hasattr(response_schema, "schema"):
+        raw_schema = response_schema.schema()
+    elif isinstance(response_schema, dict):
+        raw_schema = response_schema
+    else:
+        raise TypeError(
+            f"response_schema must be a Pydantic model class or dict, got {type(response_schema)}"
+        )
+    return _clean_schema(raw_schema)
 
 
 class GeminiPart(msgspec.Struct):
@@ -239,6 +250,11 @@ class ChatCompletionsClient:
                     )
 
                 resp_json = response.json()
+                if "choices" not in resp_json:
+                    self.logger.error(
+                        "OpenAI-compatible response missing 'choices': %s", resp_json
+                    )
+                    raise KeyError(f"'choices' not in response: {resp_json}")
                 result_str = resp_json["choices"][0]["message"]["content"].strip()
 
             try:

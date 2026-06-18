@@ -19,6 +19,15 @@ def _is_gemini_url(url: str) -> bool:
     return "generativelanguage.googleapis.com" in url
 
 
+def _clean_schema(schema: Any) -> Any:
+    """Recursively remove regex 'pattern' keys from JSON schema to prevent look-around errors in grammar parsers."""
+    if isinstance(schema, dict):
+        return {k: _clean_schema(v) for k, v in schema.items() if k != "pattern"}
+    elif isinstance(schema, list):
+        return [_clean_schema(item) for item in schema]
+    return schema
+
+
 def _schema_to_dict(response_schema: Any) -> Dict[str, Any] | None:
     """Convert a Pydantic model class or dict to a JSON Schema dict.
 
@@ -31,15 +40,17 @@ def _schema_to_dict(response_schema: Any) -> Dict[str, Any] | None:
         return None
     # Pydantic v2 model class
     if hasattr(response_schema, "model_json_schema"):
-        return response_schema.model_json_schema()
+        raw_schema = response_schema.model_json_schema()
     # Pydantic v1 model class
-    if hasattr(response_schema, "schema"):
-        return response_schema.schema()
-    if isinstance(response_schema, dict):
-        return response_schema
-    raise TypeError(
-        f"response_schema must be a Pydantic model class or dict, got {type(response_schema)}"
-    )
+    elif hasattr(response_schema, "schema"):
+        raw_schema = response_schema.schema()
+    elif isinstance(response_schema, dict):
+        raw_schema = response_schema
+    else:
+        raise TypeError(
+            f"response_schema must be a Pydantic model class or dict, got {type(response_schema)}"
+        )
+    return _clean_schema(raw_schema)
 
 
 class ChatCompletionsClient:
