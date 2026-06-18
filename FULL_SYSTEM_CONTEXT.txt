@@ -143,36 +143,39 @@ QuantumEdge/                       # Project Root ($QE_ROOT)
 
 
 ================================================================================
-  PART 2: DATA FLOW & ARCHITECTURE
+  PART 2: DATA FLOW & ARCHITECTURE (HERMES CORE)
 ================================================================================
 
-  ┌─────────────┐    ZMQ PUB/SUB     ┌──────────────┐    ZMQ PUB/SUB
-  │  Binance     │ ─── WebSocket ──→ │ MarketDataHub │ ──── :5555 ────→ Bot
-  │  Exchange    │                   │   (hub.py)    │                  │
-  └─────────────┘                   └──────┬───────┘                  │
-                                           │                          │
-                                           │ IPC (ipc:// or tcp)      │
-                                           ↓                          ↓
-                                    ┌──────────────┐    ZMQ :5557   ┌───────────┐
-                                    │  QuestDB     │ ←── (TEL) ──── │ AI Scalper│
-                                    │  (ILP :9009) │                │  Bot      │
-                                    └──────────────┘                └─────┬─────┘
-                                                                          │
-                                    ┌──────────────┐    ZMQ :5558         │
-                                    │ Supervisor   │ ──── (POL) ──────────┘
-                                    │ Agent        │
-                                    │ (supervisor  │    HTTP :8765
-                                    │  .py)        │ ──── (API) ──→ Dashboard
-                                    └──────┬───────┘
-                                           │
-                                           │  Gemini API (HTTPS)
-                                           ↓
-                                    ┌──────────────┐
-                                    │   Gemini     │
-                                    │   (LLM)      │
-                                    └──────────────┘
-
-
+  ┌─────────────┐    ZMQ PUB/SUB    ┌──────────────┐    ZMQ PUB/SUB
+  │  Binance &  │ ─── WebSocket ──→ │ MarketDataHub│ ──── :5555 ────┐
+  │  BingX      │                   │   (hub.py)   │                │
+  └─────────────┘                   └──────┬───────┘                │
+                                           │                        │
+                                           │ IPC / tcp              │
+                                           ↓                        │
+                                    ┌──────────────┐                │
+                                    │  QuestDB     │ ◄──┐           │
+                                    │  (ILP :9009) │    │           │
+                                    └──────────────┘    │           │
+                                                        │           │
+  ┌──────────────┐                          ZMQ :5557 (TEL)         │
+  │  Dashboard   │ ◄────── HTTP :8765 ──────┐           │           ↓
+  └──────────────┘                          │           │     ┌───────────┐
+                                            │           │     │ AI Scalper│
+                                 ┌──────────┴───────────┴──┐  │ DynDCA    │
+                                 │                         │  │ LockBotBTC│
+                                 │         HERMES          │  └─────┬─────┘
+                                 │     (Orchestrator)      │ ◄── TEL┘   │
+                                 │                         │            │
+                                 └──────────┬───────────▲──┘            │
+                                            │           │               │
+                               agy-cli call │           └──── POL ──────┘
+                                            ↓               ZMQ :5558
+                                 ┌──────────────────────┐
+                                 │     Gemini (LLM)     │
+                                 │  + Market Data       │
+                                 │    Analysis          │
+                                 └──────────────────────┘
 
 ================================================================================
   PART 3: PORT MAPPING (Source of Truth)
