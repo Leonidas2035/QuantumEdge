@@ -1,0 +1,17 @@
+bot_id: "dyndca_v1"
+mode: "paper" # paper або live
+market_data:
+  zmq_port: 5555
+  topics:
+    - "BTCUSDT:depth_l2"
+    - "BTCUSDT:trade"
+telemetry:
+  zmq_port: 5567
+strategy:
+  grid_spacing_pct: 0.5
+  gamma: 1.2
+  atr_period: 14
+  wall_detection_threshold: 10.0
+execution:
+  base_profit_pct: 1.0
+  funding_comp_pct: 0.2

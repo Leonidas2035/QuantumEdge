@@ -9,6 +9,7 @@ import logging
 import logging.config
 import time
 import yaml
+from decimal import Decimal
 from pathlib import Path
 
 from quantum_edge_core.ai_scalper_bot.bot.core.config import Config
@@ -16,12 +17,9 @@ from quantum_edge_core.ai_scalper_bot.bot.core.orderbook import OrderBookCache
 from quantum_edge_core.ai_scalper_bot.bot.features.facade import FeatureEngine
 from quantum_edge_core.ai_scalper_bot.bot.execution.strategy_core import (
     BotState,
-    DynamicDCAStrategy,
+    AdaptiveGridStrategy,
 )
 from quantum_edge_core.ai_scalper_bot.bot.execution.volatility import OnlineVolatility
-from quantum_edge_core.ai_scalper_bot.bot.execution.volatility_oracle import (
-    VolatilityOracle,
-)
 from quantum_edge_core.ai_scalper_bot.bot.execution.position import PositionManager
 from quantum_edge_core.ai_scalper_bot.bot.infrastructure.zmq_adapter import ZmqSubStream
 from quantum_edge_core.ai_scalper_bot.bot.infrastructure.paper_trader import (
@@ -107,8 +105,10 @@ class BotEngine:
 
         self.zmq_ctx = zmq.Context()
         self.cmd_sub = self.zmq_ctx.socket(zmq.SUB)
-        self.cmd_sub.connect(f"tcp://127.0.0.1:{self.config.policy_port}")
+        cmd_endpoint = f"tcp://127.0.0.1:{self.config.policy_port}"
+        self.cmd_sub.connect(cmd_endpoint)
         self.cmd_sub.subscribe(f"command.{self.config.service_id}".encode("utf-8"))
+        logger.info(f"🔌 Command bus connected to {cmd_endpoint}, subscribed to command.{self.config.service_id}")
 
         # 2. Memory (State)
         self.cache = OrderBookCache()
@@ -129,17 +129,51 @@ class BotEngine:
             alpha=self.config.strategy_config.get("atr_alpha", 0.01)
         )
 
-        trading_mode = getattr(self.config, "trading_mode", "scalper_v1")
-        if trading_mode == "spot_grid":
-            self.volatility_oracle = VolatilityOracle(self.config.strategy_config)
-            self.strategy = DynamicDCAStrategy(self.config.strategy_config)
-            logger.info("Initializing SPOT DynamicDCAStrategy")
-        else:
-            raise NotImplementedError(
-                "AdaptiveGridStrategy is disabled. Please set trading_mode='spot_grid' in config."
-            )
+        self.strategy = AdaptiveGridStrategy(self.config.strategy_config)
+        logger.info("Initializing AdaptiveGridStrategy for AI Scalper")
 
         self.running = False
+
+        # Telemetry Cache
+        self.last_telemetry_fetch = 0.0
+        self.cached_leverage = 20.0
+        self.cached_liq_price = 0.0
+        self.cached_unrealized_pnl = 0.0
+        self.cached_position_qty = 0.0
+
+    async def _update_portfolio_telemetry(self):
+        now = time.time()
+        if now - self.last_telemetry_fetch >= 5.0:
+            try:
+                # 1. Fetch positions
+                if hasattr(self.gateway, "fetch_positions_async"):
+                    positions = await self.gateway.fetch_positions_async()
+                    if positions:
+                        total_qty = 0.0
+                        total_pnl = 0.0
+                        first_pos = positions[0]
+                        self.cached_leverage = first_pos.get("leverage", 20.0)
+                        self.cached_liq_price = first_pos.get("liquidation_price", 0.0)
+                        for pos in positions:
+                            qty_val = pos.get("size", 0.0)
+                            if pos.get("side") == "SHORT":
+                                qty_val = -qty_val
+                            total_qty += qty_val
+                            total_pnl += pos.get("unrealized_pnl", 0.0)
+                        self.cached_position_qty = total_qty
+                        self.cached_unrealized_pnl = total_pnl
+                    else:
+                        self.cached_position_qty = 0.0
+                        self.cached_unrealized_pnl = 0.0
+                        self.cached_liq_price = 0.0
+
+                # 2. Fetch balance
+                if hasattr(self.gateway, "fetch_balance_async"):
+                    actual_balance = await self.gateway.fetch_balance_async()
+                    self.position.state.quote_balance = Decimal(str(actual_balance))
+            except Exception as e:
+                logger.error(f"Error in telemetry fetch: {e}")
+            self.last_telemetry_fetch = now
 
     # ── Supervisor command handler ────────────────────────────────
     def handle_supervisor_command(self, cmd: dict) -> None:
@@ -224,7 +258,6 @@ class BotEngine:
         if hasattr(self.gateway, "fetch_balance_async"):
             actual_balance = await self.gateway.fetch_balance_async()
             # Update PositionManager with real balance
-            from decimal import Decimal
 
             self.position.state.quote_balance = Decimal(str(actual_balance))
             logger.info(
@@ -285,12 +318,15 @@ class BotEngine:
                 if not tick:
                     now = time.time()
                     if now - last_heartbeat >= 1.0:
+                        await self._update_portfolio_telemetry()
                         ms = self.cache._current_state
                         eq = float(self.position.state.quote_balance)
+                        unrealized_pnl = self.cached_unrealized_pnl or float(self.position.state.unrealized_pnl)
+                        pos_qty = self.cached_position_qty or float(self.position.total_qty)
                         await self.reporter.send_heartbeat(
                             self.strategy.state,
-                            self.position.state.unrealized_pnl,
-                            self.position.total_qty,
+                            unrealized_pnl,
+                            pos_qty,
                             market_state=ms,
                             equity=eq,
                             trading_mode=getattr(
@@ -301,8 +337,10 @@ class BotEngine:
                         self.quest_telemetry.log_portfolio_state(
                             symbol=self.config.symbol,
                             equity=eq,
-                            unrealized_pnl=self.position.state.unrealized_pnl,
-                            position_qty=self.position.total_qty,
+                            unrealized_pnl=unrealized_pnl,
+                            position_qty=pos_qty,
+                            leverage=self.cached_leverage,
+                            liquidation_price=self.cached_liq_price,
                         )
                         last_heartbeat = now
                     await asyncio.sleep(0.01)
@@ -312,6 +350,65 @@ class BotEngine:
                 # Hub publishes whale, metrics, heartbeat events
                 # on the same ZMQ bus — skip those.
                 ev_type = tick.get("type", "") or tick.get("event_type", "")
+
+                # ── Handle Account Delta (Order Fills) Immediately ──
+                if ev_type == "hub.account_delta.v1":
+                    from quantum_edge_core.ai_scalper_bot.bot.execution.strategy_core import TradeAction
+                    data = tick.get("data", {})
+                    patch = data.get("patch", {})
+                    orders_update = []
+                    spot = patch.get("spot")
+                    if spot and isinstance(spot, dict):
+                        orders_update.extend(spot.get("orders_update") or [])
+                    usdm = patch.get("usdm")
+                    if usdm and isinstance(usdm, dict):
+                        orders_update.extend(usdm.get("orders_update") or [])
+
+                    for order in orders_update:
+                        if order.get("status") == "FILLED":
+                            side = order.get("side", "").upper()
+                            pos_side = order.get("positionSide")
+
+                            is_entry = False
+                            if pos_side and pos_side.upper() == "SHORT":
+                                is_entry = (side == "SELL")
+                            else:
+                                is_entry = (side == "BUY")
+
+                            price = Decimal(str(order.get("price", "0")))
+                            qty = Decimal(str(order.get("origQty", "0")))
+
+                            if is_entry:
+                                action = TradeAction(
+                                    action_type="ORDER_FILLED",
+                                    price=price,
+                                    qty=qty,
+                                    reason=f"side={side}|spacing_pct=0.012",
+                                )
+                                logger.warning(
+                                    f"🔔 ZMQ DETECTED ENTRY ORDER FILLED: {side} ({pos_side}) {qty} @ {price} | Executing counter-order..."
+                                )
+                                self.position.simulate_fill(
+                                    price,
+                                    qty,
+                                    side,
+                                    self.config.symbol,
+                                    position_side=pos_side,
+                                )
+                                await self.gateway.execute(action)
+                            else:
+                                logger.warning(
+                                    f"🔔 ZMQ DETECTED EXIT ORDER FILLED: {side} ({pos_side}) {qty} @ {price}."
+                                )
+                                self.position.simulate_fill(
+                                    price,
+                                    qty,
+                                    side,
+                                    self.config.symbol,
+                                    position_side=pos_side,
+                                )
+                    await asyncio.sleep(0.001)
+                    continue
 
                 # ── Handle Liquidation Immediately ──
                 if ev_type == "liquidation":
@@ -508,6 +605,52 @@ class BotEngine:
                         f"TICK: Price={market_state.last_price:.2f}, OFI={feat_vec.ofi:.4f}, ATR={atr_val:.4f}, B={market_state.best_bid_qty}, A={market_state.best_ask_qty}{walls_info}"
                     )
 
+                    # ── 2.5 PaperTrader Match Check ──
+                    if hasattr(self.gateway, "on_tick"):
+                        from quantum_edge_core.ai_scalper_bot.bot.execution.strategy_core import TradeAction
+                        filled_orders = self.gateway.on_tick(Decimal(str(market_state.last_price)))
+                        for f_order in filled_orders:
+                            side = f_order["side"].upper()
+                            pos_side = f_order["positionSide"]
+                            f_price = Decimal(str(f_order["price"]))
+                            f_qty = Decimal(str(f_order["qty"]))
+
+                            is_entry = False
+                            if pos_side and pos_side.upper() == "SHORT":
+                                is_entry = (side == "SELL")
+                            else:
+                                is_entry = (side == "BUY")
+
+                            if is_entry:
+                                action = TradeAction(
+                                    action_type="ORDER_FILLED",
+                                    price=f_price,
+                                    qty=f_qty,
+                                    reason=f"side={side}|spacing_pct=0.012",
+                                )
+                                logger.warning(
+                                    f"🔔 PAPER MATCH DETECTED (ENTRY): {side} ({pos_side}) {f_qty} @ {f_price} | Executing counter-order..."
+                                )
+                                self.position.simulate_fill(
+                                    f_price,
+                                    f_qty,
+                                    side,
+                                    self.config.symbol,
+                                    position_side=pos_side,
+                                )
+                                await self.gateway.execute(action)
+                            else:
+                                logger.warning(
+                                    f"🔔 PAPER MATCH DETECTED (EXIT): {side} ({pos_side}) {f_qty} @ {f_price}."
+                                )
+                                self.position.simulate_fill(
+                                    f_price,
+                                    f_qty,
+                                    side,
+                                    self.config.symbol,
+                                    position_side=pos_side,
+                                )
+
                     action = self.strategy.decide(
                         market_state, feat_vec, atr_val, self.position
                     )
@@ -515,17 +658,38 @@ class BotEngine:
                     # 4. Execution (PaperTrader — Shadow Mode)
                     active_signal_name = "HOLD"
                     if action:
-                        active_signal_name = action.action_type
-                        logger.warning(
-                            f"🚀 SIGNAL GENERATED: {action.action_type} @ {action.price} | Reason: {action.reason}"
-                        )
-                        self.position.simulate_fill(
-                            action.price,
-                            action.qty,
-                            action.action_type,
-                            self.config.symbol,
-                        )
-                        await self.gateway.execute(action)
+                        from quantum_edge_core.ai_scalper_bot.bot.execution.smart_executor import OrderRequest
+
+                        if isinstance(action, OrderRequest):
+                            active_signal_name = f"{action.side.value}_{action.position_side.value}"
+                            logger.warning(
+                                f"🚀 SIGNAL GENERATED: OrderRequest {action.side.value} ({action.position_side.value}) @ {action.price} | Qty: {action.qty}"
+                            )
+                            self.position.simulate_fill(
+                                Decimal(str(action.price)) if action.price is not None else Decimal("0.0"),
+                                Decimal(str(action.qty)),
+                                action.side.value,
+                                self.config.symbol,
+                                position_side=action.position_side,
+                            )
+                        else:
+                            active_signal_name = action.action_type
+                            logger.warning(
+                                f"🚀 SIGNAL GENERATED: {action.action_type} @ {action.price} | Reason: {action.reason}"
+                            )
+                            self.position.simulate_fill(
+                                action.price,
+                                action.qty,
+                                action.action_type,
+                                self.config.symbol,
+                            )
+                        # Execute with timeout to prevent hanging
+                        try:
+                            await asyncio.wait_for(self.gateway.execute(action), timeout=90.0)
+                        except asyncio.TimeoutError:
+                            logger.error(f"⏱️ Gateway execute timeout (90s) for {action.action_type}")
+                        except Exception as e:
+                            logger.error(f"❌ Gateway execute error: {e}")
 
                     # 4.5 Telemetry publishing
                     dist_pct = 0.0
@@ -562,11 +726,14 @@ class BotEngine:
                 # 5. Reporting (Throttled)
                 now = time.time()
                 if now - last_heartbeat >= 1.0:
+                    await self._update_portfolio_telemetry()
                     eq = float(self.position.state.quote_balance)
+                    unrealized_pnl = self.cached_unrealized_pnl or float(self.position.state.unrealized_pnl)
+                    pos_qty = self.cached_position_qty or float(self.position.total_qty)
                     await self.reporter.send_heartbeat(
                         self.strategy.state,
-                        self.position.state.unrealized_pnl,
-                        self.position.total_qty,
+                        unrealized_pnl,
+                        pos_qty,
                         equity=eq,
                         trading_mode=getattr(self.config, "trading_mode", "spot_grid"),
                     )
@@ -574,8 +741,10 @@ class BotEngine:
                     self.quest_telemetry.log_portfolio_state(
                         symbol=self.config.symbol,
                         equity=eq,
-                        unrealized_pnl=self.position.state.unrealized_pnl,
-                        position_qty=self.position.total_qty,
+                        unrealized_pnl=unrealized_pnl,
+                        position_qty=pos_qty,
+                        leverage=self.cached_leverage,
+                        liquidation_price=self.cached_liq_price,
                     )
 
                     last_heartbeat = now
@@ -588,6 +757,7 @@ class BotEngine:
         except Exception as e:
             logger.exception(f"CRITICAL MAIN LOOP ERROR: {e}")
         finally:
+            logger.info("Bot run() method completed, shutting down...")
             await self.shutdown()
 
     async def shutdown(self):

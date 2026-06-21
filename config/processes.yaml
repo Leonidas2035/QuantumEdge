@@ -1,0 +1,70 @@
+version: 1
+defaults:
+  env:
+    PYTHONUNBUFFERED: "1"
+  restart:
+    enabled: true
+    max_retries: 5
+    backoff_s: [1, 2, 4, 8, 16]
+    cooldown_s: 30
+
+processes:
+  hub:
+    enabled: false
+    cwd: "src/quantum_edge_core/market_data"
+    cmd: ["python", "-m", "hub"]
+    env:
+      HUB_LOG_LEVEL: "INFO"
+    healthcheck:
+      type: "http"
+      url: "http://127.0.0.1:8700/health"
+      timeout_s: 2
+    ports: [8700, 5555]
+
+  ai_scalper:
+    enabled: true
+    cwd: "."
+    cmd: ["/home/korben/QuantumEdge-main/venv/bin/python3", "-m", "quantum_edge_core.ai_scalper_bot.run_bot"]
+    env:
+      QE_BOT_ID: "ai_scalper"
+      STRATEGY_TYPE: "AdaptiveGridStrategy"
+      QE_MODE: "scalp"
+      MARKET_DATA_ZMQ_PORT: "5555"
+      QE_BOT_TELEMETRY_PORT: "5557"
+      QE_BOT_POLICY_PORT: "5559"
+    healthcheck:
+      type: "none"
+    restart:
+      enabled: false
+    ports: [5555, 5557, 5558, 5559]
+
+  dyndca:
+    enabled: true
+    cwd: "."
+    cmd: ["/home/korben/QuantumEdge-main/.venv/bin/python3", "src/quantum_edge_core/dyn_dca_bot/main.py"]
+    env:
+      PYTHONPATH: "."
+      LOG_LEVEL: "INFO"
+      MARKET_DATA_ZMQ_PORT: "5555"
+      QE_BOT_TELEMETRY_PORT: "5567"
+    healthcheck:
+      type: "none"
+    restart:
+      enabled: false
+    ports: [5555, 5567]
+
+  lockbotbtc:
+    enabled: true
+    cwd: "."
+    cmd: ["/home/korben/QuantumEdge-main/venv/bin/python3", "-m", "quantum_edge_core.lock_bot.main", "--config", "config/lockbot.yaml"]
+    env:
+      QE_BOT_ID: "LockBotBTC"
+      LOCKBOT_HUB_SUB_ENDPOINT: "tcp://127.0.0.1:5555"
+      LOCKBOT_PUB_ENDPOINT: "tcp://127.0.0.1:5577"
+      LOCKBOT_CMD_SUB_ENDPOINT: "tcp://127.0.0.1:5578"
+      LOCKBOT_POLICY_SUB_ENDPOINT: "tcp://127.0.0.1:5561"
+    healthcheck:
+      type: "none"
+    restart:
+      enabled: false
+    ports: [5555, 5577, 5578, 5561]
