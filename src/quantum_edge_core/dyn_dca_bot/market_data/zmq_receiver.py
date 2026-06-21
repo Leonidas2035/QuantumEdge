@@ -31,17 +31,10 @@ class ZmqReceiver:
         self.zmq_url = f"tcp://127.0.0.1:{port}"
         self.socket.connect(self.zmq_url)
 
-        # Підписка на топіки (trade та depth_l2)
-        topics = []
-        if isinstance(self.config, dict) and 'market_data' in self.config:
-             topics = self.config['market_data'].get('topics', [])
-        else:
-             # Default topics якщо ми не можемо витягти їх з конфігу напряму
-             topics = ["BTCUSDT:depth_l2", "BTCUSDT:trade"]
-
-        for topic in topics:
-            self.socket.setsockopt_string(zmq.SUBSCRIBE, topic)
-            logger.info("Subscribed to ZMQ topic", topic=topic)
+        # Підписка на базові префікси (оскільки Hub відправляє 'trade.btcusdt' та 'depth.btcusdt')
+        for prefix in ["trade", "depth"]:
+            self.socket.setsockopt_string(zmq.SUBSCRIBE, prefix)
+            logger.info("Subscribed to ZMQ topic prefix", prefix=prefix)
 
         # Стан для Оракула
         self.last_trade_price = 0.0
@@ -66,9 +59,9 @@ class ZmqReceiver:
                 payload_str = message_parts[1].decode('utf-8')
                 payload = json.loads(payload_str)
 
-                if topic.endswith("trade"):
+                if topic.startswith("trade"):
                     self._handle_trade(payload, state_manager)
-                elif topic.endswith("depth_l2"):
+                elif topic.startswith("depth"):
                     self._handle_l2(payload, state_manager)
 
             except asyncio.CancelledError:
