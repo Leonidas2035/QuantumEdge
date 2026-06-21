@@ -6,6 +6,7 @@ import time
 
 from typing import Optional, Dict, Any, List
 
+from quantum_edge_core.logging_setup import setup_logging
 from quantum_edge_core.dyn_dca_bot.core.config import DynDCAConfig
 from quantum_edge_core.dyn_dca_bot.market_data.l2_aggregator import L2Aggregator
 from quantum_edge_core.dyn_dca_bot.market_data.zmq_receiver import ZmqReceiver
@@ -148,6 +149,8 @@ def handle_exception(loop, context):
     logger.error("Caught exception", error=str(msg))
 
 if __name__ == "__main__":
+    setup_logging()
+    
     service = DynDCAService()
     loop = asyncio.new_event_loop()
     asyncio.set_event_loop(loop)
