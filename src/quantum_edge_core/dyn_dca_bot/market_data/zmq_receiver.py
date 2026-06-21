@@ -9,11 +9,6 @@ logger = structlog.get_logger(__name__)
 
 class ZmqReceiver:
     def __init__(self, config: Any, l2_aggregator: Any, volatility_oracle: Any):
-        """
-        :param config: Об'єкт конфігурації DynDCAConfig
-        :param l2_aggregator: Інстанс L2Aggregator для пошуку стін
-        :param volatility_oracle: Інстанс EnterpriseVolatilityOracle для оновлення EWMA
-        """
         self.config = config
         self.l2_aggregator = l2_aggregator
         self.volatility_oracle = volatility_oracle
@@ -21,39 +16,27 @@ class ZmqReceiver:
         self.context = zmq.asyncio.Context()
         self.socket = self.context.socket(zmq.SUB)
         
-        # Використовуємо порт з конфігурації (в залежності від версії config може бути як dict або об'єкт)
-        port = 5555
-        if hasattr(self.config, 'market_data_port'):
-            port = self.config.market_data_port
-        elif isinstance(self.config, dict) and 'market_data' in self.config:
-            port = self.config['market_data'].get('zmq_port', 5555)
-
+        # Безпечний витяг порту (бо config це dataclass DynDCAConfig, а не словник)
+        port = getattr(self.config, 'zmq_market_data_port', 5555)
         self.zmq_url = f"tcp://127.0.0.1:{port}"
         self.socket.connect(self.zmq_url)
 
-        # 1. ВИПРАВЛЕННЯ ТОПІКІВ: Використовуємо стандарти MarketDataHub
-        # Змінюємо "BTCUSDT:trade" на "trade.btcusdt" тощо.
+        # ВИПРАВЛЕННЯ 1: Використовуємо стандарти топіків MarketDataHub (маленькі літери, крапка)
         topics = ["depth.btcusdt", "trade.btcusdt"]
         for topic in topics:
             self.socket.setsockopt_string(zmq.SUBSCRIBE, topic)
             logger.info("Subscribed to ZMQ topic", topic=topic)
 
-        # Стан для Оракула
         self.last_trade_price = 0.0
 
     async def start_listening(self, state_manager: Any):
-        """
-        Головний асинхронний цикл прослуховування.
-        :param state_manager: Об'єкт, що зберігає поточний стан бота (стіни, поточна ціна)
-        """
         logger.info("ZMQ Receiver started listening", endpoint=self.zmq_url)
         
         while True:
             try:
-                # 2. ВИПРАВЛЕННЯ ФОРМАТУ: Читання multipart повідомлень
+                # ВИПРАВЛЕННЯ 2: Читання multipart повідомлень замість recv_string()
                 frames = await self.socket.recv_multipart()
                 
-                # Захист від битих пакетів
                 if len(frames) < 2:
                     continue
                     
@@ -61,7 +44,7 @@ class ZmqReceiver:
                 payload_str = frames[1].decode('utf-8')
                 payload = json.loads(payload_str)
 
-                # 3. ВИПРАВЛЕННЯ МАРШРУТИЗАЦІЇ: Відстеження за новим форматом
+                # ВИПРАВЛЕННЯ 3: Маршрутизація за новим форматом топіка
                 if topic.startswith("trade"):
                     self._handle_trade(payload, state_manager)
                 elif topic.startswith("depth"):
@@ -71,7 +54,7 @@ class ZmqReceiver:
                 logger.info("ZMQ Receiver shutting down...")
                 break
             except Exception as e:
-                logger.error("Error processing ZMQ message", error=str(e))
+                logger.error("Error processing ZMQ message", error=str(e), topic=topic if 'topic' in locals() else 'unknown')
 
     def _handle_trade(self, payload: Dict[str, Any], state_manager: Any):
         # Отримуємо ціну з тіку
