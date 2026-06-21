@@ -31,10 +31,12 @@ class ZmqReceiver:
         self.zmq_url = f"tcp://127.0.0.1:{port}"
         self.socket.connect(self.zmq_url)
 
-        # Підписка на базові префікси (оскільки Hub відправляє 'trade.btcusdt' та 'depth.btcusdt')
-        for prefix in ["trade", "depth"]:
-            self.socket.setsockopt_string(zmq.SUBSCRIBE, prefix)
-            logger.info("Subscribed to ZMQ topic prefix", prefix=prefix)
+        # 1. ВИПРАВЛЕННЯ ТОПІКІВ: Використовуємо стандарти MarketDataHub
+        # Змінюємо "BTCUSDT:trade" на "trade.btcusdt" тощо.
+        topics = ["depth.btcusdt", "trade.btcusdt"]
+        for topic in topics:
+            self.socket.setsockopt_string(zmq.SUBSCRIBE, topic)
+            logger.info("Subscribed to ZMQ topic", topic=topic)
 
         # Стан для Оракула
         self.last_trade_price = 0.0
@@ -48,17 +50,18 @@ class ZmqReceiver:
         
         while True:
             try:
-                # Чекаємо на повідомлення від MarketDataHub (multipart: [topic, payload])
-                message_parts = await self.socket.recv_multipart()
+                # 2. ВИПРАВЛЕННЯ ФОРМАТУ: Читання multipart повідомлень
+                frames = await self.socket.recv_multipart()
                 
-                # Декодуємо частини (MarketDataHub зазвичай надсилає 2 частини)
-                if len(message_parts) < 2:
+                # Захист від битих пакетів
+                if len(frames) < 2:
                     continue
                     
-                topic = message_parts[0].decode('utf-8')
-                payload_str = message_parts[1].decode('utf-8')
+                topic = frames[0].decode('utf-8')
+                payload_str = frames[1].decode('utf-8')
                 payload = json.loads(payload_str)
 
+                # 3. ВИПРАВЛЕННЯ МАРШРУТИЗАЦІЇ: Відстеження за новим форматом
                 if topic.startswith("trade"):
                     self._handle_trade(payload, state_manager)
                 elif topic.startswith("depth"):
