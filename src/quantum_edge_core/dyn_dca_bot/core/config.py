@@ -12,6 +12,12 @@ class DynDCAConfig:
     zmq_telemetry_port: int = 5567  # Окремий порт для Supervisor
     grid_spacing_pct: float = 0.5
     gamma: float = 1.2
+    base_profit_pct: float = 1.0      # Базовий цільовий прибуток
+    funding_comp_pct: float = 0.2     # Компенсація за фандінг та комісії
+    
+    @property
+    def total_tp_pct(self) -> float:
+        return self.base_profit_pct + self.funding_comp_pct
     
     @classmethod
     def load(cls) -> "DynDCAConfig":
