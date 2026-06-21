@@ -55,9 +55,15 @@ class ZmqReceiver:
         
         while True:
             try:
-                # Чекаємо на повідомлення від MarketDataHub
-                message = await self.socket.recv_string()
-                topic, payload_str = message.split(" ", 1)
+                # Чекаємо на повідомлення від MarketDataHub (multipart: [topic, payload])
+                message_parts = await self.socket.recv_multipart()
+                
+                # Декодуємо частини (MarketDataHub зазвичай надсилає 2 частини)
+                if len(message_parts) < 2:
+                    continue
+                    
+                topic = message_parts[0].decode('utf-8')
+                payload_str = message_parts[1].decode('utf-8')
                 payload = json.loads(payload_str)
 
                 if topic.endswith("trade"):
