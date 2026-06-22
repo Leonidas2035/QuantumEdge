@@ -146,6 +146,108 @@ def cmd_query_db(sql: str):
     except Exception as e:
         return {"error": "Unexpected error", "details": str(e)}
 
+def cmd_query_telemetry(bot_id: str, hours: int = 1):
+    sql = f"""SELECT ts, last(pnl_session) as pnl, max(drawdown_pct) as max_dd
+FROM bot_telemetry 
+WHERE bot_id = '{bot_id}' AND ts > dateadd('h', -{hours}, now()) 
+SAMPLE BY 5m ALIGN TO CALENDAR;"""
+    res = cmd_query_db(sql)
+    if "error" in res:
+        return {"error": "No data yet", "details": res.get("details", "")}
+    return res.get("results", [])
+
+def cmd_query_market_trend(symbol: str, hours: int = 4):
+    sql = f"""SELECT ts, avg(rsi_14) as rsi, avg(macd_line) as macd, avg(atr_14) as atr
+FROM market_features 
+WHERE symbol = '{symbol}' AND ts > dateadd('h', -{hours}, now()) 
+SAMPLE BY 15m ALIGN TO CALENDAR;"""
+    res = cmd_query_db(sql)
+    results = res.get("results", []) if "error" not in res else []
+    
+    # Check if we have valid non-zero indicators
+    needs_fallback = False
+    if not results:
+        needs_fallback = True
+    else:
+        all_zero = True
+        for row in results:
+            if float(row.get("rsi") or 0.0) != 0.0 or float(row.get("macd") or 0.0) != 0.0:
+                all_zero = False
+                break
+        if all_zero:
+            needs_fallback = True
+            
+    if needs_fallback:
+        # Fetch raw 1m klines from DB to calculate indicators locally
+        # Add extra hours lookback to allow indicators to warm up
+        kline_sql = f"""SELECT ts, open, high, low, close, volume FROM klines_1m 
+WHERE symbol = '{symbol}' AND ts > dateadd('h', -{hours + 6}, now()) 
+ORDER BY ts ASC;"""
+        kline_res = cmd_query_db(kline_sql)
+        klines = kline_res.get("results", [])
+        if klines:
+            try:
+                import pandas as pd
+                import numpy as np
+                
+                df = pd.DataFrame(klines)
+                df['ts'] = pd.to_datetime(df['ts'])
+                df['close'] = df['close'].astype(float)
+                df['high'] = df['high'].astype(float)
+                df['low'] = df['low'].astype(float)
+                
+                # Compute ATR
+                tr1 = df['high'] - df['low']
+                tr2 = (df['high'] - df['close'].shift(1)).abs()
+                tr3 = (df['low'] - df['close'].shift(1)).abs()
+                tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
+                df['atr'] = tr.rolling(14).mean()
+                
+                # Compute RSI
+                delta = df['close'].diff()
+                gain = delta.clip(lower=0).rolling(window=14).mean()
+                loss = (-delta.clip(upper=0)).rolling(window=14).mean()
+                rs = gain / (loss + 1e-10)
+                df['rsi'] = 100.0 - (100.0 / (1.0 + rs))
+                
+                # Compute MACD
+                ema12 = df['close'].ewm(span=12, adjust=False).mean()
+                ema26 = df['close'].ewm(span=26, adjust=False).mean()
+                df['macd'] = ema12 - ema26
+                
+                df = df.dropna(subset=['rsi', 'macd', 'atr']).copy()
+                
+                # Resample to 15m intervals
+                df.set_index('ts', inplace=True)
+                resampled = df.resample('15Min').agg({
+                    'rsi': 'mean',
+                    'macd': 'mean',
+                    'atr': 'mean'
+                }).interpolate(method='linear').fillna(0.0).reset_index()
+                
+                # Cutoff for requested hours
+                cutoff = pd.Timestamp.now(tz="UTC") - pd.Timedelta(hours=hours)
+                
+                fallback_results = []
+                for _, row in resampled.iterrows():
+                    ts_val = row['ts']
+                    if ts_val.tzinfo is None:
+                        ts_val = ts_val.tz_localize('UTC')
+                    if ts_val >= cutoff:
+                        fallback_results.append({
+                            "ts": row['ts'].strftime("%Y-%m-%dT%H:%M:%S.000000Z"),
+                            "rsi": round(float(row['rsi']), 4),
+                            "macd": round(float(row['macd']), 4),
+                            "atr": round(float(row['atr']), 4)
+                        })
+                if fallback_results:
+                    return fallback_results
+            except Exception as e:
+                # Fallback failure logs, return original empty/zero results
+                pass
+                
+    return results
+
 def main():
     parser = argparse.ArgumentParser(description="Data Plane MCP Bridge for Hermes Agent")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -158,6 +260,16 @@ def main():
     parser_db = subparsers.add_parser("query_db", help="Execute SQL against QuestDB")
     parser_db.add_argument("--sql", type=str, required=True, help="SQL query string")
 
+    # query_telemetry
+    parser_tel = subparsers.add_parser("query_telemetry", help="Query bot telemetry analytics")
+    parser_tel.add_argument("--bot", type=str, required=True, help="Bot ID (e.g. scalper_v1)")
+    parser_tel.add_argument("--hours", type=int, default=1, help="Lookback hours (default: 1)")
+
+    # query_market_trend
+    parser_trend = subparsers.add_parser("query_market_trend", help="Query market trend analytics")
+    parser_trend.add_argument("--symbol", type=str, required=True, help="Symbol (e.g. BTCUSDT)")
+    parser_trend.add_argument("--hours", type=int, default=4, help="Lookback hours (default: 4)")
+
     args = parser.parse_args()
 
     result = {}
@@ -165,6 +277,10 @@ def main():
         result = cmd_market_snapshot(args.symbol.upper())
     elif args.command == "query_db":
         result = cmd_query_db(args.sql)
+    elif args.command == "query_telemetry":
+        result = cmd_query_telemetry(args.bot, args.hours)
+    elif args.command == "query_market_trend":
+        result = cmd_query_market_trend(args.symbol.upper(), args.hours)
 
     # Output pure JSON
     print(json.dumps(result, indent=2))

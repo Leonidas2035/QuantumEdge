@@ -25,7 +25,7 @@ class MockLiveFeed(BaseFeed):
     def __init__(self, config: HubConfig, bus: EventBus):
         super().__init__(config, bus)
         self.symbols = ["BTCUSDT"]  # specific mock symbol
-        self.price = 50000.0
+        self.price = 64400.0
         self.tick_count = 0
 
     def connect(self):

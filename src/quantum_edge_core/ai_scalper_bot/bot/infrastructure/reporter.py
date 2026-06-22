@@ -106,8 +106,17 @@ class SupervisorReporter:
             "min_equity_intraday": min_equity_intraday,
             "halt_reason": halt_reason,
             "metrics": {
-                "active_positions_count": int(open_positions_qty),
+                "active_positions_count": 1 if abs(open_positions_qty) > 1e-8 else 0,
                 "cpu_usage": 0.0,
+                "atr": float(getattr(market_state, "atr", 0.0)) if market_state else 0.0,
+                "volume_delta_1m": (
+                    float(getattr(market_state, "volume_delta_1m", 0.0))
+                    if market_state
+                    else 0.0
+                ),
+                "liquidations_1m": (
+                    int(getattr(market_state, "liquidations_1m", 0)) if market_state else 0
+                ),
             },
             "errors": [],
             "equity": equity,
@@ -128,6 +137,24 @@ class SupervisorReporter:
             payload = ujson.dumps(msg)
             # Send Multipart [topic, payload]
             await self.socket.send_multipart([b"telemetry", payload.encode("utf-8")])
+
+            # Replicate to QuestDB bot_telemetry via ilp_writer
+            try:
+                from quantum_edge_core.market_data.tsdb.ilp_writer import get_ilp_writer
+                writer = get_ilp_writer()
+                writer.write_row(
+                    "bot_telemetry",
+                    symbols={"bot_id": self.service_id, "status": state.name},
+                    columns={
+                        "pnl_session": float(pnl),
+                        "active_margin": 0.0,
+                        "drawdown_pct": float(drawdown_pct),
+                        "latency_ms": 0
+                    },
+                    ts=msg["timestamp"]
+                )
+            except Exception as db_err:
+                logger.warning(f"Failed to write bot telemetry to QuestDB: {db_err}")
         except Exception as e:
             logger.warning(f"Failed to send heartbeat: {e}")
 

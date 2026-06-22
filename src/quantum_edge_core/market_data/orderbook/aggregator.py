@@ -278,25 +278,26 @@ class OrderBookAggregator:
     async def _synthetic_feed(self) -> None:
         """Simple generator to keep order book moving while real feed is absent."""
         base_prices = {
-            symbol: 40000.0 if "BTC" in symbol else 3000.0 for symbol in self._books
+            symbol: 64400.0 if "BTC" in symbol else 3000.0 for symbol in self._books
         }
         step = 0.1
         while self._running:
             for symbol, book in self._books.items():
                 mid = base_prices[symbol]
+                # Ensure bids are strictly below mid and asks are strictly above mid to avoid overlap
                 bids = [
-                    (mid - i * step, 5.0 + i * 0.5)
+                    (mid - (i + 1) * step, 5.0 + i * 0.5)
                     for i in range(self._config.top_n_levels)
                 ]
                 asks = [
-                    (mid + i * step, 5.0 + i * 0.3)
+                    (mid + (i + 1) * step, 5.0 + i * 0.3)
                     for i in range(self._config.top_n_levels)
                 ]
-                # introduce jitter
-                self.apply_delta(
+                # Use apply_snapshot instead of apply_delta to avoid accumulating stale crossed price levels
+                self.apply_snapshot(
                     symbol,
-                    [(price, qty + random.uniform(-0.5, 0.5)) for price, qty in bids],
-                    [(price, qty + random.uniform(-0.5, 0.5)) for price, qty in asks],
+                    [(price, max(0.01, qty + random.uniform(-0.5, 0.5))) for price, qty in bids],
+                    [(price, max(0.01, qty + random.uniform(-0.5, 0.5))) for price, qty in asks],
                 )
                 base_prices[symbol] *= 1 + random.uniform(-0.0002, 0.0002)
             await asyncio.sleep(self._publish_interval / 2)
