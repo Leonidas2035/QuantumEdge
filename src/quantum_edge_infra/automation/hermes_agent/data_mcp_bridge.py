@@ -1,0 +1,144 @@
+#!/usr/bin/env python3
+"""
+Data Plane MCP Bridge for Hermes Agent.
+
+Provides Hermes with:
+1. Real-time Market Snapshots (via ZMQ)
+2. Historical Data Queries (via QuestDB REST API)
+"""
+
+import argparse
+import json
+import time
+import urllib.parse
+import urllib.request
+from urllib.error import URLError, HTTPError
+import zmq
+
+def cmd_market_snapshot(symbol: str, timeout_sec: float = 2.0):
+    context = zmq.Context()
+    socket = context.socket(zmq.SUB)
+    
+    # The Hub Publisher binds to 5555, so we connect
+    socket.connect("tcp://127.0.0.1:5555")
+    
+    # Subscribe to all events, we will filter by symbol in the loop
+    socket.setsockopt_string(zmq.SUBSCRIBE, "")
+    
+    poller = zmq.Poller()
+    poller.register(socket, zmq.POLLIN)
+    
+    start_time = time.time()
+    
+    best_trade = None
+    best_depth = None
+    
+    # Listen for up to timeout_sec
+    while time.time() - start_time < timeout_sec:
+        socks = dict(poller.poll(100)) # 100ms
+        if socket in socks:
+            try:
+                parts = socket.recv_multipart(flags=zmq.NOBLOCK)
+                if len(parts) >= 2:
+                    payload_bytes = parts[-1]
+                    payload = json.loads(payload_bytes.decode("utf-8"))
+                    
+                    if payload.get("symbol") == symbol:
+                        ev_type = payload.get("event_type")
+                        if ev_type == "trade":
+                            best_trade = payload
+                        elif ev_type == "depth":
+                            best_depth = payload
+            except zmq.Again:
+                continue
+            except Exception:
+                continue
+
+    socket.close()
+    context.term()
+
+    if not best_trade and not best_depth:
+        return {"error": f"No data received for symbol {symbol} within {timeout_sec}s"}
+
+    # Format the snapshot
+    snapshot = {
+        "symbol": symbol,
+        "timestamp": time.time(),
+        "current_price": best_trade.get("price") if best_trade else (best_depth.get("mid") if best_depth else None),
+    }
+
+    if best_depth:
+        bids = best_depth.get("bids", [])
+        asks = best_depth.get("asks", [])
+        top_bid = bids[0][0] if bids else None
+        top_ask = asks[0][0] if asks else None
+        spread = round(top_ask - top_bid, 4) if top_ask and top_bid else None
+        
+        snapshot["orderbook_summary"] = {
+            "top_bid": top_bid,
+            "top_ask": top_ask,
+            "spread": spread,
+            "whale_walls": best_depth.get("whale_walls", [])
+        }
+    
+    return snapshot
+
+def cmd_query_db(sql: str):
+    base_url = "http://127.0.0.1:9000/exec"
+    params = urllib.parse.urlencode({"query": sql})
+    url = f"{base_url}?{params}"
+    
+    try:
+        req = urllib.request.Request(url)
+        with urllib.request.urlopen(req, timeout=5.0) as response:
+            data = json.loads(response.read().decode("utf-8"))
+            
+            # QuestDB returns {"columns": [{"name": "..."}], "dataset": [[...]], "count": ...}
+            columns = [c["name"] for c in data.get("columns", [])]
+            dataset = data.get("dataset", [])
+            
+            # Map columns to dataset rows to create a clean list of dicts
+            results = []
+            for row in dataset:
+                results.append(dict(zip(columns, row)))
+            
+            return {"results": results, "count": len(results)}
+            
+    except HTTPError as e:
+        error_body = e.read().decode("utf-8")
+        try:
+            err_json = json.loads(error_body)
+            error_msg = err_json.get("error", str(e))
+        except json.JSONDecodeError:
+            error_msg = error_body or str(e)
+        return {"error": "Query failed", "details": error_msg}
+    except URLError as e:
+        return {"error": "Connection failed", "details": str(e.reason)}
+    except Exception as e:
+        return {"error": "Unexpected error", "details": str(e)}
+
+def main():
+    parser = argparse.ArgumentParser(description="Data Plane MCP Bridge for Hermes Agent")
+    subparsers = parser.add_subparsers(dest="command", required=True)
+
+    # market_snapshot
+    parser_snap = subparsers.add_parser("market_snapshot", help="Get a real-time market snapshot")
+    parser_snap.add_argument("--symbol", type=str, required=True, help="Symbol to snapshot (e.g. BTCUSDT)")
+
+    # query_db
+    parser_db = subparsers.add_parser("query_db", help="Execute SQL against QuestDB")
+    parser_db.add_argument("--sql", type=str, required=True, help="SQL query string")
+
+    args = parser.parse_args()
+
+    result = {}
+    if args.command == "market_snapshot":
+        result = cmd_market_snapshot(args.symbol.upper())
+    elif args.command == "query_db":
+        result = cmd_query_db(args.sql)
+
+    # Output pure JSON
+    print(json.dumps(result, indent=2))
+
+if __name__ == "__main__":
+    main()
