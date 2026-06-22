@@ -17,6 +17,10 @@ import time
 from pathlib import Path
 from typing import List, Dict, Optional
 
+# Add /home/korben/.hermes to sys.path dynamically
+if "/home/korben/.hermes" not in sys.path:
+    sys.path.insert(0, "/home/korben/.hermes")
+
 # Third-party imports (strictly limited)
 try:
     import psutil
@@ -51,7 +55,7 @@ class ProcessManager:
         self.processes: Dict[str, subprocess.Popen] = {}
         self.stop_event = threading.Event()
         self.pid_file = Path(".quantum_edge.pid")
-        self.zmq_ports = [5555, 5556, 5557, 8765]
+        self.zmq_ports = [5555, 5557, 5558, 5567, 8765]
         self.project_root = self._resolve_project_root()
 
     def _resolve_project_root(self) -> Path:
@@ -60,18 +64,20 @@ class ProcessManager:
 
     def _build_env(self) -> Dict[str, str]:
         """
-        Constructs environment with absolute PYTHONPATH to src/.
-        Ensures 'import quantum_edge_core' works in subprocesses.
+        Constructs environment with absolute PYTHONPATH to src/ and /home/korben/.hermes.
+        Ensures 'import quantum_edge_core' and 'import hermes' work in subprocesses.
         """
         env = os.environ.copy()
         src_path = self.project_root / "src"
+        hermes_path = Path("/home/korben/.hermes")
 
-        # Prepend src/ to PYTHONPATH
+        # Prepend src/ and /home/korben/.hermes to PYTHONPATH
         current_pythonpath = env.get("PYTHONPATH", "")
+        paths_to_add = [str(src_path), str(hermes_path)]
         if current_pythonpath:
-            env["PYTHONPATH"] = f"{src_path}{os.pathsep}{current_pythonpath}"
+            env["PYTHONPATH"] = f"{os.pathsep.join(paths_to_add)}{os.pathsep}{current_pythonpath}"
         else:
-            env["PYTHONPATH"] = str(src_path)
+            env["PYTHONPATH"] = os.pathsep.join(paths_to_add)
 
         return env
 
@@ -213,61 +219,93 @@ class ProcessManager:
 
         # Define paths
         hub_script = self.project_root / "src/quantum_edge_core/market_data/hub.py"
-        supervisor_script = (
-            self.project_root / "src/quantum_edge_core/supervisor/supervisor.py"
-        )
+        dashboard_api_script = self.project_root / "src/quantum_edge_infra/automation/hermes_agent/dashboard_api.py"
+        ai_scalper_script = self.project_root / "src/quantum_edge_core/ai_scalper_bot/run_bot.py"
+        dyndca_script = self.project_root / "src/quantum_edge_core/dyn_dca_bot/main.py"
 
         if not hub_script.exists():
             logger.error(f"Critical: MarketDataHub not found at {hub_script}")
             sys.exit(1)
-        if not supervisor_script.exists():
-            logger.error(f"Critical: SupervisorAgent not found at {supervisor_script}")
+        if not dashboard_api_script.exists():
+            logger.error(f"Critical: Dashboard API Bridge not found at {dashboard_api_script}")
             sys.exit(1)
 
         # Step 2: Start MarketDataHub
         self.start_service(
             "Hub",
             [sys.executable, str(hub_script)],
-            wait_port=5555,  # Step 3: Wait for Hub ZMQ port 5555
+            wait_port=5555,  # Wait for Hub ZMQ port 5555
         )
 
-        # Step 4: Start SupervisorAgent
-        # Note: The trading bot is managed by the Supervisor.
-        cmd = [sys.executable, str(supervisor_script), "run-foreground"]
+        # Step 3: Start Dashboard API Bridge
+        self.start_service(
+            "HermesAPI",
+            [sys.executable, str(dashboard_api_script)],
+            wait_port=8765,  # Wait for FastAPI HTTP port
+        )
 
-        # Check for config/config.yaml
-        config_path = self.project_root / "config/config.yaml"
-        if config_path.exists():
-            cmd.extend(["--config", str(config_path)])
+        # Step 4: Start Trading Bots
+        logger.info("Starting Trading Bots...")
+        if ai_scalper_script.exists():
+            self.start_service("AIScalper", [sys.executable, str(ai_scalper_script)])
         else:
-            logger.warning(
-                "config/config.yaml not found. Supervisor will use defaults."
-            )
+            logger.error(f"Warning: AI Scalper script not found at {ai_scalper_script}")
 
-        self.start_service("Supervisor", cmd)
+        if dyndca_script.exists():
+            self.start_service("DynDCA", [sys.executable, str(dyndca_script)])
+        else:
+            logger.error(f"Warning: DynDCA script not found at {dyndca_script}")
 
-        # Step 5: Start AI Scalper Bot (managed by Supervisor)
-        logger.info("AI Scalper Bot is managed by the Supervisor. Skipping direct startup.")
-
-        logger.info("System startup complete. All services running.")
+        logger.info("System startup complete. Hermes API Bridge and Trading Bots are running.")
 
     def stop_all(self):
-        """Graceful shutdown in reverse order."""
+        """Graceful shutdown in reverse order, ensuring descendants are killed first."""
         logger.info("Stopping all services...")
 
-        # Reverse order: Bot -> Supervisor -> Hub
-        shutdown_order = ["Bot", "Supervisor", "Hub"]
+        # Order of parent processes to shutdown: Bots first, then API, then Hub
+        shutdown_order = ["DynDCA", "AIScalper", "HermesAPI", "Hub"]
 
         for name in shutdown_order:
             proc = self.processes.get(name)
             if proc and proc.poll() is None:
-                logger.info(f"Stopping {name}...")
-                proc.terminate()
+                logger.info(f"Stopping process tree for {name} (PID {proc.pid})...")
                 try:
-                    proc.wait(timeout=5)
-                except subprocess.TimeoutExpired:
-                    logger.warning(f"{name} did not terminate. Killing...")
-                    proc.kill()
+                    parent = psutil.Process(proc.pid)
+                    children = parent.children(recursive=True)
+                    
+                    # Terminate children first
+                    for child in children:
+                        logger.info(f"Terminating child of {name}: PID {child.pid} ({child.name()})")
+                        try:
+                            child.terminate()
+                        except psutil.NoSuchProcess:
+                            pass
+                            
+                    # Wait for children to terminate
+                    if children:
+                        gone, alive = psutil.wait_procs(children, timeout=5)
+                        for child in alive:
+                            logger.warning(f"Child PID {child.pid} did not terminate. Killing...")
+                            try:
+                                child.kill()
+                            except psutil.NoSuchProcess:
+                                pass
+                                
+                    # Terminate parent
+                    logger.info(f"Terminating parent {name}: PID {proc.pid}")
+                    proc.terminate()
+                    try:
+                        proc.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        logger.warning(f"{name} did not terminate. Killing...")
+                        proc.kill()
+                except psutil.NoSuchProcess:
+                    # Fallback in case parent PID is already gone
+                    proc.terminate()
+                    try:
+                        proc.wait(timeout=5)
+                    except subprocess.TimeoutExpired:
+                        proc.kill()
 
         logger.info("All services stopped.")
 
@@ -385,12 +423,23 @@ def dashboard_command(args):
         "true",
     ]
 
+    # Build env with PYTHONPATH to src/
+    env = os.environ.copy()
+    project_root = Path(__file__).resolve().parent
+    src_path = project_root / "src"
+    current_pythonpath = env.get("PYTHONPATH", "")
+    if current_pythonpath:
+        env["PYTHONPATH"] = f"{src_path}{os.pathsep}{current_pythonpath}"
+    else:
+        env["PYTHONPATH"] = str(src_path)
+
     # Launch detached
     subprocess.Popen(
         cmd,
         start_new_session=True,
         stdout=subprocess.DEVNULL,
         stderr=subprocess.DEVNULL,
+        env=env,
     )
     print("Dashboard is running in the background. Visit http://localhost:8501")
 
