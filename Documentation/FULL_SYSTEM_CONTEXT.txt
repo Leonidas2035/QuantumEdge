@@ -1,6 +1,6 @@
 ================================================================================
   QUANTUMEDGE — FULL SYSTEM CONTEXT (Source of Truth)
-  Generated: 2026-03-03  |  Repo: Leonidas2035/QuantumEdge
+  Generated: 2026-06-22  |  Repo: Leonidas2035/QuantumEdge
 ================================================================================
 
    ██████  ██    ██  █████  ███    ██ ████████ ██    ██ ███    ███
@@ -50,9 +50,7 @@ QuantumEdge/                       # Project Root ($QE_ROOT)
 │   │   │   └── account_delta.py
 │   │   ├── feeds/                 # Exchange WebSocket feeds
 │   │   │   ├── base.py            # Feed base class
-│   │   │   ├── binance_feed.py    # Binance WS (L1)
-│   │   │   ├── binance_futures.py # USDT-M Futures
-│   │   │   ├── binance_spot.py    # Spot market
+│   │   │   ├── bingx.py           # BingX Demo WS (Exclusive)
 │   │   │   ├── liquidations.py    # Force liquidation stream
 │   │   │   └── mock_feed.py       # Mock feed for testing
 │   │   ├── ipc/                   # ZeroMQ publish/subscribe
@@ -94,41 +92,17 @@ QuantumEdge/                       # Project Root ($QE_ROOT)
 │   │   ├── market_data/           # ZmqReceiver, L2Aggregator
 │   │   └── strategy/              # DCAEngine, VolatilityOracle
 │   │
-│   ├── supervisor/                # ── CONTROL PLANE (SupervisorAgent) ──
-│   │   ├── supervisor.py          # MAIN CLI entry point (3000+ LOC)
-│   │   ├── service.py             # AsyncSupervisor (async loops)
-│   │   ├── monitor.py             # ZMQ telemetry listener + policy pub
-│   │   ├── config/                # DEFAULT supervisor YAML configs
-│   │   │   ├── risk.yaml
-│   │   │   ├── llm_supervisor.yaml
-│   │   │   ├── supervisor.yaml
-│   │   │   ├── processes.yaml
-│   │   │   └── ...
-│   │   ├── supervisor/            # Core supervisor logic
-│   │   │   ├── config.py          # ALL config loaders & dataclasses
-│   │   │   ├── events.py          # EventType, BaseEvent, EventLogger
-│   │   │   ├── state.py           # RiskStateSnapshot, process state
-│   │   │   ├── llm_supervisor.py  # LLM risk moderator
-│   │   │   ├── llm/               # LLM chat client
-│   │   │   ├── ipc.py             # PolicyPublisher (ZMQ PUB)
-│   │   │   ├── data_ingest.py     # ZmqListener (SUB from Hub)
-│   │   │   ├── ai_bridge.py       # AI response validation
-│   │   │   ├── prompts.py         # System prompt for Gemini
-│   │   │   ├── alerts/            # Alert subsystem
-│   │   │   ├── autopilot/         # Autonomous trading adjustments
-│   │   │   ├── dashboard/         # Dashboard backend
-│   │   │   ├── lockbot/           # LockBot control plane
-│   │   │   ├── ops/               # Ops autotuner & regression gates
-│   │   │   ├── episodes/          # Episode-based evaluations
-│   │   │   ├── tsdb/              # TSDB writers & migrations
-│   │   │   └── contracts/         # API contracts
-│   │   ├── domain/                # Risk domain objects
-│   │   │   ├── models.py          # RiskConfig, PortfolioState, RiskVerdict
-│   │   │   ├── risk.py            # HardRiskEngine
-│   │   │   └── policy.py          # PolicyManager
-│   │   ├── context/               # Context builder for AI
-│   │   ├── research/              # Offline research & backtesting
-│   │   └── tests/                 # Supervisor tests
+│   ├── supervisor.bak/            # ── DEPRECATED (Local Supervisor) ──
+│   │   # Legacy Python-based supervisor is deprecated in favor of Hermes Agent
+│   │
+│   ├── quantum_edge_infra/        # ── INFRASTRUCTURE & MCP TOOLS ──
+│   │   ├── automation/
+│   │   │   ├── hermes_agent/
+│   │   │   │   ├── zmq_mcp_bridge.py   # MCP Tool: ZMQ telemetry & policy
+│   │   │   │   ├── data_mcp_bridge.py  # MCP Tool: QuestDB & ZMQ snap
+│   │   │   │   ├── dashboard_api.py    # FastAPI Bridge for UI (port 8765)
+│   │   │   │   └── instructions/
+│   │   │   │       └── risk_policy.md  # Declarative Risk Policy (replaces Supervisor)
 │   │
 │   ├── strategies/                # Strategy implementations
 │   │   ├── scalper_v1/            # Scalper V1 (alternative entry point)
@@ -154,8 +128,8 @@ QuantumEdge/                       # Project Root ($QE_ROOT)
 ================================================================================
 
   ┌─────────────┐    ZMQ PUB/SUB    ┌──────────────┐    ZMQ PUB/SUB
-  │  Binance &  │ ─── WebSocket ──→ │ MarketDataHub│ ──── :5555 ────┐
-  │  BingX      │                   │   (hub.py)   │                │
+  │ BingX Demo  │ ─── WebSocket ──→ │ MarketDataHub│ ──── :5555 ────┐
+  │  (Swap)     │                   │   (hub.py)   │                │
   └─────────────┘                   └──────┬───────┘                │
                                            │                        │
                                            │ IPC / tcp              │
@@ -167,21 +141,18 @@ QuantumEdge/                       # Project Root ($QE_ROOT)
                                                         │           │
   ┌──────────────┐                          ZMQ :5557 (TEL)         │
   │  Dashboard   │ ◄────── HTTP :8765 ──────┐           │           ↓
-  └──────────────┘                          │           │     ┌───────────┐
-                                            │           │     │ AI Scalper│
-                                 ┌──────────┴───────────┴──┐  │ DynDCA    │
-                                 │                         │  │ LockBotBTC│
-                                 │         HERMES          │  └─────┬─────┘
-                                 │     (Orchestrator)      │ ◄── TEL┘   │
-                                 │                         │            │
-                                 └──────────┬───────────▲──┘            │
-                                            │           │               │
-                               agy-cli call │           └──── POL ──────┘
-                                            ↓               ZMQ :5558
+  └──────────────┘      (Dashboard API)     │           │     ┌───────────┐
+                                 ┌──────────┴───────────┴──┐  │ AI Scalper│
+                                 │      ZMQ MCP Bridge     │  │ DynDCA    │
+                                 │   (zmq_mcp_bridge.py)   │  │ LockBotBTC│
+                                 └──────────┬───────────▲──┘  └─────┬─────┘
+                                            │           │ ◄── TEL┘  │
+                                            │           └──── POL ──┘
+                              CLI Execution │               ZMQ :5558
+                                            ↓
                                  ┌──────────────────────┐
-                                 │     Gemini (LLM)     │
-                                 │  + Market Data       │
-                                 │    Analysis          │
+                                 │    Hermes Agent      │
+                                 │ (Global CLI ~/.local)│
                                  └──────────────────────┘
 
 ================================================================================
@@ -244,22 +215,15 @@ QuantumEdge/                       # Project Root ($QE_ROOT)
   Requires: BINANCE_API_KEY, BINANCE_API_SECRET (env vars)
   Config: Environment variables (MARKET_DATA_*), see market_data/config.py
 
-  ── 2. SupervisorAgent (Control Plane) ─────────────────────────────
-  # Full supervisor with CLI:
-  cd /home/korben/.hermes/hermes
-  PYTHONPATH=/home/korben/QuantumEdge-main/src:/home/korben/.hermes python3 supervisor.py run-foreground
+  ── 2. Hermes Agent (Control Plane) ────────────────────────────────
+  # Hermes runs globally and interacts with QuantumEdge via MCP tools.
+  hermes start
 
-  # Or with mode override:
-  PYTHONPATH=/home/korben/QuantumEdge-main/src:/home/korben/.hermes python3 supervisor.py run-foreground --mode paper
+  # Hermes reads declarative instructions from:
+  # src/quantum_edge_infra/automation/hermes_agent/instructions/risk_policy.md
 
-  # Standalone LLM check:
-  PYTHONPATH=/home/korben/QuantumEdge-main/src:/home/korben/.hermes python3 -m hermes.supervisor.llm_supervisor run-foreground --mode demo
-
-  # Other commands:
-  PYTHONPATH=/home/korben/QuantumEdge-main/src:/home/korben/.hermes python3 supervisor.py start|stop|status|audit|llm-check|snapshot
-
-  Requires: GOOGLE_API_KEY (for LLM), config/supervisor.yaml
-  Config: /home/korben/.hermes/hermes/config/*.yaml
+  Requires: GOOGLE_API_KEY (for LLM inside Hermes)
+  Config: ~/.hermes/config.yaml
 
   ── 3. AI Scalper Bot (Execution Plane) ────────────────────────────
   cd $QE_ROOT
@@ -277,9 +241,9 @@ QuantumEdge/                       # Project Root ($QE_ROOT)
 
   ── 5. Orchestrator (All-In-One) ───────────────────────────────────
   cd $QE_ROOT
-  python3 QuantumEdge.py
+  python3 QuantumEdge.py start
 
-  Starts Hub → Supervisor → Bot(s) in correct order with readiness probes.
+  Starts Hub → Dashboard API → Bot(s) in correct order. Hermes manages them asynchronously.
 
 
 
