@@ -15,7 +15,7 @@ import urllib.request
 from urllib.error import URLError, HTTPError
 import zmq
 
-def cmd_market_snapshot(symbol: str, timeout_sec: float = 2.0):
+def cmd_market_snapshot(symbol: str, timeout_sec: float = 4.0):
     context = zmq.Context()
     socket = context.socket(zmq.SUB)
     
@@ -32,6 +32,7 @@ def cmd_market_snapshot(symbol: str, timeout_sec: float = 2.0):
     
     best_trade = None
     best_depth = None
+    best_walls = None
     
     # Listen for up to timeout_sec
     while time.time() - start_time < timeout_sec:
@@ -45,10 +46,15 @@ def cmd_market_snapshot(symbol: str, timeout_sec: float = 2.0):
                     
                     if payload.get("symbol") == symbol:
                         ev_type = payload.get("event_type")
-                        if ev_type == "trade":
+                        if ev_type in ("trade", "TradeEvent"):
                             best_trade = payload
-                        elif ev_type == "depth":
+                        elif ev_type in ("depth", "depth_l2", "OrderBookUpdate"):
                             best_depth = payload
+                        elif ev_type == "walls":
+                            best_walls = payload
+                            
+                        if best_depth and best_walls:
+                            break
             except zmq.Again:
                 continue
             except Exception:
@@ -57,29 +63,52 @@ def cmd_market_snapshot(symbol: str, timeout_sec: float = 2.0):
     socket.close()
     context.term()
 
-    if not best_trade and not best_depth:
+    if not best_trade and not best_depth and not best_walls:
         return {"error": f"No data received for symbol {symbol} within {timeout_sec}s"}
 
     # Format the snapshot
     snapshot = {
         "symbol": symbol,
         "timestamp": time.time(),
-        "current_price": best_trade.get("price") if best_trade else (best_depth.get("mid") if best_depth else None),
+        "current_price": None,
+        "mid_price": None,
+        "spread": None,
+        "top_bid": None,
+        "top_ask": None,
+        "whale_walls": best_walls.get("whale_walls", []) if best_walls else []
     }
+
+    if best_trade:
+        snapshot["current_price"] = best_trade.get("price")
 
     if best_depth:
         bids = best_depth.get("bids", [])
         asks = best_depth.get("asks", [])
-        top_bid = bids[0][0] if bids else None
-        top_ask = asks[0][0] if asks else None
-        spread = round(top_ask - top_bid, 4) if top_ask and top_bid else None
         
-        snapshot["orderbook_summary"] = {
-            "top_bid": top_bid,
-            "top_ask": top_ask,
-            "spread": spread,
-            "whale_walls": best_depth.get("whale_walls", [])
-        }
+        top_bid = None
+        top_ask = None
+        
+        try:
+            if bids:
+                top_bid = float(bids[0].get("price") if isinstance(bids[0], dict) else bids[0][0])
+            if asks:
+                top_ask = float(asks[0].get("price") if isinstance(asks[0], dict) else asks[0][0])
+        except (KeyError, IndexError, ValueError):
+            pass
+
+        if top_bid and top_ask:
+            mid = (top_bid + top_ask) / 2.0
+            spread = top_ask - top_bid
+            snapshot["top_bid"] = top_bid
+            snapshot["top_ask"] = top_ask
+            snapshot["mid_price"] = round(mid, 4)
+            snapshot["spread"] = round(spread, 4)
+            if snapshot["current_price"] is None:
+                snapshot["current_price"] = snapshot["mid_price"]
+        
+        # Fallback if whale_walls are bundled inside depth payload
+        if not snapshot["whale_walls"] and "whale_walls" in best_depth:
+            snapshot["whale_walls"] = best_depth.get("whale_walls", [])
     
     return snapshot
 
