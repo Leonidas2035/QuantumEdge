@@ -70,7 +70,7 @@ class BotEngine:
         execution_mode = getattr(self.config, "execution_mode", "paper").lower()
         use_testnet = getattr(self.config, "use_testnet", False)
 
-        if execution_mode == "bingx":
+        if execution_mode in ("bingx", "live"):
             logger.warning(
                 "🚀 BINGX EXECUTION MODE"
                 + (" (VST Demo)" if use_testnet else " (MAINNET - REAL MONEY)")
@@ -80,17 +80,6 @@ class BotEngine:
             )
 
             self.gateway = BingXExecutionGateway(self.config)
-        elif execution_mode == "live":
-            logger.warning(
-                "🚀 FORCING LIVE EXECUTION (Testnet - Binance)"
-                if use_testnet
-                else "🚀 FORCING LIVE EXECUTION (Production - Binance)"
-            )
-            from quantum_edge_core.ai_scalper_bot.bot.infrastructure.exchange import (
-                BinanceExecutionGateway,
-            )
-
-            self.gateway = BinanceExecutionGateway(self.config)
         else:
             self.gateway = PaperTrader(self.config)
 
@@ -140,6 +129,42 @@ class BotEngine:
         self.cached_liq_price = 0.0
         self.cached_unrealized_pnl = 0.0
         self.cached_position_qty = 0.0
+        self.last_eval_log = 0.0
+
+    async def telemetry_loop(self):
+        """Independent task for continuous 2-second telemetry emission."""
+        logger.info("📡 Starting independent telemetry loop (2s heartbeat)")
+        while self.running:
+            try:
+                await asyncio.sleep(2.0)
+                await self._update_portfolio_telemetry()
+                
+                eq = float(self.position.state.quote_balance)
+                unrealized_pnl = self.cached_unrealized_pnl or float(self.position.state.unrealized_pnl)
+                pos_qty = self.cached_position_qty or float(self.position.total_qty)
+                ms = self.cache._current_state
+                
+                await self.reporter.send_heartbeat(
+                    self.strategy.state,
+                    unrealized_pnl,
+                    pos_qty,
+                    market_state=ms,
+                    equity=eq,
+                    trading_mode=getattr(self.config, "trading_mode", "spot_grid"),
+                )
+                
+                self.quest_telemetry.log_portfolio_state(
+                    symbol=self.config.symbol,
+                    equity=eq,
+                    unrealized_pnl=unrealized_pnl,
+                    position_qty=pos_qty,
+                    leverage=self.cached_leverage,
+                    liquidation_price=self.cached_liq_price,
+                )
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"Error in telemetry loop: {e}")
 
     async def _update_portfolio_telemetry(self):
         now = time.time()
@@ -277,7 +302,9 @@ class BotEngine:
             position_qty=0.0,
         )
 
-        last_heartbeat = 0.0
+        # ── Start Telemetry Task ──────────────
+        telemetry_task = asyncio.create_task(self.telemetry_loop())
+
         last_1m_reset = time.time()
 
         # ── State retention across iterations ──────────────────
@@ -314,35 +341,8 @@ class BotEngine:
                 # 1. Data Ingestion — block up to 100 ms (efficient poll)
                 tick = self.market_stream.get_latest_tick(timeout_ms=100)
 
-                # ── No new message: send heartbeat, yield, and retry ──
+                # ── No new message: yield, and retry ──
                 if not tick:
-                    now = time.time()
-                    if now - last_heartbeat >= 1.0:
-                        await self._update_portfolio_telemetry()
-                        ms = self.cache._current_state
-                        eq = float(self.position.state.quote_balance)
-                        unrealized_pnl = self.cached_unrealized_pnl or float(self.position.state.unrealized_pnl)
-                        pos_qty = self.cached_position_qty or float(self.position.total_qty)
-                        await self.reporter.send_heartbeat(
-                            self.strategy.state,
-                            unrealized_pnl,
-                            pos_qty,
-                            market_state=ms,
-                            equity=eq,
-                            trading_mode=getattr(
-                                self.config, "trading_mode", "spot_grid"
-                            ),
-                        )
-                        # ILP Portfolio logging
-                        self.quest_telemetry.log_portfolio_state(
-                            symbol=self.config.symbol,
-                            equity=eq,
-                            unrealized_pnl=unrealized_pnl,
-                            position_qty=pos_qty,
-                            leverage=self.cached_leverage,
-                            liquidation_price=self.cached_liq_price,
-                        )
-                        last_heartbeat = now
                     await asyncio.sleep(0.01)
                     continue
 
@@ -651,9 +651,34 @@ class BotEngine:
                                     position_side=pos_side,
                                 )
 
-                    action = self.strategy.decide(
-                        market_state, feat_vec, atr_val, self.position
-                    )
+                    # ── Decision Guards & Diagnostic Logging ──
+                    reason = "Evaluating"
+                    spread = market_state.best_ask - market_state.best_bid
+                    action = None
+
+                    if market_state.last_price <= 0.0:
+                        reason = "Waiting for Market Data (Price <= 0)"
+                    elif spread <= 0 or spread > market_state.last_price * 0.01:
+                        reason = f"Spread anomalous: {spread:.2f} (Bid: {market_state.best_bid}, Ask: {market_state.best_ask})"
+                    elif getattr(market_state, "entries_paused", False) or getattr(self.gateway, "entries_paused", False):
+                        reason = "Entries Paused by Supervisor/Policy"
+                    elif atr_val <= 0.0:
+                        reason = "Waiting for Volatility Data (ATR warmup)"
+                    else:
+                        action = self.strategy.decide(
+                            market_state, feat_vec, atr_val, self.position
+                        )
+                        if action is None:
+                            reason = f"Strategy returned HOLD (Mode: {market_state.trading_mode.value}, OFI: {feat_vec.ofi:.2f}, Pos: {self.position.total_qty})"
+                        else:
+                            reason = f"Strategy returned {action.action_type}"
+
+                    now_log = time.time()
+                    if now_log - self.last_eval_log >= 10.0:
+                        logger.info(
+                            f"Evaluation Tick: Price={market_state.last_price:.2f}, Signal={'ENTER' if action else 'HOLD'}, Reason={reason}"
+                        )
+                        self.last_eval_log = now_log
 
                     # 4. Execution (PaperTrader — Shadow Mode)
                     active_signal_name = "HOLD"
@@ -724,30 +749,7 @@ class BotEngine:
                     )
 
                 # 5. Reporting (Throttled)
-                now = time.time()
-                if now - last_heartbeat >= 1.0:
-                    await self._update_portfolio_telemetry()
-                    eq = float(self.position.state.quote_balance)
-                    unrealized_pnl = self.cached_unrealized_pnl or float(self.position.state.unrealized_pnl)
-                    pos_qty = self.cached_position_qty or float(self.position.total_qty)
-                    await self.reporter.send_heartbeat(
-                        self.strategy.state,
-                        unrealized_pnl,
-                        pos_qty,
-                        equity=eq,
-                        trading_mode=getattr(self.config, "trading_mode", "spot_grid"),
-                    )
-
-                    self.quest_telemetry.log_portfolio_state(
-                        symbol=self.config.symbol,
-                        equity=eq,
-                        unrealized_pnl=unrealized_pnl,
-                        position_qty=pos_qty,
-                        leverage=self.cached_leverage,
-                        liquidation_price=self.cached_liq_price,
-                    )
-
-                    last_heartbeat = now
+                # Removed inline heartbeat to prevent blocking; now handled by telemetry_loop task.
 
                 # Yield control to event loop
                 await asyncio.sleep(0.01)
