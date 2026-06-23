@@ -172,6 +172,37 @@ class LockBotService:
                 exc,
             )
 
+        await self.warm_up()
+
+    async def warm_up(self) -> None:
+        import collections
+        self.vwap_history = collections.deque(maxlen=1000)
+        self.price_history = collections.deque(maxlen=1000)
+        
+        symbol = self._cfg.symbol
+        logger.info(f"[LockBot] Fetching historical vwap/kline data for warm-up from QuestDB...")
+        try:
+            from quantum_edge_core.market_data.tsdb.query_builder import QuestDBQueryBuilder
+            db = QuestDBQueryBuilder()
+            history = await db.get_vwap_bands(symbol, days=1)
+            logger.info(f"[LockBot] Received {len(history)} klines from QuestDB. Calculating VWAP and warming up deques...")
+            
+            # Simple cumulative volume and typical price summation to compute historical VWAP points
+            cum_vol = 0.0
+            cum_pv = 0.0
+            for record in history:
+                close = record.get('close', 0.0)
+                volume = record.get('volume', 0.0)
+                if close and volume:
+                    cum_vol += volume
+                    cum_pv += close * volume
+                    vwap = cum_pv / cum_vol if cum_vol > 0 else close
+                    self.vwap_history.append(vwap)
+                    self.price_history.append(close)
+            logger.info(f"[LockBot] Warm-up complete. Loaded {len(self.vwap_history)} VWAP values.")
+        except Exception as e:
+            logger.error(f"[LockBot] Error during warm-up: {e}")
+
         # ── Start event loop subscribers ─────────────────────────────
         if self._hub_sub:
             await self._hub_sub.start()

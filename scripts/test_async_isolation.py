@@ -11,8 +11,8 @@ import os
 
 sys.path.append(os.path.abspath("src"))
 
-from quantum_edge_core.supervisor.service import AsyncSupervisor
-from quantum_edge_core.supervisor.supervisor.gemini_client import GeminiClient
+from hermes.service import AsyncSupervisor
+from hermes.supervisor.gemini_client import GeminiClient
 
 
 async def run_test():

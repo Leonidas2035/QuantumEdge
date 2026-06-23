@@ -3,6 +3,7 @@ import signal
 import sys
 import structlog
 import time
+import collections
 
 from typing import Optional, Dict, Any, List
 
@@ -60,28 +61,43 @@ class DynDCAService:
             gamma=gamma
         )
         
-        # 2. ZMQ Receiver (передаємо оракул та агрегатор всередину)
-        self.zmq_receiver = ZmqReceiver(self.config, self.l2_aggregator, self.volatility_oracle)
+        # 2. ZMQ Receiver (передаємо оракул та агрегатор всередину, відкладаємо з'єднання)
+        self.zmq_receiver = ZmqReceiver(self.config, self.l2_aggregator, self.volatility_oracle, connect_now=False)
         
         # 3. Execution
         self.order_router = OrderRouter() # В майбутньому прийматиме exchange client
         self.grid_manager = GridManager(self.config, self.order_router)
         
         # 4. Telemetry
-        telemetry_port = 5567
-        if hasattr(self.config, 'telemetry') and isinstance(self.config.telemetry, dict):
-             telemetry_port = self.config.telemetry.get('zmq_port', 5567)
-        elif hasattr(self.config, 'telemetry_port'):
-             telemetry_port = self.config.telemetry_port
-
+        telemetry_port = self.config.zmq_telemetry_port
         self.telemetry = BotPublisher(port=telemetry_port)
         self._first_order_placed = False
+
+    async def warm_up(self):
+        self.volatility_history = collections.deque(maxlen=1000)
+        self.price_history = collections.deque(maxlen=1000)
+        symbol = getattr(self.config, 'symbol', 'BTCUSDT')
+        logger.info("Fetching historical volatility data from QuestDB for warm-up...", symbol=symbol)
+        try:
+            from quantum_edge_core.market_data.tsdb.query_builder import QuestDBQueryBuilder
+            db = QuestDBQueryBuilder()
+            history = await db.get_volatility_profile(symbol, hours=4)
+            logger.info("Received volatility profile from QuestDB. Appending to deques...", count=len(history))
+            for record in history:
+                self.volatility_history.append(record.get('atr_14', 0.0))
+                self.price_history.append(record.get('mid_price', 0.0))
+            logger.info("Warm-up complete.", volatility_len=len(self.volatility_history), price_len=len(self.price_history))
+        except Exception as e:
+            logger.error("Error during warm-up", error=str(e))
 
     async def start(self):
         self.running = True
         
         bot_id = getattr(self.config, 'bot_id', 'dyndca_v1')
         logger.info("Starting DynDCA Microservice: Component wiring complete", bot_id=bot_id)
+        
+        await self.warm_up()
+        self.zmq_receiver.connect()
         
         # Запускаємо ZMQ слухача як фонове завдання
         receiver_task = asyncio.create_task(self.zmq_receiver.start_listening(self.state))
@@ -103,6 +119,11 @@ class DynDCAService:
             logger.debug("Waiting for market data...")
             return
 
+        # STALE_DATA check: reject processing if data is older than 5 seconds
+        if self.state.last_update_ts > 0 and (time.time() - self.state.last_update_ts) > 5.0:
+            logger.warning("STALE_DATA: Market data is older than 5 seconds. Skipping trading loop cycle.")
+            return
+
         # 1. Запит до Оракула: який зараз режим?
         oracle_state = self.volatility_oracle.evaluate_regime(l1_spread_bps=2.0, atr_pct=0.5) 
         
@@ -110,7 +131,23 @@ class DynDCAService:
             logger.warning("FLASH CRASH detected by Oracle! Holding off new grid entries.")
             return # Блокуємо нові ордери, поки ринок не заспокоїться
 
-        # 2. Логіка виставлення першого ордера
+        # 2. Перевірка на досягнення Take Profit
+        if self.grid_manager.current_position_size > 0 and self.grid_manager.tp_price is not None:
+            tp_hit = False
+            current_price = self.state.current_price
+            if self.grid_manager.position_side == "buy":
+                if current_price >= self.grid_manager.tp_price:
+                    tp_hit = True
+            elif self.grid_manager.position_side == "sell":
+                if current_price <= self.grid_manager.tp_price:
+                    tp_hit = True
+            
+            if tp_hit:
+                logger.info("Take Profit price target reached", current_price=current_price, tp_price=self.grid_manager.tp_price)
+                self.grid_manager.on_tp_order_filled()
+                self._first_order_placed = False
+
+        # 3. Логіка виставлення першого ордера
         if self.grid_manager.current_position_size == 0 and not self._first_order_placed:
             # Рахуємо ціну з урахуванням стін
             next_price = self.dca_engine.calculate_next_order(
@@ -128,12 +165,19 @@ class DynDCAService:
                 self.grid_manager.on_dca_order_filled(fill_price=next_price, fill_qty=0.01, side="buy")
                 self._first_order_placed = True
 
-        # 3. Публікація телеметрії для Supervisor
+        # 4. Розрахунок PnL та Публікація телеметрії для Supervisor
+        current_pnl = 0.0
+        if self.grid_manager.current_position_size > 0:
+            if self.grid_manager.position_side == "buy":
+                current_pnl = (self.state.current_price - self.grid_manager.average_entry_price) * self.grid_manager.current_position_size
+            elif self.grid_manager.position_side == "sell":
+                current_pnl = (self.grid_manager.average_entry_price - self.state.current_price) * self.grid_manager.current_position_size
+
         if self.telemetry:
             self.telemetry.publish_status(
                 position_size=self.grid_manager.current_position_size,
                 avg_entry=self.grid_manager.average_entry_price,
-                current_pnl=0.0 # Розрахунок PnL додамо згодом
+                current_pnl=current_pnl
             )
 
     async def shutdown(self):

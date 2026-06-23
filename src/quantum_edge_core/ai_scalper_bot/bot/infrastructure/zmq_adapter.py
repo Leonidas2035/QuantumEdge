@@ -17,7 +17,7 @@ class ZmqSubStream:
     Handles socket configuration and fast JSON decoding.
     """
 
-    def __init__(self, endpoint: str, topic: str = "", hwm: int = 1000):
+    def __init__(self, endpoint: str, topic: str = "", hwm: int = 1000, connect_now: bool = True):
         """
         Args:
             endpoint: ZMQ endpoint to connect to (e.g. "tcp://127.0.0.1:5555").
@@ -30,10 +30,16 @@ class ZmqSubStream:
         # Performance Tuning
         self._socket.setsockopt(zmq.RCVHWM, hwm)
         self._socket.setsockopt_string(zmq.SUBSCRIBE, topic)
+        self.endpoint = endpoint
+        self.topic = topic
 
+        if connect_now:
+            self.connect()
+
+    def connect(self):
         try:
-            self._socket.connect(endpoint)
-            logger.info(f"Connected to ZMQ Stream at {endpoint} (Topic: '{topic}')")
+            self._socket.connect(self.endpoint)
+            logger.info(f"Connected to ZMQ Stream at {self.endpoint} (Topic: '{self.topic}')")
         except zmq.ZMQError as e:
             logger.error(f"Failed to connect to ZMQ endpoint: {e}")
             raise

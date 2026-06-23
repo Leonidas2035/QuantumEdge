@@ -1,10 +1,16 @@
 services:
   bot:
     id: "ai_scalper_bot"
-    trading_mode: "spot_grid"  # The ONLY place this ID is defined
+    trading_mode: "spot_grid"
     zmq:
       telemetry_port: 5557
-      policy_port: 5558
+      policy_port: 5559
+  dyndca:
+    id: "dyndca_v1"
+    trading_mode: "dca"
+    zmq:
+      telemetry_port: 5567
   supervisor:
     id: "supervisor_core"
     check_interval_ms: 1000
+

@@ -105,7 +105,7 @@ do_start() {
 
     # ── 2. LLM Supervisor ────────────────────────────────────────
     log_info "Starting LLM Supervisor (port $PORT_SUPERVISOR)..."
-    nohup python3 -m quantum_edge_core.supervisor.supervisor.llm_supervisor \
+    nohup python3 -m hermes.supervisor.llm_supervisor \
         run-foreground --mode paper \
         > "$LOG_DIR/supervisor.log" 2>&1 &
     local sup_pid=$!

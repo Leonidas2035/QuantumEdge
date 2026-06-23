@@ -4,7 +4,7 @@ projects:
     path: src/quantum_edge_core/strategies/scalper_v1
     description: QuantumEdge trading engine
   supervisor_agent:
-    path: src/quantum_edge_core/supervisor
+    path: /home/korben/.hermes/hermes
     description: Supervisor control plane
   meta_agent:
     path: src/quantum_edge_infra/automation/meta_agent

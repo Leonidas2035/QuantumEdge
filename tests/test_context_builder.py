@@ -12,8 +12,8 @@ import unittest
 # Add src to path
 sys.path.append(os.path.abspath("src"))
 
-from quantum_edge_core.supervisor.supervisor.data_ingest import DataStore
-from quantum_edge_core.supervisor.supervisor.context_builder import ContextBuilder
+from hermes.supervisor.data_ingest import DataStore
+from hermes.supervisor.context_builder import ContextBuilder
 
 
 class TestContextBuilder(unittest.TestCase):

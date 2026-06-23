@@ -10,6 +10,22 @@
 - **FastAPI Dashboard Bridge:** Створено `dashboard_api.py`, який замінив старий Supervisor на порту 8765. Він працює як проксі-сервер, що викликає ZMQ міст у фоновому режимі та транслює метрики на веб-фронтенд без блокування основного потоку.
 - **Оркестрація:** З `QuantumEdge.py` остаточно вирізано застарілий Python-базований `SupervisorAgent`. Тепер оркестратор послідовно запускає: `MarketDataHub -> HermesAPI Bridge -> AIScalper -> DynDCA`, делегуючи всю високорівневу бізнес-логіку автономному глобальному `Hermes Agent`.
 - **Ризик-Менеджмент:** Створено декларативний файл `risk_policy.md` у директорії `hermes_agent/instructions`, який жорстко задає правила управління ризиками (напр., No-Loss, ліміти drawdown). Legacy-файл `HERMES_STARTER_PROMPT.md` позначено як `[DEPRECATED]`.
+- **Уніфіковані схеми QuestDB & ILP Ingestion (Етап 1 & 2):** Переведено запис ринкових фіч та телеметрії на протокол Influx Line Protocol (ILP) на порт 9009 з використанням `questdb.ingress.Sender`. Створено асинхронний фоновий `ilp_writer` для запобігання затримкам у гарячому циклі HFT-ботів. Замість окремих таблиць впроваджено єдині `market_features`, `bot_telemetry` та `llm_decisions` із автоматичним retention-очищенням.
+- **Структурований вивід Hermes (Gemini):** Оновлено `GoogleGeminiBackend` на використання нового `google-genai` SDK та Pydantic-схем (`DecisionV1Schema`). Запити та рішення Гермеса автоматично записуються в уніфіковану таблицю `llm_decisions` через QuestDB REST API.
+- **Асинхронний Test Suite:** Адаптовано тестові сценарії (`test_router_policy.py`, `test_repair_loop.py`, `test_openai_payloads.py` тощо) під асинхронні сигнатури генерації моделей та виправлено моки для `Client.aio.models.generate_content`. Додано fallback-ключ `MOCK_KEY` для усунення `ValueError` при відсутності API-ключа в тестовому оточенні.
+- **ZMQ Heartbeats у HFT-ботах:** Впроваджено постійне надсилання статусних повідомлень (heartbeats) у циклі `ai_scalper_bot` через порт 5557, що запобігає позначенню бота як `offline` в MCP-мосту.
+- **Підтримка depth_l2:** Додано коректний парсинг структури подій `depth_l2` та `walls` у `data_mcp_bridge.py`.
+- **QuestDB Retrieval Layer & Warm-up (Етап 3):**
+  - Створено клас `QuestDBQueryBuilder` у `src/quantum_edge_core/market_data/tsdb/query_builder.py` для асинхронного виконання HTTP-запитів до бази даних QuestDB (порт 9000).
+  - Імплементовано методи `get_microstructure()`, `get_volatility_profile()` та `get_vwap_bands()` для отримання історичних даних.
+  - Впроваджено послідовний механізм прогріву (warm-up) для ботів `ai_scalper_bot`, `dyndca` та `lockbotbtc`. Боти при запуску спочатку заповнюють свої внутрішні сховища історії (`collections.deque`), і лише після завершення прогріву встановлюють ZMQ SUB з'єднання з `MarketDataHub`.
+- **Аналітика, MCP Tools та Dashboard API (Етап 4):**
+  - Додано нові команди `query_telemetry` та `query_market_trend` у `data_mcp_bridge.py` для виконання агрегованих аналітичних запитів до QuestDB через `SAMPLE BY`.
+  - Додано FastAPI кінцеві точки `/api/v1/charts/features` та `/api/v1/charts/pnl` у `dashboard_api.py` для подачі даних у форматі TradingView Lightweight Charts.
+  - Впроваджено автоматичне приведення таймстемпів до Unix Timestamp у секундах за допомогою `to_unix_timestamp(ts) / 1000000` на рівні БД.
+  - Додано повне покриття тестами для нових CLI та API маршрутів.
+
+
 
 
 ## [2026-06-21] - Архітектурне розділення ботів та оркестрація

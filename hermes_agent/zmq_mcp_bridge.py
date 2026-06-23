@@ -40,9 +40,11 @@ def get_status():
         
         if ai_scalper_sub in socks and socks[ai_scalper_sub] == zmq.POLLIN:
             try:
-                msg = ai_scalper_sub.recv_string(flags=zmq.NOBLOCK)
-                data = json.loads(msg)
-                status_report["ai_scalper"] = data
+                frames = ai_scalper_sub.recv_multipart(flags=zmq.NOBLOCK)
+                if len(frames) >= 2:
+                    payload = frames[1].decode("utf-8")
+                    data = json.loads(payload)
+                    status_report["ai_scalper"] = data
             except zmq.Again:
                 pass
             except Exception as e:
@@ -50,9 +52,11 @@ def get_status():
                 
         if dyndca_sub in socks and socks[dyndca_sub] == zmq.POLLIN:
             try:
-                msg = dyndca_sub.recv_string(flags=zmq.NOBLOCK)
-                data = json.loads(msg)
-                status_report["dyndca"] = data
+                frames = dyndca_sub.recv_multipart(flags=zmq.NOBLOCK)
+                if len(frames) >= 2:
+                    payload = frames[1].decode("utf-8")
+                    data = json.loads(payload)
+                    status_report["dyndca"] = data
             except zmq.Again:
                 pass
             except Exception as e:
@@ -76,15 +80,18 @@ def send_policy(bot_id, action, ttl):
     # Allow some time for the PUB socket to establish connections
     time.sleep(0.2)
     
+    # Use the correct topic required by the bots' subscriber filters
+    topic = f"command.{bot_id}".encode("utf-8")
+    
     payload = {
-        "target_bot": bot_id,
         "action": action,
         "ttl": int(ttl),
         "timestamp": time.time()
     }
     
     try:
-        pub_socket.send_string(json.dumps(payload))
+        # Send as a multipart message [topic, JSON payload]
+        pub_socket.send_multipart([topic, json.dumps(payload).encode("utf-8")])
         # Brief pause to ensure message is flushed
         time.sleep(0.1)
         result = {"success": True, "message": "Policy sent successfully", "payload": payload}

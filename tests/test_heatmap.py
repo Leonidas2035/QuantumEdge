@@ -7,7 +7,7 @@ Tests for LiquidationHeatmap Logic.
 
 import time
 import unittest
-from quantum_edge_core.supervisor.context.heatmap import LiquidationHeatmap
+from hermes.context.heatmap import LiquidationHeatmap
 
 
 class TestHeatmap(unittest.TestCase):

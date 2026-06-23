@@ -6,9 +6,9 @@ Tests for Adaptive Sizing Logic (ATR & Position Sizing).
 """
 
 import unittest
-from quantum_edge_core.supervisor.context.accumulator import MarketAccumulator
-from quantum_edge_core.supervisor.context.features import FeatureEngine
-from quantum_edge_core.supervisor.domain.models import PolicyContract, TradingMode
+from hermes.context.accumulator import MarketAccumulator
+from hermes.context.features import FeatureEngine
+from hermes.domain.models import PolicyContract, TradingMode
 from quantum_edge_core.strategies.scalper_v1.bot.trading.order_manager import (
     OrderManager,
 )

@@ -72,6 +72,7 @@ def cmd_market_snapshot(symbol: str, timeout_sec: float = 4.0):
         "timestamp": time.time(),
         "current_price": None,
         "mid_price": None,
+        "mid": None,
         "spread": None,
         "top_bid": None,
         "top_ask": None,
@@ -96,15 +97,30 @@ def cmd_market_snapshot(symbol: str, timeout_sec: float = 4.0):
         except (KeyError, IndexError, ValueError):
             pass
 
-        if top_bid and top_ask:
-            mid = (top_bid + top_ask) / 2.0
-            spread = top_ask - top_bid
+        if top_bid is not None:
             snapshot["top_bid"] = top_bid
+        if top_ask is not None:
             snapshot["top_ask"] = top_ask
-            snapshot["mid_price"] = round(mid, 4)
-            snapshot["spread"] = round(spread, 4)
+
+        # Enforce Single Source of Truth (SSOT) from Hub
+        mid_price = best_depth.get("mid_price")
+        spread = best_depth.get("spread")
+
+        if mid_price is not None:
+            snapshot["mid_price"] = round(float(mid_price), 4)
+            snapshot["mid"] = snapshot["mid_price"]
+            snapshot["current_price"] = snapshot["mid_price"] # SSOT dictates current_price is mid_price
+        elif top_bid and top_ask:
+            # Fallback only if SSOT is unavailable
+            snapshot["mid_price"] = round((top_bid + top_ask) / 2.0, 4)
+            snapshot["mid"] = snapshot["mid_price"]
             if snapshot["current_price"] is None:
                 snapshot["current_price"] = snapshot["mid_price"]
+
+        if spread is not None:
+            snapshot["spread"] = round(float(spread), 4)
+        elif top_bid and top_ask:
+            snapshot["spread"] = round(top_ask - top_bid, 4)
         
         # Fallback if whale_walls are bundled inside depth payload
         if not snapshot["whale_walls"] and "whale_walls" in best_depth:

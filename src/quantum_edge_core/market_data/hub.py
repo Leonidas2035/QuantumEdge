@@ -29,17 +29,11 @@ from quantum_edge_core.market_data.account.account_state import (
     AccountState,
     FINAL_ORDER_STATUSES,
 )
-from quantum_edge_core.market_data.account.binance_spot_userstream import (
-    BinanceSpotUserStream,
-)
-from quantum_edge_core.market_data.account.binance_usdm_userstream import (
-    BinanceUsdmUserStream,
-)
 from quantum_edge_core.market_data.account.publisher import AccountPublisher
 from quantum_edge_core.market_data.bus.event_bus import EventBus
 from quantum_edge_core.market_data.config import HubConfig
 from quantum_edge_core.market_data.feeds.mock_feed import MockLiveFeed
-from quantum_edge_core.market_data.feeds.binance_futures import BinanceFuturesFeed
+from quantum_edge_core.market_data.feeds.bingx import BingXLiveFeed
 from quantum_edge_core.market_data.feeds.liquidations import LiquidationFeed
 from quantum_edge_core.market_data.analytics.alpha_engine import AlphaEngine
 from quantum_edge_core.market_data.ipc.publisher import ZmqPublisher
@@ -148,11 +142,11 @@ class MarketDataHubService(BaseService):
                 # LiquidationFeed(self.config, self.bus) # Disabled to prevent Binance connections
             ]
         else:
-            self.feeds = [BinanceFuturesFeed(self.config, self.bus)]
+            self.feeds = [BingXLiveFeed(self.config, self.bus)]
 
         self.alpha_engine = AlphaEngine(symbol="BTCUSDT")  # Default symbol
         self.ob_aggregator = OrderBookAggregator(
-            self.config, self.publisher, self.bus, self.snapshot_cache
+            self.config.orderbook, self.publisher, self.bus, self.snapshot_cache
         )
         self.last_metrics_pub = 0.0
         self._last_mid_price: float = 0.0  # Cache for OB aggregator
@@ -193,7 +187,7 @@ class MarketDataHubService(BaseService):
                 heatmap_top_n=lockbot_cfg.heatmap_top_n,
             )
         # Legacy OrderBookAggregator disabled — replaced by self.ob_aggregator (L138)
-        self.orderbook: Optional[OrderBookAggregator] = None
+        self.orderbook: Optional[OrderBookAggregator] = self.ob_aggregator
         self.account_state = AccountState(self.config.account)
         self.account_publisher = AccountPublisher(self.publisher)
         self._account_repair_manager = AccountRepairManager(
@@ -292,6 +286,27 @@ class MarketDataHubService(BaseService):
                 symbol = getattr(event, "symbol", "global") or "global"  # Handle None
                 ev_type = getattr(event, "event_type", "unknown")
                 topic = f"{ev_type}.{symbol}".lower()
+
+                if isinstance(event, OrderBookUpdate):
+                    try:
+                        bids = getattr(event, "bids", [])
+                        asks = getattr(event, "asks", [])
+                        if getattr(event, "mid_price", 0.0) > 0.0:
+                            # Already computed accurately by feed parser
+                            pass
+                        elif bids and asks:
+                            best_bid = float(bids[0][0])
+                            best_ask = float(asks[0][0])
+                            event.mid_price = (best_bid + best_ask) / 2.0
+                            event.mid = event.mid_price
+                            event.spread = best_ask - best_bid
+                        else:
+                            event.mid_price = self._last_mid_price
+                            event.mid = self._last_mid_price
+                            event.spread = 0.0
+                        self._last_mid_price = getattr(event, "mid_price", self._last_mid_price)
+                    except Exception as e:
+                        self.logger.error("Malformed OrderBookUpdate tick handled: %s", e)
 
                 await self.publisher.publish(topic, event)
                 self.logger.debug("Hub broadcasted tick to ZMQ", topic=topic)

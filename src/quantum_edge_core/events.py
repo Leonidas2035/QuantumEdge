@@ -69,6 +69,9 @@ class OrderBookUpdate(BaseEvent):
     asks: List[List[float]]
     timestamp: float
     whale_walls: List[WhaleWall] = []
+    mid: float = 0.0
+    mid_price: float = 0.0
+    spread: float = 0.0
 
 
 class LiquidationEvent(BaseEvent):

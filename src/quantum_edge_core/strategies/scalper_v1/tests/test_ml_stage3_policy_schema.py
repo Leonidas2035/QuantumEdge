@@ -1,4 +1,4 @@
-from quantum_edge_core.supervisor.research.offline.scalper_bot.ml.eval.tune_policy import (
+from hermes.research.offline.scalper_bot.ml.eval.tune_policy import (
     validate_policy_schema,
 )
 

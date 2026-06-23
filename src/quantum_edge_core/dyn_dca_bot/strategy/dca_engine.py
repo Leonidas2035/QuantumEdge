@@ -1,5 +1,6 @@
 import structlog
 from typing import List, Dict, Any, Optional
+from quantum_edge_core.dyn_dca_bot.strategy.volatility_oracle import OracleState, MarketRegime
 
 logger = structlog.get_logger(__name__)
 
@@ -15,15 +16,20 @@ class DCAEngine:
         current_price: float, 
         average_entry: float, 
         step_index: int, 
-        volatility_multiplier: float,
+        oracle_state: OracleState,
         walls: Dict[str, List[Dict[str, Any]]],
         side: str = "buy"
-    ) -> float:
+    ) -> Optional[float]:
         """
         Розраховує ідеальну ціну для наступного усереднення з урахуванням L2 плит.
         """
+        # Якщо на ринку FLASH_CRASH, блокуємо ордер до заспокоєння ринку
+        if oracle_state.regime == MarketRegime.FLASH_CRASH:
+            logger.warning("Flash Crash detected! Delaying grid placement.")
+            return None
+            
         # 1. Базова математика (ATR + Gamma)
-        base_step = self.grid_spacing_pct * volatility_multiplier
+        base_step = self.grid_spacing_pct * oracle_state.multiplier
         expanded_step_pct = base_step * (self.gamma ** step_index)
         
         if side == "buy":

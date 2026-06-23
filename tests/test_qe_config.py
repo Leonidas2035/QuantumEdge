@@ -1,9 +1,9 @@
 import pytest
 
-pytest.skip("Legacy test broken by src-layout migration", allow_module_level=True)
+# pytest.skip("Legacy test broken by src-layout migration", allow_module_level=True)
 from pathlib import Path
 
-from tools.qe_config import get_qe_config, get_qe_paths
+from quantum_edge_infra.tools.qe_config import get_qe_config, get_qe_paths
 
 
 def test_qe_paths_defaults():

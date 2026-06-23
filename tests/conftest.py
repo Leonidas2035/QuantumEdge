@@ -11,6 +11,8 @@ if str(ROOT) not in sys.path:
 src_path = ROOT / "src"
 if str(src_path) not in sys.path:
     sys.path.insert(0, str(src_path))
+if "/home/korben/.hermes" not in sys.path:
+    sys.path.insert(0, "/home/korben/.hermes")
 
 BOT_ROOT = ROOT / "ai_scalper_bot"
 if BOT_ROOT.exists() and str(BOT_ROOT) not in sys.path:

@@ -140,6 +140,21 @@ def main():
         else:
             print("  ✅ OK")
 
+    # 3. Add Schema Migrations and Data Purges
+    print("\n>>> MIGRATIONS & DATA PURGES")
+    mig_cmds = [
+        "ALTER TABLE trades DROP PARTITION WHERE ts < dateadd('d', -1, now());",
+        "CREATE TABLE IF NOT EXISTS realized_trades (ts TIMESTAMP, bot_id SYMBOL, symbol SYMBOL, side SYMBOL, entry_price DOUBLE, exit_price DOUBLE, qty DOUBLE, realized_pnl DOUBLE, fees DOUBLE) TIMESTAMP(ts) PARTITION BY MONTH;",
+        "ALTER TABLE realized_trades ADD COLUMN bot_id SYMBOL;"
+    ]
+    for cmd in mig_cmds:
+        print(f"Executing: {cmd[:50]}...")
+        result = quest_exec(args.host, args.port, cmd)
+        if "error" in result and "column already exists" not in result.get("error", ""):
+            print(f"  ❌ ERROR or Ignored: {result.get('error')}")
+        else:
+            print("  ✅ OK")
+
     print("\n" + "=" * 60)
     if errors == 0:
         print("🎉 All schemas created successfully")

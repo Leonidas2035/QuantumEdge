@@ -4,19 +4,19 @@ import re
 # We will apply conservative exact-line replacement for unused imports and variables based on flake8 output.
 
 removals = {
-    "src/quantum_edge_core/supervisor/supervisor.py": [
+    "/home/korben/.hermes/hermes/supervisor.py": [
         ("from supervisor.llm.chat_client import ChatCompletionsClient", "")
     ],
-    "src/quantum_edge_core/supervisor/supervisor/data_ingest.py": [
+    "/home/korben/.hermes/hermes/supervisor/data_ingest.py": [
         ("current_ver = self.hub_version", "")
     ],
-    "src/quantum_edge_core/supervisor/supervisor/heartbeat.py": [
+    "/home/korben/.hermes/hermes/supervisor/heartbeat.py": [
         (
             "from dataclasses import dataclass, field",
             "from dataclasses import dataclass",
         )
     ],
-    "src/quantum_edge_core/supervisor/supervisor/risk_engine.py": [
+    "/home/korben/.hermes/hermes/supervisor/risk_engine.py": [
         (
             "from typing import Any, Dict, List, Optional, Union",
             "from typing import Any, List, Optional",

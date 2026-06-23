@@ -38,7 +38,11 @@ class BaseService(ABC):
         pass
 
     def _handle_signal(self, sig):
-        self.logger.info("Signal received, initiating shutdown", signal=sig.name)
+        try:
+            sig_name = signal.Signals(sig).name
+        except Exception:
+            sig_name = str(sig)
+        self.logger.info(f"Signal received, initiating shutdown: {sig_name}")
         self._shutdown_event.set()
 
     async def _runner_wrapper(self):
@@ -85,7 +89,7 @@ class BaseService(ABC):
                     raise
 
         except Exception as e:
-            self.logger.error("Service runtime error", error=str(e))
+            self.logger.error(f"Service runtime error: {e}")
             raise
         finally:
             self.logger.info("Service cleaning up")

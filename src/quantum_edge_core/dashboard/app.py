@@ -1,18 +1,18 @@
-"""QuantumEdge Web Dashboard — Streamlit app."""
+"""QuantumEdge Web Dashboard — Streamlit app styled like Binance Futures."""
 
 from __future__ import annotations
 
 import logging
 import time
-from urllib.parse import urlparse
-
+import json
+import os
+from datetime import datetime
 import pandas as pd
-# import pandas_ta as ta
 import plotly.graph_objects as go
 from plotly.subplots import make_subplots
 import streamlit as st
 from streamlit_autorefresh import st_autorefresh
-from streamlit.web.server.websocket_headers import _get_websocket_headers
+import ccxt
 
 from quantum_edge_core.dashboard.utils import (
     ProcessManager,
@@ -26,109 +26,405 @@ from quantum_edge_core.dashboard.utils import (
     get_mock_trades,
     send_halt_command,
     tail_log,
+    get_db_connection,
 )
 
 logger = logging.getLogger(__name__)
 
-# ─── Page Config ─────────────────────────────────────────────────────
+# Page Config
 st.set_page_config(
-    page_title="QuantumEdge • Single Pane of Glass",
+    page_title="QuantumEdge Futures Terminal",
     layout="wide",
     page_icon="⚡",
 )
 
+# Dark styling to resemble Binance Futures
 st.markdown(
     """
     <style>
-    @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap');
+    @import url('https://fonts.googleapis.com/css2?family=Roboto+Mono:wght@400;500;700&family=Inter:wght@400;500;600;700&display=swap');
 
     html, body, [class*="css"] {
         font-family: 'Inter', sans-serif;
-        background-color: #0E1117;
-        color: #E0E0E0;
+        background-color: #0B0E11;
+        color: #EAECEF;
     }
-    .status-card {
-        background: #1a1a2e;
-        border: 1px solid rgba(255, 255, 255, 0.08);
+    
+    /* Hide top Streamlit decorations */
+    #MainMenu {visibility: hidden;}
+    footer {visibility: hidden;}
+    header {visibility: hidden;}
+    
+    .terminal-header {
+        background-color: #161A1E;
+        border-bottom: 1px solid #2B3139;
+        padding: 10px 20px;
+        margin-bottom: 15px;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        border-radius: 4px;
+    }
+    
+    .ticker-metric {
+        margin-right: 20px;
+        display: inline-block;
+    }
+    .ticker-label {
+        font-size: 11px;
+        color: #848E9C;
+        text-transform: uppercase;
+        margin-bottom: 2px;
+    }
+    .ticker-value {
+        font-size: 14px;
+        font-weight: 600;
+        font-family: 'Roboto Mono', monospace;
+    }
+    
+    /* Table Styling */
+    .binance-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 12px;
+        font-family: 'Roboto Mono', monospace;
+    }
+    .binance-table th {
+        color: #848E9C;
+        text-align: left;
+        padding: 4px 6px;
+        font-weight: 500;
+        border-bottom: 1px solid #2B3139;
+    }
+    .binance-table td {
+        padding: 4px 6px;
+        border-bottom: 1px solid rgba(43, 49, 57, 0.3);
+    }
+    
+    /* Asks / Bids progress bar logic */
+    .ask-row { color: #F6465D; position: relative; }
+    .bid-row { color: #0ECB81; position: relative; }
+    
+    .ask-depth-bg {
+        position: absolute;
+        right: 0;
+        top: 0;
+        bottom: 0;
+        background-color: rgba(246, 70, 93, 0.12);
+        z-index: 0;
+    }
+    .bid-depth-bg {
+        position: absolute;
+        right: 0;
+        top: 0;
+        bottom: 0;
+        background-color: rgba(14, 203, 129, 0.12);
+        z-index: 0;
+    }
+    .row-content {
+        position: relative;
+        z-index: 1;
+        display: flex;
+        justify-content: space-between;
+        width: 100%;
+    }
+    
+    .whale-wall {
+        border: 1px solid #F3BA2F;
+        background-color: rgba(243, 186, 47, 0.15) !important;
+        animation: pulse-whale 2s infinite;
+        padding: 2px 4px;
+        border-radius: 2px;
+        font-weight: bold;
+    }
+    
+    @keyframes pulse-whale {
+        0% { box-shadow: 0 0 0 0 rgba(243, 186, 47, 0.4); }
+        70% { box-shadow: 0 0 0 4px rgba(243, 186, 47, 0); }
+        100% { box-shadow: 0 0 0 0 rgba(243, 186, 47, 0); }
+    }
+    
+    /* Panel card */
+    .panel-card {
+        background-color: #161A1E;
+        border: 1px solid #2B3139;
         border-radius: 8px;
         padding: 15px;
-        margin-bottom: 10px;
+        margin-bottom: 15px;
     }
-    .status-up { color: #00e676; font-weight: bold; }
-    .status-down { color: #ff5252; font-weight: bold; }
-    .awaiting-data {
-        background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
-        border: 1px dashed rgba(0, 212, 170, 0.3);
-        border-radius: 12px;
-        padding: 40px 20px;
-        text-align: center;
-        margin: 20px 0;
+    
+    /* Streamlit custom colors */
+    div[data-testid="metric-container"] {
+        background-color: #161A1E;
+        border: 1px solid #2B3139;
+        padding: 10px 15px;
+        border-radius: 6px;
     }
-    .awaiting-data h3 { color: #00d4aa; margin-bottom: 8px; }
-    .awaiting-data p { color: #8899aa; font-size: 0.9em; }
+    
+    .stTabs [data-baseweb="tab-list"] {
+        background-color: #161A1E;
+        border-radius: 4px 4px 0 0;
+        border: 1px solid #2B3139;
+        padding: 0 10px;
+    }
+    .stTabs [data-baseweb="tab"] {
+        color: #848E9C !important;
+        font-size: 13px !important;
+        font-weight: 500 !important;
+    }
+    .stTabs [aria-selected="true"] {
+        color: #F3BA2F !important;
+        border-bottom-color: #F3BA2F !important;
+    }
+    
+    /* Buttons styling */
     .stButton>button {
         width: 100%;
-        border-radius: 6px;
-        background-color: #2b2b36;
-        color: #fff;
-        border: 1px solid #4a4a5a;
+        border-radius: 4px;
+        background-color: #2B3139;
+        color: #EAECEF;
+        border: 1px solid #474F5A;
+        font-size: 13px;
+        font-weight: 500;
+        padding: 6px 12px;
     }
     .stButton>button:hover {
-        border-color: #00d4aa;
-        color: #00d4aa;
+        border-color: #F3BA2F;
+        color: #F3BA2F;
+        background-color: #2B3139;
     }
     .btn-danger>button {
-        background-color: #ff1744 !important;
-        border-color: #ff1744 !important;
+        background-color: #F6465D !important;
+        border-color: #F6465D !important;
         color: white !important;
+    }
+    .btn-danger>button:hover {
+        background-color: #CF304A !important;
+        border-color: #CF304A !important;
+    }
+    .btn-success>button {
+        background-color: #0ECB81 !important;
+        border-color: #0ECB81 !important;
+        color: white !important;
+    }
+    .btn-success>button:hover {
+        background-color: #0B9E64 !important;
+        border-color: #0B9E64 !important;
     }
     </style>
     """,
     unsafe_allow_html=True,
 )
 
-# Refresh every 5 seconds
-st_autorefresh(interval=5000, key="data_refresh")
+# Refresh interval (5 seconds)
+st_autorefresh(interval=5000, key="terminal_refresh")
 
+# --- Helper functions for data fetching ---
+
+@st.cache_resource
+def get_ccxt_client():
+    api_key = os.getenv("BINGX_TESTNET_API_KEY") or os.getenv("BINGX_API_KEY")
+    secret = os.getenv("BINGX_TESTNET_SECRET") or os.getenv("BINGX_SECRET")
+    use_testnet = os.getenv("USE_TESTNET", "true").lower() in {"1", "true", "t"}
+    
+    if not api_key or not secret:
+        return None
+    try:
+        exchange = ccxt.bingx({
+            "apiKey": api_key,
+            "secret": secret,
+            "options": {"defaultType": "swap"},
+            "enableRateLimit": True,
+        })
+        if use_testnet:
+            exchange.set_sandbox_mode(True)
+        return exchange
+    except Exception as e:
+        logger.error(f"Failed to create CCXT client: {e}")
+        return None
+
+def fetch_exchange_telemetry(exchange):
+    if not exchange:
+        return {}
+    try:
+        balance = exchange.fetch_balance()
+        use_testnet = os.getenv("USE_TESTNET", "true").lower() in {"1", "true", "t"}
+        quote_asset = "VST" if use_testnet else "USDT"
+        
+        free_balance = float(balance.get(quote_asset, {}).get("free", 100000.0))
+        total_balance = float(balance.get(quote_asset, {}).get("total", 100000.0))
+        
+        symbol = "BTC/USDT:USDT"
+        positions = exchange.fetch_positions(symbols=[symbol])
+        
+        active_positions = []
+        unrealized_pnl = 0.0
+        position_qty = 0.0
+        leverage = 20.0
+        liq_price = 0.0
+        
+        for pos in positions:
+            size = float(pos.get("contracts") or pos.get("size") or 0.0)
+            if size > 0:
+                side = pos.get("side", "").upper()
+                pnl = float(pos.get("unrealizedPnl") or 0.0)
+                entry_price = float(pos.get("entryPrice") or pos.get("averagePrice") or 0.0)
+                mark_price = float(pos.get("markPrice") or 0.0)
+                liq = float(pos.get("liquidationPrice") or 0.0)
+                lev = float(pos.get("leverage") or 20.0)
+                
+                unrealized_pnl += pnl
+                position_qty += size if side == "LONG" else -size
+                leverage = lev
+                liq_price = liq
+                
+                active_positions.append({
+                    "Symbol": pos.get("symbol"),
+                    "Side": side,
+                    "Size": size,
+                    "Entry Price": entry_price,
+                    "Mark Price": mark_price,
+                    "Liquidation Price": liq,
+                    "Leverage": lev,
+                    "Unrealized PnL": pnl,
+                    "Margin": float(pos.get("initialMargin") or 0.0)
+                })
+                
+        # Fetch open orders
+        orders = exchange.fetch_open_orders(symbol=symbol)
+        open_orders = []
+        for o in orders:
+            open_orders.append({
+                "ID": o.get("id"),
+                "Type": o.get("type", "").upper(),
+                "Side": o.get("side", "").upper(),
+                "Price": float(o.get("price") or 0.0),
+                "Amount": float(o.get("amount") or 0.0),
+                "Filled": float(o.get("filled") or 0.0),
+                "Status": o.get("status", "").upper(),
+                "Time": pd.to_datetime(o.get("timestamp"), unit="ms") if o.get("timestamp") else pd.Timestamp.now()
+            })
+            
+        return {
+            "balance": free_balance,
+            "total_balance": total_balance,
+            "unrealized_pnl": unrealized_pnl,
+            "position_qty": position_qty,
+            "leverage": leverage,
+            "liq_price": liq_price,
+            "positions": active_positions,
+            "open_orders": open_orders
+        }
+    except Exception as e:
+        logger.warning(f"CCXT telemetry fetch failed: {e}")
+        return {}
+
+def fetch_portfolio_state_fallback():
+    conn = get_db_connection()
+    if not conn:
+        return {}
+    try:
+        query = """
+        SELECT timestamp, equity, unrealized_pnl, position_qty, leverage, liquidation_price
+        FROM portfolio_state
+        ORDER BY timestamp DESC
+        LIMIT 1
+        """
+        df = pd.read_sql_query(query, conn)
+        conn.close()
+        if not df.empty:
+            row = df.iloc[0]
+            return {
+                "balance": float(row.get("equity", 100000.0)),
+                "total_balance": float(row.get("equity", 100000.0)),
+                "unrealized_pnl": float(row.get("unrealized_pnl", 0.0)),
+                "position_qty": float(row.get("position_qty", 0.0)),
+                "leverage": float(row.get("leverage", 20.0)),
+                "liq_price": float(row.get("liquidation_price", 0.0)),
+                "positions": [],
+                "open_orders": []
+            }
+    except Exception as e:
+        logger.warning(f"Failed to fetch portfolio state fallback: {e}")
+        if conn:
+            conn.close()
+    return {}
+
+def fetch_candles(timeframe):
+    conn = get_db_connection()
+    if not conn:
+        return pd.DataFrame()
+    try:
+        cur = conn.cursor()
+        cur.execute("SELECT count(*) FROM klines_1m")
+        count = cur.fetchone()[0]
+        if count > 0:
+            query = f"""
+            SELECT ts AS timestamp, open, high, low, close, volume
+            FROM klines_1m
+            WHERE symbol = 'BTCUSDT'
+            ORDER BY ts DESC
+            LIMIT 500
+            """
+            df = pd.read_sql_query(query, conn)
+            df = df.sort_values("timestamp")
+            conn.close()
+            return df
+        else:
+            query = """
+            SELECT timestamp, open, high, low, close, volume
+            FROM kline
+            WHERE symbol = 'BTCUSDT'
+            ORDER BY timestamp DESC
+            LIMIT 500
+            """
+            df = pd.read_sql_query(query, conn)
+            df = df.sort_values("timestamp")
+            conn.close()
+            return df
+    except Exception as e:
+        logger.warning(f"Failed to fetch klines: {e}")
+        if conn:
+            conn.close()
+        return pd.DataFrame()
+
+def fetch_real_orderbook():
+    conn = get_db_connection()
+    if not conn:
+        return pd.DataFrame()
+    try:
+        # Get latest timestamp from orderbook_snapshots
+        query = """
+        SELECT price, qty, side, timestamp
+        FROM orderbook_snapshots
+        WHERE symbol = 'BTCUSDT' AND timestamp = (SELECT max(timestamp) FROM orderbook_snapshots)
+        ORDER BY price DESC
+        """
+        df = pd.read_sql_query(query, conn)
+        conn.close()
+        return df
+    except Exception as e:
+        logger.warning(f"Failed to fetch orderbook snapshots: {e}")
+        if conn:
+            conn.close()
+        return pd.DataFrame()
 
 def is_localhost() -> bool:
-    """Check if the request originates from localhost."""
-    headers = _get_websocket_headers()
-    if not headers:
-        return True  # Default to allowing if headers can't be fetched locally
-    host = headers.get("Host", "")
-    return host.startswith("localhost") or host.startswith("127.0.0.1")
+    try:
+        headers = st.context.headers
+        if not headers:
+            return True
+        host = headers.get("Host", "")
+        return host.startswith("localhost") or host.startswith("127.0.0.1")
+    except Exception:
+        return True
 
-
-def show_awaiting_data(message: str = "Очікування перших даних...") -> None:
-    """Display a graceful 'awaiting data' placeholder instead of crashing."""
-    st.markdown(
-        f"""
-        <div class="awaiting-data">
-            <h3>⏳ {message}</h3>
-            <p>Система щойно запущена або таблиця ще порожня. Дані з'являться автоматично.</p>
-        </div>
-        """,
-        unsafe_allow_html=True,
-    )
-
-
-def safe_col(df: pd.DataFrame, col: str, default=None):
-    """Safely get a column from a DataFrame, returning default if missing."""
-    if col in df.columns:
-        return df[col]
-    return pd.Series([default] * len(df), name=col)
-
-
-# ─── Sidebar ─────────────────────────────────────────────────────────
-
-
+# --- Dialog Confirmation ---
 @st.dialog("Confirm Action")
 def confirm_process_action(action: str, name: str, cmd: str = ""):
     if not is_localhost():
         st.error("Action denied: Process controls are only allowed from localhost.")
         return
-
     st.write(f"Are you sure you want to {action} the **{name}** process?")
     if st.button(f"Yes, {action}"):
         if action == "Start":
@@ -139,580 +435,484 @@ def confirm_process_action(action: str, name: str, cmd: str = ""):
             ProcessManager.restart_process(name, cmd)
         st.rerun()
 
+# --- Main Data Gathering ---
+exchange = get_ccxt_client()
+telemetry = fetch_exchange_telemetry(exchange)
 
-with st.sidebar:
-    st.markdown("## ⚡ QuantumEdge Controls")
-
-    st.markdown("### Process Status")
-
-    processes = {
-        "Hub": "python3 -m quantum_edge_core.market_data.hub",
-        "Supervisor": "python3 -m quantum_edge_core.supervisor.supervisor run-foreground --mode paper",
-        "Bot": "python3 -m quantum_edge_core.ai_scalper_bot.run_bot",
+# Fallback if CCXT fails
+if not telemetry:
+    telemetry = fetch_portfolio_state_fallback()
+    
+# Supply default values if everything is empty
+if not telemetry:
+    telemetry = {
+        "balance": 100000.0,
+        "total_balance": 100000.0,
+        "unrealized_pnl": 0.0,
+        "position_qty": 0.0,
+        "leverage": 20.0,
+        "liq_price": 0.0,
+        "positions": [],
+        "open_orders": []
     }
 
-    for name, cmd in processes.items():
-        is_running = ProcessManager.is_running(name)
-        pid = ProcessManager.get_pid(name)
-        status_cls = "status-up" if is_running else "status-down"
-        status_text = f"RUNNING (PID {pid})" if is_running else "STOPPED"
+# Candles and price
+df_candles = fetch_candles("1m")
+last_price = 0.0
+change_pct = 0.0
+high_24h = 0.0
+low_24h = 0.0
+volume_24h = 0.0
 
-        st.markdown(
-            f"**{name}:** <span class='{status_cls}'>{status_text}</span>",
-            unsafe_allow_html=True,
-        )
+if not df_candles.empty:
+    last_price = float(df_candles["close"].iloc[-1])
+    open_price = float(df_candles["open"].iloc[0])
+    change_pct = ((last_price - open_price) / open_price) * 100 if open_price > 0 else 0.0
+    high_24h = float(df_candles["high"].max())
+    low_24h = float(df_candles["low"].min())
+    volume_24h = float(df_candles["volume"].sum())
 
-        col1, col2, col3 = st.columns(3)
-        with col1:
-            if st.button("Start", key=f"start_{name}"):
-                confirm_process_action("Start", name, cmd)
-        with col2:
-            if st.button("Stop", key=f"stop_{name}"):
-                confirm_process_action("Stop", name, cmd)
-        with col3:
-            if st.button("Restart", key=f"restart_{name}"):
-                confirm_process_action("Restart", name, cmd)
-        st.markdown("---")
+# Fetch orderbook snapshots
+df_ob = fetch_real_orderbook()
 
-    if st.button("❄️ Cold Start Full System"):
-        if is_localhost():
-            ProcessManager.cold_start_full_system()
-            st.success("Cold start initiated!")
-            time.sleep(1)
-            st.rerun()
-        else:
-            st.error("Action denied: localhost only.")
+# --- 1. Top Header Info Strip ---
+header_html = f"""
+<div class="terminal-header">
+    <div style="display: flex; align-items: center;">
+        <span style="font-size: 20px; font-weight: bold; color: #F3BA2F; margin-right: 15px;">⚡ QUANTUMEDGE TERMINAL</span>
+        <span style="background-color: #2B3139; padding: 4px 8px; border-radius: 4px; font-weight: bold; font-size: 13px; color: #EAECEF;">BTCUSDT Perpetual</span>
+    </div>
+    <div style="display: flex; align-items: center;">
+        <div class="ticker-metric">
+            <div class="ticker-label">Mark Price</div>
+            <div class="ticker-value" style="color: {'#0ECB81' if change_pct >= 0 else '#F6465D'}">${last_price:,.2f}</div>
+        </div>
+        <div class="ticker-metric">
+            <div class="ticker-label">24h Change</div>
+            <div class="ticker-value" style="color: {'#0ECB81' if change_pct >= 0 else '#F6465D'}">{change_pct:+.2f}%</div>
+        </div>
+        <div class="ticker-metric">
+            <div class="ticker-label">24h High</div>
+            <div class="ticker-value">${high_24h:,.2f}</div>
+        </div>
+        <div class="ticker-metric">
+            <div class="ticker-label">24h Low</div>
+            <div class="ticker-value">${low_24h:,.2f}</div>
+        </div>
+        <div class="ticker-metric">
+            <div class="ticker-label">24h Volume (BTC)</div>
+            <div class="ticker-value">{volume_24h:,.2f}</div>
+        </div>
+        <div class="ticker-metric">
+            <div class="ticker-label">Funding / Countdown</div>
+            <div class="ticker-value" style="color: #F3BA2F;">0.0100% / 07:44:12</div>
+        </div>
+    </div>
+</div>
+"""
+st.markdown(header_html, unsafe_allow_html=True)
 
-    st.markdown("### Emergency Controls")
-    st.markdown('<div class="btn-danger">', unsafe_allow_html=True)
-    if st.button("🛑 Manual HALT"):
-        if is_localhost():
-            if send_halt_command():
-                st.error("HALT command sent via ZMQ!")
-            else:
-                st.warning("Failed to send HALT.")
-        else:
-            st.error("Action denied: localhost only.")
+# --- 2. Three-Column Grid Layout ---
+col_left, col_center, col_right = st.columns([1.1, 2.3, 1.1])
+
+# --- COLUMN 1: Order Book & Market Trades ---
+with col_left:
+    st.markdown('<div class="panel-card">', unsafe_allow_html=True)
+    st.subheader("Order Book")
+    
+    # Process Orderbook snapshot
+    if not df_ob.empty:
+        asks = df_ob[df_ob["side"] == "SELL"].sort_values("price", ascending=False).head(10)
+        bids = df_ob[df_ob["side"] == "BUY"].sort_values("price", ascending=False).head(10)
+        
+        # Calculate maximum quantity for depth background bars
+        max_qty = max(df_ob["qty"].max(), 1.0)
+        
+        # Asks (Red)
+        asks_html = ""
+        for _, row in asks.iterrows():
+            price = float(row["price"])
+            qty = float(row["qty"])
+            width_pct = min(100, (qty / max_qty) * 100)
+            is_whale = "whale-wall" if qty >= 20.0 else ""
+            
+            asks_html += f"""
+            <tr class="ask-row">
+                <td style="position: relative; width: 100%; border: none; padding: 2px 6px;">
+                    <div class="ask-depth-bg" style="width: {width_pct}%;"></div>
+                    <div class="row-content">
+                        <span class="{is_whale}">{price:,.1f}</span>
+                        <span>{qty:.3f}</span>
+                        <span>{price*qty:,.0f}</span>
+                    </div>
+                </td>
+            </tr>
+            """
+            
+        # Bids (Green)
+        bids_html = ""
+        for _, row in bids.iterrows():
+            price = float(row["price"])
+            qty = float(row["qty"])
+            width_pct = min(100, (qty / max_qty) * 100)
+            is_whale = "whale-wall" if qty >= 20.0 else ""
+            
+            bids_html += f"""
+            <tr class="bid-row">
+                <td style="position: relative; width: 100%; border: none; padding: 2px 6px;">
+                    <div class="bid-depth-bg" style="width: {width_pct}%;"></div>
+                    <div class="row-content">
+                        <span class="{is_whale}">{price:,.1f}</span>
+                        <span>{qty:.3f}</span>
+                        <span>{price*qty:,.0f}</span>
+                    </div>
+                </td>
+            </tr>
+            """
+            
+        # Spread calculation
+        best_ask = asks["price"].min() if not asks.empty else last_price
+        best_bid = bids["price"].max() if not bids.empty else last_price
+        spread = best_ask - best_bid
+        
+        orderbook_table = f"""
+        <table class="binance-table" style="border: none;">
+            <thead>
+                <tr>
+                    <th style="padding: 2px 6px;"><div class="row-content"><span>Price (USDT)</span><span>Size (BTC)</span><span>Total (USDT)</span></div></th>
+                </tr>
+            </thead>
+            <tbody>
+                {asks_html}
+                <tr style="border-top: 1px solid #2B3139; border-bottom: 1px solid #2B3139;">
+                    <td style="padding: 6px; font-weight: bold; text-align: center;">
+                        <span style="color: {'#0ECB81' if change_pct >= 0 else '#F6465D'}; font-size: 15px;">${last_price:,.1f}</span>
+                        <span style="color: #848E9C; font-size: 11px; margin-left: 10px;">Spread: ${spread:,.1f}</span>
+                    </td>
+                </tr>
+                {bids_html}
+            </tbody>
+        </table>
+        """
+        st.markdown(orderbook_table, unsafe_allow_html=True)
+    else:
+        st.info("No live orderbook data in QuestDB.")
+        
     st.markdown("</div>", unsafe_allow_html=True)
 
-    st.markdown("### Manual Override")
-    mode = st.selectbox("Trading Mode", ["SCALP", "DCA", "PASS", "NEUTRAL"], index=1)
-    if st.button("Force Apply Mode"):
-        if is_localhost():
-            if force_apply_mode(mode):
-                st.success(f"Mode {mode} forced!")
-            else:
-                st.error("Failed to apply mode.")
-        else:
-            st.error("Action denied: localhost only.")
-
-    st.markdown("### Metrics Overview")
-
-    # ── Portfolio State from QuestDB (real telemetry) ──
-    df_portfolio, is_portfolio_mock = fetch_data(
-        "SELECT timestamp, symbol, equity, unrealized_pnl, position_qty "
-        "FROM portfolio_state WHERE symbol = 'BTCUSDT' "
-        "ORDER BY timestamp DESC LIMIT 2",
-        get_mock_inventory,
-    )
-
-    # Fetch latest price for live Unrealized PnL calculation
-    df_last_price, _ = fetch_data(
-        "SELECT last(price) AS last_price FROM trades "
-        "WHERE symbol = 'BTCUSDT' AND timestamp > now() - 5m",
-        lambda: pd.DataFrame({"last_price": [0.0]}),
-    )
-    live_price = (
-        float(df_last_price.iloc[0].get("last_price", 0))
-        if not df_last_price.empty
-        else 0.0
-    )
-
-    if not is_portfolio_mock and not df_portfolio.empty and len(df_portfolio) >= 2:
-        curr_eq = float(df_portfolio.iloc[0].get("equity", 0))
-        prev_eq = float(df_portfolio.iloc[1].get("equity", 0))
-        eq_pct = ((curr_eq - prev_eq) / prev_eq) * 100 if prev_eq > 0 else 0
-
-        curr_pnl = float(df_portfolio.iloc[0].get("unrealized_pnl", 0))
-        curr_qty = float(df_portfolio.iloc[0].get("position_qty", 0))
-
-        st.metric("Equity", f"${curr_eq:,.2f}", f"{eq_pct:+.2f}%")
-        st.metric("Unrealized PnL", f"${curr_pnl:,.2f}")
-        st.metric("Position", f"{curr_qty:+.4f} BTC")
-        if live_price > 0:
-            st.caption(f"Last Price: ${live_price:,.2f}")
+# --- COLUMN 2: Main Chart & Volatility ---
+with col_center:
+    st.markdown('<div class="panel-card">', unsafe_allow_html=True)
+    tf = st.selectbox("Timeframe", ["1m", "5m", "15m"], index=0, key="tf_select")
+    
+    if df_candles.empty or len(df_candles) < 2:
+        st.info("Awaiting kline data from QuestDB...")
     else:
-        # Fallback to inventory table or mock
-        df_inv, _ = fetch_data(
-            "SELECT * FROM inventory ORDER BY timestamp DESC LIMIT 2",
-            get_mock_inventory,
-        )
-        if not df_inv.empty and len(df_inv) >= 2:
-            curr_eq = df_inv.iloc[0]["equity"]
-            prev_eq = df_inv.iloc[1]["equity"]
-            eq_pct = ((curr_eq - prev_eq) / prev_eq) * 100 if prev_eq > 0 else 0
-            st.metric("Equity", f"${curr_eq:,.2f}", f"{eq_pct:+.2f}%")
-
-            if "drawdown" in df_inv.columns:
-                curr_dd = df_inv.iloc[0]["drawdown"]
-                prev_dd = df_inv.iloc[1]["drawdown"]
-                dd_delta = curr_dd - prev_dd
-                st.metric(
-                    "Drawdown",
-                    f"{curr_dd:.2f}%",
-                    f"{dd_delta:+.2f}%",
-                    delta_color="inverse",
-                )
-        else:
-            st.metric("Equity", "—", "—")
-            st.metric("Drawdown", "—", "—")
-
-        st.metric("Unrealized PnL", "—", "—")
-
-    df_llm_sidebar, _ = fetch_data(
-        "SELECT * FROM llm_advice ORDER BY time DESC LIMIT 1", get_mock_llm_advice
-    )
-
-    if not df_llm_sidebar.empty and "multiplier" in df_llm_sidebar.columns:
-        curr_mult = df_llm_sidebar.iloc[0]["multiplier"]
-        st.metric("Risk Multiplier", f"{curr_mult}x")
-    else:
-        st.metric("Risk Multiplier", "—")
-
-# ─── Tabs ────────────────────────────────────────────────────────────
-
-tab1, tab2, tab3, tab4, tab5, tab6 = st.tabs(
-    [
-        "👁️ Очі Кванта (Market Overview)",
-        "🧠 Мізки AI (LLM Supervisor Brain)",
-        "⚡ Виконання (Execution)",
-        "🛡️ Ризик (Inventory & Risk)",
-        "🔥 Orderbook Heatmap",
-        "📝 Live Logs",
-    ]
-)
-
-# ─── Tab 1: Market Overview ──────────────────────────────────────────
-with tab1:
-    st.markdown("### Market Overview (BTC/USDT)")
-    tf = st.selectbox("Timeframe", ["1m", "5m", "15m"], index=0)
-
-    sql_query = f"""
-    SELECT timestamp, first(price) AS open, max(price) AS high, min(price) AS low, last(price) AS close, sum(qty) AS volume
-    FROM trades
-    WHERE timestamp > now() - 24h AND symbol = 'BTCUSDT'
-    SAMPLE BY {tf} ALIGN TO CALENDAR
-    ORDER BY timestamp
-    LIMIT -1000
-    """
-
-    df, is_mock = fetch_data(sql_query, get_mock_market_data)
-
-    if is_mock:
-        st.warning("⚠️ Дані з QuestDB недоступні — демо-режим")
-
-    if df.empty or len(df) < 2:
-        show_awaiting_data("Очікування ринкових даних...")
-    else:
-        # Calculate TA
-        try:
-            df.ta.bbands(length=20, std=2, append=True)
-        except Exception:
-            pass
-        try:
-            df.ta.supertrend(length=7, multiplier=3, append=True)
-        except Exception:
-            pass
-
+        # Calculate EMA Indicators
+        df_candles["ema9"] = df_candles["close"].ewm(span=9, adjust=False).mean()
+        df_candles["ema21"] = df_candles["close"].ewm(span=21, adjust=False).mean()
+        
+        # Subplot: Chart + Volume
         fig = make_subplots(
             rows=2,
             cols=1,
             shared_xaxes=True,
             vertical_spacing=0.03,
-            subplot_titles=("Price", "Volume"),
-            row_width=[0.2, 0.7],
+            row_width=[0.2, 0.8],
         )
-
+        
         # Candlesticks
         fig.add_trace(
             go.Candlestick(
-                x=df["timestamp"],
-                open=df["open"],
-                high=df["high"],
-                low=df["low"],
-                close=df["close"],
+                x=df_candles["timestamp"],
+                open=df_candles["open"],
+                high=df_candles["high"],
+                low=df_candles["low"],
+                close=df_candles["close"],
                 name="Price",
+                increasing_line_color="#0ECB81",
+                decreasing_line_color="#F6465D",
+                increasing_fillcolor="#0ECB81",
+                decreasing_fillcolor="#F6465D",
             ),
             row=1,
             col=1,
         )
-
-        # Bollinger Bands
-        if "BBL_20_2.0" in df.columns:
-            fig.add_trace(
-                go.Scatter(
-                    x=df["timestamp"],
-                    y=df["BBU_20_2.0"],
-                    line=dict(color="gray", width=1, dash="dot"),
-                    name="Upper BB",
-                ),
-                row=1,
-                col=1,
-            )
-            fig.add_trace(
-                go.Scatter(
-                    x=df["timestamp"],
-                    y=df["BBL_20_2.0"],
-                    line=dict(color="gray", width=1, dash="dot"),
-                    name="Lower BB",
-                    fill="tonexty",
-                    fillcolor="rgba(128,128,128,0.1)",
-                ),
-                row=1,
-                col=1,
-            )
-
+        
+        # EMA Lines
+        fig.add_trace(
+            go.Scatter(
+                x=df_candles["timestamp"],
+                y=df_candles["ema9"],
+                line=dict(color="#F3BA2F", width=1),
+                name="EMA 9",
+            ),
+            row=1,
+            col=1,
+        )
+        fig.add_trace(
+            go.Scatter(
+                x=df_candles["timestamp"],
+                y=df_candles["ema21"],
+                line=dict(color="#2196F3", width=1),
+                name="EMA 21",
+            ),
+            row=1,
+            col=1,
+        )
+        
+        # Fetch realized trades from QuestDB to overlay execution points
+        df_trades_history, _ = fetch_data(
+            "SELECT timestamp, symbol, side, price, qty, realized_pnl "
+            "FROM realized_trades WHERE symbol = 'BTCUSDT' "
+            "ORDER BY timestamp DESC LIMIT 500",
+            lambda: pd.DataFrame()
+        )
+        
+        if not df_trades_history.empty:
+            buys = df_trades_history[df_trades_history["side"].str.upper() == "BUY"]
+            sells = df_trades_history[df_trades_history["side"].str.upper() == "SELL"]
+            
+            # Map timestamps to match datetime format in Plotly
+            if not buys.empty:
+                fig.add_trace(
+                    go.Scatter(
+                        x=buys["timestamp"],
+                        y=buys["price"],
+                        mode="markers",
+                        marker=dict(color="#0ECB81", size=10, symbol="triangle-up", line=dict(color="white", width=1)),
+                        name="BUY Execution",
+                    ),
+                    row=1,
+                    col=1,
+                )
+            if not sells.empty:
+                fig.add_trace(
+                    go.Scatter(
+                        x=sells["timestamp"],
+                        y=sells["price"],
+                        mode="markers",
+                        marker=dict(color="#F6465D", size=10, symbol="triangle-down", line=dict(color="white", width=1)),
+                        name="SELL Execution",
+                    ),
+                    row=1,
+                    col=1,
+                )
+        
         # Volume
-        colors = [
-            "red" if row["open"] - row["close"] >= 0 else "green"
-            for index, row in df.iterrows()
+        volume_colors = [
+            "#F6465D" if row["open"] - row["close"] >= 0 else "#0ECB81"
+            for _, row in df_candles.iterrows()
         ]
         fig.add_trace(
             go.Bar(
-                x=df["timestamp"], y=df["volume"], marker_color=colors, name="Volume"
+                x=df_candles["timestamp"],
+                y=df_candles["volume"],
+                marker_color=volume_colors,
+                name="Volume",
+                opacity=0.7,
             ),
             row=2,
             col=1,
         )
-
+        
         fig.update_layout(
-            height=700, template="plotly_dark", xaxis_rangeslider_visible=False
+            height=500,
+            template="plotly_dark",
+            xaxis_rangeslider_visible=False,
+            margin=dict(l=10, r=10, t=10, b=10),
+            paper_bgcolor="#161A1E",
+            plot_bgcolor="#161A1E",
+            grid=dict(rows=2, columns=1),
+            legend=dict(orientation="h", yanchor="bottom", y=1.02, xanchor="right", x=1),
+            yaxis=dict(gridcolor="#2B3139", tickfont=dict(color="#848E9C")),
+            xaxis=dict(gridcolor="#2B3139", tickfont=dict(color="#848E9C")),
+            yaxis2=dict(gridcolor="#2B3139", tickfont=dict(color="#848E9C")),
         )
         st.plotly_chart(fig, use_container_width=True)
+        
+    st.markdown("</div>", unsafe_allow_html=True)
 
-# ─── Tab 2: LLM Supervisor Brain ─────────────────────────────────────
-with tab2:
-    st.markdown("### AI Supervisor Reasoning History")
-    df_llm, is_llm_mock = fetch_data(
-        "SELECT * FROM llm_advice LIMIT -100", get_mock_llm_advice
-    )
-
-    if df_llm.empty or "trading_mode" not in df_llm.columns:
-        show_awaiting_data("Очікування перших рішень LLM Supervisor...")
-    else:
-        # Step chart
-        fig_llm = go.Figure()
-
-        # Mode mapping for step chart visualization
-        mode_map = {
-            "SCALP": 4,
-            "DCA": 3,
-            "NEUTRAL": 2,
-            "PASS": 1,
-            "HALT": 0,
-            "scalp": 4,
-            "dca": 3,
-            "neutral": 2,
-            "pass": 1,
-        }
-        y_vals = [mode_map.get(str(m).strip(), 2) for m in df_llm["trading_mode"]]
-
-        fig_llm.add_trace(
-            go.Scatter(
-                x=safe_col(df_llm, "time"),
-                y=y_vals,
-                mode="lines+markers",
-                line_shape="hv",
-                name="Trading Mode",
-                text=safe_col(df_llm, "reason", ""),
-                hovertemplate="<b>%{text}</b><br>Mode Level: %{y}<extra></extra>",
-            )
+# --- COLUMN 3: Control Center & Risk Management ---
+with col_right:
+    # Service control cards
+    st.markdown('<div class="panel-card">', unsafe_allow_html=True)
+    st.subheader("Process Controls")
+    
+    processes = {
+        "Hub": "python3 -m quantum_edge_core.market_data.hub",
+        "Supervisor": "python3 -m hermes.supervisor run-foreground",
+        "Bot": "python3 -m quantum_edge_core.ai_scalper_bot.run_bot",
+    }
+    
+    for name, cmd in processes.items():
+        is_running = ProcessManager.is_running(name)
+        pid = ProcessManager.get_pid(name)
+        status_cls = "color: #0ECB81;" if is_running else "color: #F6465D;"
+        status_text = f"RUNNING (PID {pid})" if is_running else "STOPPED"
+        
+        st.markdown(
+            f"**{name}:** <span style='{status_cls} font-weight: bold;'>{status_text}</span>",
+            unsafe_allow_html=True,
         )
+        
+        col1, col2 = st.columns(2)
+        with col1:
+            if not is_running:
+                if st.button("Start", key=f"start_{name}"):
+                    confirm_process_action("Start", name, cmd)
+            else:
+                if st.button("Stop", key=f"stop_{name}"):
+                    confirm_process_action("Stop", name)
+        with col2:
+            if st.button("Restart", key=f"restart_{name}"):
+                confirm_process_action("Restart", name, cmd)
+        st.markdown("<hr style='margin: 8px 0; border: none; border-top: 1px solid #2B3139;' />", unsafe_allow_html=True)
+        
+    # Cold Start Button
+    if st.button("❄️ Cold Start Full System", key="cold_start"):
+        if is_localhost():
+            ProcessManager.cold_start_full_system()
+            st.success("Cold start initiated!")
+            time.sleep(1.5)
+            st.rerun()
+            
+    # Emergency controls
+    st.markdown('<div class="btn-danger">', unsafe_allow_html=True)
+    if st.button("🛑 EMERGENCY HALT", key="halt_btn"):
+        if is_localhost():
+            if send_halt_command():
+                st.error("HALT Command Broadcasted!")
+            else:
+                st.warning("Failed to broadcast HALT.")
+    st.markdown("</div>", unsafe_allow_html=True)
+    st.markdown("</div>", unsafe_allow_html=True)
 
-        # Overlay risk multiplier
-        if "multiplier" in df_llm.columns:
-            fig_llm.add_trace(
-                go.Scatter(
-                    x=safe_col(df_llm, "time"),
-                    y=df_llm["multiplier"],
-                    mode="lines",
-                    line=dict(color="orange", dash="dash"),
-                    name="Risk Multiplier",
-                    yaxis="y2",
-                )
-            )
-
-        fig_llm.update_layout(
-            height=400,
-            template="plotly_dark",
-            yaxis=dict(
-                title="Mode",
-                tickvals=[0, 1, 2, 3, 4],
-                ticktext=["HALT", "PASS", "NEUTRAL", "DCA", "SCALP"],
-            ),
-            yaxis2=dict(title="Multiplier", overlaying="y", side="right"),
-        )
-        st.plotly_chart(fig_llm, use_container_width=True)
-
-        st.markdown("#### Latest 20 Decisions")
-        st.dataframe(df_llm.head(20), use_container_width=True)
-
-# ─── Tab 3: Execution & Trades ───────────────────────────────────────
-with tab3:
-    st.markdown("### Trade Executions")
-
-    df_trades, is_trades_mock = fetch_data(
-        "SELECT timestamp, symbol, side, price, qty, realized_pnl "
-        "FROM realized_trades WHERE symbol = 'BTCUSDT' "
-        "ORDER BY timestamp DESC LIMIT -100",
-        get_mock_trades,
-    )
-
-    if df_trades.empty or len(df_trades) < 1:
-        show_awaiting_data("Очікування перших виконаних угод...")
-    else:
-        # Overlay trades on Candlestick
-        st.markdown("#### Execution Overlay")
-        df_market, _ = fetch_data(
-            "SELECT timestamp, first(price) AS open, max(price) AS high, min(price) AS low, last(price) AS close, sum(qty) AS volume FROM trades WHERE timestamp > now() - 24h AND symbol = 'BTCUSDT' SAMPLE BY 1m ALIGN TO CALENDAR ORDER BY timestamp LIMIT -1000",
-            get_mock_market_data,
-        )
-
-        fig_overlay = go.Figure()
-
-        if not df_market.empty:
-            fig_overlay.add_trace(
-                go.Candlestick(
-                    x=df_market["timestamp"],
-                    open=df_market["open"],
-                    high=df_market["high"],
-                    low=df_market["low"],
-                    close=df_market["close"],
-                    name="Price",
-                )
-            )
-
-        # Mocking timestamps for trades to overlay on the chart properly
-        if "timestamp" not in df_trades.columns:
-            market_len = len(df_market)
-            df_trades["timestamp"] = [
-                (
-                    df_market["timestamp"].iloc[-min((i + 1) * 5, market_len)]
-                    if market_len > 0
-                    else pd.Timestamp.now()
-                )
-                for i in range(len(df_trades))
-            ]
-
-        buys_df = df_trades[df_trades["side"] == "BUY"]
-        sells_df = df_trades[df_trades["side"] == "SELL"]
-
-        fig_overlay.add_trace(
-            go.Scatter(
-                x=buys_df["timestamp"] if "timestamp" in buys_df.columns else [],
-                y=buys_df["price"],
-                mode="markers",
-                marker=dict(color="green", size=12, symbol="triangle-up"),
-                name="Buy Execution",
-            )
-        )
-
-        fig_overlay.add_trace(
-            go.Scatter(
-                x=sells_df["timestamp"] if "timestamp" in sells_df.columns else [],
-                y=sells_df["price"],
-                mode="markers",
-                marker=dict(color="red", size=12, symbol="triangle-down"),
-                name="Sell Execution",
-            )
-        )
-
-        fig_overlay.update_layout(
-            height=500, template="plotly_dark", xaxis_rangeslider_visible=False
-        )
-        st.plotly_chart(fig_overlay, use_container_width=True)
-
-        col_skew, col_pos = st.columns(2)
-
-        buys = len(buys_df)
-        sells = len(sells_df)
-        total = max(1, buys + sells)
-        buy_pct = buys / total * 100
-
-        skew_color = "red" if abs(buy_pct - 50) > 20 else "green"
-
-        with col_skew:
-            st.markdown(
-                f"#### Skew: <span style='color:{skew_color}'>Buy {buy_pct:.0f}% / Sell {100-buy_pct:.0f}%</span>",
-                unsafe_allow_html=True,
-            )
-        with col_pos:
-            # Show real position from portfolio_state if available
-            df_pos, is_pos_mock = fetch_data(
-                "SELECT position_qty FROM portfolio_state WHERE symbol = 'BTCUSDT' ORDER BY timestamp DESC LIMIT 1",
-                lambda: pd.DataFrame({"position_qty": [0.0]}),
-            )
-            pos_qty = float(df_pos.iloc[0]["position_qty"]) if not df_pos.empty else 0.0
-            pos_color = "green" if pos_qty > 0 else ("red" if pos_qty < 0 else "gray")
-            st.markdown(
-                f"#### Position: <span style='color:{pos_color}'>{pos_qty:+.4f} BTC</span>",
-                unsafe_allow_html=True,
-            )
-
-        # Show realized PnL summary
-        if "realized_pnl" in df_trades.columns:
-            total_pnl = df_trades["realized_pnl"].sum()
-            pnl_color = "green" if total_pnl >= 0 else "red"
-            st.markdown(
-                f"**Total Realized PnL:** <span style='color:{pnl_color};font-size:1.2em;font-weight:bold'>${total_pnl:+,.2f}</span>",
-                unsafe_allow_html=True,
-            )
-
-        st.dataframe(df_trades, use_container_width=True)
-
-# ─── Tab 4: Inventory & Risk ─────────────────────────────────────────
-with tab4:
-    st.markdown("### Portfolio Equity & Risk Curve")
-
-    # Prefer portfolio_state (real telemetry), fallback to inventory mock
-    df_eq, is_eq_mock = fetch_data(
-        "SELECT * FROM portfolio_state WHERE symbol = 'BTCUSDT' ORDER BY timestamp LIMIT -100",
-        get_mock_inventory,
-    )
-
-    if df_eq.empty or len(df_eq) < 2:
-        show_awaiting_data("Очікування даних портфеля...")
-    else:
-        fig_eq = make_subplots(specs=[[{"secondary_y": True}]])
-
-        eq_col = "equity" if "equity" in df_eq.columns else "close"
-        ts_col = "timestamp"
-
-        fig_eq.add_trace(
-            go.Scatter(x=df_eq[ts_col], y=df_eq[eq_col], name="Equity", fill="tozeroy"),
-            secondary_y=False,
-        )
-
-        # Unrealized PnL as a secondary axis
-        if "unrealized_pnl" in df_eq.columns:
-            fig_eq.add_trace(
-                go.Scatter(
-                    x=df_eq[ts_col],
-                    y=df_eq["unrealized_pnl"],
-                    name="Unrealized PnL",
-                    line=dict(color="cyan", dash="dot"),
-                ),
-                secondary_y=True,
-            )
-
-        # Drawdown if available (from inventory)
-        if "drawdown" in df_eq.columns:
-            fig_eq.add_trace(
-                go.Scatter(
-                    x=df_eq[ts_col],
-                    y=df_eq["drawdown"],
-                    name="Drawdown %",
-                    line=dict(color="red"),
-                ),
-                secondary_y=True,
-            )
-
-        # Add risk lines
-        max_eq = df_eq[eq_col].max()
-        if max_eq and max_eq > 0:
-            fig_eq.add_hline(
-                y=max_eq * 0.95,
-                line_dash="dash",
-                line_color="orange",
-                annotation_text="Max Daily Loss Limit",
-            )
-
-        fig_eq.update_layout(height=500, template="plotly_dark")
-        st.plotly_chart(fig_eq, use_container_width=True)
-
-    kill_switch_active = False
-    status_color = "red" if kill_switch_active else "green"
-    status_text = "ENGAGED" if kill_switch_active else "ARMED"
+    # Risk Metrics panel
+    st.markdown('<div class="panel-card">', unsafe_allow_html=True)
+    st.subheader("Risk & Portfolio")
+    
+    bal = telemetry.get("balance", 100000.0)
+    total_bal = telemetry.get("total_balance", 100000.0)
+    upnl = telemetry.get("unrealized_pnl", 0.0)
+    pos_qty = telemetry.get("position_qty", 0.0)
+    lev = telemetry.get("leverage", 20.0)
+    liq = telemetry.get("liq_price", 0.0)
+    
+    # Check if liq price is close to last price
+    liq_alert_style = ""
+    if liq > 0 and last_price > 0:
+        dist = abs(last_price - liq) / last_price
+        if dist < 0.05: # Close than 5%
+            liq_alert_style = "color: #F6465D; font-weight: bold; animation: pulse-whale 1s infinite;"
+            
+    pnl_style = "color: #0ECB81;" if upnl >= 0 else "color: #F6465D;"
+    qty_style = "color: #0ECB81;" if pos_qty > 0 else ("color: #F6465D;" if pos_qty < 0 else "")
+    
     st.markdown(
-        f"**Kill-Switch Status:** <span style='color:{status_color}; font-weight:bold;'>{status_text}</span>",
+        f"""
+        <table class="binance-table" style="width:100%; border:none;">
+            <tr><td>Account Balance</td><td style="text-align:right; font-weight:bold;">${total_bal:,.2f}</td></tr>
+            <tr><td>Available Margin</td><td style="text-align:right; font-weight:bold;">${bal:,.2f}</td></tr>
+            <tr><td>Unrealized PnL</td><td style="text-align:right; font-weight:bold; {pnl_style}">${upnl:+,.2f}</td></tr>
+            <tr><td>Position Size</td><td style="text-align:right; font-weight:bold; {qty_style}">{pos_qty:+.4f} BTC</td></tr>
+            <tr><td>Leverage</td><td style="text-align:right; font-weight:bold; color:#F3BA2F;">{lev:.0f}x</td></tr>
+            <tr><td>Liquidation Price</td><td style="text-align:right; font-weight:bold; {liq_alert_style}">${liq:,.2f}</td></tr>
+        </table>
+        """,
         unsafe_allow_html=True,
     )
+    
+    # Manual Override Mode
+    st.markdown("<hr style='margin: 8px 0; border: none; border-top: 1px solid #2B3139;' />", unsafe_allow_html=True)
+    st.markdown("**Manual Regime Override:**")
+    override_mode = st.selectbox("Regime", ["SCALP", "DCA", "PASS", "NEUTRAL"], index=1, key="override_mode")
+    if st.button("Apply Regime", key="apply_override"):
+        if is_localhost():
+            if force_apply_mode(override_mode):
+                st.success(f"Mode {override_mode} forced!")
+                st.rerun()
+                
+    st.markdown("</div>", unsafe_allow_html=True)
 
-# ─── Tab 5: Orderbook Heatmap ────────────────────────────────────────
-with tab5:
-    st.markdown("### Orderbook Heatmap & Whale Walls")
-    df_ob, is_ob_mock = fetch_data(
-        "SELECT * FROM orderbook_snapshots LIMIT -1000", get_mock_orderbook
-    )
+# --- 3. Bottom Panels / Tabs ---
+st.markdown("### Terminal Details")
+bot_tabs = st.tabs(["Positions", "Open Orders", "Trade History", "AI Supervisor Advice", "System Logs"])
 
-    if df_ob.empty or "price" not in df_ob.columns or "volume" not in df_ob.columns:
-        show_awaiting_data("Очікування даних OrderBook...")
+# Tab 1: Positions
+with bot_tabs[0]:
+    st.markdown("#### Active Positions")
+    positions = telemetry.get("positions", [])
+    if not positions:
+        st.info("No active positions.")
     else:
-        # Pivot dataframe for Heatmap
-        heatmap_data = df_ob.pivot_table(
-            index="price", columns="timestamp", values="volume", fill_value=0
-        )
-        heatmap_data = heatmap_data.sort_index(ascending=True)
+        df_p = pd.DataFrame(positions)
+        st.dataframe(df_p, use_container_width=True)
 
-        fig_ob = go.Figure(
-            data=go.Heatmap(
-                z=heatmap_data.values,
-                x=heatmap_data.columns,
-                y=heatmap_data.index,
-                colorscale="Viridis",
-                colorbar=dict(title="Volume"),
-            )
-        )
+# Tab 2: Open Orders
+with bot_tabs[1]:
+    st.markdown("#### Active DCA Grid Orders")
+    open_orders = telemetry.get("open_orders", [])
+    if not open_orders:
+        st.info("No active open orders.")
+    else:
+        df_oo = pd.DataFrame(open_orders)
+        st.dataframe(df_oo, use_container_width=True)
 
-        # Highlight whales (Volume >= 20)
-        whales = df_ob[df_ob["volume"] >= 20]
-        if not whales.empty:
-            fig_ob.add_trace(
-                go.Scatter(
-                    x=whales["timestamp"],
-                    y=whales["price"],
-                    mode="markers+text",
-                    marker=dict(
-                        color="yellow",
-                        size=8,
-                        symbol="star",
-                        line=dict(color="red", width=1),
-                    ),
-                    text=[f"{v:.0f} BTC" for v in whales["volume"]],
-                    textposition="top right",
-                    name="Whale Walls >= 20 BTC",
-                    textfont=dict(color="yellow"),
-                )
-            )
+# Tab 3: Trade History
+with bot_tabs[2]:
+    st.markdown("#### Executed Trades Log")
+    df_trades_history, _ = fetch_data(
+        "SELECT timestamp, symbol, side, price, qty, realized_pnl "
+        "FROM realized_trades WHERE symbol = 'BTCUSDT' "
+        "ORDER BY timestamp DESC LIMIT 100",
+        lambda: pd.DataFrame()
+    )
+    if df_trades_history.empty:
+        st.info("No realized trades recorded in database.")
+    else:
+        st.dataframe(df_trades_history, use_container_width=True)
 
-        fig_ob.update_layout(
-            height=600,
-            template="plotly_dark",
-            yaxis_title="Price",
-            xaxis_title="Time",
-            showlegend=False,
-        )
-        st.plotly_chart(fig_ob, use_container_width=True)
+# Tab 4: AI Supervisor Advice
+with bot_tabs[3]:
+    st.markdown("#### AI Supervisor Brain Decisions")
+    
+    # Try fetching llm_advice table, fallback if not exists
+    conn = get_db_connection()
+    df_llm = pd.DataFrame()
+    if conn:
+        try:
+            # Check if table exists
+            cur = conn.cursor()
+            cur.execute("SELECT count(*) FROM llm_advice")
+            count = cur.fetchone()[0]
+            if count > 0:
+                df_llm = pd.read_sql_query("SELECT * FROM llm_advice ORDER BY time DESC LIMIT 50", conn)
+        except Exception:
+            pass
+        finally:
+            conn.close()
+            
+    if df_llm.empty:
+        st.info("No LLM Supervisor decisions logged in database yet.")
+    else:
+        st.dataframe(df_llm, use_container_width=True)
 
-# ─── Tab 6: Live Logs & Diagnostics ──────────────────────────────────
-with tab6:
-    st.markdown("### Process Diagnostics")
-
-    if st.button("🧹 Clear & Restart All Logs"):
+# Tab 5: System Logs
+with bot_tabs[4]:
+    st.markdown("#### Real-time Log Stream")
+    if st.button("Clean All System Logs", key="clear_logs_btn"):
         clear_logs()
-        st.success("Logs cleared!")
+        st.success("Logs wiped successfully.")
         st.rerun()
-
-    col1, col2, col3 = st.columns(3)
-
-    with col1:
-        st.markdown("#### hub.log")
+        
+    col_log1, col_log2, col_log3 = st.columns(3)
+    with col_log1:
+        st.markdown("**MarketDataHub Log**")
         st.code(tail_log("hub.log", 30), language="log")
-
-    with col2:
-        st.markdown("#### supervisor.log")
+    with col_log2:
+        st.markdown("**Supervisor Log**")
         st.code(tail_log("supervisor.log", 30), language="log")
-
-    with col3:
-        st.markdown("#### bot.log")
+    with col_log3:
+        st.markdown("**Trading Bot Log**")
         st.code(tail_log("bot.log", 30), language="log")

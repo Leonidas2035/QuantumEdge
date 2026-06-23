@@ -12,7 +12,7 @@ If a task requires:
 DO NOT attempt to write code or debug complex issues yourself.
 Instead, use your command execution tool to delegate the task to Antigravity (agy) using this format:
 ```bash
-/usr/bin/antigravity chat -m agent "Clear and concise task description" -a [optional_file_context]
+agy --print "Clear and concise task description" --dangerously-skip-permissions
 ```
 
 Once agy finishes execution, read the modified files or check the status, and continue your supervisor duties.

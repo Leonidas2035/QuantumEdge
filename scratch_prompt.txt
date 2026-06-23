@@ -1,0 +1,12 @@
+Refactor the bot configuration and entrypoints:
+1. Uncomment the `AdaptiveGridStrategy` class, the `find_frontrun_price` function, and imports of `os` and `xgboost` in `src/quantum_edge_core/ai_scalper_bot/bot/execution/strategy_core.py`.
+2. Modify `src/quantum_edge_core/ai_scalper_bot/run_bot.py` to import `AdaptiveGridStrategy` in addition to `DynamicDCAStrategy`.
+3. In `src/quantum_edge_core/ai_scalper_bot/run_bot.py`, dynamically initialize `self.strategy` based on environment variables `QE_BOT_ID` or `STRATEGY_TYPE`.
+   - If `STRATEGY_TYPE == 'AdaptiveGridStrategy'` or `QE_BOT_ID == 'ai_scalper'`, initialize `self.strategy = AdaptiveGridStrategy(self.config.strategy_config)`.
+   - If `STRATEGY_TYPE == 'DynamicDCAStrategy'` or `QE_BOT_ID == 'dyndca'`, initialize `self.strategy = DynamicDCAStrategy(self.config.strategy_config)`.
+   - Use default config fallback matching `spot_grid` to `DynamicDCAStrategy` and `scalper_v1` (or others) to `AdaptiveGridStrategy` if env variables are not present.
+4. Update the processes configuration in `/home/korben/.hermes/hermes/config/processes.yaml` and create/update `/home/korben/QuantumEdge-main/config/processes.yaml` to define three distinct bot processes with their respective settings so they can be launched individually:
+   - `ai_scalper`: cmd to run `quantum_edge_core.ai_scalper_bot.run_bot` using `/home/korben/QuantumEdge-main/venv/bin/python3`, setting environment variables `QE_BOT_ID=ai_scalper`, `STRATEGY_TYPE=AdaptiveGridStrategy`, `QE_MODE=scalp`, and appropriate ports [5555, 5557, 5558, 5559].
+   - `dyndca`: cmd to run `quantum_edge_core.ai_scalper_bot.run_bot` using `/home/korben/QuantumEdge-main/venv/bin/python3`, setting environment variables `QE_BOT_ID=dyndca`, `STRATEGY_TYPE=DynamicDCAStrategy`, `QE_MODE=spot_grid`, and appropriate ports [5555, 5567, 5568, 5560].
+   - `lockbotbtc`: cmd to run `quantum_edge_core.lock_bot.main` with `--config config/lockbot.yaml` using `/home/korben/QuantumEdge-main/venv/bin/python3`, setting environment variable `QE_BOT_ID=LockBotBTC` and ports [5555, 5577, 5578, 5561].
+5. Ensure all unit and integration tests under `tests/` and `src/quantum_edge_core/ai_scalper_bot/tests/` still pass when run with python3 -m pytest.

@@ -1,76 +1,79 @@
 from __future__ import annotations
 
 import os
+import time
+import json
+import logging
+from typing import Optional
+from google import genai
+from google.genai import types
+from pydantic import BaseModel, Field
+
+logger = logging.getLogger("GoogleGeminiBackend")
+
+class DecisionV1Schema(BaseModel):
+    v: int = Field(1, description="Version of schema, always 1")
+    s: str = Field(description="Verdict/Side: BUY, SELL, HOLD, REDUCE, or CLOSE")
+    c: float = Field(description="Confidence value between 0.0 and 1.0")
+    sl: Optional[float] = Field(None, description="Stop loss price or null")
+    tp: Optional[float] = Field(None, description="Take profit price or null")
+    r: str = Field(description="Reason for decision, maximum 60 characters, no newlines")
+    rk: str = Field(description="Risk categorization: LOW, MED, HIGH, or CRIT")
 
 
 class GoogleGeminiBackend:
     def __init__(self, transport=None) -> None:
-        self.api_key = os.environ.get("GOOGLE_API_KEY", "")
-        self.model = os.environ.get("GOOGLE_MODEL", "gemini-1.5-flash")
+        self.api_key = os.environ.get("GOOGLE_API_KEY", "") or os.environ.get("GEMINI_API_KEY", "")
+        self.model = os.environ.get("GOOGLE_MODEL", "gemini-2.0-flash")
         self.max_tokens = int(os.environ.get("GOOGLE_MAX_TOKENS", "128"))
         self.name = "google_gemini"
-        self._transport = transport
-        self.base_url = "https://generativelanguage.googleapis.com/v1beta/models"
-
-    def _get_client(self, timeout_s: float):
-        try:
-            import httpx
-        except Exception as exc:
-            raise RuntimeError("httpx is required for Google Gemini backend") from exc
-
-        if not self.api_key:
-            raise RuntimeError("GOOGLE_API_KEY is required")
-
-        return httpx.AsyncClient(timeout=timeout_s, transport=self._transport)
+        
+        # Initialize Google GenAI client with key fallback for tests
+        client_key = self.api_key or "MOCK_KEY"
+        self.client = genai.Client(api_key=client_key)
 
     async def generate(
         self, prompt: str, *, system_prompt: str, timeout_s: float
     ) -> str:
-        url = f"{self.base_url}/{self.model}:generateContent?key={self.api_key}"
-
-        # mimic system prompt by expecting it in the user prompt or prepend
-        # Gemini doesn't always have a strict system role in 'generateContent' the same way as OpenAI 'messages'
-        # But we can just use the user prompt if system prompt is simple, or prepend it.
-        # "system_instruction" is supported in newer models but simple "parts" text is safest.
-
-        full_text = f"System: {system_prompt}\nUser: {prompt}"
-
-        payload = {
-            "contents": [{"parts": [{"text": full_text}]}],
-            "generationConfig": {
-                "temperature": 0.0,
-                "maxOutputTokens": self.max_tokens,
-            },
-        }
-
-        async with self._get_client(timeout_s) as client:
-            resp = await client.post(url, json=payload)
-
-        if resp.status_code != 200:
-            # Basic error handling
-            raise RuntimeError(f"gemini_error:{resp.status_code} {resp.text}")
-
-        data = resp.json()
+        config = types.GenerateContentConfig(
+            system_instruction=system_prompt,
+            response_mime_type="application/json",
+            response_schema=DecisionV1Schema,
+            temperature=0.0,
+            max_output_tokens=self.max_tokens,
+        )
 
         try:
-            # Safely extract text
-            candidates = data.get("candidates")
-            if not candidates:
-                # Check for block/safety feedback
-                if data.get("promptFeedback", {}).get("blockReason"):
-                    raise RuntimeError("gemini_blocked_prompt")
+            response = await self.client.aio.models.generate_content(
+                model=self.model,
+                contents=prompt,
+                config=config,
+            )
+            raw_text = response.text
+            if not raw_text:
                 raise RuntimeError("gemini_empty_response")
 
-            content_parts = candidates[0].get("content", {}).get("parts", [])
-            if not content_parts:
-                raise RuntimeError("gemini_empty_parts")
+            # Write decision to QuestDB llm_decisions table
+            try:
+                from quantum_edge_core.market_data.tsdb.ilp_writer import get_ilp_writer
+                dec_obj = json.loads(raw_text)
+                get_ilp_writer().write_row(
+                    "llm_decisions",
+                    symbols={
+                        "bot_id": "hermes",
+                        "verdict": str(dec_obj.get("s", "HOLD"))
+                    },
+                    columns={
+                        "reason": str(dec_obj.get("r", "approved"))[:255],
+                        "raw_prompt": str(prompt)[:4000],
+                        "raw_response": str(raw_text)[:4000]
+                    },
+                    ts=time.time()
+                )
+            except Exception as db_err:
+                logger.warning(f"Failed to write LLM decision to QuestDB: {db_err}")
 
-            text = content_parts[0].get("text", "")
-            if not text:
-                raise RuntimeError("gemini_empty_text")
-
-            return text.strip()
+            return raw_text.strip()
         except Exception as e:
-            if isinstance(e, RuntimeError):
-                raise e
-            raise RuntimeError(f"gemini_parse_error:{e}")
+            raise RuntimeError(f"gemini_error: {e}")
+

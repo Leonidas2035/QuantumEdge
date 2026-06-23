@@ -1,7 +1,7 @@
 import os
 import re
 
-directory = "src/quantum_edge_core/supervisor"
+directory = "/home/korben/.hermes/hermes"
 pattern_from = re.compile(r"\bfrom\s+supervisor\b")
 pattern_import = re.compile(r"\bimport\s+supervisor\b")
 
@@ -16,10 +16,10 @@ for root, dirs, files in os.walk(directory):
                     content = f.read()
 
                 new_content = pattern_from.sub(
-                    "from quantum_edge_core.supervisor", content
+                    "from hermes", content
                 )
                 new_content = pattern_import.sub(
-                    "import quantum_edge_core.supervisor", new_content
+                    "import hermes", new_content
                 )
 
                 if new_content != content:

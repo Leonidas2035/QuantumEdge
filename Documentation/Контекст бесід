@@ -1,0 +1,342 @@
+Відмінні новини! Ізоляція портів через ZMQ Guard в оркестраторі — це дуже надійне рішення, яке назавжди закриє проблему зомбі-процесів та колізій при рестартах.
+
+Тепер щодо переходу на Hermes Agent. Заміна локального SupervisorAgent на глобальний Hermes — це потужний архітектурний крок, який дозволить делегувати складну логіку прийняття рішень (LLM) та оркестрацію автономному агенту.
+
+Ось детальний розбір вашої поточної структури та покроковий план рефакторингу, щоб привести систему у відповідність до нової схеми.
+
+1. За що відповідає папка hermes_agent в QuantumEdge?
+У вашій системі зараз є дві сутності Hermes, і їхні ролі потрібно чітко розділити:
+
+/home/korben/.hermes/ — це ядро (Core Engine). Це глобальне встановлення фреймворку Hermes (бінарні файли, CLI, глобальні конфіги, логіка з'єднання з Gemini API).
+
+/home/korben/QuantumEdge-main/hermes_agent/ — це проєктний міст (Integration/MCP Layer). Оскільки глобальний Hermes сам по собі не знає про ZMQ, QuestDB чи специфіку ваших ботів, ця папка повинна містити локальні інструменти. Її призначення:
+
+MCP-сервери (Model Context Protocol): Скрипти, які перетворюють ZMQ-повідомлення (5555, 5557) у зрозумілий для Hermes текст/JSON, і навпаки — перетворюють команди Hermes у ZMQ-політики (5558).
+
+Системні промпти (System Prompts): Інструкції для Hermes (наприклад, файл AGY_SUPERVISOR_ROLE.md), які описують, як він має реагувати на ліквідації, волатильність чи падіння PnL.
+
+API-адаптери: Легковагі обгортки для доступу до QuestDB (порт 9009) через команди агента.
+
+2. План рефакторингу: Міграція з Supervisor на Hermes Core
+Цей план розроблено так, щоб перехід був безшовним і відповідав вашій схемі PART 2: DATA FLOW & ARCHITECTURE.
+
+Етап 1: Очищення та підготовка MCP (Model Context Protocol)
+Hermes працює найкраще, коли йому надають чіткі інструменти (tools). Старий супервізор (supervisor.py) був жорстко закодований на ZMQ. Hermes потребує посередника.
+
+Ревізія hermes_agent/: Перетворіть вміст цієї папки на єдиний MCP-сервер (або набір FastAPI-ендпоінтів/CLI-команд), який Hermes зможе викликати.
+
+Створення ZMQ Tool: Написати скрипт (наприклад, hermes_agent/zmq_bridge.py), який:
+
+Слухає 5557 (AI Scalper / LockBotBTC) та 5567 (DynDCA).
+
+Агрегує їхні статуси у єдиний JSON-файл стану або утримує в пам'яті.
+
+Має метод publish_policy(bot_id, action, params), який відправляє команду на 5558 (POL).
+
+Етап 2: Інтеграція з Data Plane (MarketDataHub & QuestDB)
+Hermes має "бачити" ринок, щоб приймати рішення (LLM + Market Data Analysis).
+
+QuestDB Tool: Налаштувати в hermes_agent/ інструмент для Hermes, який дозволить йому робити SQL-запити до localhost:9009 (наприклад, SELECT * FROM trades WHERE symbol='BTCUSDT' LIMIT 100).
+
+Market Data Stream: Навчити міст зчитувати дані з MarketDataHub (5555) і формувати для Hermes компактні зведення (наприклад, "Поточний ATR, останні стінки стакану"). Не варто згодовувати Hermes кожен тік — лише агреговані знімки (snapshots) кожні X секунд.
+
+Етап 3: Перенесення логіки Ризик-Менеджменту
+Декомпозиція старого Supervisor: Відкрити src/quantum_edge_core/supervisor.bak/ і витягти звідти хардкод-ліміти (max drawdown, circuit breakers).
+
+Створення Hermes Directives: Перенести ці правила у декларативні файли (наприклад, hermes_agent/instructions/risk_policy.md). Тепер Hermes буде читати ці інструкції при ініціалізації та самостійно приймати рішення про надсилання команд STOP/PAUSE через 5558.
+
+Етап 4: HTTP Dashboard та API (Порт 8765)
+На схемі видно, що Dashboard підключається до Hermes через HTTP :8765.
+
+Заміна бекенду: Якщо раніше порт 8765 тримав supervisor.py, тепер необхідно підняти легковагий FastAPI сервер (можна в папці hermes_agent/dashboard_api.py), який:
+
+Спілкується з Hermes (через його API або читає його логи/стани).
+
+Віддає фронтенду статуси ботів, останні рішення LLM та системний лог.
+
+Етап 5: Оновлення Оркестратора (QuantumEdge.py)
+Останній крок — змінити процес запуску системи.
+
+Видалення Supervisor: З логіки QuantumEdge.py start повністю прибрати запуск src/quantum_edge_core/supervisor/supervisor.py.
+
+Ініціалізація Hermes: Замість нього оркестратор має запускати демони з папки hermes_agent/ (ZMQ-мости) та ініціювати Hermes (/home/korben/.hermes/bin/hermes start --config /home/korben/QuantumEdge-main/hermes_agent/hermes_config.yaml).
+
+ZMQ Guard: Переконатися, що порти 5555, 5557, 5567, 5558, 8765 звільняються перед запуском мостів Hermes.
+
+Наступний крок (Call to Action)
+Щоб розпочати практичну реалізацію, я рекомендую почати з Етапу 1. Чи є у вас вже створені MCP-інструменти в папці hermes_agent/, чи нам варто спочатку згенерувати базовий код zmq_bridge.py для зв'язку Hermes із портами 5557/5567 та 5558?
+Ось готовий, детально пропрацьований промпт, який ви можете скормити вашому Meta-Agent (через файл у папці prompts/ або прямо в CLI agy). Він сформульований так, щоб агент чітко зрозумів архітектурні обмеження ZMQ та створив правильний міст для Hermes.
+
+📝 Промпт для Meta-Agent (Етап 1)
+Скопіюйте цей текст та передайте його агенту для виконання:
+
+Markdown
+# TASK: Create ZMQ MCP Bridge for Hermes Agent
+# STAGE: 1 (ZMQ & Tooling Isolation)
+
+**Objective:**
+Create a Python-based CLI tool at `src/quantum_edge_infra/automation/hermes_agent/zmq_mcp_bridge.py` (or `/home/korben/QuantumEdge-main/hermes_agent/zmq_mcp_bridge.py` depending on the exact project structure). This tool will act as the Model Context Protocol (MCP) bridge, allowing the global Hermes agent to read bot states and enforce risk policies via ZeroMQ.
+
+**Context:**
+- Hermes is a global agent that does not natively speak ZeroMQ.
+- Our Data Plane and Execution Plane use ZMQ:
+  - Port `5557` (PUB from bots): Telemetry/Status for AI Scalper (`ai_scalper`).
+  - Port `5567` (PUB from bots): Telemetry/Status for DynDCA (`dyndca`).
+  - Port `5558` (SUB in bots): Policy enforcement channel (POL).
+
+**Requirements for `zmq_mcp_bridge.py`:**
+
+1. **CLI Interface (argparse):**
+   The script must support two main commands so Hermes can call it as a tool:
+   - `python zmq_mcp_bridge.py status` -> Returns a JSON string of the latest known states of all active bots.
+   - `python zmq_mcp_bridge.py policy --bot <bot_id> --action <action_type> --ttl <seconds>` -> Publishes a policy directive to port 5558 and returns a JSON success receipt.
+
+2. **Status Aggregation Logic (The `status` command):**
+   - Since ZMQ PUB/SUB requires the subscriber to be listening *when* the message is sent, the `status` command should quickly bind `zmq.SUB` to `tcp://127.0.0.1:5557` and `tcp://127.0.0.1:5567`.
+   - Use a `poller` with a short timeout (e.g., 2-3 seconds) to catch the latest heartbeat/telemetry from both ports.
+   - Aggregate the received JSON envelopes into a single consolidated JSON dictionary and print it to `stdout`.
+   - If no data is received within the timeout, return a structured JSON indicating `"status": "offline"` for the respective bots.
+
+3. **Policy Enforcement Logic (The `policy` command):**
+   - Bind `zmq.PUB` to `tcp://127.0.0.1:5558`.
+   - Construct a `PolicyDirective` JSON envelope matching our system contract:
+     `{"target_bot": <bot_id>, "action": <action_type>, "ttl": <ttl>, "timestamp": <current_time>}`
+   - Publish the message. Wait a fraction of a second to ensure the ZMQ buffer flushes, then exit gracefully.
+
+4. **Code Quality:**
+   - No hardcoded secrets.
+   - Graceful error handling (return JSON error messages, not Python tracebacks, so Hermes can parse them).
+   - Use standard libraries + `pyzmq`.
+
+**Action Expected:**
+Create the `zmq_mcp_bridge.py` file with the specified logic. Ensure it has executable permissions (`chmod +x`).
+🎯 Очікуваний результат (Definition of Done)
+Після успішного виконання завдання агентом, ви повинні отримати наступне:
+
+Новий файл: У папці hermes_agent з'явиться файл zmq_mcp_bridge.py.
+
+Перевірка статусу: Якщо ви виконаєте в терміналі:
+python hermes_agent/zmq_mcp_bridge.py status
+У відповідь має повернутися валідний JSON з поточним балансом, PnL та станом ai_scalper та dyndca (якщо боти зараз запущені оркестратором).
+
+Перевірка політики: Якщо ви виконаєте:
+python hermes_agent/zmq_mcp_bridge.py policy --bot ai_scalper --action PAUSE --ttl 60
+Скрипт відпрацює без помилок, а в логах запущеного ai_scalper ви побачите подію про отримання команди PAUSE через порт 5558.
+
+🚀 Команди для збереження та пушу на GitHub
+Після того, як ви протестували скрипт і переконалися, що він працює коректно, зафіксуйте етап у репозиторії. Виконайте ці команди у кореневій папці QuantumEdge-main:
+
+Ось детальний промпт для Етапу 2. На цьому кроці ми дамо Hermes Agent "очі", щоб він міг бачити поточний стан ринку та аналізувати історичні дані для прийняття зважених рішень.
+
+📝 Промпт для Meta-Agent (Етап 2)
+Скопіюйте цей текст та передайте його агенту для виконання:
+
+Markdown
+# TASK: Create Data Plane MCP Tools for Hermes Agent (QuestDB & MarketDataHub)
+# STAGE: 2 (Market Context Integration)
+
+**Objective:**
+Create a Python-based CLI tool at `src/quantum_edge_infra/automation/hermes_agent/data_mcp_bridge.py`. This tool will provide the global Hermes Agent with two critical capabilities: real-time market snapshots from ZeroMQ and historical data queries from QuestDB.
+
+**Context:**
+- Hermes requires market context to make LLM-based risk and trading decisions (e.g., detecting high volatility, reading orderbook walls).
+- Real-time data is published by MarketDataHub on ZMQ PUB port `5555`.
+- Historical tick/trade data is stored in QuestDB, accessible via HTTP REST API on port `9000` (the database ingest uses ILP on 9009, but queries use HTTP on 9000).
+- The system exclusively uses BingX Demo (no Binance dependencies).
+
+**Requirements for `data_mcp_bridge.py`:**
+
+1. **CLI Interface (argparse):**
+   The script must support two main commands:
+   - `python data_mcp_bridge.py market_snapshot --symbol <symbol>` -> Returns a consolidated JSON snapshot of the latest orderbook and price.
+   - `python data_mcp_bridge.py query_db --sql "<query_string>"` -> Executes a SQL query against QuestDB and returns the results in a compact JSON format.
+
+2. **Real-time Market Snapshot Logic (`market_snapshot`):**
+   - Bind a `zmq.SUB` socket to `tcp://127.0.0.1:5555`.
+   - Subscribe to the specified symbol (e.g., `BTCUSDT`).
+   - Use a short poller timeout (e.g., 2 seconds). Capture the most recent `trade` or `depth` (orderbook) event.
+   - Do NOT stream data. Hermes only needs a static snapshot at the moment of the request.
+   - Calculate or extract simple metrics if possible (e.g., current spread, closest bid/ask wall).
+   - Return a clean JSON object containing `current_price`, `timestamp`, and `orderbook_summary`.
+
+3. **QuestDB Query Logic (`query_db`):**
+   - Use the `urllib` or `requests` library to make a GET request to `http://127.0.0.1:9000/exec`.
+   - Pass the SQL query via the `query` URL parameter (ensure proper URL encoding).
+   - Parse the QuestDB JSON response.
+   - Format the output into a compact, LLM-friendly JSON list of records (avoiding unnecessary metadata).
+   - Implement basic safety: if the query fails (e.g., syntax error), return a structured JSON error `{"error": "Query failed", "details": "..."}` so Hermes can understand and self-correct.
+
+4. **Code Quality:**
+   - Keep the code lightweight.
+   - Ensure timeouts are strictly respected so the tool does not hang if MarketDataHub is offline or QuestDB is unresponsive.
+   - Add executable permissions (`chmod +x`).
+
+**Action Expected:**
+Create the `data_mcp_bridge.py` file. Implement both the ZMQ subscriber logic and the QuestDB HTTP client logic. Output the tools' responses purely as JSON to `stdout`.
+🎯 Очікуваний результат (Definition of Done)
+Після успішного виконання завдання агентом, система матиме новий інструмент:
+
+Новий файл: src/quantum_edge_infra/automation/hermes_agent/data_mcp_bridge.py.
+
+Перевірка Market Snapshot: Виконайте:
+python src/quantum_edge_infra/automation/hermes_agent/data_mcp_bridge.py market_snapshot --symbol BTCUSDT
+Має повернутися JSON зі знімком поточного стакану або останньої ціни з BingX (якщо MarketDataHub запущений).
+
+Перевірка QuestDB: Виконайте:
+python src/quantum_edge_infra/automation/hermes_agent/data_mcp_bridge.py query_db --sql "SELECT symbol, price FROM trades LIMIT 5"
+Має повернутися JSON масив з останніми 5 трейдами з локальної бази даних.
+
+🚀 Команди для збереження та пушу на GitHub
+Після перевірки працездатності, зафіксуйте зміни:
+
+ Тепер, коли у Hermes є "очі" (MCP інструменти) та "мозок" (risk_policy.md), нам потрібно повернути системі її "обличчя".
+
+На Етапі 4 ми відновимо роботу Dashboard (веб-інтерфейсу). Раніше за порт 8765 відповідав старий Supervisor, який ми видаляємо. Тепер ми створимо легкий і швидкий API-міст, який буде брати дані з нашого zmq_mcp_bridge і віддавати їх на фронтенд.
+
+Ось детальний промпт для вашого агента.
+
+📝 Промпт для Meta-Agent (Етап 4)
+Скопіюйте цей текст та передайте його агенту:
+
+Markdown
+# TASK: Create Dashboard HTTP API Bridge
+# STAGE: 4 (Dashboard & UI Integration)
+
+**Objective:**
+Create a lightweight HTTP REST API server at `src/quantum_edge_infra/automation/hermes_agent/dashboard_api.py`. This server will replace the legacy Supervisor's HTTP endpoint on port 8765, acting as the backend for the QuantumEdge web dashboard.
+
+**Context:**
+- The web dashboard (frontend) expects to fetch system status via HTTP on port `8765`.
+- We have already built `zmq_mcp_bridge.py` which aggregates the real-time status of `ai_scalper` and `dyndca` from ZMQ ports 5557 and 5567.
+- We need a FastAPI application that serves this aggregated data to the UI, maintaining architectural compatibility with the schema shown in "PART 2: DATA FLOW & ARCHITECTURE".
+
+**Requirements for `dashboard_api.py`:**
+
+1. **Framework:** Use `FastAPI` and `uvicorn` (which are already in the project's requirements).
+2. **CORS Middleware:** Configure `CORSMiddleware` to allow all origins (`allow_origins=["*"]`) so the Vite/React frontend can connect without blocking.
+3. **Endpoints:**
+   - `GET /api/v1/health`: Returns `{"status": "ok", "service": "hermes_api_bridge"}`.
+   - `GET /api/v1/dashboard/status` (or the equivalent endpoint the frontend expects):
+     - Inside this endpoint, programmatically execute or import the `status` logic from `zmq_mcp_bridge.py`.
+     - Return the aggregated JSON containing the states of all active bots.
+4. **Integration:** - Ensure the server runs on `0.0.0.0:8765`.
+   - Add a standard `if __name__ == "__main__":` block to start `uvicorn.run(app, host="0.0.0.0", port=8765)`.
+5. **Robustness:** Wrap the ZMQ fetching logic in a `try/except` block. If the ZMQ bridge times out (e.g., bots are offline), the API should still return a 200 OK with a valid JSON indicating the bots' "offline" status, rather than crashing with a 500 error.
+
+**Action Expected:**
+Create `dashboard_api.py` implementing the FastAPI server. Ensure it correctly imports or calls the ZMQ bridge logic from Stage 1 to serve real-time metrics.
+🎯 Очікуваний результат (Definition of Done)
+Після того, як агент створить файл, ви можете перевірити його працездатність:
+
+Новий файл: У системі з'явиться src/quantum_edge_infra/automation/hermes_agent/dashboard_api.py.
+
+Тестовий запуск: Відкрийте термінал і виконайте:
+python src/quantum_edge_infra/automation/hermes_agent/dashboard_api.py
+
+Перевірка API: Відкрийте браузер і перейдіть за адресою http://localhost:8765/api/v1/health. Ви маєте побачити відповідь {"status": "ok"}.
+
+Перевірка Даних: Перейдіть на http://localhost:8765/api/v1/dashboard/status (або просто подивіться у ваш UI дашборд, якщо він запущений). Ви маєте побачити підтягнуті статуси ботів.
+
+🚀 Команди для збереження та пушу на GitHub
+Якщо API працює і дашборд ожив, фіксуємо зміни:
+
+Bash
+# Додаємо новий API-міст
+git add src/quantum_edge_infra/automation/hermes_agent/dashboard_api.py
+
+# Створюємо коміт
+git commit -m "feat: add FastAPI dashboard bridge for Hermes Agent on port 8765"
+
+# Відправляємо на GitHub
+git push origin main
+Після цього нам залишиться Етап 5 — найголовніший: ми остаточно викинемо старий Supervisor зі стартового файлу QuantumEdge.py і навчимо оркестратор піднімати цю нову, чисту архітектуру. Дайте знати, коли Етап 4 буде завершено! 
+
+Ти провів абсолютно точний інжиніринговий аналіз. Це класичний випадок "дрейфу контрактів" (contract drift) між мікросервісами: MarketDataHub еволюціонував і почав віддавати сирі масиви bids/asks (рівень L2), а наш нашвидкуруч написаний міст data_mcp_bridge.py все ще чекав на розжований mid з попередньої версії.
+
+Твій план щодо індикаторів (RSI, MACD, Cumulative Delta) та доступу до REST API BingX для крос-чеку — це саме те, що перетворить Hermes із "сліпого" читача логів на справжнього торгового термінала. Але зараз пріоритет №1 — полагодити базовий зір.
+
+Ось детальний промпт для Antigravity, який усуне фундаментальну невідповідність форматів і поверне Hermes здатність бачити стакан.
+
+📝 Промпт для Meta-Agent (Гаряче виправлення data_mcp_bridge.py)
+Скопіюй цей текст і передай агенту для виконання:
+
+Markdown
+# TASK: Fix Schema Mismatch in Data MCP Bridge (L2 Depth Parser)
+# STAGE: Hotfix & Contract Alignment
+
+**Objective:**
+Refactor the `market_snapshot` command inside `src/quantum_edge_infra/automation/hermes_agent/data_mcp_bridge.py` to correctly parse the actual payload structures emitted by `MarketDataHub` on ZMQ port 5555, specifically handling `depth_l2` and `walls` event types.
+
+**Context (The Bug):**
+Currently, `data_mcp_bridge.py` fails with "No data received" timeouts. The bridge expects events of type `trade` or `depth` and looks for a pre-calculated `mid` key. 
+However, the actual Hub contract publishes:
+- `event_type`: `depth_l2` (Payload contains `bids` and `asks` arrays: `[{"price": 40189.60, "qty": ...}, ...]`). There is NO `mid` field.
+- `event_type`: `walls` (Payload contains `whale_walls`).
+- `event_type`: `heartbeat`.
+
+**Requirements for `data_mcp_bridge.py`:**
+
+1. **Update ZMQ Poller & Timeout:**
+   - Increase the poller timeout from 2 seconds to `4000` milliseconds (4 seconds) to account for Hub reconnect lags.
+   - Subscribe explicitly to topics `market.depth.btcusdt` and `market.walls.btcusdt` if topic routing is used, or filter for `"symbol": "BTCUSDT"` in the payload.
+
+2. **Refactor Payload Parser (`depth_l2`):**
+   - When `event_type` == `depth_l2`:
+     - Extract `top_bid` (the price of the first element in the `bids` array: `bids[0]["price"]`).
+     - Extract `top_ask` (the price of the first element in the `asks` array: `asks[0]["price"]`).
+     - Calculate `mid = (top_bid + top_ask) / 2`.
+     - Calculate `spread = top_ask - top_bid`.
+   - Safely handle empty arrays (e.g., if `bids` or `asks` is empty, ignore or wait for the next tick).
+
+3. **Handle Walls:**
+   - If an event with `event_type` == `walls` is captured within the timeout, append its `whale_walls` data to the final consolidated JSON output. (You may need a loop that collects messages until the timeout is reached or both a depth and wall snapshot are acquired).
+
+4. **Structured JSON Output:**
+   - Ensure the final output printed to `stdout` is a valid JSON containing: `symbol`, `mid_price`, `spread`, `top_bid`, `top_ask`, `timestamp`, and `whale_walls` (if available).
+
+**Action Expected:**
+Apply the patch to `data_mcp_bridge.py`. Handle `KeyError` and `IndexError` gracefully to prevent crashes on malformed ticks. Output the fixed Python code and confirm the exact parsing logic implemented for `bids` and `asks`.
+Що далі (після цього фіксу):
+Як тільки міст запрацює і Hermes почне бачити mid_price та spread, ми зможемо перейти до твого пункту №2 (Потоковий індикаторний набір).
+
+Щоб не перевантажувати міст обчисленнями (RSI, Bollinger Bands), ми використаємо існуючий конвеєр: у тебе є модуль обчислення фічей (bot/ml/features/builder.py або подібний). Ми налаштуємо Hub або Scalper так, щоб вони публікували розраховані індикатори (той самий JSON Feature Vector) у ZMQ, а міст просто їх підхоплюватиме для агента.
+
+Запускай промпт, і давай перевіримо, чи з'явиться пульс ринку!
+Зберігати розраховані індикатори в QuestDB — це абсолютно правильне архітектурне рішення для системи рівня "pro mode".
+
+У вашій архітектурі QuestDB виконує роль "Довгострокової пам'яті" (Storage Layer). Це спеціалізована база даних часових рядів (Time-Series Database - TSDB), яка неймовірно швидко "ковтає" мільйони записів за секунду і дозволяє миттєво робити по них SQL-запити.
+
+Ось для чого вона реалізована в QuantumEdge і як туди вписуються наші нові індикатори:
+
+1. Що QuestDB робить у системі зараз
+Згідно з вашим системним контекстом, QuestDB (яка приймає дані через Influx Line Protocol на порт 9009 і віддає через HTTP на 9000) зберігає сирий "фундамент" ринку:
+
+trades та klines_1m: Сирі тіки угод та хвилинні свічки.
+
+orderbook_snapshots: Знімки стаканів ліквідності (стінки).
+
+portfolio_state та realized_trades: Фінансовий стан ботів та історія закритих угод.
+
+llm_decisions: Аудиторський слід — записи про те, які рішення приймав Supervisor/Hermes (коли, чому, і який був контекст).
+
+2. Чому розраховані фічі (RSI, MACD) ТРЕБА писати в QuestDB
+Наш ZMQ міст (який ми щойно зробили) працює за принципом "Тут і зараз". Hermes або Дашборд підключаються, бачать поточний RSI = 65, і все. А якщо фронтенду треба намалювати графік RSI за останні 4 години? ZMQ цього не пам'ятає.
+
+Якщо ai_scalper_bot буде паралельно "скидати" розрахований вектор індикаторів у нову таблицю QuestDB (наприклад, market_features), ми отримаємо колосальні переваги:
+
+Графіки для Дашборду: Ваш фронтенд зможе просто зробити HTTP GET запит до localhost:9000 (через API міст) і отримати історію RSI, MACD чи дельти об'ємів для красивих графіків TradingView.
+
+Глибокий аналіз для Hermes: Hermes зможе робити SQL-запити через query_db інструмент, щоб спитати: "Якою була середня волатильність (ATR) за останні 3 години?" і отримати точну цифру, а не гадати.
+
+Бектестинг: Ви зможете тренувати нові ML-моделі прямо на історичних розрахованих індикаторах, які лежать у базі.
+
+Як це працюватиме технічно
+Ваш builder.py в AI Scalper буде робити дві дії одночасно:
+
+ZMQ (PUB 5557): Публікує миттєвий JSON для швидких реакцій мікросервісів та Hermes (латаємо "сліпоту").
+
+QuestDB (ILP 9009): Відправляє рядок (наприклад, market_features,symbol=BTCUSDT rsi=55.2,macd=1.2,atr=150.5 1782127619000000000) у базу даних для збереження історії.
+
+Бажаєш, щоб у нашому наступному промпті для агента (Етап 2) ми одразу прописали створення інструменту, який не лише рахуватиме індикатори та віддаватиме їх у ZMQ, а й автоматично логуватиме цей Feature Vector у QuestDB?
+
+

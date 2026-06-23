@@ -5,7 +5,7 @@ import numpy as np
 import pandas as pd
 import xgboost as xgb
 
-from quantum_edge_core.supervisor.research.offline.scalper_bot.ml.eval.run import (
+from hermes.research.offline.scalper_bot.ml.eval.run import (
     evaluate,
 )
 from bot.ml.features.builder import feature_names

@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 
-from quantum_edge_core.supervisor.research.offline.scalper_bot.ml.labels.builder import (
+from hermes.research.offline.scalper_bot.ml.labels.builder import (
     LabelConfig,
     build_labels,
 )

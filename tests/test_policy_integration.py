@@ -13,7 +13,7 @@ import unittest
 # Add src to path
 sys.path.append(os.path.abspath("src"))
 
-from quantum_edge_core.supervisor.supervisor.ipc import PolicyPublisher
+from hermes.supervisor.ipc import PolicyPublisher
 from quantum_edge_core.bot.service import BotService
 
 # import zmq

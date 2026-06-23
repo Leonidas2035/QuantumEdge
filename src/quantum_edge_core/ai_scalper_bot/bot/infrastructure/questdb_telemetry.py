@@ -35,23 +35,45 @@ class QuestDbTelemetry:
         await loop.run_in_executor(None, self._send_payload, payload)
 
     def log_portfolio_state(
-        self, symbol: str, equity: float, unrealized_pnl: float, position_qty: float
+        self, symbol: str, equity: float, unrealized_pnl: float, position_qty: float, leverage: float = 0.0, liquidation_price: float = 0.0
     ):
         """
         Logs the real-time state of the portfolio.
-        Format: portfolio_state,symbol=BTCUSDT equity={equity},unrealized_pnl={pnl},position_qty={qty} <timestamp_ns>
+        Format: portfolio_state,symbol=BTCUSDT equity={equity},unrealized_pnl={pnl},position_qty={qty},leverage={leverage},liquidation_price={liquidation_price} <timestamp_ns>
         """
         ts_ns = int(time.time() * 1_000_000_000)
-        payload = f"portfolio_state,symbol={symbol} equity={float(equity)},unrealized_pnl={float(unrealized_pnl)},position_qty={float(position_qty)} {ts_ns}\n"
-        asyncio.create_task(self._send_payload_async(payload))
+        payload = f"portfolio_state,symbol={symbol} equity={float(equity)},unrealized_pnl={float(unrealized_pnl)},position_qty={float(position_qty)},leverage={float(leverage)},liquidation_price={float(liquidation_price)} {ts_ns}\n"
+        try:
+            loop = asyncio.get_running_loop()
+            loop.create_task(self._send_payload_async(payload))
+        except RuntimeError:
+            self._send_payload(payload)
 
     def log_realized_trade(
-        self, symbol: str, side: str, price: float, qty: float, realized_pnl: float
+        self, symbol: str, side: str, entry_price: float, exit_price: float, qty: float, realized_pnl: float, fees: float = 0.0
     ):
         """
-        Logs a closed or partially closed trade.
-        Format: realized_trades,symbol=BTCUSDT side={side} price={price},qty={qty},realized_pnl={pnl} <timestamp_ns>
+        Logs a closed or partially closed trade via ILP Writer.
         """
-        ts_ns = int(time.time() * 1_000_000_000)
-        payload = f"realized_trades,symbol={symbol},side={side} price={float(price)},qty={float(qty)},realized_pnl={float(realized_pnl)} {ts_ns}\n"
-        asyncio.create_task(self._send_payload_async(payload))
+        import os
+        bot_id = os.getenv("QE_BOT_ID", "ai_scalper_bot")
+        ts = time.time()
+        
+        try:
+            from quantum_edge_core.market_data.tsdb.ilp_writer import get_ilp_writer
+            writer = get_ilp_writer()
+            writer.write_row(
+                "realized_trades",
+                symbols={"bot_id": bot_id, "symbol": symbol, "side": side},
+                columns={
+                    "entry_price": float(entry_price),
+                    "exit_price": float(exit_price),
+                    "qty": float(qty),
+                    "realized_pnl": float(realized_pnl),
+                    "fees": float(fees)
+                },
+                ts=ts
+            )
+            self.logger.info(f"Position Closed [{bot_id}]: {side} {qty} {symbol} | PnL: ${realized_pnl:.2f}")
+        except Exception as e:
+            self.logger.error(f"Failed to log realized_trade: {e}")

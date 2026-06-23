@@ -70,6 +70,7 @@ class BingXExecutionGateway:
                 "secret": secret,
                 "options": options,
                 "enableRateLimit": True,
+                "timeout": 30000,  # 30 seconds timeout for requests
             }
         )
 
@@ -181,8 +182,34 @@ class BingXExecutionGateway:
             self.logger.warning(f"⚠️ Failed to fetch balance async: {e}")
             return getattr(self, "_cached_balance", 100000.0)
 
-    async def execute(self, action: Union[TradeAction, List[TradeAction]]) -> bool:
-        """Execute single TradeAction or list (DCA Grid batch)."""
+    async def fetch_positions_async(self) -> list[dict[str, Any]]:
+        """Fetch active positions from the exchange."""
+        try:
+            symbol = self._normalize_symbol(self.config.symbol)
+            # Fetch positions via CCXT
+            positions = await self.exchange.fetch_positions(symbols=[symbol])
+            results = []
+            for pos in positions:
+                size = float(pos.get("contracts") or pos.get("size") or 0.0)
+                if size > 0:
+                    results.append({
+                        "symbol": pos.get("symbol"),
+                        "side": pos.get("side", "").upper(),
+                        "size": size,
+                        "entry_price": float(pos.get("entryPrice") or pos.get("averagePrice") or 0.0),
+                        "unrealized_pnl": float(pos.get("unrealizedPnl") or 0.0),
+                        "leverage": float(pos.get("leverage") or 1.0),
+                        "liquidation_price": float(pos.get("liquidationPrice") or 0.0),
+                        "margin_type": pos.get("marginMode", "cross"),
+                    })
+            return results
+        except Exception as e:
+            self.logger.warning(f"⚠️ Failed to fetch positions async: {e}")
+            return []
+
+    async def execute(self, action: Union[TradeAction, Any, List[TradeAction]]) -> bool:
+        """Execute single TradeAction/OrderRequest or list (DCA Grid batch)."""
+        self.logger.warning(f"🔧 BINGX execute() called: type={type(action)}, action_type={getattr(action, 'action_type', 'N/A') if hasattr(action, 'action_type') else 'OrderRequest'}")
         if isinstance(action, list):
             placed = 0
             for order in action:
@@ -195,9 +222,12 @@ class BingXExecutionGateway:
             return placed > 0
         return await self._execute_single(action)
 
-    async def _execute_single(self, action: TradeAction) -> bool:
-        """Process a single TradeAction."""
-        if action.action_type == "CANCEL_ALL":
+    async def _execute_single(self, action: Any) -> bool:
+        """Process a single TradeAction or OrderRequest."""
+        from quantum_edge_core.ai_scalper_bot.bot.execution.smart_executor import OrderRequest
+
+        self.logger.warning(f"🔧 _execute_single: action_type={getattr(action, 'action_type', 'N/A') if hasattr(action, 'action_type') else 'OrderRequest'}")
+        if hasattr(action, "action_type") and action.action_type == "CANCEL_ALL":
             try:
                 self.logger.warning(
                     f"🚀 BINGX: Canceling all open orders for {self._ccxt_symbol} | {action.reason}"
@@ -208,28 +238,37 @@ class BingXExecutionGateway:
                 self.logger.error(f"❌ BINGX Cancel All Error: {e}")
                 return False
 
-        if action.action_type == "SYNC_GRID":
+        if hasattr(action, "action_type") and action.action_type == "SYNC_GRID":
             return await self._sync_grid(action)
 
-        if action.action_type == "ORDER_FILLED":
+        if hasattr(action, "action_type") and action.action_type == "ORDER_FILLED":
             return await self._order_filled_counter(action)
 
-        # Regular BUY/SELL limit/market
-        side = "buy" if "BUY" in action.action_type else "sell"
-        if "SHORT" in action.action_type:
-            side = "sell"
-
-        amount = float(action.qty)
+        # Standard order routing (handles TradeAction and OrderRequest)
+        if isinstance(action, OrderRequest):
+            side = action.side.value.lower()
+            amount = float(action.qty)
+            price = action.price
+            pos_side = action.position_side.value
+        else:
+            # Regular BUY/SELL limit/market
+            side = "buy" if "BUY" in action.action_type else "sell"
+            if "SHORT" in action.action_type:
+                side = "sell"
+            amount = float(action.qty)
+            price = float(action.price) if action.price is not None else None
+            pos_side = self._get_position_side(side)
 
         try:
             params = {}
-            pos_side = self._get_position_side(side)
             if pos_side:
                 params["positionSide"] = pos_side
 
+            if isinstance(action, OrderRequest) and action.client_oid:
+                params["clientOrderId"] = action.client_oid
+
             if self.trading_mode == "spot_grid":
                 # Spot LIMIT order
-                price = float(action.price)
                 self.logger.warning(
                     f"🚀 BINGX (SPOT): Limit {side.upper()} {amount} {self._ccxt_symbol} @ {price} | params={params}"
                 )
@@ -242,21 +281,23 @@ class BingXExecutionGateway:
                     params=params,
                 )
             else:
-                # Futures MARKET order with positionSide for hedge mode
+                # Futures/Swap order
+                order_type = "limit" if price is not None else "market"
                 self.logger.warning(
-                    f"🚀 BINGX (FUTURES): Market {side.upper()} {amount} {self._ccxt_symbol} | params={params}"
+                    f"🚀 BINGX (FUTURES): {order_type.upper()} {side.upper()} {amount} {self._ccxt_symbol} @ {price or 'market'} | params={params}"
                 )
                 order = await self.exchange.create_order(
                     symbol=self._ccxt_symbol,
-                    type="market",
+                    type=order_type,
                     side=side,
                     amount=amount,
+                    price=price,
                     params=params,
                 )
 
             self.logger.warning(f"✅ BINGX: Order Filled! ID: {order['id']}")
             self.logger.warning(
-                f"✅ REAL ORDER PLACED: {side.upper()} {amount:.6f} @ {price if self.trading_mode == 'spot_grid' else 'market'}"
+                f"✅ REAL ORDER PLACED: {side.upper()} {amount:.6f} @ {price if price is not None else 'market'}"
             )
             return True
 
@@ -269,11 +310,18 @@ class BingXExecutionGateway:
         Sync grid: cancel all + place new grid orders around center price.
         Expects action.reason to contain: spacing_pct=X|below=N|above=M
         """
+        self.logger.warning(
+            f"🚀 BINGX: Syncing Grid around {action.price} | {action.reason}"
+        )
         try:
-            self.logger.warning(
-                f"🚀 BINGX: Syncing Grid around {action.price} | {action.reason}"
+            # Cancel all with timeout
+            await asyncio.wait_for(
+                self.exchange.cancel_all_orders(symbol=self._ccxt_symbol),
+                timeout=15.0,
             )
-            await self.exchange.cancel_all_orders(symbol=self._ccxt_symbol)
+        except asyncio.TimeoutError:
+            self.logger.error("❌ BINGX Cancel All Timeout (15s)")
+            return False
         except Exception as e:
             self.logger.error(f"❌ BINGX Cancel All Error: {e}")
             return False
@@ -303,17 +351,23 @@ class BingXExecutionGateway:
                     if pos_side:
                         order_params["positionSide"] = pos_side
 
-                    await self.exchange.create_order(
-                        symbol=self._ccxt_symbol,
-                        type="limit",
-                        side=side,
-                        amount=amount,
-                        price=price,
-                        params=order_params,
+                    # Use wait_for with timeout for each order
+                    await asyncio.wait_for(
+                        self.exchange.create_order(
+                            symbol=self._ccxt_symbol,
+                            type="limit",
+                            side=side,
+                            amount=amount,
+                            price=price,
+                            params=order_params,
+                        ),
+                        timeout=10.0,
                     )
                     self.logger.warning(
                         f"✅ REAL ORDER PLACED: {side.upper()} {amount:.6f} @ {price:.2f}"
                     )
+                except asyncio.TimeoutError:
+                    self.logger.warning(f"⏱️ Timeout placing {side} grid at {price}")
                 except Exception as e:
                     self.logger.warning(f"Failed to place {side} grid at {price}: {e}")
                 # Space out concurrent requests slightly
@@ -329,7 +383,12 @@ class BingXExecutionGateway:
             price = round(current_price * (1 + spacing_pct * i), 2)
             tasks.append(asyncio.create_task(safe_create_order("sell", price)))
 
-        await asyncio.gather(*tasks)
+        # Wait for all tasks with overall timeout
+        try:
+            await asyncio.wait_for(asyncio.gather(*tasks, return_exceptions=True), timeout=60.0)
+        except asyncio.TimeoutError:
+            self.logger.error("❌ Grid sync overall timeout (60s)")
+        
         self.logger.warning("✅ BINGX: Grid Sync Complete (Concurrent).")
         return True
 
@@ -352,17 +411,18 @@ class BingXExecutionGateway:
         if filled_side == "BUY":
             new_side = "sell"
             new_price = round(orig_price * (1 + spacing_pct), 2)
+            pos_side = "LONG"
         else:
             new_side = "buy"
             new_price = round(orig_price * (1 - spacing_pct), 2)
+            pos_side = "SHORT"
 
         self.logger.warning(
-            f"✅ BINGX: Counter-Order -> {new_side.upper()} @ {new_price}"
+            f"✅ BINGX: Counter-Order -> {new_side.upper()} @ {new_price} (positionSide={pos_side})"
         )
 
         try:
             order_params = {}
-            pos_side = self._get_position_side(new_side)
             if pos_side:
                 order_params["positionSide"] = pos_side
 

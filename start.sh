@@ -11,7 +11,7 @@ if ! docker info > /dev/null 2>&1; then
 fi
 
 echo "[1/5] Starting Docker containers (QuestDB)..."
-docker-compose up -d
+docker compose up -d
 
 echo "[2/5] Checking Python Virtual Environment..."
 if [ ! -d "venv" ]; then

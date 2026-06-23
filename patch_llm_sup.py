@@ -1,6 +1,6 @@
 import re
 
-with open("src/quantum_edge_core/supervisor/supervisor/llm_supervisor.py", "r") as f:
+with open("/home/korben/.hermes/hermes/supervisor/llm_supervisor.py", "r") as f:
     data = f.read()
 
 data = re.sub(
@@ -9,5 +9,5 @@ data = re.sub(
     data,
 )
 
-with open("src/quantum_edge_core/supervisor/supervisor/llm_supervisor.py", "w") as f:
+with open("/home/korben/.hermes/hermes/supervisor/llm_supervisor.py", "w") as f:
     f.write(data)

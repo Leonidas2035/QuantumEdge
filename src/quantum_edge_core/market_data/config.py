@@ -97,30 +97,19 @@ class WallsConfig:
 
 @dataclass
 class OrderbookSnapshotConfig:
-    include_depth: bool = os.getenv("MARKET_DATA_ORDERBOOK_SNAPSHOT_DEPTH", "1") in {
-        "1",
-        "true",
-        "True",
-    }
-    include_walls: bool = os.getenv("MARKET_DATA_ORDERBOOK_SNAPSHOT_WALLS", "1") in {
-        "1",
-        "true",
-        "True",
-    }
-
+    endpoint: str = os.getenv(
+        "MARKET_DATA_SNAPSHOT_ENDPOINT", "ipc:///tmp/quantum_market_snapshot.ipc"
+    )
+    include_depth: bool = os.getenv("MARKET_DATA_ORDERBOOK_SNAPSHOT_DEPTH", "1") in {"1", "true", "True"}
+    include_walls: bool = os.getenv("MARKET_DATA_ORDERBOOK_SNAPSHOT_WALLS", "1") in {"1", "true", "True"}
+    trade_tail: int = int(os.getenv("MARKET_DATA_SNAPSHOT_TRADE_TAIL", "0"))
 
 @dataclass
 class OrderbookConfig:
-    enabled: bool = os.getenv("MARKET_DATA_ORDERBOOK_ENABLED", "1") in {
-        "1",
-        "true",
-        "True",
-    }
-    symbols: List[str] = field(
-        default_factory=lambda: os.getenv(
-            "MARKET_DATA_ORDERBOOK_SYMBOLS", "BTCUSDT,ETHUSDT"
-        ).split(",")
-    )
+    enabled: bool = os.getenv("MARKET_DATA_ORDERBOOK_ENABLED", "1") in {"1", "true", "True"}
+    symbols: List[str] = field(default_factory=lambda: os.getenv(
+        "MARKET_DATA_ORDERBOOK_SYMBOLS", "BTCUSDT,ETHUSDT"
+    ).split(","))
     top_n_levels: int = int(os.getenv("MARKET_DATA_ORDERBOOK_TOP_N", "50"))
     publish_interval_ms: int = int(os.getenv("MARKET_DATA_ORDERBOOK_PUBLISH_MS", "100"))
     walls: WallsConfig = field(default_factory=WallsConfig)
@@ -213,12 +202,19 @@ class AccountRuntimeConfig:
 
 @dataclass
 class HubConfig:
+    @property
+    def top_n_levels(self) -> int:
+        """Compatibility shim for legacy references.
+        Some components (e.g., OrderbookAggregator) expect `self._config.top_n_levels`.
+        This forwards to the nested OrderbookConfig's `top_n_levels` value.
+        """
+        return self.orderbook.top_n_levels
     mode: str = os.getenv("MARKET_DATA_MODE", "live")  # live | mock
     symbols: List[str] = field(
         default_factory=lambda: os.getenv("MARKET_DATA_SYMBOLS", "BTCUSDT").split(",")
     )
     zmq: ZmqConfig = field(default_factory=ZmqConfig)
-    snapshot: SnapshotConfig = field(default_factory=SnapshotConfig)
+    snapshot: OrderbookSnapshotConfig = field(default_factory=OrderbookSnapshotConfig)
     quest: QuestConfig = field(default_factory=QuestConfig)
     tsdb: TsdbConfig = field(default_factory=TsdbConfig)
     l2: L2Config = field(default_factory=L2Config)

@@ -186,7 +186,7 @@ print(val)
     fi
 
     cd "${PROJECT_ROOT}"
-    nohup python3 src/quantum_edge_core/supervisor/supervisor.py run-foreground \
+    nohup python3 /home/korben/.hermes/hermes/supervisor.py run-foreground \
         > "${LOG_DIR}/supervisor.log" 2>&1 &
     echo $! > "${PROJECT_ROOT}/runtime/supervisor.pid"
     info "Supervisor PID=$(cat "${PROJECT_ROOT}/runtime/supervisor.pid")"

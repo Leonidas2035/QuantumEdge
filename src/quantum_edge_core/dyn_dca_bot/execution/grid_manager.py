@@ -16,6 +16,8 @@ class GridManager:
         self.current_position_size: float = 0.0
         self.average_entry_price: float = 0.0
         self.active_tp_order_id: Optional[str] = None
+        self.position_side: Optional[str] = None
+        self.tp_price: Optional[float] = None
 
     def on_dca_order_filled(self, fill_price: float, fill_qty: float, side: str):
         """
@@ -27,6 +29,7 @@ class GridManager:
         total_cost = (self.average_entry_price * self.current_position_size) + (fill_price * fill_qty)
         self.current_position_size += fill_qty
         self.average_entry_price = total_cost / self.current_position_size
+        self.position_side = side
         
         logger.info("Position updated", new_avg_entry=self.average_entry_price, total_size=self.current_position_size)
 
@@ -61,6 +64,7 @@ class GridManager:
             return
 
         tp_price = round(tp_price, 2) # Округлення до тіка (в майбутньому брати з exchange rules)
+        self.tp_price = tp_price
 
         # Перевірка на NO-LOSS (Sanity Check)
         if position_side == "buy" and tp_price <= self.average_entry_price:
@@ -90,4 +94,5 @@ class GridManager:
         self.current_position_size = 0.0
         self.average_entry_price = 0.0
         self.active_tp_order_id = None
-        # Тут також можна викликати логіку початку нової сітки
+        self.position_side = None
+        self.tp_price = None

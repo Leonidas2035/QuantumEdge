@@ -5,6 +5,7 @@ Target Exchange: BingX (Integration Phase)
 """
 
 import asyncio
+import collections
 import logging
 import logging.config
 import time
@@ -64,6 +65,7 @@ class BotEngine:
         self.market_stream = ZmqSubStream(
             endpoint=f"tcp://127.0.0.1:{self.config.market_data_port}",
             topic="",  # Global subscription — receive ALL topics from Hub
+            connect_now=False,
         )
         import os
 
@@ -101,6 +103,8 @@ class BotEngine:
 
         # 2. Memory (State)
         self.cache = OrderBookCache()
+        self.ofi_history = collections.deque(maxlen=1000)
+        self.price_history = collections.deque(maxlen=1000)
         self.position = PositionManager(
             mode=getattr(self.config, "trading_mode", "scalper_v1"),
             initial_quote_balance=float(self.gateway.quote_balance),
@@ -109,6 +113,15 @@ class BotEngine:
             "PositionManager initialised with quote_balance=%.2f",
             float(self.position.state.quote_balance),
         )
+
+        from quantum_edge_core.ai_scalper_bot.bot.execution.position import PortfolioSynchronizer
+        self.portfolio_sync = None
+        if execution_mode in ("bingx", "live"):
+            api_key = self.config.bingx_testnet_api_key if use_testnet else self.config.bingx_api_key
+            api_secret = self.config.bingx_testnet_secret if use_testnet else self.config.bingx_secret
+            if api_key and api_secret:
+                self.portfolio_sync = PortfolioSynchronizer(api_key, api_secret, self.position)
+                logger.info("PortfolioSynchronizer armed for background sync.")
 
         # 3. Logic (Features & Strategy)
         self.features = FeatureEngine(
@@ -130,6 +143,20 @@ class BotEngine:
         self.cached_unrealized_pnl = 0.0
         self.cached_position_qty = 0.0
         self.last_eval_log = 0.0
+
+        # Truncate QuestDB realized_trades table to clear old test data
+        try:
+            import requests
+            host = os.getenv("MARKET_DATA_QUEST_HOST", "127.0.0.1")
+            port = os.getenv("MARKET_DATA_QUEST_REST_PORT", "9000")
+            url = f"http://{host}:{port}/exec"
+            resp = requests.get(url, params={"query": "TRUNCATE TABLE realized_trades;"}, timeout=2.0)
+            if resp.status_code == 200:
+                logger.info("QuestDB realized_trades table truncated successfully.")
+            else:
+                logger.warning(f"Failed to truncate realized_trades table: {resp.text}")
+        except Exception as e:
+            logger.warning(f"Could not truncate realized_trades table: {e}")
 
     async def telemetry_loop(self):
         """Independent task for continuous 2-second telemetry emission."""
@@ -179,18 +206,58 @@ class BotEngine:
                         first_pos = positions[0]
                         self.cached_leverage = first_pos.get("leverage", 20.0)
                         self.cached_liq_price = first_pos.get("liquidation_price", 0.0)
+                        
+                        long_qty = Decimal("0.0")
+                        short_qty = Decimal("0.0")
+                        long_avg = Decimal("0.0")
+                        short_avg = Decimal("0.0")
+                        long_pnl = Decimal("0.0")
+                        short_pnl = Decimal("0.0")
+                        
                         for pos in positions:
                             qty_val = pos.get("size", 0.0)
+                            avg_entry = pos.get("entry_price", 0.0) or pos.get("avg_price", 0.0) or pos.get("price", 0.0)
+                            pnl_val = pos.get("unrealized_pnl", 0.0)
+                            
+                            qty_dec = Decimal(str(qty_val))
+                            avg_dec = Decimal(str(avg_entry))
+                            pnl_dec = Decimal(str(pnl_val))
+                            
                             if pos.get("side") == "SHORT":
-                                qty_val = -qty_val
-                            total_qty += qty_val
+                                short_qty = qty_dec
+                                short_avg = avg_dec
+                                short_pnl = pnl_dec
+                                total_qty -= qty_val
+                            else:
+                                long_qty = qty_dec
+                                long_avg = avg_dec
+                                long_pnl = pnl_dec
+                                total_qty += qty_val
                             total_pnl += pos.get("unrealized_pnl", 0.0)
+                            
                         self.cached_position_qty = total_qty
                         self.cached_unrealized_pnl = total_pnl
+                        
+                        # Sync PositionManager
+                        self.position.long_state.total_qty = long_qty
+                        self.position.long_state.avg_price = long_avg
+                        self.position.long_state.unrealized_pnl = long_pnl
+                        
+                        self.position.short_state.total_qty = short_qty
+                        self.position.short_state.avg_price = short_avg
+                        self.position.short_state.unrealized_pnl = short_pnl
                     else:
                         self.cached_position_qty = 0.0
                         self.cached_unrealized_pnl = 0.0
                         self.cached_liq_price = 0.0
+                        
+                        self.position.long_state.total_qty = Decimal("0.0")
+                        self.position.long_state.avg_price = Decimal("0.0")
+                        self.position.long_state.unrealized_pnl = Decimal("0.0")
+                        
+                        self.position.short_state.total_qty = Decimal("0.0")
+                        self.position.short_state.avg_price = Decimal("0.0")
+                        self.position.short_state.unrealized_pnl = Decimal("0.0")
 
                 # 2. Fetch balance
                 if hasattr(self.gateway, "fetch_balance_async"):
@@ -262,10 +329,27 @@ class BotEngine:
             except Exception as parse_err:
                 logger.error("Error parsing trade policy: %s", parse_err)
 
+    async def warm_up(self):
+        symbol = self.config.symbol
+        logger.info(f"[WARM-UP] Fetching historical microstructure data for {symbol} from QuestDB...")
+        try:
+            from quantum_edge_core.market_data.tsdb.query_builder import QuestDBQueryBuilder
+            db = QuestDBQueryBuilder()
+            history = await db.get_microstructure(symbol, minutes=15)
+            logger.info(f"[WARM-UP] Received {len(history)} records from QuestDB. Appending to deques...")
+            for record in history:
+                self.ofi_history.append(record.get('ofi_raw', 0.0))
+                self.price_history.append(record.get('mid_price', 0.0))
+            logger.info(f"[WARM-UP] Warm-up complete. Loaded {len(self.ofi_history)} OFI values, {len(self.price_history)} price values.")
+        except Exception as e:
+            logger.error(f"[WARM-UP] Error during warm-up: {e}")
+
     async def run(self) -> None:
         logger.info(
             f">>> Bot Engine STARTING Main Loop... Target: {self.config.symbol}"
         )
+        await self.warm_up()
+        self.market_stream.connect()
         self.running = True
 
         # ── AUTO-START: Force RUNNING state on boot ───────────
@@ -304,6 +388,10 @@ class BotEngine:
 
         # ── Start Telemetry Task ──────────────
         telemetry_task = asyncio.create_task(self.telemetry_loop())
+
+        # ── Start Background CCXT Sync ──────────
+        if getattr(self, "portfolio_sync", None):
+            asyncio.create_task(self.portfolio_sync.sync_loop())
 
         last_1m_reset = time.time()
 
@@ -462,7 +550,10 @@ class BotEngine:
                         best_ask_qty = float(asks[0][1])
 
                     # Depth events don't carry trade price — use mid or last known
-                    if best_bid and best_ask and price <= 0.0:
+                    hub_mid = tick.get("mid_price")
+                    if hub_mid and float(hub_mid) > 0:
+                        price = float(hub_mid)
+                    elif best_bid and best_ask and price <= 0.0:
                         price = (best_bid + best_ask) / 2.0
 
                 # ── Normalize tick data ──────────────────────────
@@ -501,6 +592,14 @@ class BotEngine:
                     timestamp /= 1e9  # ns to s
                 elif timestamp > 1e12:
                     timestamp /= 1e3  # ms to s
+
+                # STALE_DATA guard: reject data older than 5 seconds
+                if timestamp > 0 and (time.time() - timestamp) > 5.0:
+                    logger.warning(
+                        f"STALE_DATA: Rejecting tick older than 5 seconds (timestamp={timestamp}, age={time.time() - timestamp:.2f}s)"
+                    )
+                    await asyncio.sleep(0.001)
+                    continue
 
                 # m/is_buyer_maker handling
                 is_buyer_maker = bool(tick.get("m", False))
@@ -557,6 +656,33 @@ class BotEngine:
                     feat_vec = self.features.update(tick_obj, market_state)
                     atr_val = self.volatility.update(market_state.last_price)
                     market_state.atr = atr_val
+
+                    # Write to QuestDB market_features via ilp_writer
+                    try:
+                        from quantum_edge_core.market_data.tsdb.ilp_writer import get_ilp_writer
+                        mid_val = 0.0
+                        spread_val = 0.0
+                        if market_state.best_ask > 0 and market_state.best_bid > 0:
+                            mid_val = (market_state.best_ask + market_state.best_bid) / 2.0
+                            spread_val = market_state.best_ask - market_state.best_bid
+                        
+                        get_ilp_writer().write_row(
+                            "market_features",
+                            symbols={"symbol": self.config.symbol},
+                            columns={
+                                "mid_price": float(mid_val),
+                                "spread": float(spread_val),
+                                "rsi_14": 0.0,
+                                "macd_line": 0.0,
+                                "macd_signal": 0.0,
+                                "atr_14": float(atr_val),
+                                "ofi_raw": float(feat_vec.ofi),
+                                "volume_delta": float(market_state.volume_delta_1m)
+                            },
+                            ts=market_state.timestamp / 1000.0
+                        )
+                    except Exception as db_err:
+                        logger.warning(f"Failed to write market features to QuestDB: {db_err}")
 
                     if getattr(self, "volatility_oracle", None):
                         # Use kline close to update oracle, or fallback to last_price
@@ -656,10 +782,22 @@ class BotEngine:
                     spread = market_state.best_ask - market_state.best_bid
                     action = None
 
+                    if isinstance(market_state.last_price, Decimal):
+                        limit_1pct = market_state.last_price * Decimal('0.01')
+                        limit_05pct = market_state.last_price * Decimal('0.005')
+                    else:
+                        limit_1pct = market_state.last_price * 0.01
+                        limit_05pct = market_state.last_price * 0.005
+
+                    if spread >= 0 and spread > limit_05pct:
+                        logger.warning(f'Spread warning: spread {spread:.4f} exceeds 0.5% threshold of price {market_state.last_price:.2f}')
+
                     if market_state.last_price <= 0.0:
-                        reason = "Waiting for Market Data (Price <= 0)"
-                    elif spread <= 0 or spread > market_state.last_price * 0.01:
-                        reason = f"Spread anomalous: {spread:.2f} (Bid: {market_state.best_bid}, Ask: {market_state.best_ask})"
+                        reason = 'Waiting for Market Data (Price <= 0)'
+                    elif spread < 0:
+                        reason = 'Spread inverted'
+                    elif spread > limit_1pct:
+                        reason = f'Spread anomalous: {spread:.2f} (Bid: {market_state.best_bid}, Ask: {market_state.best_ask})'
                     elif getattr(market_state, "entries_paused", False) or getattr(self.gateway, "entries_paused", False):
                         reason = "Entries Paused by Supervisor/Policy"
                     elif atr_val <= 0.0:
@@ -669,7 +807,8 @@ class BotEngine:
                             market_state, feat_vec, atr_val, self.position
                         )
                         if action is None:
-                            reason = f"Strategy returned HOLD (Mode: {market_state.trading_mode.value}, OFI: {feat_vec.ofi:.2f}, Pos: {self.position.total_qty})"
+                            pos_val = self.position.long_state.total_qty - self.position.short_state.total_qty
+                            reason = f"Strategy returned HOLD (Mode: {market_state.trading_mode.value}, OFI: {feat_vec.ofi:.2f}, Pos: {pos_val})"
                         else:
                             reason = f"Strategy returned {action.action_type}"
 

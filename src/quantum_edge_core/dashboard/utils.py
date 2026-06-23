@@ -115,24 +115,40 @@ class ProcessManager:
 
     @staticmethod
     def is_running(name: str) -> bool:
-        pid_file = ProcessManager.get_pid_file(name)
-        if not pid_file.exists():
-            return False
-        try:
-            pid = int(pid_file.read_text().strip())
-            return psutil.pid_exists(pid)
-        except ValueError:
-            return False
+        pid = ProcessManager.get_pid(name)
+        return pid is not None
 
     @staticmethod
     def get_pid(name: str) -> Optional[int]:
+        # Check pid file first
         pid_file = ProcessManager.get_pid_file(name)
-        if not pid_file.exists():
+        if pid_file.exists():
+            try:
+                pid = int(pid_file.read_text().strip())
+                if psutil.pid_exists(pid):
+                    return pid
+            except ValueError:
+                pass
+
+        # Scan running processes as fallback
+        patterns = {
+            "Hub": ["quantum_edge_core.market_data.hub", "market_data/hub.py"],
+            "Supervisor": ["hermes.supervisor", "supervisor/supervisor.py"],
+            "Bot": ["quantum_edge_core.ai_scalper_bot.run_bot", "ai_scalper_bot/run_bot.py"],
+        }
+        alt_patterns = patterns.get(name, [])
+        if not alt_patterns:
             return None
-        try:
-            return int(pid_file.read_text().strip())
-        except ValueError:
-            return None
+
+        for proc in psutil.process_iter(["pid", "cmdline"]):
+            try:
+                cmdline = proc.info.get("cmdline") or []
+                cmd_str = " ".join(cmdline)
+                if any(pat in cmd_str for pat in alt_patterns):
+                    return proc.info["pid"]
+            except (psutil.NoSuchProcess, psutil.AccessDenied):
+                continue
+        return None
 
     @staticmethod
     def start_process(name: str, cmd: str) -> bool:

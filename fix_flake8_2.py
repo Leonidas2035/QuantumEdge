@@ -24,14 +24,14 @@ removals = {
     "src/quantum_edge_core/strategies/scalper_v1/tests/test_ml_stage3_eval_outputs.py": [
         ("model = ", "# model = ")
     ],
-    "src/quantum_edge_core/supervisor/research/offline/scalper_bot/scenarios/validate.py": [
+    "/home/korben/.hermes/hermes/research/offline/scalper_bot/scenarios/validate.py": [
         ("episodes_dir = ", "# episodes_dir = ")
     ],
-    "src/quantum_edge_core/supervisor/research/sandbox/offline_loop.py": [
+    "/home/korben/.hermes/hermes/research/sandbox/offline_loop.py": [
         ("pseudo_signal = ", "# pseudo_signal = ")
     ],
-    "src/quantum_edge_core/supervisor/service.py": [("risk_info = ", "# risk_info = ")],
-    "src/quantum_edge_core/supervisor/supervisor/data_ingest.py": [
+    "/home/korben/.hermes/hermes/service.py": [("risk_info = ", "# risk_info = ")],
+    "/home/korben/.hermes/hermes/supervisor/data_ingest.py": [
         ("current_ver = ", "# current_ver = ")
     ],
     "src/quantum_edge_infra/automation/meta_agent/meta_agent.py": [

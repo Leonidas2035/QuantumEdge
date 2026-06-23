@@ -1,0 +1,5 @@
+Collecting streamlit
+  Using cached streamlit-1.58.0-py3-none-any.whl.metadata (9.6 kB)
+Using cached streamlit-1.58.0-py3-none-any.whl (9.2 MB)
+Installing collected packages: streamlit
+Successfully installed streamlit-1.58.0

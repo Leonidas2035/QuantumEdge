@@ -1,0 +1,16 @@
+enabled: true
+model: "openai/gpt-oss-120b:free"
+temperature: 0.2
+timeout_ms: 1500
+
+inputs:
+  history_window_minutes: 15
+  include_volatility: true
+  include_signal_stats: true
+
+rate_limit:
+  max_calls_per_minute: 20
+
+cache:
+  enabled: true
+  ttl_seconds: 120

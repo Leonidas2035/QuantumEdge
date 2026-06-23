@@ -323,3 +323,286 @@ class TradeAction:
     reason: str
 
 
+class DynamicDCAStrategy:
+    """
+    Continuous Dynamic DCA Strategy for SPOT.
+    Implements L2 Level Detection, Non-linear ATR+gamma Grids, and Flash Crash Protection.
+    """
+
+    def __init__(self, config: Dict[str, Any]):
+        self.state = BotState.IDLE
+        self.config = config
+        self.grid_levels_below = config.get("grid_levels_below", 15)
+        self.grid_levels_above = config.get("grid_levels_above", 15)
+        self.base_order_size_q = Decimal(str(config.get("base_order_size_q", 0.001)))
+
+        self.last_grid_sync_time = 0.0
+        self.last_sync_price = Decimal("0.0")
+
+        # Non-linear grid config
+        self.gamma = Decimal("1.2")
+        self.grid_spacing_multiplier = Decimal("1.0")
+
+        self.last_regime: Optional[str] = None
+        self.last_bias: Optional[str] = None
+
+        # Flash crash protection
+        self.price_buffer = collections.deque(maxlen=10)
+        self.flash_crash_pause_until = 0.0
+
+        # Volatility Oracle for ATR
+        from quantum_edge_core.ai_scalper_bot.bot.execution.volatility_oracle import VolatilityOracle
+        self.vol_oracle = VolatilityOracle(config)
+        self.max_open_positions = config.get("max_open_positions", 1)
+        self.target_profit_pct = config.get("target_profit_pct", 0.01)
+
+    def evaluate_position(self, market_state: dict, position_state: dict) -> str:
+        live_price = market_state.get("mid_price")
+        if not live_price:
+            return "WAITING_DATA"
+
+        # 1. Calculate Live PnL
+        entry_price = position_state.get("average_entry_price", 0.0)
+        size = position_state.get("position_size", 0.0)
+        side = position_state.get("side", "BUY")
+
+        if size > 0:
+            if side == "BUY":
+                unrealized_pnl = (live_price - entry_price) * size
+                tp_price = entry_price * (1 + self.target_profit_pct)
+                
+                # 2. Enforce Take Profit
+                if live_price >= tp_price:
+                    logger.info(f"Target Profit Reached: Live {live_price} >= TP {tp_price}. Closing Long.")
+                    return "CLOSE_LONG"
+
+            elif side == "SELL":
+                unrealized_pnl = (entry_price - live_price) * abs(size)
+                tp_price = entry_price * (1 - self.target_profit_pct)
+                
+                if live_price <= tp_price:
+                    logger.info(f"Target Profit Reached: Live {live_price} <= TP {tp_price}. Closing Short.")
+                    return "CLOSE_SHORT"
+            
+            # Update local state with real PnL
+            position_state["unrealized_pnl"] = unrealized_pnl
+
+        return "HOLD"
+
+    def should_enter_new_trade(self, position_state: dict) -> bool:
+        active_count = position_state.get("active_positions_count", 0)
+        if active_count >= self.max_open_positions:
+            logger.debug(f"Entry blocked: Max positions ({self.max_open_positions}) reached.")
+            return False
+        return True
+
+    def decide(
+        self,
+        market: MarketState,
+        features: FeatureVector,
+        atr: float,  # keeping signature for compatibility, but using vol_oracle
+        position: PositionManager,
+    ) -> Optional[TradeAction]:
+
+        now = time.time()
+        current_price = Decimal(str(market.last_price))
+        if current_price <= Decimal("0.0"):
+            return None
+
+        # Execute TP evaluation logic
+        if position.total_qty > 0:
+            target_profit_pct = Decimal(str(self.config.get("target_profit_pct", 0.01)))
+            avg_entry = position.long_state.avg_price
+            unrealized_pnl = (current_price - avg_entry) * position.long_state.total_qty
+            position.long_state.unrealized_pnl = unrealized_pnl
+            
+            tp_price = avg_entry * (Decimal("1.0") + target_profit_pct)
+            if current_price >= tp_price:
+                logger.info(f"Target Profit Reached: Live {current_price} >= TP {tp_price}. Closing Long.")
+                return TradeAction(
+                    action_type="SELL",
+                    price=current_price,
+                    qty=position.long_state.total_qty,
+                    reason=f"TP Hit (PNL: {unrealized_pnl:.2f})"
+                )
+
+        # Execute duplicate entries prevention
+        if not self.should_enter_new_trade({"active_positions_count": 1 if position.total_qty > 0 else 0}):
+            # If max positions reached, prevent new grid generation
+            market.entries_paused = True
+
+        # Flash Crash Protection (Price Velocity)
+        self.price_buffer.append((now, float(current_price)))
+        if len(self.price_buffer) >= 2:
+            dt = now - self.price_buffer[0][0]
+            if dt > 0:
+                velocity = (float(current_price) - self.price_buffer[0][1]) / dt
+                velocity_pct = velocity / self.price_buffer[0][1]
+
+                # Check threshold: e.g. 2% drop in 10s -> velocity_pct < -0.002 per second (approx)
+                if velocity_pct < -0.002:
+                    logger.warning("[FLASH CRASH] Velocity %.4f per sec. Halting entries.", velocity_pct)
+                    self.flash_crash_pause_until = now + 60.0
+                    return TradeAction(
+                        action_type="CANCEL_ALL",
+                        price=Decimal("0.0"),
+                        qty=Decimal("0.0"),
+                        reason="Flash Crash Protection",
+                    )
+
+        if now < self.flash_crash_pause_until:
+            return None
+
+        # Update Volatility Oracle
+        self.vol_oracle.add_close_price(float(current_price))
+        calculated_atr = Decimal(str(self.vol_oracle.calculate_atr()))
+        if calculated_atr <= Decimal("0.0"):
+            calculated_atr = Decimal("50.0") # Fallback for tests if no history
+
+        grid_bottom = Decimal(str(getattr(market, "grid_bottom", 0.0)))
+        grid_top = Decimal(str(getattr(market, "grid_top", 0.0)))
+
+        # Boundary Guard
+        if grid_bottom > 0 and grid_top > 0:
+            if current_price < grid_bottom or current_price > grid_top:
+                logger.info(
+                    "[GRID] Price %s out of bounds [%s, %s]. Paused.",
+                    current_price,
+                    grid_bottom,
+                    grid_top,
+                )
+                market.entries_paused = True
+                return None
+
+        regime = getattr(market, "market_regime", "ranging")
+        bias = getattr(market, "grid_bias", "neutral")
+
+        # Regime adjustments
+        if regime == "trending" and bias == "bullish":
+            # Check EMA condition conceptually (assuming > 200 EMA)
+            self.grid_spacing_multiplier = Decimal("1.5")
+        elif regime == "ranging":
+            self.grid_spacing_multiplier = Decimal("0.5")
+        else:
+            self.grid_spacing_multiplier = Decimal("1.0")
+
+        spacing_mult = Decimal(str(getattr(market, "grid_spacing_multiplier", 1.0))) * self.grid_spacing_multiplier
+
+        # Money Management
+        risk_percent = Decimal(str(self.config.get("risk_percent", 0.01)))
+        fractional_kelly = Decimal(str(self.config.get("fractional_kelly", 0.25)))
+        quote_balance = position.state.quote_balance
+
+        if quote_balance > 0:
+            risk_amount = quote_balance * risk_percent * fractional_kelly
+            self.base_order_size_q = risk_amount / current_price
+
+        # Check conditions for SYNC_GRID
+        is_initial_start = self.last_sync_price == Decimal("0.0")
+        macro_changed = (
+            self.last_regime is not None and regime != self.last_regime
+        ) or (self.last_bias is not None and bias != self.last_bias)
+
+        # Re-sync if price moved more than the base ATR gap
+        price_moved_abs = Decimal("0.0")
+        if not is_initial_start:
+            price_moved_abs = abs(current_price - self.last_sync_price)
+
+        out_of_bounds = price_moved_abs > (calculated_atr * Decimal("0.5"))
+
+        if is_initial_start or macro_changed or out_of_bounds:
+            self.last_grid_sync_time = now
+            self.last_sync_price = current_price
+            self.last_regime = regime
+            self.last_bias = bias
+
+            if is_initial_start and os.environ.get("QE_SKIP_INITIAL_SYNC") == "1":
+                logger.info("[GRID] Skipped initial sync as QE_SKIP_INITIAL_SYNC is active.")
+                return None
+
+            params = f"regime={regime}|bias={bias}|atr={float(calculated_atr):.2f}|gamma={self.gamma}|mult={float(spacing_mult):.2f}"
+
+            return TradeAction(
+                action_type="SYNC_GRID",
+                price=current_price,
+                qty=self.base_order_size_q,
+                reason=params,
+            )
+
+        return None
+
+    def on_order_filled(
+        self, side: str, price: Decimal, qty: Decimal, spacing_pct: Decimal
+    ):
+        """
+        Triggered directly by an ORDER_FILLED event to place the exact counter-order.
+        """
+        from quantum_edge_core.ai_scalper_bot.bot.execution.smart_executor import (
+            OrderRequest,
+            OrderSide,
+            PositionSide,
+        )
+        if "BUY" in side.upper():
+            counter_price = float(price * (Decimal("1.0") + spacing_pct))
+            return OrderRequest(
+                symbol=self.config.get("symbol", "BTCUSDT"),
+                side=OrderSide.SELL,
+                position_side=PositionSide.LONG,
+                qty=float(qty),
+                price=counter_price,
+                client_oid="counter_sell"
+            )
+        else:
+            counter_price = float(price * (Decimal("1.0") - spacing_pct))
+            return OrderRequest(
+                symbol=self.config.get("symbol", "BTCUSDT"),
+                side=OrderSide.BUY,
+                position_side=PositionSide.SHORT,
+                qty=float(qty),
+                price=counter_price,
+                client_oid="counter_buy"
+            )
+
+    def adjust_to_liquidity(self, target_price: Decimal, liquidity_walls: list) -> Decimal:
+        """
+        Adjust target price to front-run a liquidity wall.
+        """
+        if not liquidity_walls:
+            return target_price
+
+        for wall in liquidity_walls:
+            wall_price = Decimal(str(wall["price"]))
+            # If wall is close to our target (within 1%)
+            if abs(wall_price - target_price) / target_price < Decimal("0.01"):
+                # Front-run by 0.1%
+                if wall["side"].upper() == "BID":
+                    return wall_price * Decimal("1.001")
+                else:
+                    return wall_price * Decimal("0.999")
+
+        return target_price
+
+    def calculate_grid_prices(self, current_price: Decimal, calculated_atr: Decimal, spacing_mult: Decimal) -> dict:
+        """
+        Calculate Non-linear Grid via ATR + gamma
+        """
+        bids = []
+        asks = []
+
+        for k in range(1, self.grid_levels_below + 1):
+            if k == 1:
+                gap = calculated_atr * Decimal("0.5")
+            else:
+                gap = calculated_atr * spacing_mult * (self.gamma ** Decimal(str(k)))
+            bids.append(current_price - gap)
+
+        for k in range(1, self.grid_levels_above + 1):
+            if k == 1:
+                gap = calculated_atr * Decimal("0.5")
+            else:
+                gap = calculated_atr * spacing_mult * (self.gamma ** Decimal(str(k)))
+            asks.append(current_price + gap)
+
+        return {"bids": bids, "asks": asks}
+
+

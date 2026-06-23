@@ -13,6 +13,7 @@ google-api-python-client==2.190.0
 google-auth==2.48.0
 google-auth-httplib2==0.3.0
 google-generativeai==0.8.6
+google-genai>=1.64.0
 googleapis-common-protos==1.72.0
 grpcio==1.78.0
 grpcio-status==1.71.2
@@ -50,7 +51,6 @@ uvicorn==0.40.0
 uvloop==0.22.1
 websockets==16.0
 psutil
-google-genai>=1.64.0
 pandas>=2.0.0
 pyarrow>=14.0.0
 xgboost>=2.0.0
@@ -61,5 +61,3 @@ plotly
 psycopg2-binary
 streamlit-autorefresh
 pandas-ta
-psutil
-python-dotenv

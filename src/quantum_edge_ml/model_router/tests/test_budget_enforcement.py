@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-
+import pytest
 from model_router.router.router import Router
 
 
@@ -11,12 +11,13 @@ class StaticBackend:
         self.output = output
         self.calls = 0
 
-    def generate(self, prompt: str, *, system_prompt: str, timeout_s: float) -> str:
+    async def generate(self, prompt: str, *, system_prompt: str, timeout_s: float) -> str:
         self.calls += 1
         return self.output
 
 
-def test_budget_enforcement_skips_teacher(monkeypatch, tmp_path):
+@pytest.mark.asyncio
+async def test_budget_enforcement_skips_teacher(monkeypatch, tmp_path):
     monkeypatch.setenv("TEACHER_MAX_REQ_PER_DAY", "0")
     monkeypatch.setenv("TEACHER_MAX_TOKENS_PER_DAY", "0")
 
@@ -28,6 +29,7 @@ def test_budget_enforcement_skips_teacher(monkeypatch, tmp_path):
         student_backend=student, teacher_backend=teacher, runtime_dir=tmp_path
     )
 
-    result = router.route("prompt", hints={"mode": "fallback"})
+    result = await router.route("prompt", hints={"mode": "fallback"})
     assert result.backend in {"student", "fallback"}
     assert teacher.calls == 0
+

@@ -1,7 +1,7 @@
 import os
 import re
 
-directory = "src/quantum_edge_core/supervisor"
+directory = "/home/korben/.hermes/hermes"
 
 inner_modules = [
     "action_ledger",
@@ -46,7 +46,7 @@ inner_modules = [
     "utils",
 ]
 
-# Create a regex to match quantum_edge_core.supervisor.(module)
+# Create a regex to match hermes.(module)
 mods_pattern = "|".join(inner_modules)
 regex_from = re.compile(
     rf"\bfrom\s+quantum_edge_core\.supervisor\.(?P<mod>{mods_pattern})\b"
@@ -66,10 +66,10 @@ for root, dirs, files in os.walk(directory):
                     content = f.read()
 
                 new_content = regex_from.sub(
-                    r"from quantum_edge_core.supervisor.supervisor.\g<mod>", content
+                    r"from hermes.supervisor.\g<mod>", content
                 )
                 new_content = regex_import.sub(
-                    r"import quantum_edge_core.supervisor.supervisor.\g<mod>",
+                    r"import hermes.supervisor.\g<mod>",
                     new_content,
                 )
 

@@ -41,7 +41,7 @@ processes:
   dyndca:
     enabled: true
     cwd: "."
-    cmd: ["/home/korben/QuantumEdge-main/.venv/bin/python3", "src/quantum_edge_core/dyn_dca_bot/main.py"]
+    cmd: ["/home/korben/QuantumEdge-main/venv/bin/python3", "-m", "quantum_edge_core.dyn_dca_bot.main"]
     env:
       PYTHONPATH: "."
       LOG_LEVEL: "INFO"

@@ -59,7 +59,7 @@ class PaperTrader:
             float(self.quote_balance),
         )
 
-    async def execute(self, action: Union[TradeAction, List[TradeAction]]) -> bool:
+    async def execute(self, action: Union[TradeAction, Any, List[TradeAction]]) -> bool:
         """Execute a single action or a batch of grid orders."""
         # ── Handle list of orders (DCA Grid batch) ───────────────
         if isinstance(action, list):
@@ -78,13 +78,13 @@ class PaperTrader:
         # ── Single action ────────────────────────────────────────
         return await self._execute_single(action)
 
-    async def _execute_single(self, action: TradeAction) -> bool:
-        """Process a single TradeAction."""
+    async def _execute_single(self, action: Any) -> bool:
+        """Process a single TradeAction or OrderRequest."""
         if self.quote_balance <= 0:
             logger.error("INSUFFICIENT BALANCE DETECTED — forcing fallback $10k")
             self.quote_balance = Decimal(str(PAPER_FALLBACK_BALANCE_USDT))
 
-        if action.action_type == "CANCEL_ALL":
+        if hasattr(action, "action_type") and action.action_type == "CANCEL_ALL":
             cancelled = len(self.open_orders)
             self.open_orders.clear()
             logger.info(
@@ -94,11 +94,51 @@ class PaperTrader:
             )
             return True
 
-        if action.action_type == "SYNC_GRID":
+        if hasattr(action, "action_type") and action.action_type == "SYNC_GRID":
             return await self._expand_sync_grid(action)
+
+        if hasattr(action, "action_type") and action.action_type == "ORDER_FILLED":
+            return await self._order_filled_counter(action)
 
         # ── Direct BUY/SELL order ────────────────────────────────
         return self._place_limit_order(action)
+
+    async def _order_filled_counter(self, action: TradeAction) -> bool:
+        """
+        Counter-order logic: when BUY fills -> place SELL at +spacing, when SELL fills -> place BUY at -spacing.
+        Expects reason to contain: side=BUY|spacing_pct=X
+        """
+        try:
+            params = dict(item.split("=") for item in action.reason.split("|"))
+            spacing_pct = float(params.get("spacing_pct", 0.012))
+            filled_side = params.get("side", "BUY").upper()
+        except Exception:
+            spacing_pct = 0.012
+            filled_side = "BUY"
+
+        orig_price = float(action.price)
+        amount = float(action.qty)
+
+        if filled_side == "BUY":
+            new_side = "SELL"
+            new_price = round(orig_price * (1 + spacing_pct), 2)
+            pos_side = "LONG"
+        else:
+            new_side = "BUY"
+            new_price = round(orig_price * (1 - spacing_pct), 2)
+            pos_side = "SHORT"
+
+        logger.warning(
+            f"✅ PAPER: Executing Counter-Order -> {new_side} @ {new_price} (positionSide={pos_side})"
+        )
+
+        order = TradeAction(
+            action_type=f"GRID_{new_side}_{pos_side}",
+            price=Decimal(str(new_price)),
+            qty=Decimal(str(amount)),
+            reason=f"Counter-Order for {filled_side} @ {orig_price}",
+        )
+        return self._place_limit_order(order)
 
     async def _expand_sync_grid(self, action: TradeAction) -> bool:
         """Expand a SYNC_GRID action into individual LIMIT orders.
@@ -161,10 +201,71 @@ class PaperTrader:
         )
         return placed > 0
 
-    def _place_limit_order(self, action: TradeAction) -> bool:
+    def on_tick(self, price: Decimal) -> List[Any]:
+        """
+        Match open orders against the current price tick.
+        Returns a list of filled orders.
+        """
+        filled_orders = []
+        still_open = []
+        for order in self.open_orders:
+            order_price = Decimal(str(order["price"]))
+            side = order["side"]
+            qty = Decimal(str(order["qty"]))
+            if side == "BUY":
+                if price <= order_price:
+                    order["status"] = "FILLED"
+                    self.fills.append(order)
+                    self.quote_balance -= order_price * qty
+                    filled_orders.append(order)
+                    logger.warning(
+                        f"🎯 PAPER ORDER FILLED: BUY {qty} @ {order_price} | Current price: {price} | Bal: {self.quote_balance}"
+                    )
+                else:
+                    still_open.append(order)
+            else:  # SELL
+                if price >= order_price:
+                    order["status"] = "FILLED"
+                    self.fills.append(order)
+                    self.quote_balance += order_price * qty
+                    filled_orders.append(order)
+                    logger.warning(
+                        f"🎯 PAPER ORDER FILLED: SELL {qty} @ {order_price} | Current price: {price} | Bal: {self.quote_balance}"
+                    )
+                else:
+                    still_open.append(order)
+        self.open_orders = still_open
+        return filled_orders
+
+    def _place_limit_order(self, action: Any) -> bool:
         """Place a single LIMIT order (BUY or SELL)."""
-        qty = Decimal(str(action.qty))
-        price = Decimal(str(action.price))
+        from quantum_edge_core.ai_scalper_bot.bot.execution.smart_executor import OrderRequest
+
+        if isinstance(action, OrderRequest):
+            qty = Decimal(str(action.qty))
+            price = Decimal(str(action.price)) if action.price is not None else Decimal("0.0")
+            side = action.side.value.upper()
+            pos_side = action.position_side.value.upper()
+            reason = f"OrderRequest {side} on {pos_side}"
+            client_oid = action.client_oid
+        else:
+            qty = Decimal(str(action.qty))
+            price = Decimal(str(action.price))
+            if "BUY" in action.action_type:
+                side = "BUY"
+            elif "SELL" in action.action_type:
+                side = "SELL"
+            else:
+                side = "BUY" if "BUY" in action.reason.upper() else "SELL"
+
+            if "SHORT" in action.action_type:
+                pos_side = "SHORT"
+            elif "LONG" in action.action_type:
+                pos_side = "LONG"
+            else:
+                pos_side = "LONG" if side == "BUY" else "SHORT"
+            reason = action.reason
+            client_oid = None
 
         if qty <= 0 or qty < Decimal("0.0001"):
             logger.error(
@@ -177,36 +278,29 @@ class PaperTrader:
             logger.error("ORDER SKIPPED: price=%.2f is invalid!", float(price))
             return False
 
-        side = "BUY" if "BUY" in action.action_type else "SELL"
-        fill_id = str(uuid.uuid4())[:8]
+        fill_id = client_oid or str(uuid.uuid4())[:8]
 
         order = {
             "id": fill_id,
             "symbol": self.symbol,
             "side": side,
+            "positionSide": pos_side,
             "qty": float(qty),
             "price": float(price),
-            "reason": action.reason,
+            "reason": reason,
             "status": "OPEN",
             "ts": time.time(),
         }
         self.open_orders.append(order)
-        self.fills.append(order)
-
-        # Track quote balance
-        if side == "BUY":
-            self.quote_balance -= price * qty
-        else:
-            self.quote_balance += price * qty
 
         logger.info(
-            "ORDER PLACED: %s %.6f %s @ %.2f | reason=%s | bal=%.2f (id=%s)",
+            "ORDER PLACED (OPEN): %s (%s) %.6f %s @ %.2f | reason=%s (id=%s)",
             side,
+            pos_side,
             float(qty),
             self.symbol,
             float(price),
-            action.reason,
-            float(self.quote_balance),
+            reason,
             fill_id,
         )
         return True

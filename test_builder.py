@@ -1,9 +1,9 @@
 import asyncio
 import logging
-from quantum_edge_core.supervisor.supervisor.market_context_builder import (
+from hermes.supervisor.market_context_builder import (
     MarketContextBuilder,
 )
-from quantum_edge_core.supervisor.supervisor.state import RiskStateSnapshot
+from hermes.supervisor.state import RiskStateSnapshot
 
 logging.basicConfig(level=logging.INFO)
 

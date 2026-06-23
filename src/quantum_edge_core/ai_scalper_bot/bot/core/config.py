@@ -32,8 +32,16 @@ class Config:
 
         # Load from Env or Services YAML
         self.service_id = os.getenv("QE_BOT_ID", "ai_scalper_bot")
-        self.telemetry_port = int(os.getenv("QE_BOT_TELEMETRY_PORT", "5557"))
-        self.policy_port = int(os.getenv("QE_BOT_POLICY_PORT", "5558"))
+        self.telemetry_port = 5557
+        env_bot_id = os.getenv("QE_BOT_ID")
+        if env_bot_id in (None, "ai_scalper", "ai_scalper_bot"):
+            env_port = os.getenv("QE_BOT_TELEMETRY_PORT")
+            if env_port:
+                try:
+                    self.telemetry_port = int(env_port)
+                except ValueError:
+                    pass
+        self.policy_port = int(os.getenv("QE_BOT_POLICY_PORT", "5559"))
         self.trading_mode = "spot_grid"
 
         if "QE_BOT_ID" not in os.environ:

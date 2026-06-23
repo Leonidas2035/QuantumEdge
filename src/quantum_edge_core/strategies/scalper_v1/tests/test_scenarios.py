@@ -1,10 +1,10 @@
 import json
 from pathlib import Path
 
-from quantum_edge_core.supervisor.research.offline.scalper_bot.scenarios.build import (
+from hermes.research.offline.scalper_bot.scenarios.build import (
     build_scenarios_pipeline,
 )
-from quantum_edge_core.supervisor.research.offline.scalper_bot.scenarios.validate import (
+from hermes.research.offline.scalper_bot.scenarios.validate import (
     validate_scenarios,
 )
 

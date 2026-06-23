@@ -32,6 +32,9 @@ class LockbotConfig:
     bot_pub_endpoint: str = os.getenv(
         "LOCKBOT_PUB_ENDPOINT", "ipc:///tmp/lockbot_status.ipc"
     )
+    supervisor_policy_sub_endpoint: str = os.getenv(
+        "LOCKBOT_POLICY_SUB_ENDPOINT", "tcp://127.0.0.1:5556"
+    )
     market_topics: List[str] = field(
         default_factory=lambda: [
             "BTCUSDT:mark_price_1s",

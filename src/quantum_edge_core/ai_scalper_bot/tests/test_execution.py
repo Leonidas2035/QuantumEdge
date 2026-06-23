@@ -47,8 +47,7 @@ def test_position_weighted_avg():
     assert float(dd) == pytest.approx(0.0526, abs=0.0001)
 
 
-@pytest.mark.asyncio
-async def test_position_sell_reduction():
+def test_position_sell_reduction():
     pm = PositionManager()
     pm.simulate_fill(Decimal("100.0"), Decimal("2.0"), "BUY")
 
@@ -174,3 +173,58 @@ def test_regime_change_sync_grid():
     action3 = strat.decide(state2, create_features(), 1.0, pm)
     assert action3 is not None
     assert action3.action_type == "SYNC_GRID"
+
+
+def test_paper_trader_order_matching_and_counter():
+    from quantum_edge_core.ai_scalper_bot.bot.infrastructure.paper_trader import PaperTrader
+    from quantum_edge_core.ai_scalper_bot.bot.execution.strategy_core import TradeAction
+
+    # 1. Initialize PaperTrader
+    pt = PaperTrader()
+    assert len(pt.open_orders) == 0
+
+    # 2. Place a BUY limit order at 95.0
+    buy_action = TradeAction(action_type="BUY", price=Decimal("95.0"), qty=Decimal("0.1"), reason="GRID_BUY_L1")
+    res = pt._place_limit_order(buy_action)
+    assert res is True
+    assert len(pt.open_orders) == 1
+    assert pt.open_orders[0]["price"] == 95.0
+    assert pt.open_orders[0]["status"] == "OPEN"
+
+    # 3. Simulate tick at 96.0 (should NOT match BUY at 95.0)
+    fills = pt.on_tick(Decimal("96.0"))
+    assert len(fills) == 0
+    assert len(pt.open_orders) == 1
+
+    # 4. Simulate tick at 94.5 (should match BUY at 95.0)
+    fills = pt.on_tick(Decimal("94.5"))
+    assert len(fills) == 1
+    assert fills[0]["status"] == "FILLED"
+    assert len(pt.open_orders) == 0
+
+    # 5. Execute ORDER_FILLED event for the filled BUY (should place a counter SELL order)
+    # Target profit is 1.2% (1% profit + 0.2% commission buffer) -> 95.0 * 1.012 = 96.14
+    fill_action = TradeAction(
+        action_type="ORDER_FILLED",
+        price=Decimal("95.0"),
+        qty=Decimal("0.1"),
+        reason="side=BUY|spacing_pct=0.012",
+    )
+    import asyncio
+    res_counter = asyncio.run(pt.execute(fill_action))
+    assert res_counter is True
+
+    # Check that the counter order is in open_orders
+    assert len(pt.open_orders) == 1
+    counter_order = pt.open_orders[0]
+    assert counter_order["side"] == "SELL"
+    assert counter_order["price"] == pytest.approx(96.14, abs=0.01)
+    assert counter_order["qty"] == 0.1
+    assert counter_order["status"] == "OPEN"
+
+    # 6. Simulate tick at 96.5 (should match counter SELL at 96.14)
+    fills_sell = pt.on_tick(Decimal("96.5"))
+    assert len(fills_sell) == 1
+    assert fills_sell[0]["status"] == "FILLED"
+    assert len(pt.open_orders) == 0
+

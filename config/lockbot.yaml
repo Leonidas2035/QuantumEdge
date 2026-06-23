@@ -7,7 +7,7 @@ log_path: "logs/lockbot.log"
 # Infrastructure
 hub_sub_endpoint: "tcp://127.0.0.1:5555"
 supervisor_policy_sub_endpoint: "tcp://127.0.0.1:5556"
-bot_pub_endpoint: "tcp://127.0.0.1:5557"
+bot_pub_endpoint: "tcp://127.0.0.1:5577"
 
 # Execution (Binance Futures Testnet)
 # API keys must be loaded from ENV:

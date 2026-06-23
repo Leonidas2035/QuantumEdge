@@ -1,6 +1,6 @@
 import asyncio
 from unittest.mock import MagicMock, patch
-from quantum_edge_core.supervisor.gemini_client import GeminiClient
+from hermes.gemini_client import GeminiClient
 
 
 async def test_circuit_breaker_logic():

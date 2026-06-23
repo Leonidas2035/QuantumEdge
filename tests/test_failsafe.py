@@ -15,8 +15,8 @@ from unittest.mock import MagicMock, AsyncMock
 # Add src to path
 sys.path.append(os.path.abspath("src"))
 
-from quantum_edge_core.supervisor.service import AsyncSupervisor
-from quantum_edge_core.supervisor.supervisor.gemini_client import GeminiClient
+from hermes.service import AsyncSupervisor
+from hermes.supervisor.gemini_client import GeminiClient
 
 
 class TestFailSafe(unittest.IsolatedAsyncioTestCase):

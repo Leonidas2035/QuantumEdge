@@ -15,7 +15,7 @@ from pathlib import Path
 # Add src to path
 sys.path.append(os.path.abspath("src"))
 
-from quantum_edge_core.supervisor.service import AsyncSupervisor
+from hermes.service import AsyncSupervisor
 
 # We need httpx OR requests to test API.
 # Since we installed httpx for Gemini, we can use it, or requests (standard).

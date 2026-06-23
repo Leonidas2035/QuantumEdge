@@ -38,7 +38,7 @@ ingest:
   events_path: "ai_scalper_bot/runtime/events/events.jsonl"
   metrics_path: "ai_scalper_bot/runtime/status/metrics.json"
   exec_path: "ai_scalper_bot/runtime/state/ledger.jsonl"
-  state_path: "SupervisorAgent/runtime/ingest_state.json"
+  state_path: "/home/korben/.hermes/runtime/ingest_state.json"
   max_line_kb: 256
   interval_sec: 2
   dedupe_cache_size: 5000

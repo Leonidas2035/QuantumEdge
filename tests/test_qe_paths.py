@@ -1,10 +1,10 @@
 import pytest
 
-pytest.skip("Legacy test broken by src-layout migration", allow_module_level=True)
+# pytest.skip("Legacy test broken by src-layout migration", allow_module_level=True)
 import os
 from pathlib import Path
 
-from tools.qe_paths import find_repo_root, get_paths
+from quantum_edge_infra.tools.qe_paths import find_repo_root, get_paths
 
 
 def test_find_repo_root_from_any_cwd(tmp_path: Path):

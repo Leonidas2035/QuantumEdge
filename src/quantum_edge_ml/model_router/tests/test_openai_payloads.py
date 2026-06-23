@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-
+import pytest
 import httpx
 
 from model_router.backends.openai_chat import OpenAIChatBackend
@@ -35,7 +35,8 @@ def test_openai_responses_payload(monkeypatch):
     assert output.startswith("{")
 
 
-def test_openai_chat_payload(monkeypatch):
+@pytest.mark.asyncio
+async def test_openai_chat_payload(monkeypatch):
     monkeypatch.setenv("OPENAI_API_KEY", "sk-test")
     monkeypatch.setenv("OPENAI_MODEL", "gpt-test")
 
@@ -59,7 +60,7 @@ def test_openai_chat_payload(monkeypatch):
 
     transport = httpx.MockTransport(handler)
     backend = OpenAIChatBackend(transport=transport)
-    output = backend.generate("prompt", system_prompt="sys", timeout_s=2.0)
+    output = await backend.generate("prompt", system_prompt="sys", timeout_s=2.0)
     assert output.startswith("{")
 
 

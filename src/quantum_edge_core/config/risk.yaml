@@ -1,0 +1,25 @@
+# ──────────────────────────────────────────────────────────────────
+# QuantumEdge — Global Risk Configuration
+# ──────────────────────────────────────────────────────────────────
+# Loaded by: config.load_risk_config()
+# Dataclass: RiskConfig
+#
+# Key names MUST match exactly what the parser expects.
+# All numeric values MUST be positive (validator raises ValueError).
+# ──────────────────────────────────────────────────────────────────
+
+currency: "USDT"
+
+# ── Daily Loss Limits ────────────────────────────────────────────
+max_daily_loss_abs: 5000.0       # Absolute daily loss limit (USDT) - increased for VST demo
+max_daily_loss_pct: 0.05         # Daily loss as fraction of equity (5%)
+
+# ── Drawdown Limits ──────────────────────────────────────────────
+max_drawdown_abs: 5000.0         # Max intraday drawdown (USDT) - increased for VST demo
+max_drawdown_pct: 0.10           # Max drawdown as fraction of peak equity (10%)
+
+# ── Position Sizing ──────────────────────────────────────────────
+max_notional_per_symbol: 1000000.0 # Max notional exposure per symbol (USDT)
+max_leverage: 50.0                # Max leverage multiplier
+
+risk_management_enabled: false
