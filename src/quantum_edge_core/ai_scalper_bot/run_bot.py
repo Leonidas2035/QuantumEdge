@@ -12,6 +12,8 @@ import time
 import yaml
 from decimal import Decimal
 from pathlib import Path
+from dotenv import load_dotenv
+load_dotenv()
 
 from quantum_edge_core.ai_scalper_bot.bot.core.config import Config
 from quantum_edge_core.ai_scalper_bot.bot.core.orderbook import OrderBookCache
@@ -69,7 +71,8 @@ class BotEngine:
         )
         import os
 
-        execution_mode = getattr(self.config, "execution_mode", "paper").lower()
+        # Force execution_mode to 'bingx' to disable Paper Trader
+        execution_mode = "bingx"
         use_testnet = getattr(self.config, "use_testnet", False)
 
         if execution_mode in ("bingx", "live"):
@@ -96,10 +99,11 @@ class BotEngine:
 
         self.zmq_ctx = zmq.Context()
         self.cmd_sub = self.zmq_ctx.socket(zmq.SUB)
+        # Connect to the policy port published by supervisor
         cmd_endpoint = f"tcp://127.0.0.1:{self.config.policy_port}"
         self.cmd_sub.connect(cmd_endpoint)
-        self.cmd_sub.subscribe(f"command.{self.config.service_id}".encode("utf-8"))
-        logger.info(f"🔌 Command bus connected to {cmd_endpoint}, subscribed to command.{self.config.service_id}")
+        self.cmd_sub.subscribe(b"")
+        logger.info(f"🔌 Command bus connected to {cmd_endpoint}, subscribed to ALL topics (b'')")
 
         # 2. Memory (State)
         self.cache = OrderBookCache()
@@ -193,6 +197,41 @@ class BotEngine:
             except Exception as e:
                 logger.error(f"Error in telemetry loop: {e}")
 
+    async def behavior_logger(self):
+        """15-minute async behavior logging loop."""
+        logger.info("📡 Starting independent behavior logger loop (15m interval)")
+        while self.running:
+            try:
+                ms = self.cache._current_state
+                price_val = ms.last_price if ms else 0.0
+                atr_val = ms.atr if ms else 0.0
+                
+                pos_val = float(self.position.long_state.total_qty - self.position.short_state.total_qty)
+                entry_val = float(self.position.long_state.avg_price)
+                pnl_val = float(self.position.long_state.unrealized_pnl)
+                
+                import datetime
+                timestamp_str = datetime.datetime.utcnow().strftime("%Y-%m-%d %H:%M:%S")
+                
+                log_line = (
+                    f"{timestamp_str} | BEHAVIOR HEARTBEAT | "
+                    f"ai_scalper signal={getattr(self.strategy, 'state', BotState.IDLE).name} "
+                    f"last_price={price_val:.2f} atr={atr_val:.4f} "
+                    f"ofi={self.features.latest_ofi:.2f} | "
+                    f"dyndca pos={pos_val:.4f} entry={entry_val:.2f} pnl={pnl_val:+.2f} | "
+                    f"action=WAIT\n"
+                )
+                
+                with open("ai_scalper_behavior.log", "a") as f:
+                    f.write(log_line)
+                    
+            except asyncio.CancelledError:
+                break
+            except Exception as e:
+                logger.error(f"Behavior logger crashed: {e}")
+            finally:
+                await asyncio.sleep(900.0)
+
     async def _update_portfolio_telemetry(self):
         now = time.time()
         if now - self.last_telemetry_fetch >= 5.0:
@@ -268,17 +307,118 @@ class BotEngine:
             self.last_telemetry_fetch = now
 
     # ── Supervisor command handler ────────────────────────────────
-    def handle_supervisor_command(self, cmd: dict) -> None:
-        """Process a single command dict from the Supervisor command bus.
-
-        Supported actions:
-        - ``PAUSE_ENTRIES``: halt all new entries until ``RESUME_ENTRIES``.
-        - ``RESUME_ENTRIES``: re-enable entries after a pause.
-        - ``ADJUST_RISK``: set ``market_state.risk_multiplier``.
-        - ``trading_mode`` field: switch the active ``TradingMode``.
-        """
+    async def handle_supervisor_command(self, cmd: dict) -> None:
+        """Process a single command dict or directive from the Supervisor command bus."""
+        print(f"[DEBUG-CMD] Received command: {cmd}", flush=True)
+        logger.warning(f"📥 RAW SUPERVISOR COMMAND RECEIVED: {cmd}")
+        
         market_state = self.cache._current_state
 
+        # ── Direct Trade Directives ────────────────────────────────
+        command_type: str = cmd.get("command_type", "")
+        if command_type:
+            logger.warning(f"🎯 RECEIVING EXTERNAL TRADE DIRECTIVE: {command_type}")
+            price = cmd.get("price")
+            qty = cmd.get("quantity") or cmd.get("qty")
+            reason = cmd.get("reason", "External agent directive")
+            
+            if command_type == "HOLD":
+                self.gateway.entries_paused = True
+                self.strategy.state = BotState.PAUSED
+                if market_state:
+                    market_state.entries_paused = True
+                action_cancel = TradeAction(
+                    action_type="CANCEL_ALL",
+                    price=Decimal("0.0"),
+                    qty=Decimal("0.0"),
+                    reason=f"HOLD directive: {reason}"
+                )
+                await self.gateway.execute(action_cancel)
+                logger.warning("🛑 Bot state suspended and all orders cancelled via HOLD directive.")
+                return
+
+            if command_type == "LIMIT_BUY":
+                if not price or not qty:
+                    logger.error(f"LIMIT_BUY rejected: price={price}, qty={qty} must be provided.")
+                    return
+                action_buy = TradeAction(
+                    action_type="BUY",
+                    price=Decimal(str(price)),
+                    qty=Decimal(str(qty)),
+                    reason=f"LIMIT_BUY directive: {reason}"
+                )
+                await self.gateway.execute(action_buy)
+                return
+
+            if command_type == "LIMIT_SELL":
+                if not price or not qty:
+                    logger.error(f"LIMIT_SELL rejected: price={price}, qty={qty} must be provided.")
+                    return
+                action_sell = TradeAction(
+                    action_type="SELL",
+                    price=Decimal(str(price)),
+                    qty=Decimal(str(qty)),
+                    reason=f"LIMIT_SELL directive: {reason}"
+                )
+                await self.gateway.execute(action_sell)
+                return
+
+            if command_type == "MARKET_BUY":
+                if not qty:
+                    logger.error(f"MARKET_BUY rejected: qty={qty} must be provided.")
+                    return
+                exec_price = market_state.best_ask if (market_state and market_state.best_ask > 0) else (market_state.last_price if market_state else 0.0)
+                action_mbuy = TradeAction(
+                    action_type="BUY",
+                    price=Decimal(str(exec_price)),
+                    qty=Decimal(str(qty)),
+                    reason=f"MARKET_BUY directive: {reason}"
+                )
+                await self.gateway.execute(action_mbuy)
+                return
+
+            if command_type == "MARKET_SELL":
+                if not qty:
+                    logger.error(f"MARKET_SELL rejected: qty={qty} must be provided.")
+                    return
+                exec_price = market_state.best_bid if (market_state and market_state.best_bid > 0) else (market_state.last_price if market_state else 0.0)
+                action_msell = TradeAction(
+                    action_type="SELL",
+                    price=Decimal(str(exec_price)),
+                    qty=Decimal(str(qty)),
+                    reason=f"MARKET_SELL directive: {reason}"
+                )
+                await self.gateway.execute(action_msell)
+                return
+
+            if command_type == "TP":
+                if self.position.total_qty > 0:
+                    exec_price = market_state.best_bid if (market_state and market_state.best_bid > 0) else (market_state.last_price if market_state else 0.0)
+                    action_tp = TradeAction(
+                        action_type="SELL",
+                        price=Decimal(str(exec_price)),
+                        qty=Decimal(str(self.position.total_qty)),
+                        reason=f"TP directive: {reason}"
+                    )
+                    await self.gateway.execute(action_tp)
+                elif self.position.total_qty < 0:
+                    exec_price = market_state.best_ask if (market_state and market_state.best_ask > 0) else (market_state.last_price if market_state else 0.0)
+                    action_tp = TradeAction(
+                        action_type="BUY",
+                        price=Decimal(str(exec_price)),
+                        qty=Decimal(str(abs(self.position.total_qty))),
+                        reason=f"TP directive: {reason}"
+                    )
+                    await self.gateway.execute(action_tp)
+                else:
+                    logger.info("TP directive received, but position is already zero. Ignoring.")
+                return
+
+            if command_type == "STOP_LOSS":
+                logger.error("❌ STOP_LOSS directive rejected at bot level (No-Loss Policy Guard).")
+                return
+
+        # ── Regular Policy Actions ────────────────────────────────
         action: str = cmd.get("action", "")
 
         if action == "PAUSE_ENTRIES":
@@ -298,36 +438,48 @@ class BotEngine:
             return
 
         if action == "ADJUST_RISK":
-            multiplier = float(cmd.get("multiplier", 1.0))
+            multiplier = float(cmd.get("multiplier", cmd.get("risk_multiplier", 1.0)))
             if market_state:
                 market_state.risk_multiplier = multiplier
             logger.warning(
                 "⚠️ SUPERVISOR COMMAND: Risk Multiplier set to %s",
                 multiplier,
             )
-            return
+            if not any(k in cmd for k in ["buy_zone_max", "sell_zone_min", "trading_mode"]):
+                return
 
         # ── Trading mode / zone updates (no action field) ─────────
-        if market_state and "trading_mode" in cmd:
-            from quantum_edge_core.ai_scalper_bot.bot.core.models import (
-                TradingMode,
-            )
+        # Supervisor might send flat {buy_zone_max: ...} OR nested {payload: {buy_zone_max: ...}}
+        payload = cmd.get("payload", cmd) if isinstance(cmd.get("payload"), dict) else cmd
+
+        if market_state:
+            if "trading_mode" in payload:
+                from quantum_edge_core.ai_scalper_bot.bot.core.models import TradingMode
+                try:
+                    mode_str = str(payload.get("trading_mode", "PASS")).upper()
+                    if mode_str in TradingMode.__members__:
+                        market_state.trading_mode = TradingMode[mode_str]
+                        logger.warning(
+                            "🤖 SUPERVISOR POLICY: Trading Mode -> %s",
+                            market_state.trading_mode.value,
+                        )
+                except Exception as parse_err:
+                    logger.error("Error parsing trading_mode: %s", parse_err)
 
             try:
-                mode_str = str(cmd.get("trading_mode", "PASS")).upper()
-                if mode_str in TradingMode.__members__:
-                    market_state.trading_mode = TradingMode[mode_str]
-                    logger.warning(
-                        "🤖 SUPERVISOR POLICY: Trading Mode -> %s",
-                        market_state.trading_mode.value,
-                    )
-
-                if "buy_zone_max" in cmd and cmd["buy_zone_max"] is not None:
-                    market_state.buy_zone_max = float(cmd["buy_zone_max"])
-                if "sell_zone_min" in cmd and cmd["sell_zone_min"] is not None:
-                    market_state.sell_zone_min = float(cmd["sell_zone_min"])
+                if "buy_zone_max" in payload and payload["buy_zone_max"] is not None:
+                    market_state.buy_zone_max = float(payload["buy_zone_max"])
+                    logger.info(f"Applied Policy Update: buy_zone_max={market_state.buy_zone_max}")
+                if "sell_zone_min" in payload and payload["sell_zone_min"] is not None:
+                    market_state.sell_zone_min = float(payload["sell_zone_min"])
+                    logger.info(f"Applied Policy Update: sell_zone_min={market_state.sell_zone_min}")
+                if "risk_multiplier" in payload and payload["risk_multiplier"] is not None:
+                    old_risk = float(market_state.risk_multiplier)
+                    new_risk = float(payload["risk_multiplier"])
+                    market_state.risk_multiplier = new_risk
+                    logger.info(f"Applied Policy Update: risk_multiplier={market_state.risk_multiplier} (was {old_risk})")
             except Exception as parse_err:
-                logger.error("Error parsing trade policy: %s", parse_err)
+                logger.error("Error parsing trade policy zones/risk: %s", parse_err)
 
     async def warm_up(self):
         symbol = self.config.symbol
@@ -337,10 +489,42 @@ class BotEngine:
             db = QuestDBQueryBuilder()
             history = await db.get_microstructure(symbol, minutes=15)
             logger.info(f"[WARM-UP] Received {len(history)} records from QuestDB. Appending to deques...")
+            
+            strategy_oracle = getattr(self.strategy, "vol_oracle", None)
+            
+            # Fetch 6 hours of kline data from klines_1m if available to warm up Volatility Oracle
+            try:
+                kline_history = await db._execute(f"SELECT ts, close FROM klines_1m WHERE symbol = '{symbol}' AND ts > dateadd('h', -6, now()) ORDER BY ts ASC;")
+                logger.info(f"[WARM-UP] Fetched {len(kline_history)} 1m klines from QuestDB for Volatility Oracle.")
+                if strategy_oracle is not None:
+                    for k in kline_history:
+                        close_p = k.get("close")
+                        if close_p:
+                            strategy_oracle.add_close_price(float(close_p))
+            except Exception as k_err:
+                logger.warning(f"[WARM-UP] Failed to fetch 1m kline history: {k_err}")
+
+            if strategy_oracle is not None and len(strategy_oracle.price_history) == 0:
+                last_minute = None
+                for record in history:
+                    ts = record.get('ts', 0)
+                    # Convert QuestDB microsecond timestamp to seconds if needed
+                    ts_sec = ts / 1e6 if ts > 1e12 else ts
+                    mid_p = record.get('mid_price', 0.0)
+                    if ts_sec > 0 and mid_p > 0:
+                        minute = int(ts_sec) // 60
+                        if last_minute is None or minute > last_minute:
+                            strategy_oracle.add_close_price(mid_p)
+                            last_minute = minute
+
             for record in history:
+                mid_p = record.get('mid_price', 0.0)
                 self.ofi_history.append(record.get('ofi_raw', 0.0))
-                self.price_history.append(record.get('mid_price', 0.0))
+                self.price_history.append(mid_p)
+                    
             logger.info(f"[WARM-UP] Warm-up complete. Loaded {len(self.ofi_history)} OFI values, {len(self.price_history)} price values.")
+            if strategy_oracle is not None:
+                logger.info(f"[WARM-UP] Volatility Oracle price history size: {len(strategy_oracle.price_history)}")
         except Exception as e:
             logger.error(f"[WARM-UP] Error during warm-up: {e}")
 
@@ -366,12 +550,29 @@ class BotEngine:
         # ── Fetch actual balance from exchange (async, now that loop is running) ───────────
         if hasattr(self.gateway, "fetch_balance_async"):
             actual_balance = await self.gateway.fetch_balance_async()
-            # Update PositionManager with real balance
-
             self.position.state.quote_balance = Decimal(str(actual_balance))
             logger.info(
                 f"💰 PositionManager updated with real balance: {actual_balance:.2f}"
             )
+
+        # ── Authoritative Portfolio Sync on Startup ──
+        if self.portfolio_sync:
+            try:
+                logger.info("[STARTUP] Performing authoritative portfolio sync with BingX REST API...")
+                positions = await self.portfolio_sync.exchange.fetch_positions()
+                balance = await self.portfolio_sync.exchange.fetch_balance()
+                self.position.update_from_exchange(positions, balance)
+                logger.info(f"[STARTUP] Portfolio synced. Equity: {balance.get('USDT', {}).get('free', 0.0)}")
+            except Exception as sync_err:
+                logger.error(f"[STARTUP] Authoritative startup portfolio sync failed: {sync_err}")
+        else:
+            logger.info("[STARTUP] Paper trading / sandbox mode: resetting position manager states.")
+            self.position.long_state.total_qty = Decimal("0.0")
+            self.position.long_state.avg_price = Decimal("0.0")
+            self.position.long_state.unrealized_pnl = Decimal("0.0")
+            self.position.short_state.total_qty = Decimal("0.0")
+            self.position.short_state.avg_price = Decimal("0.0")
+            self.position.short_state.unrealized_pnl = Decimal("0.0")
 
         # ── Broadcast initial state to Dashboard ──────────────
         await self.reporter.send_initial_state(
@@ -388,6 +589,9 @@ class BotEngine:
 
         # ── Start Telemetry Task ──────────────
         telemetry_task = asyncio.create_task(self.telemetry_loop())
+
+        # ── Start Behavior Logger Task ────────
+        behavior_logger_task = asyncio.create_task(self.behavior_logger())
 
         # ── Start Background CCXT Sync ──────────
         if getattr(self, "portfolio_sync", None):
@@ -409,12 +613,43 @@ class BotEngine:
                     import json
 
                     while True:
-                        topic, msg = self.cmd_sub.recv_multipart(zmq.NOBLOCK)
-                        cmd = json.loads(msg.decode("utf-8"))
-                        self.handle_supervisor_command(cmd)
+                        raw_parts = self.cmd_sub.recv_multipart(zmq.NOBLOCK)
+                        print(f"[DEBUG-ZMQ] Raw parts received: {raw_parts}", flush=True)
+                        if len(raw_parts) == 2:
+                            topic, msg = raw_parts
+                        elif len(raw_parts) == 1:
+                            topic = b"unknown"
+                            msg = raw_parts[0]
+                        else:
+                            topic = raw_parts[0]
+                            msg = raw_parts[-1]
+                            
+                        # Try JSON first
+                        try:
+                            cmd = json.loads(msg.decode("utf-8"))
+                        except (json.JSONDecodeError, UnicodeDecodeError):
+                            # Fallback to MessagePack
+                            import msgspec
+                            from quantum_edge_core.shared.trading_policy import TradingPolicy
+                            try:
+                                policy = msgspec.msgpack.decode(msg, type=TradingPolicy)
+                                # Convert TradingPolicy object to dictionary for the handler
+                                cmd = {
+                                    "trading_mode": policy.strategy_mode,
+                                    "buy_zone_max": policy.buy_zone_max,
+                                    "sell_zone_min": policy.sell_zone_min,
+                                    "risk_multiplier": policy.risk_multiplier
+                                }
+                                print(f"[DEBUG-ZMQ] Decoded MessagePack Policy: {cmd}")
+                            except Exception as mp_err:
+                                print(f"[DEBUG-ZMQ] Both JSON and MsgPack failed: {mp_err}")
+                                continue
+
+                        await self.handle_supervisor_command(cmd)
                 except zmq.Again:
                     pass
                 except Exception as e:
+                    print(f"[DEBUG-ZMQ-ERROR] Failed to process command: {e}", flush=True)
                     logger.error("Error processing command bus: %s", e)
 
                 # ── 0.5 Rolling 1M State Reset ──
@@ -593,10 +828,11 @@ class BotEngine:
                 elif timestamp > 1e12:
                     timestamp /= 1e3  # ms to s
 
-                # STALE_DATA guard: reject data older than 5 seconds
-                if timestamp > 0 and (time.time() - timestamp) > 5.0:
+                # STALE_DATA guard: accept data up to 60s old to survive ZMQ backlog,
+                # beyond that treat as stuck pipe and skip.
+                if timestamp > 0 and (time.time() - timestamp) > 60.0:
                     logger.warning(
-                        f"STALE_DATA: Rejecting tick older than 5 seconds (timestamp={timestamp}, age={time.time() - timestamp:.2f}s)"
+                        f"STALE_DATA: Rejecting tick older than 60s (timestamp={timestamp}, age={time.time() - timestamp:.2f}s)"
                     )
                     await asyncio.sleep(0.001)
                     continue
@@ -655,6 +891,17 @@ class BotEngine:
                     # Update Alpha Features
                     feat_vec = self.features.update(tick_obj, market_state)
                     atr_val = self.volatility.update(market_state.last_price)
+
+                    # Override ATR with candle-based value from strategy oracle when available.
+                    strategy_oracle = getattr(self.strategy, "vol_oracle", None)
+                    if strategy_oracle is not None:
+                        try:
+                            oracle_atr = strategy_oracle.calculate_atr()
+                            if oracle_atr and oracle_atr > 0:
+                                atr_val = oracle_atr
+                        except Exception:
+                            pass
+
                     market_state.atr = atr_val
 
                     # Write to QuestDB market_features via ilp_writer
@@ -684,23 +931,20 @@ class BotEngine:
                     except Exception as db_err:
                         logger.warning(f"Failed to write market features to QuestDB: {db_err}")
 
-                    if getattr(self, "volatility_oracle", None):
-                        # Use kline close to update oracle, or fallback to last_price
+                    strategy_oracle = getattr(self.strategy, "vol_oracle", None)
+                    if strategy_oracle is not None:
+                        # Feed 1-minute kline close into oracle when available.
                         kline = tick.get("k")
                         if (
                             kline and isinstance(kline, dict) and kline.get("x")
                         ):  # x=is_closed
-                            self.volatility_oracle.add_close_price(
+                            strategy_oracle.add_close_price(
                                 float(kline.get("c", market_state.last_price))
                             )
 
-                        market_state.vol_index = (
-                            self.volatility_oracle.calculate_volatility_index()
-                        )
-                        market_state.grid_spacing_pct = (
-                            self.volatility_oracle.get_dynamic_grid_spacing(
-                                market_state.vol_index
-                            )
+                        market_state.vol_index = strategy_oracle.calculate_volatility_index()
+                        market_state.grid_spacing_pct = strategy_oracle.get_dynamic_grid_spacing(
+                            market_state.vol_index
                         )
 
                     # 3. Decision

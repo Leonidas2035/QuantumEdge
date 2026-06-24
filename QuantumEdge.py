@@ -1,399 +1,439 @@
 #!/usr/bin/env python3
 """
-QuantumEdge Orchestrator
-Production-ready process manager for HFT system.
-Combines OOP architecture with ZMQ Guard and Async Log Multiplexing.
+QuantumEdge Unified Orchestrator (qe)
+Manages the lifecycle of HFT components via a persistent background Daemon.
+Provides high-level JSON RPC commands over ZMQ port 5560.
 """
 
-import argparse
-import logging
-import os
-import signal
-import socket
+import asyncio
 import subprocess
+import os
 import sys
-import threading
+import psutil
 import time
+import socket
+import yaml
+import zmq.asyncio
+import logging
+import argparse
 from pathlib import Path
-from typing import List, Dict, Optional
+from typing import Dict, List, Optional, Any
 
-# Add /home/korben/.hermes to sys.path dynamically
-if "/home/korben/.hermes" not in sys.path:
-    sys.path.insert(0, "/home/korben/.hermes")
-
-# Third-party imports (strictly limited)
-try:
-    import psutil
-    from dotenv import load_dotenv
-except ImportError as e:
-    print(f"Critical Error: Missing dependency {e}. Please install requirements.")
-    sys.exit(1)
-
-
-# Load environment variables
-load_dotenv()
-
-# Setup logging
+# Configure Logging
 logging.basicConfig(
     level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+    format='%(asctime)s [%(levelname)s] Orchestrator: %(message)s',
     handlers=[
         logging.StreamHandler(sys.stdout),
         logging.FileHandler("quantum_edge.log", mode="a"),
-    ],
+    ]
 )
 logger = logging.getLogger("QuantumEdge")
 
 
-class ProcessManager:
+def load_ports_config() -> dict:
+    """Loads ports configuration yaml from the config directory."""
+    config_path = Path("config/ports.yaml")
+    if not config_path.exists():
+        logger.error(f"Ports config not found at {config_path}")
+        return {}
+    with open(config_path, "r", encoding="utf-8") as f:
+        return yaml.safe_load(f) or {}
+
+
+class UnifiedOrchestrator:
     """
-    Manages the lifecycle of HFT services with robust startup/shutdown sequences,
-    port guarding, and log multiplexing.
+    Asynchronous Daemon that handles port guarding, dependency checking,
+    orderly bootstrapping, process telemetry collection, and graceful halts.
     """
 
-    def __init__(self):
+    def __init__(self, control_port: int = 5560):
+        self.context = zmq.asyncio.Context()
+        self.cmd_socket = self.context.socket(zmq.REP)
+        self.cmd_socket.bind(f"tcp://127.0.0.1:{control_port}")
         self.processes: Dict[str, subprocess.Popen] = {}
-        self.stop_event = threading.Event()
+        self.ports_config = load_ports_config()
+        self.registry = self._build_registry()
         self.pid_file = Path(".quantum_edge.pid")
-        self.zmq_ports = [5555, 5557, 5558, 5567, 8765]
-        self.project_root = self._resolve_project_root()
 
-    def _resolve_project_root(self) -> Path:
-        """Dynamically resolves the project root directory."""
-        return Path(__file__).resolve().parent
+    def _build_registry(self) -> Dict[str, Any]:
+        """Resolves config/ports.yaml into executable commands and dependency chains."""
+        registry = {}
+        components = self.ports_config.get("components", {})
+        for name, comp in components.items():
+            module_name = comp.get("module")
+            entrypoint = comp.get("entrypoint")
+            args = comp.get("args", [])
 
-    def _build_env(self) -> Dict[str, str]:
-        """
-        Constructs environment with absolute PYTHONPATH to src/ and /home/korben/.hermes.
-        Ensures 'import quantum_edge_core' and 'import hermes' work in subprocesses.
-        """
+            if entrypoint:
+                cmd = entrypoint.split() + args
+            elif module_name:
+                cmd = [sys.executable, "-m", module_name] + args
+            else:
+                logger.error(f"Invalid component configuration for {name}")
+                continue
+
+            # Resolve ports
+            readiness_port = None
+            ports = comp.get("ports", [])
+            if ports:
+                port_name = ports[0]
+                readiness_port = self.ports_config.get("ports", {}).get(port_name)
+
+            # Resolve dependency port
+            dependency_port = None
+            if name == "dashboard_api":
+                dependency_port = self.ports_config.get("ports", {}).get("hub")
+            elif name in ("ai_scalper", "dyndca"):
+                dependency_port = self.ports_config.get("ports", {}).get("dashboard")
+            elif name == "hub":
+                dependency_port = self.ports_config.get("questdb", {}).get("ilp")
+
+            registry[name] = {
+                "name": name,
+                "command": cmd,
+                "readiness_port": readiness_port,
+                "dependency_port": dependency_port,
+                "startup_timeout_sec": comp.get("startup_timeout_sec", 30),
+                "extra_pythonpath": comp.get("extra_pythonpath"),
+                "env": comp.get("env", {})
+            }
+        return registry
+
+    async def _zmq_guard_cleanup(self):
+        """Scans and kills zombie processes holding critical ports."""
+        ports_to_check = []
+        ports_section = self.ports_config.get("ports", {})
+        for p_name, p_val in ports_section.items():
+            ports_to_check.append(int(p_val))
+
+        logger.info(f"ZMQ Guard: Scanning and cleaning ports: {ports_to_check}")
+
+        connections = []
+        try:
+            connections = psutil.net_connections()
+        except Exception as e:
+            logger.warning(f"Could not read global connections, falling back to process sweep: {e}")
+            for proc in psutil.process_iter(['pid', 'name']):
+                try:
+                    connections.extend(proc.connections())
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    continue
+
+        killed_pids = set()
+        for conn in connections:
+            if conn.laddr.port in ports_to_check and conn.status == 'LISTEN':
+                pid = conn.pid
+                if pid and pid != os.getpid() and pid not in killed_pids:
+                    try:
+                        proc = psutil.Process(pid)
+                        logger.warning(f"ZMQ Guard: Killing zombie process {proc.name()} (PID: {pid}) holding port {conn.laddr.port}")
+                        proc.terminate()
+                        killed_pids.add(pid)
+                    except (psutil.NoSuchProcess, psutil.AccessDenied):
+                        pass
+
+        if killed_pids:
+            await asyncio.sleep(2)
+        logger.info("ZMQ Guard: All ports checked and cleared.")
+
+    def _build_env(self, comp_info: dict) -> Dict[str, str]:
+        """Assembles absolute PYTHONPATH and CPU/Thread optimization environment variables."""
         env = os.environ.copy()
-        src_path = self.project_root / "src"
+        env["OMP_NUM_THREADS"] = "1"
+        env["MKL_NUM_THREADS"] = "1"
+
+        comp_env = comp_info.get("env", {})
+        for k, v in comp_env.items():
+            env[k] = str(v)
+
+        project_root = Path(__file__).resolve().parent
+        src_path = project_root / "src"
         hermes_path = Path("/home/korben/.hermes")
 
-        # Prepend src/ and /home/korben/.hermes to PYTHONPATH
+        paths = [str(src_path), str(hermes_path)]
+        extra_path = comp_info.get("extra_pythonpath")
+        if extra_path:
+            paths.append(extra_path)
+
         current_pythonpath = env.get("PYTHONPATH", "")
-        paths_to_add = [str(src_path), str(hermes_path)]
         if current_pythonpath:
-            env["PYTHONPATH"] = f"{os.pathsep.join(paths_to_add)}{os.pathsep}{current_pythonpath}"
+            env["PYTHONPATH"] = f"{os.pathsep.join(paths)}{os.pathsep}{current_pythonpath}"
         else:
-            env["PYTHONPATH"] = os.pathsep.join(paths_to_add)
+            env["PYTHONPATH"] = os.pathsep.join(paths)
 
         return env
 
-    def _enforce_port_availability(self, ports: List[int]):
-        """
-        ZMQ Guard: Scans and kills processes holding critical ports.
-        """
-        logger.info(f"ZMQ Guard: Checking ports {ports}...")
-        for port in ports:
-            for proc in psutil.process_iter(["pid", "name"]):
-                try:
-                    # psutil >=6 renamed connections() -> net_connections()
-                    _conns_fn = (
-                        getattr(proc, "net_connections", None) or proc.connections
-                    )
-                    for conn in _conns_fn(kind="inet"):
-                        if conn.laddr.port == port:
-                            logger.warning(
-                                f"Port {port} is held by PID {proc.info['pid']} "
-                                f"({proc.info['name']}). Terminating..."
-                            )
-                            proc.terminate()
-                            try:
-                                proc.wait(timeout=2)
-                            except psutil.TimeoutExpired:
-                                logger.warning(
-                                    f"PID {proc.info['pid']} did not terminate. "
-                                    "Killing..."
-                                )
-                                proc.kill()
-                except (
-                    psutil.NoSuchProcess,
-                    psutil.AccessDenied,
-                    psutil.ZombieProcess,
-                ):
-                    continue
-        logger.info("ZMQ Guard: All ports clear.")
-
-    def _stream_reader(self, pipe, prefix: str, is_error_stream: bool):
-        """
-        Async Log Multiplexing: Reads stdout/stderr from subprocess and logs it.
-        """
-        try:
-            with pipe:
-                for line in iter(pipe.readline, ""):
-                    if not line:
-                        break
-                    line = line.strip()
-                    if line:
-                        if is_error_stream:
-                            logger.error(f"[{prefix}] {line}")
-                        else:
-                            logger.info(f"[{prefix}] {line}")
-        except Exception as e:
-            logger.error(f"[{prefix}] Log stream error: {e}")
-
-    def _start_log_threads(self, process: subprocess.Popen, name: str):
-        """Starts daemon threads to read stdout and stderr."""
-        stdout_thread = threading.Thread(
-            target=self._stream_reader,
-            args=(process.stdout, name.upper(), False),
-            daemon=True,
-        )
-        stderr_thread = threading.Thread(
-            target=self._stream_reader,
-            args=(process.stderr, name.upper(), True),
-            daemon=True,
-        )
-        stdout_thread.start()
-        stderr_thread.start()
-
-    def _wait_for_port(self, port: int, timeout: int = 30) -> bool:
-        """Polls a TCP port until it accepts connections (Readiness Probe)."""
+    async def _wait_for_tcp_port(self, port: int, timeout: int) -> bool:
+        """Asynchronous Readiness-probe verifying network port availability."""
         start_time = time.time()
         while time.time() - start_time < timeout:
             try:
-                with socket.create_connection(("127.0.0.1", port), timeout=1):
+                with socket.create_connection(('127.0.0.1', port), timeout=1):
                     return True
-            except (OSError, ConnectionRefusedError):
-                time.sleep(0.5)
+            except (ConnectionRefusedError, socket.timeout, OSError):
+                await asyncio.sleep(0.5)
         return False
 
-    def start_service(
-        self,
-        name: str,
-        cmd: List[str],
-        wait_port: Optional[int] = None,
-        cwd: Optional[Path] = None,
-    ):
-        """
-        Starts a subprocess with environment injection and log multiplexing.
-        """
-        logger.info(f"Starting {name}...")
-        env = self._build_env()
-        working_dir = cwd or self.project_root
+    async def launch_module(self, comp_info: dict) -> bool:
+        """Launches an isolated child process, handles dependency chains, and monitors status."""
+        name = comp_info["name"]
+        dep_port = comp_info["dependency_port"]
+        timeout = comp_info["startup_timeout_sec"]
 
+        if dep_port:
+            logger.info(f"Waiting for dependency port {dep_port} before starting {name}...")
+            if not await self._wait_for_tcp_port(dep_port, timeout):
+                logger.error(f"Dependency check failed: port {dep_port} is not ready. Aborting start of {name}.")
+                return False
+
+        log_dir = Path("logs")
+        log_dir.mkdir(exist_ok=True)
+        log_path = log_dir / f"{name}.log"
+
+        log_file = open(log_path, "a", encoding="utf-8")
+        env = self._build_env(comp_info)
+        cmd = comp_info["command"]
+
+        logger.info(f"Launching component {name} with command {cmd}...")
         try:
-            process = subprocess.Popen(
+            proc = subprocess.Popen(
                 cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                text=True,
-                bufsize=1,  # Line buffered
                 env=env,
-                cwd=working_dir,
+                stdout=log_file,
+                stderr=subprocess.STDOUT,
+                cwd=str(Path(__file__).resolve().parent)
             )
+            self.processes[name] = proc
 
-            self.processes[name] = process
-            self._start_log_threads(process, name)
+            await asyncio.sleep(1.0)
+            if proc.poll() is not None:
+                logger.error(f"Component {name} crashed immediately on startup with return code {proc.returncode}.")
+                return False
 
-            # Check for immediate crash
-            time.sleep(1)
-            if process.poll() is not None:
-                logger.error(
-                    f"{name} crashed immediately with exit code "
-                    f"{process.returncode}."
-                )
-                self.stop_all()
-                sys.exit(1)
+            ready_port = comp_info["readiness_port"]
+            if ready_port:
+                logger.info(f"Waiting for readiness on port {ready_port} for {name}...")
+                if not await self._wait_for_tcp_port(ready_port, timeout):
+                    logger.error(f"Readiness probe failed for {name} on port {ready_port}. Terminating component...")
+                    proc.terminate()
+                    return False
 
-            if wait_port:
-                logger.info(f"Waiting for {name} readiness on port {wait_port}...")
-                if self._wait_for_port(wait_port):
-                    logger.info(f"{name} is ready.")
-                else:
-                    logger.error(f"{name} failed to become ready on port {wait_port}.")
-                    self.stop_all()
-                    sys.exit(1)
-
+            logger.info(f"Component {name} is successfully started and ready (PID: {proc.pid}).")
+            return True
         except Exception as e:
-            logger.error(f"Failed to start {name}: {e}")
-            self.stop_all()
-            sys.exit(1)
+            logger.error(f"Failed to spawn component {name}: {e}")
+            return False
 
-    def start_all(self):
-        """Executes the strict startup sequence."""
-        # Step 1: Run ZMQ Guard
-        self._enforce_port_availability(self.zmq_ports)
+    async def bootstrap_full_system(self) -> dict:
+        """Performs bottom-up initialization sequence based on topological dependency layers."""
+        await self._zmq_guard_cleanup()
 
-        # Define paths
-        hub_script = self.project_root / "src/quantum_edge_core/market_data/hub.py"
-        dashboard_api_script = self.project_root / "src/quantum_edge_infra/automation/hermes_agent/dashboard_api.py"
-        ai_scalper_script = self.project_root / "src/quantum_edge_core/ai_scalper_bot/run_bot.py"
-        dyndca_script = self.project_root / "src/quantum_edge_core/dyn_dca_bot/main.py"
+        results = {}
+        startup_order = ["hub", "dashboard_api", "ai_scalper", "dyndca", "lockbotbtc"]
+        for name in startup_order:
+            if name not in self.registry:
+                continue
+            success = await self.launch_module(self.registry[name])
+            results[name] = "RUNNING" if success else "FAILED"
+            if not success:
+                logger.error(f"Cascading bootstrap failed at component '{name}'. Halting bootstrap.")
+                break
+        return results
 
-        if not hub_script.exists():
-            logger.error(f"Critical: MarketDataHub not found at {hub_script}")
-            sys.exit(1)
-        if not dashboard_api_script.exists():
-            logger.error(f"Critical: Dashboard API Bridge not found at {dashboard_api_script}")
-            sys.exit(1)
+    async def generate_telemetry_report(self) -> dict:
+        """Gathers system usage statistics (CPU, RAM, PID, Status) for running processes."""
+        report = {}
+        for name, proc in list(self.processes.items()):
+            is_running = proc.poll() is None
+            cpu_usage, memory_mb = 0.0, 0.0
+            if is_running:
+                try:
+                    p = psutil.Process(proc.pid)
+                    cpu_usage = p.cpu_percent(interval=0.1)
+                    memory_mb = round(p.memory_info().rss / (1024 * 1024), 2)
+                except psutil.NoSuchProcess:
+                    is_running = False
 
-        # Step 2: Start MarketDataHub
-        self.start_service(
-            "Hub",
-            [sys.executable, str(hub_script)],
-            wait_port=5555,  # Wait for Hub ZMQ port 5555
-        )
+            report[name] = {
+                "state": "RUNNING" if is_running else "TERMINATED",
+                "pid": proc.pid if is_running else None,
+                "cpu_percent": cpu_usage,
+                "ram_mb": memory_mb
+            }
+        return report
 
-        # Step 3: Start Dashboard API Bridge
-        self.start_service(
-            "HermesAPI",
-            [sys.executable, str(dashboard_api_script)],
-            wait_port=8765,  # Wait for FastAPI HTTP port
-        )
-
-        # Step 4: Start Trading Bots
-        logger.info("Starting Trading Bots...")
-        if ai_scalper_script.exists():
-            self.start_service("AIScalper", [sys.executable, str(ai_scalper_script)])
-        else:
-            logger.error(f"Warning: AI Scalper script not found at {ai_scalper_script}")
-
-        if dyndca_script.exists():
-            self.start_service("DynDCA", [sys.executable, str(dyndca_script)])
-        else:
-            logger.error(f"Warning: DynDCA script not found at {dyndca_script}")
-
-        logger.info("System startup complete. Hermes API Bridge and Trading Bots are running.")
-
-    def stop_all(self):
-        """Graceful shutdown in reverse order, ensuring descendants are killed first."""
-        logger.info("Stopping all services...")
-
-        # Order of parent processes to shutdown: Bots first, then API, then Hub
-        shutdown_order = ["DynDCA", "AIScalper", "HermesAPI", "Hub"]
-
+    async def halt_all_system(self):
+        """Halts all modules in reverse dependency order."""
+        logger.info("Halting all components...")
+        shutdown_order = ["lockbotbtc", "dyndca", "ai_scalper", "dashboard_api", "hub"]
         for name in shutdown_order:
             proc = self.processes.get(name)
             if proc and proc.poll() is None:
-                logger.info(f"Stopping process tree for {name} (PID {proc.pid})...")
+                logger.info(f"Terminating process tree for component {name} (PID: {proc.pid})...")
                 try:
                     parent = psutil.Process(proc.pid)
                     children = parent.children(recursive=True)
-                    
-                    # Terminate children first
                     for child in children:
-                        logger.info(f"Terminating child of {name}: PID {child.pid} ({child.name()})")
                         try:
                             child.terminate()
                         except psutil.NoSuchProcess:
                             pass
-                            
-                    # Wait for children to terminate
                     if children:
-                        gone, alive = psutil.wait_procs(children, timeout=5)
-                        for child in alive:
-                            logger.warning(f"Child PID {child.pid} did not terminate. Killing...")
-                            try:
-                                child.kill()
-                            except psutil.NoSuchProcess:
-                                pass
-                                
-                    # Terminate parent
-                    logger.info(f"Terminating parent {name}: PID {proc.pid}")
-                    proc.terminate()
+                        psutil.wait_procs(children, timeout=3)
+                    parent.terminate()
                     try:
-                        proc.wait(timeout=5)
-                    except subprocess.TimeoutExpired:
-                        logger.warning(f"{name} did not terminate. Killing...")
-                        proc.kill()
+                        parent.wait(timeout=3)
+                    except psutil.TimeoutExpired:
+                        parent.kill()
                 except psutil.NoSuchProcess:
-                    # Fallback in case parent PID is already gone
                     proc.terminate()
                     try:
-                        proc.wait(timeout=5)
+                        proc.wait(timeout=3)
                     except subprocess.TimeoutExpired:
                         proc.kill()
+                logger.info(f"Component {name} halted.")
+        self.processes.clear()
 
-        logger.info("All services stopped.")
-
-    def monitor_loop(self):
-        """Monitors child processes and handles signals."""
-
-        def signal_handler(sig, frame):
-            logger.info(f"Received signal {sig}. Shutting down...")
-            self.stop_event.set()
-
-        signal.signal(signal.SIGINT, signal_handler)
-        signal.signal(signal.SIGTERM, signal_handler)
-
-        logger.info("System is running. Press Ctrl+C to stop.")
-
-        while not self.stop_event.is_set():
-            # Check health
-            for name, proc in self.processes.items():
-                if proc.poll() is not None:
-                    logger.error(
-                        f"Critical: {name} died unexpectedly "
-                        f"(Exit Code: {proc.returncode}). Emergency Stop."
-                    )
-                    self.stop_event.set()
-                    break
-            time.sleep(1)
-
-        self.stop_all()
-        # Clean up PID file
-        if self.pid_file.exists():
-            self.pid_file.unlink()
-
-    def run_foreground(self):
-        """Main entry point for running the orchestrator in foreground."""
-        # Write PID file
+    async def control_loop(self):
+        """Listens on 5560 for JSON-RPC management requests."""
+        logger.info("Unified Orchestrator Daemon activated. Listening on port 5560...")
         self.pid_file.write_text(str(os.getpid()))
 
         try:
-            self.start_all()
-            self.monitor_loop()
+            while True:
+                request = await self.cmd_socket.recv_json()
+                action = request.get("action")
+                logger.info(f"Received daemon directive: {action}")
+
+                if action == "SYSTEM_BOOTSTRAP":
+                    status_matrix = await self.bootstrap_full_system()
+                    await self.cmd_socket.send_json({"status": "SUCCESS", "matrix": status_matrix})
+                elif action == "SYSTEM_DIAGNOSTICS":
+                    report = await self.generate_telemetry_report()
+                    await self.cmd_socket.send_json({"status": "SUCCESS", "telemetry": report})
+                elif action == "SYSTEM_HALT":
+                    await self.halt_all_system()
+                    await self.cmd_socket.send_json({"status": "SUCCESS", "message": "All executive planes halted."})
+                    break
+                else:
+                    await self.cmd_socket.send_json({"status": "ERROR", "message": f"Unknown directive: {action}"})
         except Exception as e:
-            logger.error(f"Orchestrator crashed: {e}")
-            self.stop_all()
+            logger.error(f"Exception in control loop: {e}")
+        finally:
             if self.pid_file.exists():
                 self.pid_file.unlink()
-            sys.exit(1)
+            logger.info("Orchestrator Daemon stopped.")
 
 
-# --- CLI Functions ---
+# --- Client Commands ---
+
+def send_daemon_command(action: str, payload: dict = None) -> Optional[dict]:
+    """Helper method to send a synchronous JSON-RPC request to the Daemon."""
+    import zmq
+    context = zmq.Context()
+    socket_client = context.socket(zmq.REQ)
+    socket_client.setsockopt(zmq.RCVTIMEO, 5000)
+    socket_client.setsockopt(zmq.SNDTIMEO, 5000)
+    try:
+        socket_client.connect("tcp://127.0.0.1:5560")
+        request = {"action": action}
+        if payload:
+            request.update(payload)
+        socket_client.send_json(request)
+        return socket_client.recv_json()
+    except Exception as e:
+        logger.error(f"Failed to communicate with Orchestrator Daemon: {e}")
+        return None
 
 
 def run_command(args):
-    """Runs the orchestrator in the foreground (blocking)."""
-    pm = ProcessManager()
-    pm.run_foreground()
+    """Starts the Orchestrator Daemon in the foreground."""
+    daemon = UnifiedOrchestrator()
+    try:
+        asyncio.run(daemon.control_loop())
+    except KeyboardInterrupt:
+        logger.info("Daemon stopped by user.")
 
 
 def start_command(args):
-    """Starts the orchestrator in the background."""
+    """Launches the Orchestrator Daemon in the background and requests bootstrap."""
     pid_file = Path(".quantum_edge.pid")
     if pid_file.exists():
         try:
             pid = int(pid_file.read_text())
             if psutil.pid_exists(pid):
-                print(f"QuantumEdge is already running (PID {pid}).")
+                print(f"Orchestrator Daemon is already running (PID: {pid}).")
                 return
             else:
-                print("Stale PID file found. Removing...")
                 pid_file.unlink()
         except ValueError:
             pid_file.unlink()
 
-    print("Starting QuantumEdge in background...")
-    # Launch self with 'run' command, detached
+    print("Starting Orchestrator Daemon in background...")
     subprocess.Popen(
         [sys.executable, __file__, "run"],
         start_new_session=True,
         stdout=subprocess.DEVNULL,
-        stderr=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL
     )
-    print("QuantumEdge started. Use 'python QuantumEdge.py status' to check.")
+
+    print("Waiting for Daemon to bind to port 5560...")
+    daemon_ready = False
+    start_time = time.time()
+    while time.time() - start_time < 10:
+        try:
+            with socket.create_connection(("127.0.0.1", 5560), timeout=1):
+                daemon_ready = True
+                break
+        except (ConnectionRefusedError, socket.timeout, OSError):
+            time.sleep(0.5)
+
+    if not daemon_ready:
+        print("Error: Orchestrator Daemon failed to start on port 5560.")
+        return
+
+    print("Daemon is active. Sending SYSTEM_BOOTSTRAP command...")
+    res = send_daemon_command("SYSTEM_BOOTSTRAP")
+    if res and res.get("status") == "SUCCESS":
+        print("Bootstrap Complete. Components status:")
+        matrix = res.get("matrix", {})
+        for k, v in matrix.items():
+            print(f"  - {k}: {v}")
+    else:
+        print(f"Bootstrap failed: {res}")
+
+
+def stop_command(args):
+    """Sends SYSTEM_HALT to shut down the running Daemon and all components."""
+    print("Sending SYSTEM_HALT to Orchestrator Daemon...")
+    res = send_daemon_command("SYSTEM_HALT")
+    if res and res.get("status") == "SUCCESS":
+        print("System successfully halted.")
+    else:
+        print(f"Failed to halt system (or daemon was not running): {res}")
+
+
+def status_command(args):
+    """Queries and displays daemon process telemetry."""
+    res = send_daemon_command("SYSTEM_DIAGNOSTICS")
+    if res and res.get("status") == "SUCCESS":
+        print("QuantumEdge System Status: RUNNING")
+        telemetry = res.get("telemetry", {})
+        for comp, stats in telemetry.items():
+            print(f"Component: {comp}")
+            print(f"  State: {stats.get('state')}")
+            print(f"  PID: {stats.get('pid')}")
+            print(f"  CPU Usage: {stats.get('cpu_percent')}%")
+            print(f"  RAM Usage: {stats.get('ram_mb')} MB")
+    else:
+        print("QuantumEdge System Status: STOPPED (Daemon not reachable on 5560)")
 
 
 def dashboard_command(args):
     """Starts the Single Pane of Glass dashboard in the background."""
     print("Starting QuantumEdge Dashboard on port 8501...")
 
-    # Check if streamlit is available
     try:
         import streamlit
     except ImportError:
@@ -423,7 +463,6 @@ def dashboard_command(args):
         "true",
     ]
 
-    # Build env with PYTHONPATH to src/
     env = os.environ.copy()
     project_root = Path(__file__).resolve().parent
     src_path = project_root / "src"
@@ -433,7 +472,6 @@ def dashboard_command(args):
     else:
         env["PYTHONPATH"] = str(src_path)
 
-    # Launch detached
     subprocess.Popen(
         cmd,
         start_new_session=True,
@@ -444,79 +482,15 @@ def dashboard_command(args):
     print("Dashboard is running in the background. Visit http://localhost:8501")
 
 
-def stop_command(args):
-    """Stops the running orchestrator."""
-    pid_file = Path(".quantum_edge.pid")
-    if not pid_file.exists():
-        print("QuantumEdge is not running (no PID file).")
-        return
-
-    try:
-        pid = int(pid_file.read_text())
-        if psutil.pid_exists(pid):
-            print(f"Stopping QuantumEdge (PID {pid})...")
-            os.kill(pid, signal.SIGTERM)
-
-            # Wait for exit
-            for _ in range(20):  # Wait up to 10 seconds
-                if not psutil.pid_exists(pid):
-                    print("Stopped.")
-                    if pid_file.exists():
-                        pid_file.unlink()
-                    return
-                time.sleep(0.5)
-
-            print("Force killing...")
-            os.kill(pid, signal.SIGKILL)
-        else:
-            print("Process not found. Cleaning up PID file.")
-            pid_file.unlink()
-    except ValueError:
-        print("Invalid PID file.")
-        pid_file.unlink()
-    except ProcessLookupError:
-        print("Process already gone.")
-        if pid_file.exists():
-            pid_file.unlink()
-
-
-def status_command(args):
-    """Checks system status."""
-    pid_file = Path(".quantum_edge.pid")
-    if pid_file.exists():
-        try:
-            pid = int(pid_file.read_text())
-            if psutil.pid_exists(pid):
-                proc = psutil.Process(pid)
-                print("Status: RUNNING")
-                print(f"PID: {pid}")
-                print(f"Uptime: {int(time.time() - proc.create_time())}s")
-
-                # List children
-                children = proc.children(recursive=True)
-                print(f"Child Processes: {len(children)}")
-                for child in children:
-                    try:
-                        print(f"  - {child.name()} (PID {child.pid})")
-                    except psutil.NoSuchProcess:
-                        pass
-                return
-        except (ValueError, psutil.NoSuchProcess):
-            pass
-
-    print("Status: STOPPED")
-
-
 def main():
-    parser = argparse.ArgumentParser(description="QuantumEdge Orchestrator")
+    parser = argparse.ArgumentParser(description="QuantumEdge Unified Orchestrator")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    # Subcommands
-    subparsers.add_parser("run", help="Run in foreground (blocking)")
-    subparsers.add_parser("start", help="Start in background")
-    subparsers.add_parser("stop", help="Stop the system")
-    subparsers.add_parser("status", help="Show system status")
-    subparsers.add_parser("dashboard", help="Start the UI dashboard")
+    subparsers.add_parser("run", help="Run Orchestrator Daemon in foreground")
+    subparsers.add_parser("start", help="Start Daemon in background and bootstrap")
+    subparsers.add_parser("stop", help="Halt system and daemon")
+    subparsers.add_parser("status", help="Get system status report")
+    subparsers.add_parser("dashboard", help="Start Streamlit UI dashboard")
 
     args = parser.parse_args()
 

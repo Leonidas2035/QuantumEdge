@@ -1,0 +1,47 @@
+ports:
+  hub: 5555
+  supervisor_telemetry: 5557
+  supervisor_policy: 5558
+  supervisor_command: 5559
+  dyndca_telemetry: 5567
+  lockbot_pub: 5577
+  lockbot_cmd_sub: 5578
+  lockbot_policy_sub: 5561
+  dashboard: 8765
+
+questdb:
+  http: 9000
+  ilp: 9009
+  pg: 8812
+
+components:
+  hub:
+    module: quantum_edge_core.market_data.hub
+    ports: [hub]
+    telemetry: false
+  supervisor:
+    module: quantum_edge_core.supervisor.supervisor
+    entrypoint: /home/korben/.hermes/hermes/supervisor.py run-foreground
+    ports: [supervisor_policy, supervisor_command, dashboard]
+    extra_pythonpath: /home/korben/.hermes
+    needs_docker: false
+  dyndca:
+    module: quantum_edge_core.dyn_dca_bot.main
+    ports: [dyndca_telemetry]
+    telemetry: true
+    env:
+      QE_BOT_TELEMETRY_PORT: "5567"
+      MARKET_DATA_ZMQ_PORT: "5555"
+  ai_scalper:
+    module: quantum_edge_core.ai_scalper_bot.run_bot
+    ports: [supervisor_telemetry]
+    telemetry: true
+    env:
+      QE_BOT_TELEMETRY_PORT: "5557"
+      QE_BOT_POLICY_PORT: "5559"
+      MARKET_DATA_ZMQ_PORT: "5555"
+    needs_supervisor: true
+  lockbotbtc:
+    module: quantum_edge_core.lock_bot.main
+    args: ["--config", "config/lockbot.yaml"]
+    ports: [lockbot_pub, lockbot_cmd_sub, lockbot_policy_sub]

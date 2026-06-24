@@ -1,0 +1,110 @@
+================================================================================
+         FULL CONTEXT AUDIT: HERMES AGENT RUNTIME CORE (.hermes)
+================================================================================
+
+This document details the audit of the active Hermes Agent Core directory located
+at `/home/korben/.hermes/` on the user's system. It describes the runtime layout,
+operational principles, database functions, and installed skills.
+
+--------------------------------------------------------------------------------
+1. DIRECTORY STRUCTURE & RUNTIME ARTIFACTS
+--------------------------------------------------------------------------------
+The directory `/home/korben/.hermes/` represents the stateful runtime home of the
+Hermes Agent. Key components include:
+
+*  config.yaml: The active configuration file defining model settings, fallback
+   providers, tool usage policies, personality rules, and communication backends.
+   - Primary model: `stepfun/step-3.7-flash:free` via the Nous Research API.
+   - Fallback options: Configuration for secondary providers in case of timeouts
+     or rate limits.
+   - Personalities: Pre-configured prompt structures for tone (e.g. kawaii,
+     noir, helpful, pirate).
+*  .env: Secure credentials file containing API keys (OpenRouter, Google Vertex,
+   GCP credentials) and other private environment variables.
+*  SOUL.md: Defines the agent's core identity, mission, active tools, and skill
+   sets (e.g., identity on Vertex AI for the cyberclaw-496012 project).
+*  state.db: The primary SQLite database (approx. 192MB) which persists the
+   agent's conversations, session contexts, system prompts, and memory logs.
+*  kanban.db: SQLite database used to persist tasks, todo queues, and task-agent
+   scheduling boards.
+*  skills/: Directory containing active skill plugins loaded dynamically by the
+   agent runtime to extend its capabilities.
+*  memories/: Stores extracted semantic memory graphs, user profiles, and past
+   learnings to preserve long-term context across sessions.
+*  sessions/ & logs/: Directories housing session-specific history and runtime
+   debugging logs.
+*  gateway.pid & gateway.lock: Active process identifiers used to prevent port
+   collisions or duplicate agent instances.
+
+--------------------------------------------------------------------------------
+2. OPERATING PRINCIPLES
+--------------------------------------------------------------------------------
+Hermes is an autonomous system administrator and trading supervisor. It operates
+on the following runtime principles:
+
+1. Dynamic Context & Prompt Generation:
+   Upon starting a session, the prompt builder (`prompt_builder.py`) loads:
+   - The basic agent personality from `config.yaml` / `SOUL.md`.
+   - Conversational history from `state.db`.
+   - Long-term semantic memories from the `memories/` directory.
+   - Active system instructions from the loaded `skills/` directories.
+   This constructs a highly contextualized system prompt for the reasoning model.
+
+2. Model Context Protocol (MCP) & Local Bridging:
+   Hermes does not trade directly. Instead, it relies on external helper bridges
+   running locally on the system:
+   - Data MCP Bridge: Connects to the MarketDataHub ZMQ stream (port 5555) to read
+     live price snapshots and microstructure indicators, and queries QuestDB (port
+     9000) for historical trend analytics.
+   - ZMQ MCP Bridge: Connects to the bots' ZMQ streams (ports 5557 and 5567) to audit
+     running statistics, and publishes policy controls to ZMQ port 5559.
+   - FastAPI Dashboard Bridge: Exposes real-time analytics to the local network.
+
+3. Context Compression & Turn Budgeting:
+   To prevent exceeding LLM context windows, Hermes monitors its turn budget
+   (`max_turns: 90`). When the token limit approaches, the `context_compressor.py`
+   summarizes old exchanges, keeping only critical variables in active memory.
+
+4. Task Delegation and Hardening:
+   - High-level decision loop is executed by Hermes itself.
+   - Technical code modifications, file writes, and running python test suites are
+     fully delegated to the local **Antigravity (agy)** CLI tool.
+   - Safety checks: A safety layer (`file_safety.py`) filters destructive actions.
+
+--------------------------------------------------------------------------------
+3. INSTALLED SKILLS AND CAPABILITIES
+--------------------------------------------------------------------------------
+Active skills are located under `/home/korben/.hermes/skills/`. The primary skill
+controlling the trading engine is `quantum_edge` (located at `skills/quantum_edge/`).
+It includes the following sub-capabilities:
+
+1. quantum-edge-orchestrator:
+   Controls the startup and shutdown sequence of QuantumEdge modules via
+   `QuantumEdge.py` (Hub, HermesAPI, AIScalper, DynDCA). Monitors system status,
+   handles readiness probes, and initiates emergency stop routines.
+
+2. quantum-edge-market-data-hub:
+   Interacts with the ZMQ market data stream to track orderbook depths, wall sizes,
+   mid-prices, and bid/ask spreads.
+
+3. quantum-edge-logging:
+   Monitors and audits behavioural trading logs (`bot.log` and `ai_scalper_behavior.log`).
+
+4. crypto-charts-vision:
+   Enables multimodal vision capabilities (using Gemini API) to analyze visual
+   market charts and identify chart patterns.
+
+5. crypto-quantitative-ta:
+   Computes standard quantitative indicators (RSI, MACD, ATR, Bollinger Bands)
+   directly on live or historical OHLCV data fetched from QuestDB.
+
+6. crypto-news-signals:
+   Ingests public RSS feeds, news websites, and sentiment analyses to determine
+   macro market direction.
+
+7. trading-bot-ops:
+   General-purpose quantitative skill for configuring DCA grid parameters, Bybit
+   or BingX gateway configurations, and hard risk limits.
+
+8. kanban:
+   Enables task decomposition and queue monitoring across system processes.

@@ -1,0 +1,425 @@
+﻿Комплексний архітектурний аудит та план рефакторингу екосистеми QuantumEdge: Інтеграція уніфікованого ШІ-оркестратора Hermes
+1. Еволюція торгової інфраструктури та проблематика існуючої парадигми оркестрації
+Сучасна архітектура високочастотної торгової платформи QuantumEdge пройшла складний еволюційний шлях від монолітного скрипта до глибоко децентралізованої мікросервісної інфраструктури. Згідно з останніми змінами, зафіксованими в журналі міграцій, система була повністю відокремлена від залежностей Binance на користь потоків BingXLiveFeed та переведена на високопродуктивне сховище часових рядів QuestDB з використанням протоколу Influx Line Protocol (ILP) на порту 9009.1 Ця децентралізація призвела до фізичного розділення виконавчих модулів (Execution Plane), рівня даних (Data Plane) та рівня телеметрії (Control Plane). Як наслідок, торгові боти, такі як ai_scalper_bot (що використовує алгоритми машинного навчання та адаптивну сітку XGBoost) та dyn_dca_bot (що базується на математичній моделі детекції стін ліквідності та ефекті магніту), тепер функціонують як повністю ізольовані процеси, що спілкуються виключно через брокер повідомлень ZeroMQ (ZMQ).1
+Хоча такий розподіл відповідальності суттєво підвищив відмовостійкість системи та мінімізував затримки (latency) завдяки жорсткій прив'язці до процесорних ядер (CPU Pinning) 1, він створив критичну проблему на рівні оркестрації. Історично управління платформою здійснювалося через статичний модуль SupervisorAgent, який згодом був визнаний застарілим і вилучений на користь впровадження автономного агента Hermes на базі великих мовних моделей (LLM).1 Розміщений у директорії /home/korben/.hermes/, агент Hermes виконує роль супервізора, приймаючи стратегічні рішення на основі циклу OODA (Observe-Orient-Decide-Act) та аналізуючи телеметрію через міст Model Context Protocol (MCP).1
+Проблема полягає у тому, що поточний механізм управління вимагає від агента ініціювати численні термінальні сесії для запуску кожного окремого мікросервісу. Скрипт QuantumEdge.py, хоча і підтримує команди start, stop та status, залишається CLI-орієнтованим інструментом.1 Для моніторингу та управління агенту доводиться виконувати велику кількість низькорівневих системних команд, читати розрізнені лог-файли та мануально перевіряти стан процесів.1 Такий підхід катастрофічно виснажує контекстне вікно мовної моделі (що обмежене лімітом max_turns: 90), змушує систему постійно звертатися до модуля context_compressor.py для стиснення історії та відвертає увагу ШІ від його головної мети — аналізу ринку та управління капіталом.1
+Для перетворення агента Hermes на ефективного системного адміністратора та торгового супервізора необхідно фундаментально змінити парадигму взаємодії. Замість того, щоб змушувати ШІ імітувати дії людини в терміналі, система повинна надати йому єдиний, суворо типізований API (на базі MCP), який інкапсулює всю складність топології мікросервісів, управління портами та моніторингу працездатності.
+2. Концептуальна модель уніфікованого оркестратора (Unified Supervisor Orchestrator)
+Щоб агент Hermes міг "спрощено запустити торгову систему в кілька команд", архітектура запуску має бути трансформована у постійно працюючий системний демон (Orchestrator Daemon). Цей демон перебирає на себе всю відповідальність за послідовність запуску, перевірку готовності портів (Readiness Probes), мультиплексування стандартних потоків виводу (stdout/stderr) та відновлення після збоїв, залишаючи агенту лише високорівневий інтерфейс прийняття рішень.
+Фундаментальний принцип правильного запуску QuantumEdge базується на ієрархії "знизу вгору", що унеможливлює стан гонитви (race conditions) під час ініціалізації компонентів. Ця ієрархія суворо визначена архітектурними обмеженнями системи: жоден модуль рівня виконання не має права стартувати, доки не підтверджено працездатність бази даних та шини постачання ринкових даних.
+
+Етап ініціалізації	Модуль	Мережеві порти	Роль в системі	Умови успішного старту (Readiness)
+Етап 0: Storage Plane	QuestDB	9000 (HTTP REST), 9009 (ILP), 8812 (PG)	Основне сховище часових рядів, історичних тіків та аудиту рішень ШІ.1	Відповідь 200 OK від http://localhost:9000.
+Етап 1: Data Plane	MarketDataHub	5555 (ZMQ PUB)	Підключення до біржі, розрахунок mid_price, стрімінг L2 ордербуку.	Успішний біндинг порту 5555; наявність першого тіку.
+Етап 2: Control Plane	FastAPI Dashboard / MCP Bridge	8765 (HTTP), 5559 (ZMQ PUB), 5560 (REP)	Локальний міст керування, трансляція команд від Hermes до ботів.1	Успішний старт Uvicorn на порту 8765.
+Етап 3: Execution Plane	AI Scalper Bot & DynDCA Bot	5557 (PUB), 5567 (PUB)	Виконавчі алгоритми HFT та накопичення позицій; ML інференс.1	Завершення процедури прогріву; публікація першого пакету телеметрії.
+Інтеграція демона оркестрації вимагає впровадження внутрішнього RPC-сервера на базі ZMQ (наприклад, REP/REQ патерн на порту 5560), який слугуватиме єдиною точкою входу для команд від агента Hermes. Замість виклику десятків bash-скриптів, агент формуватиме один структурований JSON-запит, який оркестратор автоматично розгорне у послідовність системних викликів, супроводжуючи їх вбудованою системою ZMQ Guard для очищення заблокованих портів перед стартом.
+3. Детальний план рефакторингу запуску модулів: Модернізація QuantumEdge.py
+Існуючий файл QuantumEdge.py наразі функціонує як процедурний блокуючий скрипт. Для перетворення його на асинхронного демона, необхідно застосувати бібліотеку asyncio у поєднанні з модулем subprocess та асинхронним розширенням zmq.asyncio. Це дозволить оркестратору паралельно відстежувати стан дочірніх процесів, прослуховувати команди управління та збирати системні метрики (використання CPU та оперативної пам'яті).
+Рефакторинг передбачає створення класу UnifiedOrchestrator, який інкапсулює логіку управління станом усієї торгової екосистеми. Нижче наведено розширений приклад реалізації ядра оркестратора, який відповідає архітектурним вимогам безвідмовної роботи:
+
+
+
+Python
+import asyncio
+import subprocess
+import os
+import psutil
+import time
+import socket
+from typing import Dict, Optional, Any
+import zmq.asyncio
+import logging
+from pydantic import BaseModel, Field
+
+# Налаштування форматованого логування для мультиплексора
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] Orchestrator: %(message)s',
+    handlers=
+)
+
+class ModuleConfig(BaseModel):
+    name: str
+    command: list[str]
+    readiness_port: Optional[int] = None
+    dependency_port: Optional[int] = None
+    startup_timeout_sec: int = 30
+
+class UnifiedOrchestrator:
+    def __init__(self, control_port: int = 5560):
+        self.context = zmq.asyncio.Context()
+        self.cmd_socket = self.context.socket(zmq.REP)
+        self.cmd_socket.bind(f"tcp://127.0.0.1:{control_port}")
+        self.processes: Dict[str, subprocess.Popen] = {}
+        self.registry: Dict[str, ModuleConfig] = self._build_registry()
+        
+    def _build_registry(self) -> Dict[str, ModuleConfig]:
+        """Реєстр модулів згідно з ієрархією запуску (Storage -> Data -> Control -> Execution)"""
+        return {
+            "market_data_hub": ModuleConfig(
+                name="market_data_hub",
+                command=["python", "-m", "src.quantum_edge_core.market_data.hub"],
+                readiness_port=5555,
+                dependency_port=9009 # Очікуємо доступності ILP QuestDB
+            ),
+            "dashboard_api": ModuleConfig(
+                name="dashboard_api",
+                command=["python", "-m", "src.quantum_edge_infra.automation.hermes_agent.dashboard_api"],
+                readiness_port=8765,
+                dependency_port=5555
+            ),
+            "ai_scalper_bot": ModuleConfig(
+                name="ai_scalper_bot",
+                command=["python", "-m", "src.quantum_edge_core.ai_scalper_bot.run_bot"],
+                readiness_port=5557,
+                dependency_port=8765
+            ),
+            "dyn_dca_bot": ModuleConfig(
+                name="dyn_dca_bot",
+                command=["python", "-m", "src.quantum_edge_core.dyn_dca_bot.main"],
+                readiness_port=5567,
+                dependency_port=8765
+            )
+        }
+
+    async def _zmq_guard_cleanup(self, ports: list[int]):
+        """Сканування та примусове знищення зомбі-процесів, що блокують критичні порти"""
+        for conn in psutil.net_connections():
+            if conn.laddr.port in ports and conn.status == 'LISTEN':
+                try:
+                    proc = psutil.Process(conn.pid)
+                    logging.warning(f"ZMQ Guard: Вбиваємо зомбі-процес {proc.name()} (PID: {conn.pid}) на порту {conn.laddr.port}")
+                    proc.terminate()
+                    proc.wait(timeout=5)
+                except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.TimeoutExpired):
+                    pass
+        await asyncio.sleep(1) # Затримка для звільнення сокетів на рівні ОС
+
+    async def _wait_for_tcp_port(self, port: int, timeout: int) -> bool:
+        """Асинхронна Readiness-проба для перевірки доступності мережевого порту"""
+        start_time = time.time()
+        while time.time() - start_time < timeout:
+            try:
+                with socket.create_connection(('127.0.0.1', port), timeout=1):
+                    return True
+            except (ConnectionRefusedError, socket.timeout, OSError):
+                await asyncio.sleep(0.5)
+        return False
+
+    async def launch_module(self, config: ModuleConfig) -> bool:
+        """Ізольований запуск дочірнього процесу з перевіркою залежностей та мультиплексуванням логів"""
+        if config.dependency_port:
+            logging.info(f"Очікування порту {config.dependency_port} для старту {config.name}...")
+            if not await self._wait_for_tcp_port(config.dependency_port, config.startup_timeout_sec):
+                logging.error(f"Помилка залежності: Порт {config.dependency_port} недоступний. Блокування {config.name}.")
+                return False
+
+        log_path = f"logs/{config.name}.log"
+        os.makedirs(os.path.dirname(log_path), exist_ok=True)
+        log_file = open(log_path, "a")
+        
+        env = os.environ.copy()
+        # Встановлення змінних середовища для оптимізації продуктивності
+        env = "1"
+        env = "1" # Запобігання конфліктам потоків у XGBoost
+        
+        logging.info(f"Ініціалізація модуля {config.name}...")
+        proc = subprocess.Popen(config.command, env=env, stdout=log_file, stderr=subprocess.STDOUT)
+        self.processes[config.name] = proc
+
+        if config.readiness_port:
+            if not await self._wait_for_tcp_port(config.readiness_port, config.startup_timeout_sec):
+                logging.error(f"Readiness-проба провалена для {config.name} на порту {config.readiness_port}. Знищення процесу.")
+                proc.terminate()
+                return False
+                
+        logging.info(f"Модуль {config.name} успішно запущено (PID: {proc.pid}).")
+        return True
+
+    async def bootstrap_full_system(self) -> dict:
+        """Послідовний алгоритм підняття всієї інфраструктури знизу вгору"""
+        # Попереднє очищення портів для уникнення Address already in use
+        await self._zmq_guard_cleanup()
+        
+        results = {}
+        for module_name, config in self.registry.items():
+            success = await self.launch_module(config)
+            results[module_name] = "RUNNING" if success else "FAILED"
+            if not success:
+                logging.critical(f"Збій каскадного запуску на етапі {module_name}. Зупинка ініціалізації.")
+                break
+        return results
+
+    async def generate_telemetry_report(self) -> dict:
+        """Формування структурованого звіту про стан процесів для агента Hermes"""
+        report = {}
+        for name, proc in self.processes.items():
+            is_running = proc.poll() is None
+            cpu_usage, memory_mb = 0.0, 0.0
+            if is_running:
+                try:
+                    p = psutil.Process(proc.pid)
+                    cpu_usage = p.cpu_percent(interval=0.1)
+                    memory_mb = round(p.memory_info().rss / (1024 * 1024), 2)
+                except psutil.NoSuchProcess:
+                    is_running = False
+            
+            report[name] = {
+                "state": "RUNNING" if is_running else "TERMINATED",
+                "pid": proc.pid if is_running else None,
+                "cpu_percent": cpu_usage,
+                "ram_mb": memory_mb
+            }
+        return report
+
+    async def control_loop(self):
+        """Головний цикл прослуховування MCP-команд керування (Decentralized RPC)"""
+        logging.info("Unified Orchestrator Daemon активовано. Очікування команд від Hermes...")
+        while True:
+            try:
+                request = await self.cmd_socket.recv_json()
+                action = request.get("action")
+                
+                if action == "SYSTEM_BOOTSTRAP":
+                    status_matrix = await self.bootstrap_full_system()
+                    await self.cmd_socket.send_json({"status": "SUCCESS", "matrix": status_matrix})
+                    
+                elif action == "SYSTEM_DIAGNOSTICS":
+                    report = await self.generate_telemetry_report()
+                    await self.cmd_socket.send_json({"status": "SUCCESS", "telemetry": report})
+                    
+                elif action == "SYSTEM_HALT":
+                    for name, proc in self.processes.items():
+                        logging.info(f"Надсилання SIGTERM до модуля {name}...")
+                        proc.terminate()
+                    await self.cmd_socket.send_json({"status": "SUCCESS", "message": "All executive planes halted."})
+                    
+                else:
+                    await self.cmd_socket.send_json({"status": "ERROR", "message": f"Unknown directive: {action}"})
+                    
+            except Exception as e:
+                logging.error(f"Помилка в циклі управління: {str(e)}")
+                await self.cmd_socket.send_json({"status": "ERROR", "message": "Internal Orchestrator Exception"})
+
+if __name__ == "__main__":
+    daemon = UnifiedOrchestrator()
+    try:
+        asyncio.run(daemon.control_loop())
+    except KeyboardInterrupt:
+        logging.info("Оркестратор зупинено користувачем.")
+
+Цей архітектурний патерн гарантує, що процес запуску є детермінованим і надійним. Агенту Hermes достатньо надіслати одну команду SYSTEM_BOOTSTRAP через розширення MCP, щоб ініціювати розгортання всього ланцюжка. Це усуває потребу у прямій взаємодії з командним рядком операційної системи, що значно знижує ризик галюцинацій мовної моделі при генерації bash-команд. Крім того, функція SYSTEM_DIAGNOSTICS забезпечує агента чистим JSON-контекстом, який легко серіалізується та аналізується у фазі орієнтації (Orient) циклу OODA.1
+4. Уніфікація шини ZMQ та телеметричних контрактів
+Наступним критичним аспектом рефакторингу є нормалізація потоків даних. Наразі система характеризується фрагментованою топологією комунікацій: MarketDataHub транслює дані про ринок на порту 5555, ai_scalper_bot публікує свою телеметрію на порту 5557, dyn_dca_bot — на порту 5567, тоді як команди управління маршрутизуються через порт 5559.1 Ця фрагментація ускладнює агенту завдання агрегації статусу в реальному часі.
+Для вирішення цієї проблеми розробляється механізм суворо типізованих контрактів обміну повідомленнями (Message Envelopes) з використанням бібліотеки Pydantic.1 Типізація виключає можливість помилок десеріалізації (Type Collision) та гарантує, що незалежно від того, який саме бот надсилає дані — чи то машинно-навчальна система скальпінгу, чи математична модель сітки — агент отримає їх в ідентичному форматі.
+Структура уніфікованої телеметрії (StatusEnvelope)
+Кожен виконавчий мікросервіс зобов'язаний з періодичністю у 2 секунди публікувати свій стан у вигляді JSON-об'єкта, що відповідає контракту StatusEnvelope.
+
+Поле контракту	Тип Pydantic	Архітектурне призначення
+bot_id	str	Ідентифікація джерела (наприклад, ai_scalper_bot, dyn_dca). Необхідно для коректної маршрутизації команд-відповідей через топіки ZMQ.
+timestamp	float	Мілісекундна мітка часу для виявлення застарілих даних (STALE_DATA) та вимірювання мережевої затримки (latency).1
+trading_regime	Literal	Поточний стан машини станів бота. Наприклад, PANIC_LOCK вказує на спрацювання захисних механізмів DDNEngine.1
+net_exposure	float	Обсяг відкритої позиції базового активу. Критично для перевірки цільової позиції (1.2 BTC для DCA, 0.3 BTC для Scalper).1
+unrealized_pnl	float	Поточний плаваючий прибуток/збиток (USDT). Використовується агентом для контролю лімітів щоденних збитків (max_daily_loss).1
+drawdown_pct	float	Показник відносної просадки капіталу. Тригер для зміни політик ризику з боку агента.1
+active_orders_count	int	Кількість поточних нереалізованих лімітних або стоп-ордерів у книзі заявок біржі.
+Для прийому цих даних агент Hermes використовує оновлений міст Model Context Protocol — zmq_mcp_bridge.py. Цей модуль агрегує порти обох ботів та створює єдине інтегроване представлення стану системи.
+Приклад реалізації ZMQ MCP Bridge (Агрегація телеметрії):
+
+
+
+Python
+import asyncio
+import zmq.asyncio
+from pydantic import BaseModel, Field, ValidationError
+from typing import Literal, Dict
+
+class StatusEnvelope(BaseModel):
+    bot_id: str
+    timestamp: float
+    trading_regime: Literal
+    net_exposure: float
+    unrealized_pnl: float
+    drawdown_pct: float
+    active_orders_count: int
+
+class UnifiedTelemetryAggregator:
+    def __init__(self):
+        self.context = zmq.asyncio.Context()
+        self.subscriber = self.context.socket(zmq.SUB)
+        # Підключення до множинних ендпоінтів телеметрії
+        self.subscriber.connect("tcp://127.0.0.1:5557") # AI Scalper
+        self.subscriber.connect("tcp://127.0.0.1:5567") # DynDCA
+        self.subscriber.setsockopt_string(zmq.SUBSCRIBE, "") # Слухати всі топіки
+        
+        # In-memory кеш для останніх станів
+        self.system_state_cache: Dict = {}
+
+    async def telemetry_ingestion_loop(self):
+        """Безперервний фоновий цикл агрегації та валідації вхідної телеметрії"""
+        while True:
+            try:
+                # Очікуємо multipart повідомлення: [topic, payload]
+                message_parts = await self.subscriber.recv_multipart()
+                if len(message_parts) >= 2:
+                    payload = message_parts.decode('utf-8')
+                    # Сувора валідація схеми
+                    validated_status = StatusEnvelope.parse_raw(payload)
+                    # Оновлення кешу останнім актуальним станом
+                    self.system_state_cache[validated_status.bot_id] = validated_status
+            except ValidationError as ve:
+                # Відкидаємо некоректні формати (Data Drift Protection)
+                pass
+            except Exception as e:
+                pass
+
+    def get_unified_snapshot(self) -> dict:
+        """Метод, що викликається агентом Hermes через MCP Tool для аналізу"""
+        return {bot_id: state.model_dump() for bot_id, state in self.system_state_cache.items()}
+
+Такий підхід дозволяє перевести агента з парадигми "парсингу текстових логів" (bot.log) до парадигми "запиту структурованих об'єктів".1 Коли Hermes має намір оцінити ситуацію, він просто викликає відповідний інструмент MCP, який повертає миттєвий зріз (snapshot) з кешу UnifiedTelemetryAggregator.
+5. Векторне управління позиціями: Командна шина та торгові директиви
+Головним завданням інтеграції ШІ у платформу є надання йому здатності не лише спостерігати, але й активно керувати торговим процесом. Попередні ітерації мосту zmq_mcp_bridge.py обмежувалися ін'єкцією високорівневих політик ризику, таких як коригування параметру risk_multiplier або встановлення лімітів цінових зон buy_zone_max.1 Згідно з новим технічним завданням, агент повинен мати змогу надавати точні, гранулярні команди щодо відкритих та нових позицій: LIMIT_BUY, LIMIT_SELL, HOLD, MARKET_BUY, MARKET_SELL, STOP_LOSS, TP (Take Profit).
+Складність реалізації цього завдання полягає у необхідності дотримання суворих правил безпеки. Відповідно до ролі AGY Supervisor та специфікацій експерименту "DOUBLED EDGE x50", система функціонує в умовах екстремального кредитного плеча (x50) на торговій парі BTCUSDT, де діє абсолютне правило No-Loss.1 Це правило категорично забороняє закриття будь-якої позиції у збиток; будь-які спроби ініціювати дію STOP_LOSS (навіть якщо мовна модель вважає це раціональним рішенням) мають бути імплементно заблоковані на рівні комунікаційного мосту.
+Контракт торгових директив (TradeCommandEnvelope)
+Для забезпечення надійної трансляції рішень агента до виконавчих механізмів, створюється новий командний Pydantic-контракт у файлі hermes_agent/zmq_mcp_bridge.py.
+
+
+
+Python
+from pydantic import BaseModel, Field, validator
+from typing import Literal, Optional
+import zmq
+import json
+
+class TradeCommandEnvelope(BaseModel):
+    command_type: Literal
+    symbol: str = Field(default="BTCUSDT", description="Цільова торгова пара")
+    target_bot: str = Field(..., description="Ідентифікатор виконавця (напр., ai_scalper_bot)")
+    price: Optional[float] = Field(None, description="Ціна виконання для лімітних ордерів")
+    quantity: Optional[float] = Field(None, description="Обсяг активу")
+    leverage: int = Field(default=50, description="Зафіксовано правилами DOUBLED EDGE x50")
+    reason: str = Field(..., description="Логічне обґрунтування LLM для ініціалізації цієї дії")
+
+    @validator('command_type')
+    def enforce_no_loss_experiment_rules(cls, v):
+        """Жорсткий запобіжник для блокування алгоритму Stop-Loss"""
+        if v == 'STOP_LOSS':
+            raise ValueError(": Згідно з експериментом DOUBLED EDGE x50, закриття позицій у збиток (STOP_LOSS) суворо заборонено.")
+        return v
+
+class DirectivePublisherBridge:
+    def __init__(self, publish_port: int = 5559):
+        self.context = zmq.Context()
+        self.pub_socket = self.context.socket(zmq.PUB)
+        self.pub_socket.bind(f"tcp://127.0.0.1:{publish_port}")
+        
+    def dispatch_trade_directive(self, llm_payload: dict) -> dict:
+        """Метод, що експонується як MCP Tool для агента Hermes"""
+        try:
+            # Парсинг та валідація наміру LLM
+            directive = TradeCommandEnvelope(**llm_payload)
+            
+            # Формування топіку для маршрутизації конкретному боту
+            routing_topic = f"command.{directive.target_bot}".encode('utf-8')
+            serialized_payload = directive.model_dump_json().encode('utf-8')
+            
+            # Асинхронна публікація команди на шину управління
+            self.pub_socket.send_multipart([routing_topic, serialized_payload])
+            
+            return {
+                "status": "ACKNOWLEDGED", 
+                "message": f"Директива {directive.command_type} успішно передана до {directive.target_bot}."
+            }
+        except ValueError as ve:
+            # Повертаємо помилку валідації агенту, щоб він міг переосмислити своє рішення
+            return {"status": "BLOCKED_BY_POLICY", "reason": str(ve)}
+        except Exception as e:
+            return {"status": "SYSTEM_ERROR", "reason": str(e)}
+
+Коли Hermes викликає інструмент для відкриття позиції, цей міст перевіряє правильність структури. Якщо агент, піддавшись галюцинації або неправильній оцінці ризику, спробує надіслати STOP_LOSS, валідатор enforce_no_loss_experiment_rules миттєво відхилить запит та поверне текстове пояснення назад у контекстне вікно моделі. Це гарантує математично доведену відповідність системним обмеженням.1
+Виконавчий рівень (Execution Plane): Перехоплення команд ботами
+Зі свого боку, торгові боти повинні вміти коректно реагувати на ці директиви. Якщо бот отримує пряму команду, він мусить призупинити свою автономну логіку (наприклад, зупинити генерацію сигналів моделі машинного навчання AdaptiveGridStrategy) і віддати пріоритет зовнішньому наказу.
+Нижче наведено приклад рефакторингу логіки прослуховування команд у модулі ipc/control_subscriber.py виконавчого бота 1:
+
+
+
+Python
+import zmq.asyncio
+import asyncio
+import json
+import logging
+
+class BotCommandSubscriber:
+    def __init__(self, bot_id: str, execution_manager):
+        self.context = zmq.asyncio.Context()
+        self.subscriber = self.context.socket(zmq.SUB)
+        self.subscriber.connect("tcp://127.0.0.1:5559")
+        # Підписка виключно на команди, адресовані цьому конкретному модулю
+        self.subscriber.setsockopt_string(zmq.SUBSCRIBE, f"command.{bot_id}")
+        self.executor = execution_manager
+        
+    async def listen_for_directives(self):
+        """Фонова корутина для прослуховування наказів від Hermes"""
+        while True:
+            try:
+                topic, message = await self.subscriber.recv_multipart()
+                payload = json.loads(message.decode('utf-8'))
+                
+                cmd = payload.get("command_type")
+                price = payload.get("price")
+                qty = payload.get("quantity")
+                
+                logging.info(f"Отримано зовнішню директиву: {cmd}. Призупинення автономного двигуна.")
+                
+                if cmd == 'LIMIT_BUY':
+                    await self.executor.place_order(side='BUY', type='LIMIT', price=price, qty=qty)
+                elif cmd == 'LIMIT_SELL':
+                    await self.executor.place_order(side='SELL', type='LIMIT', price=price, qty=qty)
+                elif cmd == 'MARKET_BUY':
+                    await self.executor.place_order(side='BUY', type='MARKET', qty=qty)
+                elif cmd == 'MARKET_SELL':
+                    await self.executor.place_order(side='SELL', type='MARKET', qty=qty)
+                elif cmd == 'TP':
+                    # Запуск спеціального алгоритму закриття прибуткової позиції
+                    await self.executor.execute_take_profit_logic()
+                elif cmd == 'HOLD':
+                    # Блокування ініціації будь-яких нових угод (Magnet Effect та ML Scalper призупиняються)
+                    self.executor.set_regime('HALTED')
+                    
+                # Після успішного виконання бот має опублікувати оновлений статус на порту 5557/5567
+                
+            except Exception as e:
+                logging.error(f"Помилка обробки директиви: {str(e)}")
+
+Така архітектура реалізує концепцію дворівневого інтелекту, що описана в документації.1 Бот залишається швидким (написаним з урахуванням оптимізації затримок та CPU Affinity 1), статичним виконавцем, тоді як агент Hermes бере на себе роль адаптивного стратега. Коли ринок змінюється, агент може перемкнути режим бота на HOLD, виконати макроаналіз, і за необхідності вийти з ринку через TP або розставити лімітні ордери (LIMIT_BUY) для поглинання ліквідності під час паніки.
+6. Інтеграція навичок (Skills) та MCP Tools агента Hermes
+Агент Hermes є мультимодальною і масштабованою системою. Згідно з аналізом файлів .hermes/SOUL.md та config.yaml, його операційна логіка спирається на набір динамічно завантажуваних плагінів (Skills), розташованих у директорії /home/korben/.hermes/skills/quantum_edge/.1
+Для того, щоб забезпечити безшовний цикл аналізу ринку та прийняття рішень, навички агента повинні бути експоновані як інструменти (Tools) в рамках протоколу MCP. Мовна модель (наприклад, stepfun/step-3.7-flash:free або fallback на Gemini) отримує системний промпт, який описує доступні функції.
+Огляд ключових інструментів агента
+    1. orchestrate_system(action: str): Цей інструмент інтегрується з раніше описаним демоном UnifiedOrchestrator. Замість виклику десятків bash-команд, агент використовує цей єдиний метод з параметрами START_ALL, STOP_ALL або STATUS.
+    2. get_market_analysis(symbol: str, timeframe: str): Інструмент звертається до існуючого модуля crypto-quantitative-ta.1 Внутрішньо цей модуль здійснює HTTP REST запит до QuestDB (порт 9000), завантажує масив історичних OHLCV-тіків та обчислює індикатори (RSI, MACD, Average True Range). Інструмент повертає агенту стислий текстовий або JSON-звіт про ринковий режим (наприклад, "Тренд висхідний, ATR високий, волатильність зростає").
+    3. analyze_visual_chart(image_path: str): Використовує навичку crypto-charts-vision.1 Завдяки мультимодальним можливостям API (наприклад, Google Vertex AI), агент здатний аналізувати скріншоти графіків або теплові карти книги ордерів (L2 Heatmaps), що генеруються локальним дашбордом на порту 8765, для виявлення патернів, які неможливо описати лише математичними векторами.
+    4. delegate_technical_task(instruction: str): Важливий інструмент для самовідновлення системи. Якщо під час моніторингу логів Hermes виявляє технічну помилку (наприклад, зміну структури API біржі або помилку типу в коді), він не намагається писати код власноруч. Він делегує це завдання агенту нижчого рівня — Antigravity (agy), який працює в ізольованому середовищі (shadow workspace), модифікує файли та запускає pytest.1
+    5. execute_trade_directive(payload: dict): Інструмент, підключений до DirectivePublisherBridge, що дозволяє матеріалізувати торгові наміри у конкретні дії на біржі.
+Цикл OODA в контексті нових інструментів
+Процес прийняття рішень відбувається безперервно у рамках абстракції OODA.1
+    • Observe (Спостереження): Кожні 5-15 хвилин 1 агент активується та викликає інструмент отримання статусу з UnifiedTelemetryAggregator (порт 5557/5567). Він бачить, що просадка капіталу (drawdown_pct) починає зростати.
+    • Orient (Орієнтація): Hermes викликає get_market_analysis для оцінки макроситуації. Він також використовує модуль crypto-news-signals для сканування RSS-стрічок криптовалютних новин.1 Аналіз показує, що ринок увійшов у стан панічних розпродажів.
+    • Decide (Прийняття рішення): Базуючись на політиці безпеки (risk_policy.md), агент розуміє, що подальше усереднення (DCA) або скальпінг небезпечні. Він приймає рішення призупинити нові входи і чекати стабілізації. Водночас він розраховує математичну ціну для закриття існуючих позицій у мінімальний плюс, пам'ятаючи про сувору заборону STOP_LOSS.
+    • Act (Дія): Агент викликає інструмент execute_trade_directive з аргументом HOLD, тимчасово паралізуючи ботів. Після стабілізації ціни він викликає LIMIT_SELL для поетапного вивантаження активу в ринок.
+7. Моніторинг працездатності (Health-checks) та обробка аномалій
+Навіть найдосконаліша стратегія зазнає краху, якщо інфраструктура страждає від прихованих збоїв (silent failures). Згідно зі звітами діагностики (zero_trades_diagnostic.md), основною причиною відсутності угод у попередніх ітераціях системи була проблема "застарілих даних" (STALE_DATA).1 Коли з'єднання з MarketDataHub обривалося, часові мітки last_market_ts переставали оновлюватися, і двигун DDNEngine автоматично блокував будь-які операції, повертаючи помилку STALE_DATA при кожній ітерації evaluate().1
+Крім того, відсутність автономного торгового циклу у main.py призводила до того, що бот завмирав в очікуванні зовнішніх команд.1 Щоб уникнути подібних катастрофічних сценаріїв, інфраструктура оркестрації та агента Hermes доповнюється багаторівневою системою відмовостійкості.
+Архітектурні рішення для стабілізації інфраструктури:
+    1. Watchdog Timer та апаратне визначення затримок (Latency Monitoring): Впроваджена структура StatusEnvelope містить параметр timestamp. Агрегатор телеметрії у MCP-мості постійно порівнює цей параметр із системним часом time.time(). Якщо різниця (lag) перевищує допустимий ліміт (наприклад, 2000 мс), міст автоматично генерує подію NETWORK_DEGRADATION. Агент Hermes, отримавши цей статус, може превентивно надіслати команду HOLD, щоб бот не виконував угоди на основі застарілих цін стакану ордерів.1
+    2. Захист від розриву з'єднання з базою (Circuit Breakers): Торгові боти здійснюють процедуру прогріву, завантажуючи історичні дані з QuestDB (порт 9000). Якщо REST API стає недоступним, бот переходить у режим HALTED. Ця інформація негайно передається агенту через порт телеметрії. Замість того, щоб панікувати, Hermes може ініціювати команду перезапуску контейнера бази даних через інструменти операційної системи або делегувати розслідування агенту agy.
+    3. Анти-колізійний механізм (SSOT - Single Source of Truth): У минулому виникали колізії форматів даних (float vs decimal) при розрахунку просадок.1 Нова система усуває цю проблему завдяки суворій валідації Pydantic та встановленню математичної середньої ціни (mid_price), яку розраховує виключно MarketDataHub, як єдиного джерела істини для всіх мікросервісів.1
+    4. Fallback для ШІ (Local LLM Fallback): Будучи залежним від хмарних мовних моделей, Hermes потенційно вразливий до мережевих тайм-аутів або вичерпання лімітів API (Rate Limits). Файл config.yaml визначає механізми резервного копіювання: у разі недоступності основного провайдера (Nous Research API / Google Vertex), система перемикається на локальні або альтернативні моделі.1 Якщо відмовляють усі ШІ-системи, спрацьовують вбудовані в ботів "запобіжники скальпінгу" (scalp_guards.py та circuit_breakers.py), які керуються жорстко закодованими лімітами денних збитків (max_daily_loss), забезпечуючи автономне виживання капіталу.1
+8. Синтез результатів та стратегічний висновок
+Запропонований план рефакторингу розв'язує фундаментальну суперечність між складною, децентралізованою інфраструктурою мікросервісів та потребами автономного когнітивного агента. Замість того, щоб імітувати роботу системного адміністратора у терміналі, агент Hermes інтегрується у систему як стратегічний "зовнішній мозок" (Supervisor), взаємодіючи з інфраструктурою через стандартизований, безпечний протокол MCP.
+Трансформація скрипта QuantumEdge.py в асинхронний демон-оркестратор гарантує послідовний, безвідмовний запуск компонентів QuestDB -> MarketDataHub -> Dashboard -> Bots. Уніфікація шини ZMQ та впровадження жорстких контрактів (Pydantic) забезпечують надійний двосторонній зв'язок: від ботів до агента надходить чиста, структурована телеметрія, а від агента до ботів — точні, валідовані команди (LIMIT_BUY, HOLD, TP).
+Найважливіше те, що ця архітектура гарантує дотримання критичних бізнес-правил, таких як експеримент No-Loss.1 Завдяки винесенню обмежень на рівень ZMQ-мосту, система фізично блокує будь-які спроби виконання команд STOP_LOSS, навіть якщо вони були згенеровані через галюцинації нейромережі. Розподіл функцій між агентом бізнес-логіки Hermes та агентом технічної підтримки Antigravity (agy) 1 створює синергетичну, стійку екосистему, яка здатна адаптуватися до мінливих ринкових умов, аналізувати тенденції та безперервно еволюціонувати без втручання людини.
+Works cited
+    1. Загальний опис проєкту QuantumEdge
