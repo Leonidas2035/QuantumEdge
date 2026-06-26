@@ -17,11 +17,25 @@ handlers:
     formatter: simple
     filename: hub.log
     encoding: utf-8
+  bot_file:
+    class: logging.FileHandler
+    level: INFO
+    formatter: simple
+    filename: bot.log
+    encoding: utf-8
 
 loggers:
   quantum_edge_core.market_data.hub:
     level: INFO
     handlers: [console, file]
+    propagate: false
+  QuantumEdgeBot:
+    level: INFO
+    handlers: [console, bot_file]
+    propagate: false
+  BingXGateway:
+    level: INFO
+    handlers: [console, bot_file]
     propagate: false
 
 root:

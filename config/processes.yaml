@@ -10,7 +10,7 @@ defaults:
 
 processes:
   hub:
-    enabled: false
+    enabled: true
     cwd: "src/quantum_edge_core/market_data"
     cmd: ["python", "-m", "hub"]
     env:
@@ -26,7 +26,7 @@ processes:
     cwd: "."
     cmd: ["/home/korben/QuantumEdge-main/venv/bin/python3", "-m", "quantum_edge_core.ai_scalper_bot.run_bot"]
     env:
-      QE_BOT_ID: "ai_scalper"
+      QE_BOT_ID: "ai_scalper_bot"
       STRATEGY_TYPE: "AdaptiveGridStrategy"
       QE_MODE: "scalp"
       MARKET_DATA_ZMQ_PORT: "5555"

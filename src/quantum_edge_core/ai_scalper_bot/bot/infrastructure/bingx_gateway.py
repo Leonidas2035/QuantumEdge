@@ -33,10 +33,8 @@ class BingXExecutionGateway:
         self.trading_mode = getattr(config, "trading_mode", "spot_grid")
 
         # CCXT options - VST funds are in swap/futures account
-        options = {"defaultType": "spot"}
-        if self.trading_mode in ("futures", "perp", "swap", "spot_grid"):
-            # For VST demo, grid trading uses futures account
-            options = {"defaultType": "swap"}  # BingX perpetual futures
+        # Force defaultType to swap for all modes including SCALP
+        options = {"defaultType": "swap"}
 
         # API credentials from config
         api_key = getattr(config, "bingx_api_key", "") or getattr(
@@ -84,7 +82,7 @@ class BingXExecutionGateway:
         self._balance_account_type = (
             "swap"
             if use_testnet
-            and self.trading_mode in ("futures", "perp", "swap", "spot_grid")
+            and self.trading_mode in ("futures", "perp", "swap", "spot_grid", "scalp", "scalper_v1")
             else "spot"
         )
 
@@ -101,7 +99,7 @@ class BingXExecutionGateway:
         """Convert internal symbol (BTCUSDT) to CCXT format."""
         # Spot: BTC/USDT, Futures/Swap: BTC/USDT:USDT
         base = symbol.replace("USDT", "")
-        if self.trading_mode in ("futures", "perp", "swap", "spot_grid"):
+        if self.trading_mode in ("futures", "perp", "swap", "spot_grid", "scalp", "scalper_v1"):
             # For VST demo and futures, use swap format
             return f"{base}/USDT:USDT"
         else:
@@ -115,7 +113,7 @@ class BingXExecutionGateway:
 
         # positionSide is required on swap/futures in hedge mode
         is_swap = (
-            self.trading_mode in ("futures", "perp", "swap", "spot_grid")
+            self.trading_mode in ("futures", "perp", "swap", "spot_grid", "scalp", "scalper_v1")
             and getattr(self, "_balance_account_type", "spot") == "swap"
         )
         if not is_swap:

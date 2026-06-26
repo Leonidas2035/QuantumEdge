@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import List, Optional
+from typing import List, Optional, Dict, Any
 
 import msgspec
 
@@ -29,6 +29,11 @@ class DepthL2Event(MarketEvent):
     asks: List[DepthLevel]
     mid: Optional[float] = None
     spread: Optional[float] = None
+    ofi_1s: Optional[float] = None
+    cvd_10s: Optional[float] = None
+    imbalance_top10: Optional[float] = None
+    whale_walls: Optional[List[Dict[str, Any]]] = None
+
 
 
 class WallsSummary(msgspec.Struct):

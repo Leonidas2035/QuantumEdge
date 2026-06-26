@@ -1,4 +1,4 @@
-#!/home/korben/QuantumEdge-main/.venv/bin/python
+#!/home/korben/QuantumEdge-main/.venv/bin/python3
 # -*- coding: utf-8 -*-
 import sys
 from numpy._configtool import main

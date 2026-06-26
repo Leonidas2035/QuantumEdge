@@ -14,6 +14,11 @@ class DynDCAConfig:
     gamma: float = 1.2
     base_profit_pct: float = 1.0      # Базовий цільовий прибуток
     funding_comp_pct: float = 0.2     # Компенсація за фандінг та комісії
+    total_capital_vst: float = 150000.0
+    max_orders_per_side: int = 15
+    initial_order_qty: float = 0.01
+    order_value_pct_balance: float = 0.03
+    min_order_value_vst: float = 500.0
     
     @property
     def total_tp_pct(self) -> float:
@@ -58,6 +63,11 @@ class DynDCAConfig:
             if isinstance(execution, dict):
                 cfg.base_profit_pct = execution.get("base_profit_pct", cfg.base_profit_pct)
                 cfg.funding_comp_pct = execution.get("funding_comp_pct", cfg.funding_comp_pct)
+                cfg.total_capital_vst = execution.get("total_capital_vst", 150000.0)
+                cfg.max_orders_per_side = execution.get("max_orders_per_side", 15)
+                cfg.initial_order_qty = execution.get("initial_order_qty", 0.01)
+                cfg.order_value_pct_balance = execution.get("order_value_pct_balance", 0.03)
+                cfg.min_order_value_vst = execution.get("min_order_value_vst", 500.0)
 
         # Overwrite telemetry port with QE_BOT_TELEMETRY_PORT only if isolated for DynDCA
         env_bot_id = os.environ.get("QE_BOT_ID")

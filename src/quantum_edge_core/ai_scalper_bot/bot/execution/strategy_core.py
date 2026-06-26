@@ -114,6 +114,10 @@ class AdaptiveGridStrategy:
         self.config = config
         self.last_buy_price: float = 0.0
 
+        # Volatility Oracle
+        from quantum_edge_core.ai_scalper_bot.bot.execution.volatility_oracle import VolatilityOracle
+        self.vol_oracle = VolatilityOracle(config)
+
         # Feature state
         self.mid_prices = collections.deque(maxlen=100)
         self.prev_bid_qty = 0.0
@@ -148,6 +152,8 @@ class AdaptiveGridStrategy:
         atr: float,
         position: PositionManager,
     ) -> Optional[TradeAction]:
+        from quantum_edge_core.ai_scalper_bot.bot.core.models import TradingMode
+        # Removed hardcoded market.trading_mode = TradingMode.SCALP to respect supervisor policy
         current_price = market.last_price
 
         # --- ML Feature Pipeline (OFI) ---
@@ -228,7 +234,7 @@ class AdaptiveGridStrategy:
                         )  # Mocking whale walls as L2
                         # Build a mock bid book from walls for the frontrunner if real l2_bids is missing
                         walls = [
-                            (w.get("price", 0), w.get("vol", 0))
+                            (w.get("price", 0), w.get("qty", w.get("vol", 0)))
                             for w in (l2_bids or [])
                             if w.get("side") == "BID"
                         ]
@@ -453,8 +459,8 @@ class DynamicDCAStrategy:
         if now < self.flash_crash_pause_until:
             return None
 
-        # Update Volatility Oracle
-        self.vol_oracle.add_close_price(float(current_price))
+        # Note: VolatilityOracle is now fed with 1-minute kline closes
+        # from run_bot.py to avoid flooding it with tick-level noise.
         calculated_atr = Decimal(str(self.vol_oracle.calculate_atr()))
         if calculated_atr <= Decimal("0.0"):
             calculated_atr = Decimal("50.0") # Fallback for tests if no history

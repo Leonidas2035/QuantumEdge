@@ -175,22 +175,29 @@ class OrderBookAggregator:
             mid=mid,
             spread=spread,
         )
+
+        if self._microstructure and best_bid and best_ask:
+            try:
+                bids_list = [[float(b.price), float(b.qty)] for b in bids]
+                asks_list = [[float(a.price), float(a.qty)] for a in asks]
+                metrics = self._microstructure.update_book(
+                    symbol=symbol,
+                    bids=bids_list,
+                    asks=asks_list,
+                    ts_ns=event.ts_ns,
+                )
+                event.ofi_1s = float(metrics["ofi_1s"])
+                event.cvd_10s = float(metrics["cvd_10s"])
+                event.imbalance_top10 = float(metrics["imbalance_top10"])
+                event.whale_walls = metrics["whale_walls"]
+            except Exception as exc:
+                pass
+
         await self._publisher.publish(f"market.depth.{symbol.lower()}", event)
         self._last_depth_ts[symbol] = event.ts_ns
         self._stats.depth_publish_total += 1
         if self._config.snapshot.include_depth:
             self._snapshot_cache.update(event)
-        if self._microstructure and self._micro_publisher and best_bid and best_ask:
-            snapshot = self._microstructure.update_book(
-                symbol=symbol,
-                bid_px=best_bid[0],
-                bid_qty=best_bid[1],
-                ask_px=best_ask[0],
-                ask_qty=best_ask[1],
-                ts_event=event.ts_ns,
-            )
-            if snapshot:
-                self._micro_publisher.publish(snapshot)
 
     async def _publish_walls(self, symbol: str) -> None:
         book = self._books[symbol]

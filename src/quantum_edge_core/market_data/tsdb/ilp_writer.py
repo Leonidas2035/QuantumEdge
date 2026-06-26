@@ -26,6 +26,10 @@ class QuestDBILPWriter:
 
     def write_row(self, table: str, symbols: dict, columns: dict, ts=None):
         """Puts a row write task onto the background queue."""
+        if table == 'market_features':
+            for col in ('ofi_1s', 'cvd_10s', 'imbalance_top10'):
+                if col not in columns:
+                    columns[col] = 0.0
         try:
             self.queue.put_nowait((table, symbols, columns, ts))
         except queue.Full:

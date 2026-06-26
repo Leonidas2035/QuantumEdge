@@ -29,6 +29,14 @@ class VolatilityOracle:
         if price > 0:
             self.price_history.append(price)
 
+    def update_from_kline(self, close_price: float, high: float = None, low: float = None):
+        """Updates the oracle history from a kline."""
+        self.add_close_price(close_price)
+
+    def get_atr(self) -> float:
+        """Returns the current ATR."""
+        return self.calculate_atr()
+
     def calculate_volatility_index(self) -> float:
         """
         Calculates the volatility index based on the price history.

@@ -120,7 +120,13 @@ class SupervisorReporter:
             },
             "errors": [],
             "equity": equity,
-            "trading_mode": trading_mode,
+            "trading_mode": (
+                market_state.trading_mode.value
+                if market_state and hasattr(market_state.trading_mode, "value")
+                else str(getattr(market_state, "trading_mode", trading_mode))
+            ),
+            "buy_zone_max": float(getattr(market_state, "buy_zone_max", 0.0)) if market_state else 0.0,
+            "risk_multiplier": float(getattr(market_state, "risk_multiplier", 1.0)) if market_state else 1.0,
             "atr": float(getattr(market_state, "atr", 0.0)) if market_state else 0.0,
             "volume_delta_1m": (
                 float(getattr(market_state, "volume_delta_1m", 0.0))
@@ -178,6 +184,13 @@ class SupervisorReporter:
             "atr": float(getattr(market_state, "atr", 0.0)),
             "volume_delta_1m": float(getattr(market_state, "volume_delta_1m", 0.0)),
             "liquidations_1m": int(getattr(market_state, "liquidations_1m", 0)),
+            "trading_mode": (
+                market_state.trading_mode.value
+                if market_state and hasattr(market_state.trading_mode, "value")
+                else str(getattr(market_state, "trading_mode", "scalp"))
+            ) if market_state else "scalp",
+            "buy_zone_max": float(getattr(market_state, "buy_zone_max", 0.0)) if market_state else 0.0,
+            "risk_multiplier": float(getattr(market_state, "risk_multiplier", 1.0)) if market_state else 1.0,
         }
 
         try:

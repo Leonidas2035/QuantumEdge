@@ -4,6 +4,10 @@ import sys
 import structlog
 import time
 import collections
+import os
+from pathlib import Path
+
+from dotenv import load_dotenv
 
 from typing import Optional, Dict, Any, List
 
@@ -19,12 +23,30 @@ from quantum_edge_core.dyn_dca_bot.execution.telemetry import BotPublisher
 
 logger = structlog.get_logger(__name__)
 
+_SECRETS_PATH = Path(__file__).resolve().parents[3] / "config" / "secrets.local.env"
+
+
+def _load_secrets() -> None:
+    if _SECRETS_PATH.exists():
+        load_dotenv(dotenv_path=str(_SECRETS_PATH), override=False)
+        logger.info("Loaded secrets", path=str(_SECRETS_PATH))
+    else:
+        logger.warning("Secrets file not found", path=str(_SECRETS_PATH))
+
+
+if __name__ == "__main__":
+    _load_secrets()
+    setup_logging()
+
+
 class BotState:
     """Глобальний стан для обміну між ZMQ-потоком та торговим циклом."""
     def __init__(self):
         self.current_price: float = 0.0
         self.current_walls: Dict[str, List[Dict[str, Any]]] = {"bid_walls": [], "ask_walls": []}
         self.last_update_ts: float = 0.0
+        self.active_grid_orders: Dict[str, Dict[str, Any]] = {}
+
 
 class DynDCAService:
     def __init__(self):
@@ -65,13 +87,13 @@ class DynDCAService:
         self.zmq_receiver = ZmqReceiver(self.config, self.l2_aggregator, self.volatility_oracle, connect_now=False)
         
         # 3. Execution
-        self.order_router = OrderRouter() # В майбутньому прийматиме exchange client
-        self.grid_manager = GridManager(self.config, self.order_router)
+        self.order_router = OrderRouter()
+        self._grid_managers: Dict[str, GridManager] = {}
         
         # 4. Telemetry
         telemetry_port = self.config.zmq_telemetry_port
         self.telemetry = BotPublisher(port=telemetry_port)
-        self._first_order_placed = False
+        self._initialized = False
 
     async def warm_up(self):
         self.volatility_history = collections.deque(maxlen=1000)
@@ -127,58 +149,142 @@ class DynDCAService:
         # 1. Запит до Оракула: який зараз режим?
         oracle_state = self.volatility_oracle.evaluate_regime(l1_spread_bps=2.0, atr_pct=0.5) 
         
-        if oracle_state.regime == MarketRegime.FLASH_CRASH:
+        if oracle_state.regime == MarketRegime.FLASH_CRASH and self._initialized:
             logger.warning("FLASH CRASH detected by Oracle! Holding off new grid entries.")
             return # Блокуємо нові ордери, поки ринок не заспокоїться
 
-        # 2. Перевірка на досягнення Take Profit
-        if self.grid_manager.current_position_size > 0 and self.grid_manager.tp_price is not None:
-            tp_hit = False
-            current_price = self.state.current_price
-            if self.grid_manager.position_side == "buy":
-                if current_price >= self.grid_manager.tp_price:
-                    tp_hit = True
-            elif self.grid_manager.position_side == "sell":
-                if current_price <= self.grid_manager.tp_price:
-                    tp_hit = True
-            
-            if tp_hit:
-                logger.info("Take Profit price target reached", current_price=current_price, tp_price=self.grid_manager.tp_price)
-                self.grid_manager.on_tp_order_filled()
-                self._first_order_placed = False
+        # 2. Первинна ініціалізація сітки (одноразова)
+        if not self._initialized and not self.state.active_grid_orders:
+            await self._initialize_grid(oracle_state)
+            self._initialized = True
 
-        # 3. Логіка виставлення першого ордера
-        if self.grid_manager.current_position_size == 0 and not self._first_order_placed:
-            # Рахуємо ціну з урахуванням стін
-            next_price = self.dca_engine.calculate_next_order(
-                current_price=self.state.current_price,
-                average_entry=self.state.current_price, # Для першого ордера відштовхуємось від поточної ціни
-                step_index=0,
-                oracle_state=oracle_state,
-                walls=self.state.current_walls,
-                side="buy"
-            )
-            
-            if next_price:
-                logger.info("Placing initial grid order", price=next_price, regime=oracle_state.regime.name)
-                # Імітуємо виконання (в реальності тут був би place_limit_order)
-                self.grid_manager.on_dca_order_filled(fill_price=next_price, fill_qty=0.01, side="buy")
-                self._first_order_placed = True
+        # 3. Оновлення стану активних позицій (TP/закриття)
+        await self._update_grid_positions()
 
-        # 4. Розрахунок PnL та Публікація телеметрії для Supervisor
-        current_pnl = 0.0
-        if self.grid_manager.current_position_size > 0:
-            if self.grid_manager.position_side == "buy":
-                current_pnl = (self.state.current_price - self.grid_manager.average_entry_price) * self.grid_manager.current_position_size
-            elif self.grid_manager.position_side == "sell":
-                current_pnl = (self.grid_manager.average_entry_price - self.state.current_price) * self.grid_manager.current_position_size
-
+        # 4. Розрахунок PnL та Публікація телеметрії
+        total_pnl = self._calculate_total_pnl()
+        active_count = len(self.state.active_grid_orders)
         if self.telemetry:
             self.telemetry.publish_status(
-                position_size=self.grid_manager.current_position_size,
-                avg_entry=self.grid_manager.average_entry_price,
-                current_pnl=current_pnl
+                position_size=active_count,
+                avg_entry=0.0,
+                current_pnl=total_pnl
             )
+
+    async def _initialize_grid(self, oracle_state):
+        """Places grid orders based on capital allocation and market regime."""
+        current_price = self.state.current_price
+        max_orders = getattr(self.config, 'max_orders_per_side', 15)
+
+        # Calculate order size per side
+        total_capital = getattr(self.config, 'total_capital_vst', 150000.0)
+        order_value = max(total_capital / (max_orders * 2), getattr(self.config, 'min_order_value_vst', 500.0))
+        qty = round(order_value / current_price, 4)
+
+        regime = getattr(oracle_state, 'regime', None)
+        allow_long = regime in (MarketRegime.CALM,)
+        allow_short = regime in (MarketRegime.CHOPPY, MarketRegime.FLASH_CRASH)
+
+        logger.info("Initializing grid", price=current_price, qty=qty, order_value=order_value, sides=max_orders, regime=str(regime))
+
+        if allow_long:
+            # Place long orders (buy) below current price
+            for i in range(max_orders):
+                side = "buy"
+                next_price = self.dca_engine.calculate_next_order(
+                    current_price=current_price,
+                    average_entry=current_price,
+                    step_index=i,
+                    oracle_state=oracle_state,
+                    walls=self.state.current_walls,
+                    side=side
+                )
+                if not next_price:
+                    continue
+                order = self.order_router.place_limit_order(side=side, price=next_price, qty=qty, reduce_only=False, position_side='LONG')
+                if order and order.get("order_id"):
+                    mgr = GridManager(self.config, self.order_router)
+                    mgr.on_dca_order_filled(fill_price=next_price, fill_qty=qty, side=side)
+                    self.state.active_grid_orders[order["order_id"]] = {
+                        "side": side,
+                        "qty": qty,
+                        "entry": next_price,
+                        "mgr": mgr,
+                        "bin_side": "long",
+                    }
+                    self._grid_managers[order["order_id"]] = mgr
+                    logger.info("Grid long order placed", index=i, price=next_price, order_id=order["order_id"])
+
+        if allow_short:
+            # Place short orders (sell) above current price
+            for i in range(max_orders):
+                side = "sell"
+                next_price = self.dca_engine.calculate_next_order(
+                    current_price=current_price,
+                    average_entry=current_price,
+                    step_index=i,
+                    oracle_state=oracle_state,
+                    walls=self.state.current_walls,
+                    side=side
+                )
+                if not next_price:
+                    continue
+                order = self.order_router.place_limit_order(side=side, price=next_price, qty=qty, reduce_only=False, position_side='SHORT')
+                if order and order.get("order_id"):
+                    mgr = GridManager(self.config, self.order_router)
+                    mgr.on_dca_order_filled(fill_price=next_price, fill_qty=qty, side=side)
+                    self.state.active_grid_orders[order["order_id"]] = {
+                        "side": side,
+                        "qty": qty,
+                        "entry": next_price,
+                        "mgr": mgr,
+                        "bin_side": "short",
+                    }
+                    self._grid_managers[order["order_id"]] = mgr
+                    logger.info("Grid short order placed", index=i, price=next_price, order_id=order["order_id"])
+
+    async def _update_grid_positions(self):
+        """Simplified: do not close individual grid positions early.
+        In production, this should query the exchange for actual fills and manage TP/SL at position level."""
+        current_price = self.state.current_price
+        closed = []
+        for order_id, pos in list(self.state.active_grid_orders.items()):
+            entry = pos["entry"]
+            side = pos["side"]
+            tp_hit = False
+            # Do NOT close long positions at a loss during downtrends
+            # Only close if clearly profitable after fees
+            if side == "buy" and current_price >= entry * 1.005:
+                tp_hit = True
+            elif side == "sell" and current_price <= entry * 0.995:
+                tp_hit = True
+
+            if tp_hit:
+                mgr = self._grid_managers.get(order_id)
+                if mgr:
+                    mgr.on_tp_order_filled()
+                closed.append(order_id)
+                logger.info("Grid position closed", order_id=order_id, side=side, entry=entry, price=current_price)
+
+        for oid in closed:
+            self.state.active_grid_orders.pop(oid, None)
+            self._grid_managers.pop(oid, None)
+            # Only re-init if all grid orders are gone
+            if not self.state.active_grid_orders:
+                self._initialized = False
+
+    def _calculate_total_pnl(self) -> float:
+        total = 0.0
+        cp = self.state.current_price
+        for pos in self.state.active_grid_orders.values():
+            e = pos["entry"]
+            s = pos["side"]
+            q = pos["qty"]
+            if s == "buy":
+                total += (cp - e) * q
+            elif s == "sell":
+                total += (e - cp) * q
+        return total
 
     async def shutdown(self):
         logger.info("Initiating graceful shutdown for DynDCA...")
@@ -211,4 +317,5 @@ if __name__ == "__main__":
         loop.run_until_complete(service.start())
     except KeyboardInterrupt:
         logger.info("Keyboard interrupt received.")
-        loop.run_until_complete(service.shutdown())
+    
+    loop.run_until_complete(service.shutdown())

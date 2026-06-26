@@ -1,0 +1,18 @@
+# Meta-Agent supervisor orchestration (Stage 5).
+# Controls when/how SupervisorAgent triggers Meta-Agent strategic cycles.
+
+enabled: false  # default: do not auto-run
+meta_agent_root: ""  # optional override; empty uses PathsConfig.meta_agent_root
+python_executable: ""  # optional override; empty uses current Python
+project_id: "ai_scalper_bot"
+frequency_days: 1
+min_hours_between_runs: 12
+require_bot_idle: true
+dry_run: true  # when true, only log/plan, do not start Meta-Agent
+use_supervisor_runner: true  # prefer supervisor_runner.py if present
+task_title_prefix: "S1 ai_scalper_bot"
+extra_tags:
+  - "supervisor"
+  - "ai_scalper_bot"
+max_audit_days: 1
+

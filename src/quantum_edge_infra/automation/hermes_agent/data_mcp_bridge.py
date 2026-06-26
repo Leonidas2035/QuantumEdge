@@ -264,6 +264,63 @@ ORDER BY ts ASC;"""
                 
     return results
 
+def cmd_market_microstructure(symbol: str, timeout_sec: float = 4.0):
+    context = zmq.Context()
+    socket = context.socket(zmq.SUB)
+    socket.connect("tcp://127.0.0.1:5555")
+    socket.setsockopt_string(zmq.SUBSCRIBE, "")
+
+    poller = zmq.Poller()
+    poller.register(socket, zmq.POLLIN)
+
+    start_time = time.time()
+    end_time = start_time + timeout_sec
+    best_payload = None
+
+    while time.time() < end_time:
+        socks = dict(poller.poll(100))
+        if socket not in socks:
+            continue
+        try:
+            parts = socket.recv_multipart(flags=zmq.NOBLOCK)
+            if len(parts) < 2:
+                continue
+            payload_bytes = parts[-1]
+            payload = json.loads(payload_bytes.decode("utf-8"))
+
+            if payload.get("symbol") != symbol:
+                continue
+
+            # Accept any OrderBook/depth-like event that carries microstructure fields
+            if "ofi_1s" in payload or "cvd_10s" in payload or "imbalance_top10" in payload or "whale_walls" in payload:
+                best_payload = payload
+                # If we got rich data, return immediately
+                ofi = float(payload.get("ofi_1s") or 0.0)
+                cvd = float(payload.get("cvd_10s") or 0.0)
+                walls = payload.get("whale_walls") or []
+                if ofi != 0.0 or cvd != 0.0 or len(walls) > 0:
+                    break
+        except zmq.Again:
+            continue
+        except Exception:
+            continue
+
+    socket.close()
+    context.term()
+
+    if not best_payload:
+        return {"error": f"No microstructure data received for symbol {symbol} within {timeout_sec}s"}
+
+    return {
+        "symbol": symbol,
+        "timestamp": best_payload.get("ts_ns", time.time_ns()) / 1_000_000_000.0,
+        "ofi_1s": best_payload.get("ofi_1s", 0.0),
+        "cvd_10s": best_payload.get("cvd_10s", 0.0),
+        "imbalance_top10": best_payload.get("imbalance_top10", 0.0),
+        "whale_walls": best_payload.get("whale_walls", []),
+    }
+
+
 def main():
     parser = argparse.ArgumentParser(description="Data Plane MCP Bridge for Hermes Agent")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -271,6 +328,10 @@ def main():
     # market_snapshot
     parser_snap = subparsers.add_parser("market_snapshot", help="Get a real-time market snapshot")
     parser_snap.add_argument("--symbol", type=str, required=True, help="Symbol to snapshot (e.g. BTCUSDT)")
+
+    # market_microstructure
+    parser_micro = subparsers.add_parser("market_microstructure", help="Get real-time market microstructure indicators")
+    parser_micro.add_argument("--symbol", type=str, required=True, help="Symbol to query (e.g. BTCUSDT)")
 
     # query_db
     parser_db = subparsers.add_parser("query_db", help="Execute SQL against QuestDB")
@@ -291,6 +352,8 @@ def main():
     result = {}
     if args.command == "market_snapshot":
         result = cmd_market_snapshot(args.symbol.upper())
+    elif args.command == "market_microstructure":
+        result = cmd_market_microstructure(args.symbol.upper())
     elif args.command == "query_db":
         result = cmd_query_db(args.sql)
     elif args.command == "query_telemetry":

@@ -19,6 +19,10 @@ import argparse
 from pathlib import Path
 from typing import Dict, List, Optional, Any
 
+from dotenv import load_dotenv
+
+load_dotenv()
+
 # Configure Logging
 logging.basicConfig(
     level=logging.INFO,
@@ -66,7 +70,11 @@ class UnifiedOrchestrator:
             args = comp.get("args", [])
 
             if entrypoint:
-                cmd = entrypoint.split() + args
+                cmd_parts = entrypoint.split()
+                if cmd_parts[0].endswith(".py"):
+                    cmd = [sys.executable] + cmd_parts + args
+                else:
+                    cmd = cmd_parts + args
             elif module_name:
                 cmd = [sys.executable, "-m", module_name] + args
             else:
@@ -82,7 +90,7 @@ class UnifiedOrchestrator:
 
             # Resolve dependency port
             dependency_port = None
-            if name == "dashboard_api":
+            if name == "supervisor":
                 dependency_port = self.ports_config.get("ports", {}).get("hub")
             elif name in ("ai_scalper", "dyndca"):
                 dependency_port = self.ports_config.get("ports", {}).get("dashboard")
@@ -230,7 +238,7 @@ class UnifiedOrchestrator:
         await self._zmq_guard_cleanup()
 
         results = {}
-        startup_order = ["hub", "dashboard_api", "ai_scalper", "dyndca", "lockbotbtc"]
+        startup_order = ["hub", "supervisor", "ai_scalper", "dyndca", "lockbotbtc"]
         for name in startup_order:
             if name not in self.registry:
                 continue
@@ -266,7 +274,7 @@ class UnifiedOrchestrator:
     async def halt_all_system(self):
         """Halts all modules in reverse dependency order."""
         logger.info("Halting all components...")
-        shutdown_order = ["lockbotbtc", "dyndca", "ai_scalper", "dashboard_api", "hub"]
+        shutdown_order = ["lockbotbtc", "dyndca", "ai_scalper", "supervisor", "hub"]
         for name in shutdown_order:
             proc = self.processes.get(name)
             if proc and proc.poll() is None:
@@ -333,8 +341,8 @@ def send_daemon_command(action: str, payload: dict = None) -> Optional[dict]:
     import zmq
     context = zmq.Context()
     socket_client = context.socket(zmq.REQ)
-    socket_client.setsockopt(zmq.RCVTIMEO, 5000)
-    socket_client.setsockopt(zmq.SNDTIMEO, 5000)
+    socket_client.setsockopt(zmq.RCVTIMEO, 30000)
+    socket_client.setsockopt(zmq.SNDTIMEO, 30000)
     try:
         socket_client.connect("tcp://127.0.0.1:5560")
         request = {"action": action}

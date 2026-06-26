@@ -8,6 +8,7 @@ ports:
   lockbot_cmd_sub: 5578
   lockbot_policy_sub: 5561
   dashboard: 8765
+  bridge_command: 5562
 
 questdb:
   http: 9000
@@ -37,6 +38,7 @@ components:
     ports: [supervisor_telemetry]
     telemetry: true
     env:
+      QE_BOT_ID: "ai_scalper_bot"
       QE_BOT_TELEMETRY_PORT: "5557"
       QE_BOT_POLICY_PORT: "5559"
       MARKET_DATA_ZMQ_PORT: "5555"

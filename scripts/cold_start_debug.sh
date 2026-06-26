@@ -201,6 +201,32 @@ print(val)
 }
 
 ########################################################################
+# PHASE 4.5 — Dynamic DCA Bot
+########################################################################
+phase_dyndca() {
+    info "Starting Dynamic DCA Bot (port :5567)"
+
+    cd /home/korben/QuantumEdge-main
+    PYTHONPATH=src nohup python3 -m quantum_edge_core.dyn_dca_bot.main \
+        > logs/dyndca.log 2>&1 &
+    echo $! > runtime/dyndca.pid
+    info "Dynamic DCA Bot PID=$(cat runtime/dyndca.pid)"
+
+    # Readiness: wait until port 5567 is bound
+    local retries=15
+    while (( retries > 0 )); do
+        if lsof -i :5567 >/dev/null 2>&1; then
+            info "Dynamic DCA Bot port 5567 bound ✓"
+            return 0
+        fi
+        sleep 1
+        (( retries-- ))
+    done
+    err "Dynamic DCA Bot failed to bind port 5567 in 15s. Tail log: tail -50 logs/dyndca.log"
+    exit 1
+}
+
+########################################################################
 # PHASE 5 — Execution Plane: AI Scalper Bot
 ########################################################################
 phase_bot() {
@@ -263,6 +289,7 @@ main() {
     phase_questdb
     phase_hub
     phase_supervisor
+    phase_dyndca
     phase_bot
     phase_diagnostics
 

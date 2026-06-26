@@ -1,0 +1,34 @@
+version: 1
+defaults:
+  env:
+    PYTHONUNBUFFERED: "1"
+  restart:
+    enabled: true
+    max_retries: 5
+    backoff_s: [1, 2, 4, 8, 16]
+    cooldown_s: 30
+
+processes:
+  hub:
+    enabled: false
+    cwd: "src/quantum_edge_core/market_data"
+    cmd: ["python", "-m", "hub"]
+    env:
+      HUB_LOG_LEVEL: "INFO"
+    healthcheck:
+      type: "http"
+      url: "http://127.0.0.1:8700/health"
+      timeout_s: 2
+    ports: [8700, 5555]
+  ai_scalper_bot:
+    enabled: true
+    cwd: "."
+    cmd: ["python", "-m", "quantum_edge_core.ai_scalper_bot.run_bot"]
+    env:
+      QE_MODE: "scalp"
+      QE_BOT_POLICY_PORT: "5559"
+    healthcheck:
+      type: "none"
+    restart:
+      enabled: false
+    ports: [5555, 5557, 5558, 5559]

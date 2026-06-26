@@ -25,10 +25,11 @@ data/
 
 # Secret & Configs (Security)
 config/secrets.yaml
+config/secrets.local.env
 config/api_keys.json
 scripts/secrets.enc
-config/secrets.local.env
-**/secrets.local.env
+src/**/secrets.local.env
+src/**/*.local.env
 
 # Temporary output
 output/
@@ -38,3 +39,18 @@ tools/update_config.py
 .venv/
 venv/
 .env
+
+# One-off scripts
+patch_*.py
+fix_*.py
+scratch_*.py
+agy_task.txt
+
+# Runtime artifacts
+*.pid
+*.out
+*.tmp
+payload.json
+.agent_response.json
+.jules_*
+.julescontext

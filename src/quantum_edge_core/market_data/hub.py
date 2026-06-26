@@ -45,8 +45,9 @@ from quantum_edge_core.market_data.models import HeartbeatEvent, Priority, Trade
 from quantum_edge_core.market_data.models.account_snapshot import AccountSnapshot
 from quantum_edge_core.market_data.models.account_delta import AccountDelta
 from quantum_edge_core.market_data.orderbook.aggregator import OrderBookAggregator
-from quantum_edge_core.market_data.microstructure.publisher import (
+from quantum_edge_core.market_data.microstructure import (
     MicrostructurePublisher,
+    MicrostructureCalculator,
 )
 from quantum_edge_core.market_data.lockbot.engine import LockbotDerivedEngine
 from quantum_edge_core.market_data.lockbot.publisher import LockbotPublisher
@@ -145,8 +146,17 @@ class MarketDataHubService(BaseService):
             self.feeds = [BingXLiveFeed(self.config, self.bus)]
 
         self.alpha_engine = AlphaEngine(symbol="BTCUSDT")  # Default symbol
+        self.microstructure_calculator = MicrostructureCalculator(
+            ofi_window_sec=1.0,
+            cvd_window_sec=10.0,
+            whale_wall_threshold=10.0,
+        )
         self.ob_aggregator = OrderBookAggregator(
-            self.config.orderbook, self.publisher, self.bus, self.snapshot_cache
+            self.config.orderbook,
+            self.publisher,
+            self.bus,
+            self.snapshot_cache,
+            microstructure=self.microstructure_calculator,
         )
         self.last_metrics_pub = 0.0
         self._last_mid_price: float = 0.0  # Cache for OB aggregator
@@ -282,6 +292,17 @@ class MarketDataHubService(BaseService):
                 self._last_event_ts[key] = getattr(event, "ts_ns", time.time_ns())
                 self.snapshot_cache.update(event)
 
+                # Feed trade event to microstructure calculator
+                if isinstance(event, (TradeEvent, MarketTrade)):
+                    ts_ns = getattr(event, "ts_ns", None)
+                    if ts_ns is None:
+                        ts_sec = getattr(event, "timestamp", 0)
+                        ts_ns = int(ts_sec * 1_000_000_000) if ts_sec > 0 else time.time_ns()
+                    price = float(getattr(event, "price", 0.0))
+                    qty = float(getattr(event, "size", getattr(event, "quantity", 0.0)))
+                    side = str(getattr(event, "side", getattr(event, "taker_side", "unknown")))
+                    self.microstructure_calculator.update_trade(ts_ns, price, qty, side)
+
                 # Derive topic
                 symbol = getattr(event, "symbol", "global") or "global"  # Handle None
                 ev_type = getattr(event, "event_type", "unknown")
@@ -305,13 +326,47 @@ class MarketDataHubService(BaseService):
                             event.mid = self._last_mid_price
                             event.spread = 0.0
                         self._last_mid_price = getattr(event, "mid_price", self._last_mid_price)
+
+                        # Feed orderbook update to calculator and enrich event fields
+                        ts_ns = getattr(event, "ts_ns", None)
+                        if ts_ns is None:
+                            ts_sec = getattr(event, "timestamp", 0)
+                            ts_ns = int(ts_sec * 1_000_000_000) if ts_sec > 0 else time.time_ns()
+                        metrics = self.microstructure_calculator.update_book(
+                            symbol=event.symbol,
+                            bids=bids,
+                            asks=asks,
+                            ts_ns=ts_ns
+                        )
+                        event.ofi_1s = float(metrics["ofi_1s"])
+                        event.cvd_10s = float(metrics["cvd_10s"])
+                        event.imbalance_top10 = float(metrics["imbalance_top10"])
+                        
+                        from quantum_edge_core.events import WhaleWall
+                        event.whale_walls = [
+                            WhaleWall(
+                                priority="L0",
+                                event_type="whale_wall",
+                                seq=0,
+                                side=w["side"],
+                                price=w["price"],
+                                quantity=w["qty"]
+                            )
+                            for w in metrics["whale_walls"]
+                        ]
+
+                        self.logger.debug(
+                            "Broadcasting Microstructure: OFI=%s CVD=%s Imb=%s Walls=%s",
+                            float(metrics.get("ofi_1s", 0.0)),
+                            float(metrics.get("cvd_10s", 0.0)),
+                            float(metrics.get("imbalance_top10", 0.0)),
+                            len(metrics.get("whale_walls", [])),
+                        )
                     except Exception as e:
                         self.logger.error("Malformed OrderBookUpdate tick handled: %s", e)
 
                 await self.publisher.publish(topic, event)
                 self.logger.debug("Hub broadcasted tick to ZMQ", topic=topic)
-                if self.microstructure_analyzer and isinstance(event, TradeEvent):
-                    self.microstructure_analyzer.update_trade(event.ts_ns, event.size)
                 if self.lockbot_engine and isinstance(event, TradeEvent):
                     ts_event_ms = int(event.ts_ns / 1_000_000)
                     taker_side = str(event.taker_side or "").lower()
@@ -373,6 +428,7 @@ class MarketDataHubService(BaseService):
                             self._persist_kline(event)
                         elif isinstance(event, OrderBookUpdate):
                             self._persist_orderbook(event)
+                            self._persist_microstructure(event)
                         elif isinstance(event, (TradeEvent, MarketTrade)):
                             self._persist_trade(event)
 
@@ -389,6 +445,42 @@ class MarketDataHubService(BaseService):
                     event_type=getattr(event, "event_type", "?"),
                     exc_info=True,
                 )
+
+    def _persist_microstructure(self, event: OrderBookUpdate) -> None:
+        """Write microstructure indicators to market_features table via ILP."""
+        symbol = str(getattr(event, "symbol", "unknown"))
+        ts_ns = getattr(event, "ts_ns", None)
+        if ts_ns is None:
+            ts_sec = float(getattr(event, "timestamp", 0.0))
+            ts_ns = int(ts_sec * 1_000_000_000) if ts_sec > 0 else time.time_ns()
+        
+        self.logger.debug(
+            "Persist Microstructure: symbol=%s ofi=%s cvd=%s imb=%s walls=%s",
+            symbol,
+            float(getattr(event, "ofi_1s", 0.0)),
+            float(getattr(event, "cvd_10s", 0.0)),
+            float(getattr(event, "imbalance_top10", 0.0)),
+            len(getattr(event, "whale_walls", []) or []),
+        )
+        
+        self.writer.enqueue(
+            table="market_features",
+            symbols={"symbol": symbol},
+            columns={
+                "mid_price": float(event.mid_price),
+                "spread": float(event.spread),
+                "rsi_14": 0.0,
+                "macd_line": 0.0,
+                "macd_signal": 0.0,
+                "atr_14": 0.0,
+                "ofi_raw": float(event.ofi_1s),
+                "ofi_1s": float(event.ofi_1s),
+                "cvd_10s": float(event.cvd_10s),
+                "imbalance_top10": float(event.imbalance_top10),
+                "volume_delta": float(event.cvd_10s),
+            },
+            timestamp_ns=ts_ns,
+        )
 
     def _get_next_offset(self) -> int:
         """Helper to generate a rolling nanosecond offset to prevent QuestDB WAL duplication."""

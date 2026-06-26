@@ -52,10 +52,14 @@ DDL_STATEMENTS = [
         macd_signal DOUBLE,
         atr_14 DOUBLE,
         ofi_raw DOUBLE,
-        volume_delta DOUBLE
+        volume_delta DOUBLE,
+        ofi_1s DOUBLE,
+        cvd_10s DOUBLE,
+        imbalance_top10 DOUBLE
     ) TIMESTAMP(ts) PARTITION BY DAY;
     """,
     "ALTER TABLE market_features ALTER COLUMN symbol ADD INDEX;",
+    "ALTER TABLE market_features ADD COLUMN ofi_1s DOUBLE, ADD COLUMN cvd_10s DOUBLE, ADD COLUMN imbalance_top10 DOUBLE;",
 
     # Table 2: bot_telemetry
     """
@@ -95,8 +99,8 @@ def execute_sql(query: str) -> bool:
             logger.info(f"Successfully executed: {clean_query[:70]}...")
             return True
         else:
-            # Table already altered index or similar non-critical issues can be quiet
-            if "column value index already exists" in response.text.lower():
+            resp_lower = response.text.lower()
+            if "column value index already exists" in resp_lower or "column already exists" in resp_lower or "duplicate column" in resp_lower or "duplicate column name" in resp_lower:
                 logger.debug(f"Non-critical issue: {response.text.strip()}")
                 return True
             logger.error(f"Failed to execute query. Status: {response.status_code}, Response: {response.text.strip()}")

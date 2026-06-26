@@ -1,0 +1,14 @@
+enabled: true
+
+retention_days:
+  raw: 14
+  rollup_1m: 90
+  rollup_1h: 365
+
+rollups:
+  enabled: true
+  intervals:
+    - name: "1m"
+      seconds: 60
+    - name: "1h"
+      seconds: 3600

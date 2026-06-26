@@ -69,6 +69,24 @@ TABLES = [
         ts                   TIMESTAMP
     ) TIMESTAMP(ts) PARTITION BY DAY WAL;
     """,
+    # --- market_features ---
+    """
+    CREATE TABLE IF NOT EXISTS market_features (
+        ts                   TIMESTAMP,
+        symbol               SYMBOL,
+        mid_price            DOUBLE,
+        spread               DOUBLE,
+        rsi_14               DOUBLE,
+        macd_line            DOUBLE,
+        macd_signal          DOUBLE,
+        atr_14               DOUBLE,
+        ofi_raw              DOUBLE,
+        volume_delta         DOUBLE,
+        ofi_1s               DOUBLE,
+        cvd_10s              DOUBLE,
+        imbalance_top10      DOUBLE
+    ) TIMESTAMP(ts) PARTITION BY DAY WAL;
+    """,
 ]
 
 
@@ -145,13 +163,16 @@ def main():
     mig_cmds = [
         "ALTER TABLE trades DROP PARTITION WHERE ts < dateadd('d', -1, now());",
         "CREATE TABLE IF NOT EXISTS realized_trades (ts TIMESTAMP, bot_id SYMBOL, symbol SYMBOL, side SYMBOL, entry_price DOUBLE, exit_price DOUBLE, qty DOUBLE, realized_pnl DOUBLE, fees DOUBLE) TIMESTAMP(ts) PARTITION BY MONTH;",
-        "ALTER TABLE realized_trades ADD COLUMN bot_id SYMBOL;"
+        "ALTER TABLE realized_trades ADD COLUMN bot_id SYMBOL;",
+        "ALTER TABLE market_features ADD COLUMN ofi_1s DOUBLE, ADD COLUMN cvd_10s DOUBLE, ADD COLUMN imbalance_top10 DOUBLE;"
     ]
     for cmd in mig_cmds:
         print(f"Executing: {cmd[:50]}...")
         result = quest_exec(args.host, args.port, cmd)
-        if "error" in result and "column already exists" not in result.get("error", ""):
-            print(f"  ❌ ERROR or Ignored: {result.get('error')}")
+        err_msg = str(result.get("error", "")).lower()
+        if "error" in result and "column already exists" not in err_msg and "duplicate column" not in err_msg and "duplicate column name" not in err_msg:
+            print(f"  ❌ ERROR: {result.get('error')}")
+            errors += 1
         else:
             print("  ✅ OK")
 

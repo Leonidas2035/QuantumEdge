@@ -45,6 +45,24 @@ class TradeCommandEnvelope(BaseModel):
         return v
 
 
+class TradeDirectiveEnvelope(BaseModel):
+    command_type: Literal["LIMIT_BUY", "LIMIT_SELL", "HOLD", "MARKET_BUY", "MARKET_SELL", "STOP_LOSS", "TP"]
+    symbol: str = Field(default="BTCUSDT", description="Цільова торгова пара")
+    target_bot: str = Field(..., description="Ідентифікатор виконавця (напр., ai_scalper)")
+    price: Optional[float] = Field(None, description="Ціна виконання для лімітних ордерів")
+    quantity: Optional[float] = Field(None, description="Обсяг активу")
+    leverage: int = Field(default=50, description="Зафіксовано правилами DOUBLED EDGE x50")
+    reason: str = Field(..., description="Логічне обґрунтування LLM для ініціалізації цієї дії")
+
+    @field_validator("command_type")
+    @classmethod
+    def enforce_no_loss_experiment_rules(cls, v: str) -> str:
+        """Safety Guardrail: Blocks any STOP_LOSS command to enforce the No-Loss Experiment rules."""
+        if v == "STOP_LOSS":
+            raise ValueError("No-Loss safety rule violation: Direct STOP_LOSS command from agent is strictly blocked.")
+        return v
+
+
 # --- Bridge Logic ---
 
 def get_status():
@@ -85,9 +103,15 @@ def get_status():
                 if len(frames) >= 2:
                     payload = frames[1].decode("utf-8")
                     data = json.loads(payload)
-                    # Validate via Pydantic StatusEnvelope
-                    envelope = StatusEnvelope(**data)
-                    status_report["ai_scalper"] = envelope.model_dump()
+                    # Normalize: detailed telemetry may carry 'service_id' instead of 'source'
+                    if data.get("source") is None and data.get("service_id") is not None:
+                        data["source"] = data["service_id"]
+                    # Validate via Pydantic StatusEnvelope (with fallback for alternate structures)
+                    try:
+                        envelope = StatusEnvelope(**data)
+                        status_report["ai_scalper"] = envelope.model_dump()
+                    except Exception:
+                        status_report["ai_scalper"] = data
             except zmq.Again:
                 pass
             except Exception as e:
@@ -121,6 +145,24 @@ def get_status():
     print(json.dumps(status_report, indent=2))
 
 
+def load_bridge_port() -> int:
+    import yaml
+    import pathlib
+    bridge_port = 5562
+    try:
+        current_path = pathlib.Path(__file__).resolve()
+        for parent in current_path.parents:
+            ports_file = parent / "config" / "ports.yaml"
+            if ports_file.exists():
+                with open(ports_file, "r") as f:
+                    ports_data = yaml.safe_load(f)
+                    bridge_port = ports_data.get("ports", {}).get("bridge_command", 5562)
+                break
+    except Exception:
+        pass
+    return bridge_port
+
+
 def send_policy(bot_id, action, ttl, buy_zone_max=None, sell_zone_min=None, risk_multiplier=None, trading_mode=None):
     try:
         # Construct and validate the command using TradeCommandEnvelope
@@ -137,19 +179,65 @@ def send_policy(bot_id, action, ttl, buy_zone_max=None, sell_zone_min=None, risk
         print(json.dumps(result, indent=2))
         sys.exit(1)
 
+    port = load_bridge_port()
     context = zmq.Context()
     pub_socket = context.socket(zmq.PUB)
-    pub_socket.connect("tcp://127.0.0.1:5559")
-    
-    time.sleep(0.2)
-    
-    topic = f"command.{bot_id}".encode("utf-8")
-    payload = envelope.model_dump()
     
     try:
+        pub_socket.bind(f"tcp://127.0.0.1:{port}")
+        # Sleep to allow the bot's connecting SUB socket to complete the handshake
+        time.sleep(0.4)
+        
+        topic = f"command.{bot_id}".encode("utf-8")
+        payload = envelope.model_dump()
+        
         pub_socket.send_multipart([topic, json.dumps(payload).encode("utf-8")])
-        time.sleep(0.1)
+        time.sleep(0.2)
         result = {"success": True, "message": "Policy sent successfully", "payload": payload}
+    except Exception as e:
+        result = {"success": False, "error": str(e)}
+    finally:
+        pub_socket.close()
+        context.term()
+        
+    print(json.dumps(result, indent=2))
+
+
+def send_directive(bot_id, command_type, symbol, price, qty, leverage, reason):
+    try:
+        # Construct and validate using Pydantic
+        envelope = TradeDirectiveEnvelope(
+            command_type=command_type,
+            symbol=symbol,
+            target_bot=bot_id,
+            price=price,
+            quantity=qty,
+            leverage=leverage,
+            reason=reason
+        )
+    except Exception as ve:
+        result = {"success": False, "error": f"Schema Validation Failed: {ve}"}
+        print(json.dumps(result, indent=2))
+        sys.exit(1)
+        
+    port = load_bridge_port()
+    context = zmq.Context()
+    pub_socket = context.socket(zmq.PUB)
+    
+    try:
+        pub_socket.bind(f"tcp://127.0.0.1:{port}")
+        # Sleep to allow the bot's connecting SUB socket to complete the handshake
+        time.sleep(0.4)
+        
+        topic = f"command.{bot_id}".encode("utf-8")
+        payload = envelope.model_dump()
+        
+        pub_socket.send_multipart([topic, json.dumps(payload).encode("utf-8")])
+        time.sleep(0.2)
+        result = {
+            "success": True, 
+            "message": f"Директива {envelope.command_type} успішно передана до {envelope.target_bot}."
+        }
     except Exception as e:
         result = {"success": False, "error": str(e)}
     finally:
@@ -176,6 +264,16 @@ def main():
     policy_parser.add_argument("--risk-multiplier", type=float, default=None, help="Risk multiplier (0.0 - 1.0)")
     policy_parser.add_argument("--trading-mode", type=str, default=None, help="Trading mode (SCALP, DCA, etc.)")
     
+    # Directive command
+    directive_parser = subparsers.add_parser("directive", help="Publish a direct trade directive to a bot")
+    directive_parser.add_argument("--bot", required=True, help="Target bot ID (e.g. ai_scalper)")
+    directive_parser.add_argument("--command-type", dest="command_type", required=True, choices=["LIMIT_BUY", "LIMIT_SELL", "HOLD", "MARKET_BUY", "MARKET_SELL", "STOP_LOSS", "TP"], help="Command type")
+    directive_parser.add_argument("--symbol", default="BTCUSDT", help="Symbol to trade")
+    directive_parser.add_argument("--price", type=float, default=None, help="Execution price for limit orders")
+    directive_parser.add_argument("--qty", type=float, default=None, help="Quantity of asset")
+    directive_parser.add_argument("--leverage", type=int, default=50, help="Leverage multiplier")
+    directive_parser.add_argument("--reason", required=True, help="LLM justification for this action")
+
     try:
         args = parser.parse_args()
         
@@ -190,6 +288,16 @@ def main():
                 sell_zone_min=args.sell_zone_min,
                 risk_multiplier=args.risk_multiplier,
                 trading_mode=args.trading_mode
+            )
+        elif args.command == "directive":
+            send_directive(
+                args.bot,
+                args.command_type,
+                args.symbol,
+                args.price,
+                args.qty,
+                args.leverage,
+                args.reason
             )
     except Exception as e:
         print(json.dumps({"error": str(e)}))

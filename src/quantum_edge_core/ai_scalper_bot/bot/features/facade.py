@@ -53,7 +53,8 @@ class FeatureEngine:
         # OFI depends on Book State changes
         try:
             val = self.ofi_calc.update(book_state)
-            self.latest_ofi = val  # OFI is instantaneous flow
+            alpha = 0.1
+            self.latest_ofi = self.latest_ofi + alpha * (val - self.latest_ofi)
         except Exception as e:
             logger.error(f"OFI Calc Error: {e}")
 

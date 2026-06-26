@@ -72,6 +72,9 @@ class OrderBookUpdate(BaseEvent):
     mid: float = 0.0
     mid_price: float = 0.0
     spread: float = 0.0
+    ofi_1s: float = 0.0
+    cvd_10s: float = 0.0
+    imbalance_top10: float = 0.0
 
 
 class LiquidationEvent(BaseEvent):

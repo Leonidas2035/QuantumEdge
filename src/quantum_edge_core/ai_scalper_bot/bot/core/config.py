@@ -31,7 +31,8 @@ class Config:
         self.market_data_port = int(os.getenv("MARKET_DATA_ZMQ_PORT", "5555"))
 
         # Load from Env or Services YAML
-        self.service_id = os.getenv("QE_BOT_ID", "ai_scalper_bot")
+        env_id = os.getenv("QE_BOT_ID", "ai_scalper_bot")
+        self.service_id = "ai_scalper_bot" if env_id == "ai_scalper" else env_id
         self.telemetry_port = 5557
         env_bot_id = os.getenv("QE_BOT_ID")
         if env_bot_id in (None, "ai_scalper", "ai_scalper_bot"):
@@ -42,10 +43,13 @@ class Config:
                 except ValueError:
                     pass
         self.policy_port = int(os.getenv("QE_BOT_POLICY_PORT", "5559"))
-        self.trading_mode = "spot_grid"
+        self.trading_mode = "scalp"
 
         if "QE_BOT_ID" not in os.environ:
             self._load_from_services_yaml()
+
+        # Force SCALP mode strictly
+        self.trading_mode = "scalp"
 
         self.supervisor_port = self.telemetry_port  # Legacy support
 

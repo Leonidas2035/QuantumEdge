@@ -96,14 +96,35 @@ class BotEngine:
 
         # 1.5 Command Bus (Control Input)
         import zmq
+        import yaml
+        import pathlib
 
         self.zmq_ctx = zmq.Context()
         self.cmd_sub = self.zmq_ctx.socket(zmq.SUB)
         # Connect to the policy port published by supervisor
         cmd_endpoint = f"tcp://127.0.0.1:{self.config.policy_port}"
         self.cmd_sub.connect(cmd_endpoint)
+
+        # Connect to the bridge port dynamically resolved from ports.yaml
+        bridge_port = 5562
+        try:
+            current_path = pathlib.Path(__file__).resolve()
+            for parent in current_path.parents:
+                ports_file = parent / "config" / "ports.yaml"
+                if ports_file.exists():
+                    with open(ports_file, "r") as f:
+                        ports_data = yaml.safe_load(f)
+                        bridge_port = ports_data.get("ports", {}).get("bridge_command", 5562)
+                    break
+        except Exception as e:
+            logger.warning(f"Could not load ports.yaml for bridge_port: {e}")
+
+        bridge_endpoint = f"tcp://127.0.0.1:{bridge_port}"
+        self.cmd_sub.connect(bridge_endpoint)
         self.cmd_sub.subscribe(b"")
-        logger.info(f"🔌 Command bus connected to {cmd_endpoint}, subscribed to ALL topics (b'')")
+        logger.info(
+            f"🔌 Command bus connected to {cmd_endpoint} and {bridge_endpoint}, subscribed to ALL topics (b'')"
+        )
 
         # 2. Memory (State)
         self.cache = OrderBookCache()

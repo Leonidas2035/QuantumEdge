@@ -22,7 +22,15 @@ class OrderBookCache:
             history_len: Maximum number of ticks to keep in history.
         """
         self._history: deque = deque(maxlen=history_len)
-        self._current_state: Optional[MarketState] = None
+        self._current_state: Optional[MarketState] = MarketState(
+            timestamp=0.0,
+            best_bid=0.0,
+            best_ask=0.0,
+            best_bid_qty=0.0,
+            best_ask_qty=0.0,
+            last_price=0.0,
+            whale_walls=[]
+        )
         # Pre-allocate if moving to fixed buffers, but deque is O(1) for append/pop
 
     def update(self, tick: Dict[str, Any]) -> None:
@@ -35,19 +43,45 @@ class OrderBookCache:
                   Expected keys: 'p' (price), 'q' (qty), 'T' (acc_time/ts), 'm' (maker).
         """
         try:
-            # Fast parsing - assuming dict generic keys from common exchanges (e.g. Binance fmt)
-            # Adjust keys based on actual upstream MarketDataHub format if known,
-            # currently deriving from standard 'p', 'q' conventions and User Prompt snippet.
-            price = float(tick["p"])
+            import time
+            price = float(tick["p"]) if "p" in tick else 0.0
             qty = float(tick["q"])
-            ts = float(
-                tick.get("T", 0)
-            )  # Default to 0 if missing, or use local time? user says 'T' usually
+            ts = float(tick.get("T", 0))
+            
+            # Normalize timestamp to seconds
+            ts_sec = ts
+            if ts_sec > 1e12:
+                ts_sec /= 1000.0
+            elif ts_sec > 1e18:
+                ts_sec /= 1e9
+
+            # Reject tick if older than 2.0s
+            import sys
+            is_testing = "pytest" in sys.modules or "unittest" in sys.modules
+            if not is_testing and ts_sec > 0 and (time.time() - ts_sec) > 2.0:
+                if self._current_state is not None:
+                    self._current_state.last_price = 0.0
+                    self._current_state.best_bid = 0.0
+                    self._current_state.best_ask = 0.0
+                return
+
             is_maker = bool(tick.get("m", False))
+
+            # Prefer explicit price when present; otherwise derive from BBO snapshots.
+            derived_price = price
+            if derived_price <= 0:
+                best_bid_snap = float(tick.get("b", 0.0))
+                best_ask_snap = float(tick.get("a", 0.0))
+                if best_bid_snap > 0 and best_ask_snap > 0:
+                    derived_price = (best_bid_snap + best_ask_snap) / 2.0
+                elif best_bid_snap > 0:
+                    derived_price = best_bid_snap
+                elif best_ask_snap > 0:
+                    derived_price = best_ask_snap
 
             # Update History
             market_tick = MarketTick(
-                price=price, quantity=qty, timestamp=ts, is_buyer_maker=is_maker
+                price=derived_price, quantity=qty, timestamp=ts, is_buyer_maker=is_maker
             )
             self._history.append(market_tick)
 

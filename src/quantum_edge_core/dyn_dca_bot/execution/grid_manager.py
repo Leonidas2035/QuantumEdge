@@ -79,7 +79,8 @@ class GridManager:
             side=close_side,
             price=tp_price,
             qty=self.current_position_size,
-            reduce_only=True # Гарантуємо, що це тільки закриття позиції
+            reduce_only=True, # Гарантуємо, що це тільки закриття позиції
+            position_side="LONG" if position_side == "buy" else "SHORT"
         )
         
         if order and "order_id" in order:
