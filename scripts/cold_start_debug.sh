@@ -186,7 +186,7 @@ print(val)
     fi
 
     cd "${PROJECT_ROOT}"
-    nohup python3 /home/korben/.hermes/hermes/supervisor.py run-foreground \
+    nohup python3 /home/layman/QuantumEdge/src/quantum_edge_core/supervisor/supervisor.py run-foreground \
         > "${LOG_DIR}/supervisor.log" 2>&1 &
     echo $! > "${PROJECT_ROOT}/runtime/supervisor.pid"
     info "Supervisor PID=$(cat "${PROJECT_ROOT}/runtime/supervisor.pid")"
@@ -206,7 +206,7 @@ print(val)
 phase_dyndca() {
     info "Starting Dynamic DCA Bot (port :5567)"
 
-    cd /home/korben/QuantumEdge-main
+    cd /home/layman/QuantumEdge
     PYTHONPATH=src nohup python3 -m quantum_edge_core.dyn_dca_bot.main \
         > logs/dyndca.log 2>&1 &
     echo $! > runtime/dyndca.pid

@@ -76,6 +76,9 @@ class PositionManager:
             position_side: Targeted positionSide for Hedge Mode.
         """
         side_str = side.upper()
+        price = Decimal(str(price))
+        qty = Decimal(str(qty))
+
 
         # Resolve targeted position side
         if position_side is None:

@@ -22,9 +22,9 @@ components:
     telemetry: false
   supervisor:
     module: quantum_edge_core.supervisor.supervisor
-    entrypoint: /home/korben/.hermes/hermes/supervisor.py run-foreground
+    entrypoint: /home/layman/QuantumEdge/src/quantum_edge_core/supervisor/supervisor.py run-foreground
     ports: [supervisor_policy, supervisor_command, dashboard]
-    extra_pythonpath: /home/korben/.hermes
+    extra_pythonpath: /home/layman/QuantumEdge/src
     needs_docker: false
   dyndca:
     module: quantum_edge_core.dyn_dca_bot.main

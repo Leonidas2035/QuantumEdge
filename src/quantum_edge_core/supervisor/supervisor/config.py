@@ -108,6 +108,7 @@ class RiskConfig:
     max_drawdown_pct: Optional[Decimal]
     max_notional_per_symbol: Decimal
     max_leverage: Decimal
+    risk_management_enabled: bool = True
 
 
 @dataclass
@@ -627,6 +628,7 @@ def load_risk_config(path: Path) -> RiskConfig:
     max_drawdown_pct = raw.get("max_drawdown_pct")
     max_notional_per_symbol = raw.get("max_notional_per_symbol", 0.0)
     max_leverage = raw.get("max_leverage", 0.0)
+    risk_management_enabled = raw.get("risk_management_enabled", True)
 
     def _validate_positive(
         val: Optional[Any], name: str, allow_zero: bool = False
@@ -664,6 +666,7 @@ def load_risk_config(path: Path) -> RiskConfig:
         max_drawdown_pct=max_drawdown_pct,
         max_notional_per_symbol=max_notional_per_symbol,
         max_leverage=max_leverage,
+        risk_management_enabled=bool(risk_management_enabled),
     )
 
 
@@ -1072,7 +1075,7 @@ def load_tsdb_config(path: Path) -> TsdbConfig:
             ingest_events_path="ai_scalper_bot/runtime/events/events.jsonl",
             ingest_metrics_path="ai_scalper_bot/runtime/status/metrics.json",
             ingest_exec_path="ai_scalper_bot/runtime/state/ledger.jsonl",
-            ingest_state_path="/home/korben/.hermes/runtime/ingest_state.json",
+            ingest_state_path="/home/layman/.hermes/runtime/ingest_state.json",
             ingest_max_line_kb=256,
             ingest_interval_sec=2.0,
             ingest_dedupe_cache_size=5000,
@@ -1120,7 +1123,7 @@ def load_tsdb_config(path: Path) -> TsdbConfig:
             ingest.get("exec_path", "ai_scalper_bot/runtime/state/ledger.jsonl")
         ),
         ingest_state_path=str(
-            ingest.get("state_path", "/home/korben/.hermes/runtime/ingest_state.json")
+            ingest.get("state_path", "/home/layman/.hermes/runtime/ingest_state.json")
         ),
         ingest_max_line_kb=int(ingest.get("max_line_kb", 256)),
         ingest_interval_sec=float(ingest.get("interval_sec", 2.0)),

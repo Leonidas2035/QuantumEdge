@@ -54,3 +54,19 @@ payload.json
 .agent_response.json
 .jules_*
 .julescontext
+
+# Recovery Hardening: Dependencies, Caches, Models, Secrets, Logs
+node_modules/
+ollama/
+.pytest_cache/
+models/.cache/
+*.gguf
+*.key
+*.pem
+config/firecrawl.key
+Hermes LOG
+hub.log*
+.env.*
+!.env.example
+!.env.Example
+!.env.template

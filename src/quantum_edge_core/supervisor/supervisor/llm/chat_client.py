@@ -253,7 +253,7 @@ class ChatCompletionsClient:
         import subprocess
 
         # Call the user's local hermes command
-        cmd = ["/home/korben/.local/bin/hermes", "-z", prompt_str]
+        cmd = ["/home/layman/.local/bin/hermes", "-z", prompt_str]
         if model and model != "hermes":
             cmd.extend(["--model", model])
 

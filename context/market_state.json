@@ -1,0 +1,45 @@
+{
+  "timestamp": 1783934374,
+  "status": "SUCCESS",
+  "balance": {
+    "free": 263555.8868,
+    "used": 292713.3757,
+    "total": 556269.2625
+  },
+  "positions": [
+    {
+      "symbol": "BTC/USDT:USDT",
+      "side": "short",
+      "contracts": 75.4871,
+      "entry_price": 62117.4,
+      "unrealized_pnl": -72958.6911,
+      "leverage": 50.0
+    },
+    {
+      "symbol": "SOL/USDT:USDT",
+      "side": "short",
+      "contracts": 50000.0,
+      "entry_price": 78.0,
+      "unrealized_pnl": 70500.0,
+      "leverage": 20.0
+    },
+    {
+      "symbol": "ETH/USDT:USDT",
+      "side": "long",
+      "contracts": 11.012,
+      "entry_price": 1785.35,
+      "unrealized_pnl": 1.5263,
+      "leverage": 5.0
+    }
+  ],
+  "market": {
+    "symbol": "XRP/USDT:USDT",
+    "last_price": 1.0789,
+    "bid": 1.0775,
+    "ask": 1.0801,
+    "atr_14": 0.008735714285714275,
+    "ema_20": 1.0845454359740003,
+    "ema_50": 1.0789,
+    "rsi_14": 39.59062907100671
+  }
+}

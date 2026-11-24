@@ -37,6 +37,11 @@ loggers:
     level: INFO
     handlers: [console, bot_file]
     propagate: false
+  quantum_edge_core:
+    level: INFO
+    handlers: [console, bot_file]
+    propagate: false
+
 
 root:
   level: INFO

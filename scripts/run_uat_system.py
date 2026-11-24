@@ -16,7 +16,7 @@ PROCESSES = {
     "BOT": [sys.executable, "src/quantum_edge_core/ai_scalper_bot/run_bot.py"],
     "SUP": [
         sys.executable,
-        "/home/korben/.hermes/hermes/supervisor.py",
+        "/home/layman/QuantumEdge/src/quantum_edge_core/supervisor/supervisor.py",
         "run-foreground",
     ],  # Перевір точний шлях
 }

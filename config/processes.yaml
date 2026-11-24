@@ -12,7 +12,7 @@ processes:
   hub:
     enabled: true
     cwd: "src/quantum_edge_core/market_data"
-    cmd: ["python", "-m", "hub"]
+    cmd: ["/home/layman/QuantumEdge/.venv/bin/python3", "-m", "hub"]
     env:
       HUB_LOG_LEVEL: "INFO"
     healthcheck:
@@ -24,7 +24,7 @@ processes:
   ai_scalper:
     enabled: true
     cwd: "."
-    cmd: ["/home/korben/QuantumEdge-main/venv/bin/python3", "-m", "quantum_edge_core.ai_scalper_bot.run_bot"]
+    cmd: ["/home/layman/QuantumEdge/.venv/bin/python3", "-m", "quantum_edge_core.ai_scalper_bot.run_bot"]
     env:
       QE_BOT_ID: "ai_scalper_bot"
       STRATEGY_TYPE: "AdaptiveGridStrategy"
@@ -41,7 +41,7 @@ processes:
   dyndca:
     enabled: true
     cwd: "."
-    cmd: ["/home/korben/QuantumEdge-main/venv/bin/python3", "-m", "quantum_edge_core.dyn_dca_bot.main"]
+    cmd: ["/home/layman/QuantumEdge/.venv/bin/python3", "-m", "quantum_edge_core.dyn_dca_bot.main"]
     env:
       PYTHONPATH: "."
       LOG_LEVEL: "INFO"
@@ -56,7 +56,7 @@ processes:
   lockbotbtc:
     enabled: true
     cwd: "."
-    cmd: ["/home/korben/QuantumEdge-main/venv/bin/python3", "-m", "quantum_edge_core.lock_bot.main", "--config", "config/lockbot.yaml"]
+    cmd: ["/home/layman/QuantumEdge/.venv/bin/python3", "-m", "quantum_edge_core.lock_bot.main", "--config", "config/lockbot.yaml"]
     env:
       QE_BOT_ID: "LockBotBTC"
       LOCKBOT_HUB_SUB_ENDPOINT: "tcp://127.0.0.1:5555"

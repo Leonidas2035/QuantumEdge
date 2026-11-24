@@ -1,3 +1,4 @@
+from __future__ import annotations
 import time
 
 """
@@ -15,7 +16,7 @@ from typing import List, Optional, Dict, Any, Tuple
 
 # Unused imports commented out per user request for audit
 import os
-# import numpy as np
+import numpy as np
 import xgboost as xgb
 import collections
 
@@ -28,64 +29,8 @@ logger: logging.Logger = logging.getLogger(__name__)
 # ── Probability thresholds for XGBoost signal ────────────────────────
 _BUY_THRESHOLD: float = 0.65  # P(buy) > 65% → BUY
 _SELL_THRESHOLD: float = 0.35  # P(buy) < 35% → SELL
-_TICK_SIZE: float = 0.10  # BTCUSDT tick size on Binance
+# Global parameters deprecated in favor of coin-specific class properties
 
-
-_MIN_WALL_VOLUME: float = 5.0  # BTC
-
-
-# find_frontrun_price helper commented out per user request for audit
-def find_frontrun_price(
-    l2_bids: List[Tuple[float, float]],
-    target_price: float,
-    ticks_above: int = 2,
-) -> Optional[float]:
-    """Find optimal limit-buy price by front-running the largest L2 bid block.
-
-    Scans the L2 order book bids below ``target_price``, finds the
-    price level with maximum volume concentration (the "wall") that exceeds
-    ``_MIN_WALL_VOLUME``, and returns a price ``ticks_above`` ticks ABOVE that wall.
-
-    Parameters
-    ----------
-    l2_bids:
-        List of ``(price, qty)`` tuples, sorted descending by price.
-    target_price:
-        Maximum price we're willing to buy at (from TradingPolicy.buy_zone_max).
-    ticks_above:
-        How many ticks above the wall to place our order (default: 2).
-
-    Returns
-    -------
-    Optional[float]
-        The front-run price rounded to 1 decimal place.
-        Returns None if no wall >= 5.0 BTC is found in the zone.
-    """
-    if not l2_bids:
-        return None
-
-    best_price: float = 0.0
-    best_qty: float = 0.0
-
-    for price, qty in l2_bids:
-        if price > target_price:
-            continue  # Skip bids above our zone limit
-        if qty > best_qty:
-            best_qty = qty
-            best_price = price
-
-    if best_qty < _MIN_WALL_VOLUME or best_price <= 0.0:
-        return None  # No real wall found
-
-    frontrun: float = round(best_price + (ticks_above * _TICK_SIZE), 1)
-    logger.info(
-        "[L2] Front-run: wall @ %.1f (qty=%.4f), placing @ %.1f (+%d ticks)",
-        best_price,
-        best_qty,
-        frontrun,
-        ticks_above,
-    )
-    return frontrun
 
 
 class BotState(Enum):
@@ -114,6 +59,22 @@ class AdaptiveGridStrategy:
         self.config = config
         self.last_buy_price: float = 0.0
 
+        # Coin specific parameters (XRP/ETH/BTC adaptation)
+        self.symbol = config.get("symbol", "BTCUSDT")
+        if "XRP" in self.symbol:
+            self.tick_size = 0.0001
+            self.min_wall_volume = 5000.0
+            self.round_decimals = 4
+        elif "ETH" in self.symbol:
+            self.tick_size = 0.01
+            self.min_wall_volume = 5.0
+            self.round_decimals = 2
+        else: # BTCUSDT fallback
+            self.tick_size = 0.10
+            self.min_wall_volume = 5.0
+            self.round_decimals = 1
+
+
         # Volatility Oracle
         from quantum_edge_core.ai_scalper_bot.bot.execution.volatility_oracle import VolatilityOracle
         self.vol_oracle = VolatilityOracle(config)
@@ -123,27 +84,140 @@ class AdaptiveGridStrategy:
         self.prev_bid_qty = 0.0
         self.prev_ask_qty = 0.0
 
-        # Load ML model
-        self.model = None
-        model_path = "models/xgboost_alpha.json"
-        if os.path.exists(model_path):
+        # Load ML models
+        import json
+        self.model_up = None
+        self.model_down = None
+        self.manifest = None
+        manifest_path = "models/manifest.json"
+        
+        # Collections for real-time feature engineering
+        self.recent_trades = collections.deque()
+        self.ofi_history = collections.deque(maxlen=100)
+        
+        if os.path.exists(manifest_path):
             try:
-                self.model = xgb.XGBClassifier()
-                self.model.load_model(model_path)
-                logger.info("[StrategyCore] Loaded XGBoost model from %s", model_path)
+                with open(manifest_path, "r") as f:
+                    self.manifest = json.load(f)
+                
+                model_up_path = self.manifest["models"]["model_up"]["file"]
+                model_down_path = self.manifest["models"]["model_down"]["file"]
+                
+                if os.path.exists(model_up_path) and os.path.exists(model_down_path):
+                    self.model_up = xgb.XGBClassifier()
+                    self.model_up.load_model(model_up_path)
+                    
+                    self.model_down = xgb.XGBClassifier()
+                    self.model_down.load_model(model_down_path)
+                    
+                    logger.info("[StrategyCore] Loaded dual binary XGBoost models and manifest from %s", manifest_path)
             except Exception as e:
-                logger.error("[StrategyCore] Error loading model: %s", e)
-                logger.warning(
-                    "[!] УВАГА: XGBoost модель не завантажилися (%s). "
-                    "Бот працює в Fallback режимі!",
-                    model_path,
-                )
+                logger.error("[StrategyCore] Error loading dual models: %s", e)
+                logger.warning("[!] УВАГА: XGBoost моделі не завантажилися. Бот працює без ML Gating!")
         else:
-            logger.warning(
-                "[!] УВАГА: XGBoost модель не знайдено (%s). "
-                "Бот працює в Fallback режимі!",
-                model_path,
+            logger.warning("[!] УВАГА: Маніфест XGBoost не знайдено (%s). Бот працює без ML Gating!", manifest_path)
+
+    def add_trade(self, timestamp: float, qty: float):
+        self.recent_trades.append((timestamp, qty))
+
+    def _evaluate_ml_signals(self, market: MarketState, features: FeatureVector) -> Tuple[float, float]:
+        """
+        Evaluate model_up and model_down and return (p_up, p_down).
+        """
+        if self.model_up is None or self.model_down is None:
+            return 0.0, 0.0
+            
+        try:
+            # 1. spread
+            spread = market.best_ask - market.best_bid
+            
+            # 2. micro_imbalance
+            micro_imbalance = (market.best_bid_qty - market.best_ask_qty) / (
+                market.best_bid_qty + market.best_ask_qty + 1e-8
             )
+            
+            # 3. ofi_proxy
+            ofi_proxy = features.ofi
+            
+            # 4. volatility_100t
+            mid_price = (market.best_bid + market.best_ask) / 2.0
+            self.mid_prices.append(mid_price)
+            volatility_100t = np.std(self.mid_prices) if len(self.mid_prices) >= 2 else 0.0
+            
+            # 5. ofi_ma5
+            self.ofi_history.append(features.ofi)
+            ofi_ma5 = np.mean(list(self.ofi_history)[-5:]) if self.ofi_history else features.ofi
+            
+            # 6. top_qty_sum
+            top_qty_sum = market.best_bid_qty + market.best_ask_qty
+            
+            # 7. ofi_z
+            ofi_mean = np.mean(self.ofi_history) if self.ofi_history else 0.0
+            ofi_std = np.std(self.ofi_history) if len(self.ofi_history) >= 2 else 0.0
+            ofi_z = (features.ofi - ofi_mean) / (ofi_std + 1e-8)
+            
+            # 8 & 9. trade_rate_1s and volume_1s
+            now = market.timestamp
+            while self.recent_trades and now - self.recent_trades[0][0] > 1.0:
+                self.recent_trades.popleft()
+            trade_rate_1s = len(self.recent_trades)
+            volume_1s = sum(t[1] for t in self.recent_trades)
+                
+            # Create feature vector matching expected features in manifest
+            # ["spread", "micro_imbalance", "ofi_proxy", "volatility_100t", "ofi_z", "ofi_ma5", "top_qty_sum", "trade_rate_1s", "volume_1s"]
+            feat_arr = np.array([[
+                spread,
+                micro_imbalance,
+                ofi_proxy,
+                volatility_100t,
+                ofi_z,
+                ofi_ma5,
+                top_qty_sum,
+                float(trade_rate_1s),
+                float(volume_1s)
+            ]], dtype=np.float32)
+            
+            p_up = float(self.model_up.predict_proba(feat_arr)[0, 1])
+            p_down = float(self.model_down.predict_proba(feat_arr)[0, 1])
+            
+            return p_up, p_down
+        except Exception as e:
+            logger.error("[StrategyCore] Error in ML signal evaluation: %s", e)
+            return 0.0, 0.0
+
+
+    def find_frontrun_price(
+        self,
+        l2_bids: List[Tuple[float, float]],
+        target_price: float,
+        ticks_above: int = 2,
+    ) -> Optional[float]:
+        """Find optimal limit-buy price by front-running the largest L2 bid block."""
+        if not l2_bids:
+            return None
+
+        best_price: float = 0.0
+        best_qty: float = 0.0
+
+        for price, qty in l2_bids:
+            if price > target_price:
+                continue  # Skip bids above our zone limit
+            if qty > best_qty:
+                best_qty = qty
+                best_price = price
+
+        if best_qty < self.min_wall_volume or best_price <= 0.0:
+            return None  # No real wall found
+
+        frontrun: float = round(best_price + (ticks_above * self.tick_size), self.round_decimals)
+        logger.info(
+            "[L2] Front-run: wall @ %s (qty=%.4f), placing @ %s (+%d ticks)",
+            f"{best_price:.{self.round_decimals}f}",
+            best_qty,
+            f"{frontrun:.{self.round_decimals}f}",
+            ticks_above,
+        )
+        return frontrun
 
     def decide(
         self,
@@ -153,8 +227,19 @@ class AdaptiveGridStrategy:
         position: PositionManager,
     ) -> Optional[TradeAction]:
         from quantum_edge_core.ai_scalper_bot.bot.core.models import TradingMode
-        # Removed hardcoded market.trading_mode = TradingMode.SCALP to respect supervisor policy
         current_price = market.last_price
+        
+        # --- Handle external engine commands (RUNNING, PAUSED, STOPPED) ---
+        if self.state == BotState.RUNNING:
+            if position.total_qty > 0:
+                self.state = BotState.LONG_ACCUMULATION
+            else:
+                self.state = BotState.IDLE
+        elif self.state == BotState.PAUSED or self.state == BotState.STOPPED:
+            logger.info(f"[StrategyDecide] Blocked: Strategy is in {self.state.name} state.")
+            return None
+
+        logger.info(f"[StrategyDecide] State: {self.state.name}, Mode: {market.trading_mode.value}, Price: {current_price}, buy_zone_max: {getattr(market, 'buy_zone_max', 0.0)}")
 
         # --- ML Feature Pipeline (OFI) ---
         self.mid_prices.append((market.best_bid + market.best_ask) / 2.0)
@@ -173,7 +258,7 @@ class AdaptiveGridStrategy:
             if dd > self.config.get("hedge_trigger_dd", 0.02):
                 self.state = BotState.HEDGED
                 return TradeAction(
-                    "HEDGE_SHORT", market.best_bid, position.total_qty, "DD Hedge"
+                    "HEDGE_SHORT", market.best_bid, float(position.total_qty), "DD Hedge"
                 )
 
         # 2. MATCH TRADING MODE
@@ -185,7 +270,7 @@ class AdaptiveGridStrategy:
                 return TradeAction(
                     "SELL",
                     market.best_ask,
-                    position.total_qty,
+                    float(position.total_qty),
                     "Supervisor dictacted PASS mode",
                 )
 
@@ -208,12 +293,12 @@ class AdaptiveGridStrategy:
                         return None  # Shorting not fully implemented yet in position manager
 
                 if self.state == BotState.LONG_ACCUMULATION:
-                    tp_price = position.avg_price * (
+                    tp_price = float(position.avg_price) * (
                         1 + getattr(self, "take_profit_pct", 0.005)
                     )
                     if current_price >= tp_price:
                         return TradeAction(
-                            "SELL", market.best_ask, position.total_qty, "Neutral MM TP"
+                            "SELL", market.best_ask, float(position.total_qty), "Neutral MM TP"
                         )
                 return None
 
@@ -223,32 +308,41 @@ class AdaptiveGridStrategy:
                 )
 
                 if self.state == BotState.IDLE:
-                    # SCALP: Use limit orders strictly inside buy zone
-                    if (
-                        getattr(market, "buy_zone_max", 0.0) > 0
-                        and current_price < market.buy_zone_max
-                    ):
-                        # Front-run L2 wall
-                        l2_bids = getattr(
-                            market, "whale_walls", []
-                        )  # Mocking whale walls as L2
-                        # Build a mock bid book from walls for the frontrunner if real l2_bids is missing
-                        walls = [
-                            (w.get("price", 0), w.get("qty", w.get("vol", 0)))
-                            for w in (l2_bids or [])
-                            if w.get("side") == "BID"
-                        ]
+                    p_up, p_down = self._evaluate_ml_signals(market, features)
+                    is_ml_allowed = True
+                    if self.model_up is not None and self.model_down is not None:
+                        is_ml_allowed = (p_up > 0.65) and (p_down < 0.30)
+                        logger.info(f"[ML Gating] SCALP Entry: p_up={p_up:.4f}, p_down={p_down:.4f}. Allowed={is_ml_allowed}")
+                    
+                    if is_ml_allowed:
+                        buy_max = getattr(market, "buy_zone_max", 0.0)
+                        if buy_max <= 0.0:
+                            buy_max = current_price * 1.05
+                            
+                        # SCALP: Use limit orders strictly inside buy zone
+                        if current_price < buy_max:
+                            # Front-run L2 wall
+                            l2_bids = getattr(
+                                market, "whale_walls", []
+                            )  # Mocking whale walls as L2
+                            # Build a mock bid book from walls for the frontrunner if real l2_bids is missing
+                            walls = [
+                                (w.get("price", 0), w.get("qty", w.get("vol", 0)))
+                                for w in (l2_bids or [])
+                                if w.get("side") == "BID"
+                            ]
 
-                        entry_price = (
-                            find_frontrun_price(walls, market.buy_zone_max)
-                            if walls
-                            else market.best_bid
-                        )
-                        if entry_price:
-                            self.last_buy_price = entry_price
-                            return TradeAction(
-                                "BUY", entry_price, qty, "SCALP Limit Entry"
+                            entry_price = (
+                                self.find_frontrun_price(walls, buy_max)
+                                if walls
+                                else market.best_bid
                             )
+                            if entry_price:
+                                self.last_buy_price = entry_price
+                                return TradeAction(
+                                    "BUY", entry_price, qty, "SCALP Limit Entry"
+                                )
+
 
                 elif self.state == BotState.LONG_ACCUMULATION:
                     # Aggressive TP inside Sell Zone
@@ -257,16 +351,16 @@ class AdaptiveGridStrategy:
                         and current_price >= market.sell_zone_min
                     ):
                         return TradeAction(
-                            "SELL", market.best_ask, position.total_qty, "SCALP Zone TP"
+                            "SELL", market.best_ask, float(position.total_qty), "SCALP Zone TP"
                         )
 
                     # Or fallback aggressive TP
-                    tp_price = position.avg_price * 1.002
+                    tp_price = float(position.avg_price) * 1.002
                     if current_price >= tp_price:
                         return TradeAction(
                             "SELL",
                             market.best_ask,
-                            position.total_qty,
+                            float(position.total_qty),
                             "SCALP Quick TP",
                         )
 
@@ -278,12 +372,19 @@ class AdaptiveGridStrategy:
                 )
 
                 if self.state == BotState.IDLE:
-                    # Initial entry setup
-                    if features.ofi > 0:
-                        self.last_buy_price = market.best_bid
-                        return TradeAction(
-                            "BUY", market.best_bid, qty, "DCA Initial Entry"
-                        )
+                    p_up, p_down = self._evaluate_ml_signals(market, features)
+                    is_ml_allowed = True
+                    if self.model_up is not None and self.model_down is not None:
+                        is_ml_allowed = (p_up > 0.65) and (p_down < 0.30)
+                        logger.info(f"[ML Gating] DCA Entry: p_up={p_up:.4f}, p_down={p_down:.4f}. Allowed={is_ml_allowed}")
+                    
+                    if is_ml_allowed:
+                        # Initial entry setup
+                        if features.ofi > 0:
+                            self.last_buy_price = market.best_bid
+                            return TradeAction(
+                                "BUY", market.best_bid, qty, "DCA Initial Entry"
+                            )
 
                 elif self.state == BotState.LONG_ACCUMULATION:
                     # Micro-Stop based on OFI (Signs of dumping)
@@ -308,10 +409,10 @@ class AdaptiveGridStrategy:
                         )
 
                     # Standard TP
-                    tp_price = position.avg_price * 1.01
+                    tp_price = float(position.avg_price) * 1.01
                     if current_price >= tp_price:
                         return TradeAction(
-                            "SELL", market.best_ask, position.total_qty, "DCA Target TP"
+                            "SELL", market.best_ask, float(position.total_qty), "DCA Target TP"
                         )
 
                 return None

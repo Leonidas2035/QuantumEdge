@@ -22,7 +22,8 @@ class ZmqReceiver:
         self.zmq_url = f"tcp://127.0.0.1:{port}"
 
         # ВИПРАВЛЕННЯ 1: Використовуємо стандарти топіків MarketDataHub (маленькі літери, крапка)
-        self.topics = ["depth.btcusdt", "trade.btcusdt"]
+        symbol = getattr(self.config, 'symbol', 'BTCUSDT').lower()
+        self.topics = [f"depth.{symbol}", f"trade.{symbol}"]
         for topic in self.topics:
             self.socket.setsockopt_string(zmq.SUBSCRIBE, topic)
 

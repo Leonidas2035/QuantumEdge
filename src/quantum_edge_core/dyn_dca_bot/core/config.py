@@ -19,6 +19,7 @@ class DynDCAConfig:
     initial_order_qty: float = 0.01
     order_value_pct_balance: float = 0.03
     min_order_value_vst: float = 500.0
+    symbol: str = "BTCUSDT"
     
     @property
     def total_tp_pct(self) -> float:
@@ -49,6 +50,13 @@ class DynDCAConfig:
             md = yaml_data.get("market_data", {})
             if isinstance(md, dict):
                 cfg.zmq_market_data_port = md.get("zmq_port", cfg.zmq_market_data_port)
+                topics = md.get("topics", [])
+                if topics:
+                    first_topic = topics[0]
+                    if ":" in first_topic:
+                        cfg.symbol = first_topic.split(":")[0].upper()
+                    elif "." in first_topic:
+                        cfg.symbol = first_topic.split(".")[1].upper()
                 
             telemetry = yaml_data.get("telemetry", {})
             if isinstance(telemetry, dict):

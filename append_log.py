@@ -1,4 +1,4 @@
-log_path = "/home/korben/QuantumEdge-main/ai_scalper_behavior.log"
+log_path = "/home/layman/QuantumEdge/ai_scalper_behavior.log"
 entry = """
 === AI SCALPER BEHAVIOR TRACKING ===
 Timestamp: 2026-06-24 10:48 UTC

@@ -3,8 +3,8 @@ mode: "live" # paper або live
 market_data:
   zmq_port: 5555
   topics:
-    - "BTCUSDT:depth_l2"
-    - "BTCUSDT:trade"
+    - "ETHUSDT:depth_l2"
+    - "ETHUSDT:trade"
 telemetry:
   zmq_port: 5567
 strategy:

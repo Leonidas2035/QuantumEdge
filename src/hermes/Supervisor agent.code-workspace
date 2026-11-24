@@ -1,0 +1,12 @@
+{
+	"folders": [
+		{
+			"path": "."
+		},
+		{
+			"name": "Supervisor-agent",
+			"path": "Supervisor-agent"
+		}
+	],
+	"settings": {}
+}

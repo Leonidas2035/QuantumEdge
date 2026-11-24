@@ -51,7 +51,7 @@ def delegate_to_agy(
     # Construct the agy command line
     # Using --dangerously-skip-permissions to avoid interactive prompt halts
     cmd = [
-        "/home/korben/.local/bin/agy",
+        "/home/layman/.local/bin/agy",
         "--dangerously-skip-permissions",
         "--print",
         f"Perform task: {task_description}. Analyze the request context from the file {request_file.resolve()} "

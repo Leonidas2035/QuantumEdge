@@ -1,0 +1,3 @@
+-- QuestDB retention is typically handled by dropping partitions or truncating by timestamp.
+-- Example (run in console):
+-- ALTER TABLE tsdb_points DROP PARTITION WHERE ts < dateadd('d', -14, systimestamp());

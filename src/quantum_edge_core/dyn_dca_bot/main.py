@@ -87,7 +87,7 @@ class DynDCAService:
         self.zmq_receiver = ZmqReceiver(self.config, self.l2_aggregator, self.volatility_oracle, connect_now=False)
         
         # 3. Execution
-        self.order_router = OrderRouter()
+        self.order_router = OrderRouter(self.config)
         self._grid_managers: Dict[str, GridManager] = {}
         
         # 4. Telemetry
@@ -176,10 +176,13 @@ class DynDCAService:
         current_price = self.state.current_price
         max_orders = getattr(self.config, 'max_orders_per_side', 15)
 
-        # Calculate order size per side
+        # Calculate order size per side (scale inversely with volatility multiplier: calm = larger order)
+        vol_mult = getattr(oracle_state, 'multiplier', 1.0)
+        qty_scale = 1.0 / vol_mult if vol_mult > 0 else 1.0
+
         total_capital = getattr(self.config, 'total_capital_vst', 150000.0)
         order_value = max(total_capital / (max_orders * 2), getattr(self.config, 'min_order_value_vst', 500.0))
-        qty = round(order_value / current_price, 4)
+        qty = round((order_value / current_price) * qty_scale, 4)
 
         regime = getattr(oracle_state, 'regime', None)
         allow_long = regime in (MarketRegime.CALM,)
@@ -204,13 +207,13 @@ class DynDCAService:
                 order = self.order_router.place_limit_order(side=side, price=next_price, qty=qty, reduce_only=False, position_side='LONG')
                 if order and order.get("order_id"):
                     mgr = GridManager(self.config, self.order_router)
-                    mgr.on_dca_order_filled(fill_price=next_price, fill_qty=qty, side=side)
                     self.state.active_grid_orders[order["order_id"]] = {
                         "side": side,
                         "qty": qty,
                         "entry": next_price,
                         "mgr": mgr,
                         "bin_side": "long",
+                        "filled": False,
                     }
                     self._grid_managers[order["order_id"]] = mgr
                     logger.info("Grid long order placed", index=i, price=next_price, order_id=order["order_id"])
@@ -232,39 +235,54 @@ class DynDCAService:
                 order = self.order_router.place_limit_order(side=side, price=next_price, qty=qty, reduce_only=False, position_side='SHORT')
                 if order and order.get("order_id"):
                     mgr = GridManager(self.config, self.order_router)
-                    mgr.on_dca_order_filled(fill_price=next_price, fill_qty=qty, side=side)
                     self.state.active_grid_orders[order["order_id"]] = {
                         "side": side,
                         "qty": qty,
                         "entry": next_price,
                         "mgr": mgr,
                         "bin_side": "short",
+                        "filled": False,
                     }
                     self._grid_managers[order["order_id"]] = mgr
                     logger.info("Grid short order placed", index=i, price=next_price, order_id=order["order_id"])
 
     async def _update_grid_positions(self):
-        """Simplified: do not close individual grid positions early.
-        In production, this should query the exchange for actual fills and manage TP/SL at position level."""
+        """Update grid positions based on price fills and take profit."""
         current_price = self.state.current_price
         closed = []
         for order_id, pos in list(self.state.active_grid_orders.items()):
             entry = pos["entry"]
             side = pos["side"]
-            tp_hit = False
-            # Do NOT close long positions at a loss during downtrends
-            # Only close if clearly profitable after fees
-            if side == "buy" and current_price >= entry * 1.005:
-                tp_hit = True
-            elif side == "sell" and current_price <= entry * 0.995:
-                tp_hit = True
+            filled = pos.get("filled", False)
+            
+            if not filled:
+                # Check if the limit order is filled
+                if side == "buy" and current_price <= entry:
+                    pos["filled"] = True
+                    mgr = self._grid_managers.get(order_id)
+                    if mgr:
+                        mgr.on_dca_order_filled(fill_price=entry, fill_qty=pos["qty"], side=side)
+                    logger.info("Grid order filled on exchange", order_id=order_id, price=entry, side=side)
+                elif side == "sell" and current_price >= entry:
+                    pos["filled"] = True
+                    mgr = self._grid_managers.get(order_id)
+                    if mgr:
+                        mgr.on_dca_order_filled(fill_price=entry, fill_qty=pos["qty"], side=side)
+                    logger.info("Grid order filled on exchange", order_id=order_id, price=entry, side=side)
+            else:
+                # Position is active, check for TP
+                tp_hit = False
+                if side == "buy" and current_price >= entry * 1.005:
+                    tp_hit = True
+                elif side == "sell" and current_price <= entry * 0.995:
+                    tp_hit = True
 
-            if tp_hit:
-                mgr = self._grid_managers.get(order_id)
-                if mgr:
-                    mgr.on_tp_order_filled()
-                closed.append(order_id)
-                logger.info("Grid position closed", order_id=order_id, side=side, entry=entry, price=current_price)
+                if tp_hit:
+                    mgr = self._grid_managers.get(order_id)
+                    if mgr:
+                        mgr.on_tp_order_filled()
+                    closed.append(order_id)
+                    logger.info("Grid position closed (TP)", order_id=order_id, side=side, entry=entry, price=current_price)
 
         for oid in closed:
             self.state.active_grid_orders.pop(oid, None)
