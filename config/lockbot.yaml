@@ -1,6 +1,6 @@
 # LockBot DDN Configuration
 bot_id: "LockBotBTC"
-symbol: "BTCUSDT"
+symbol: "ETHUSDT"
 log_level: "INFO"
 log_path: "logs/lockbot.log"
 

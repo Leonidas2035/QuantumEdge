@@ -1,4 +1,4 @@
-#!/home/korben/QuantumEdge-main/venv/bin/python3
+#!/usr/bin/env python3
 """
 Cron job: monitor_adjust.py
 Analyze BTCUSDT 15m chart, compute TA, fetch positions from BingX VST,
@@ -19,7 +19,7 @@ import numpy as np
 import pandas as pd
 import ta
 
-PROJECT_ROOT = Path("/home/korben/QuantumEdge-main")
+PROJECT_ROOT = Path("/home/layman/QuantumEdge")
 LOG_FILE = PROJECT_ROOT / "logs" / "monitor_adjust.log"
 CURRENCY = "BTC/USDT:USDT"
 INTERVAL = "15m"

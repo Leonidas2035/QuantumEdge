@@ -3,7 +3,7 @@
 
 enabled: true
 api_url: "https://openrouter.ai/api/v1/chat/completions"
-model: "openai/gpt-oss-120b:free"
+model: "nvidia/nemotron-3-ultra-550b-a55b:free"
 api_key_env: "OPENROUTER_API_KEY"
 check_interval_minutes: 1
 min_order_decisions: 0      # ЗМІНЕНО ДЛЯ UAT: дозволяє LLM аналізувати відразу

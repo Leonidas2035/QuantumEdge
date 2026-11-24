@@ -6,7 +6,7 @@ Drop-in replacement for BinanceExecutionGateway.
 import asyncio
 import ccxt.async_support as ccxt
 import logging
-from typing import List, Union, Optional
+from typing import List, Union, Optional, Any, Dict
 
 from quantum_edge_core.ai_scalper_bot.bot.execution.strategy_core import TradeAction
 
@@ -161,6 +161,30 @@ class BingXExecutionGateway:
     async def fetch_balance_async(self) -> float:
         """Async balance fetch for use in async context."""
         try:
+            # Ensure exchange is initialized inside the running event loop to prevent hangs
+            if not hasattr(self, "_async_init_done") or not self._async_init_done:
+                try:
+                    await self.exchange.close()
+                except Exception:
+                    pass
+
+                use_testnet = getattr(self.config, "use_testnet", False)
+                api_key = self.config.bingx_testnet_api_key if use_testnet else self.config.bingx_api_key
+                secret = self.config.bingx_testnet_secret if use_testnet else self.config.bingx_secret
+
+                self.exchange = ccxt.bingx(
+                    {
+                        "apiKey": api_key,
+                        "secret": secret,
+                        "options": {"defaultType": "swap"},
+                        "enableRateLimit": True,
+                        "timeout": 30000,
+                    }
+                )
+                if use_testnet:
+                    self.exchange.set_sandbox_mode(True)
+                self._async_init_done = True
+
             original_type = self.exchange.options.get("defaultType", "swap")
             self.exchange.options["defaultType"] = self._balance_account_type
 

@@ -1,0 +1,25 @@
+{
+  "tv": {
+    "symbol": "XRPUSDT",
+    "recommendation": "Neutral Sell Buy Strong sell Strong buy",
+    "priceText": "1.1003",
+    "levels": [],
+    "fullTextSample": "Skip to main content\nSearch\nProducts\nCommunity\nMarkets\nBrokers\nMore\nEN\nGet started\nXRPUSDT\n1.1003\nUSDT\n\u22120.0130\n\u22121.17%\nSee on Supercharts\nMarkets\n/\nCryptocurrencies\n/\nXRP\n/\nTether USDt\n/\nXRPUSDT\nXRP / TetherUS\nXRPUSDT\nBinance\nMarket open\n1.1003USDT\n\u22120.0130\n\u22121.17%\nAs of today at 15:45 GMT+3\nOverviewNewsCommunityTechnicalsSeasonalsMarkets\nMore\nFull chart\n\t\n\t\n\n\t\n\t\n1 day\n\u22121.12%\n1 week\n0.92%\n1 month\n\u221211.10%\n6 months\n\u221246.77%\nYear to date\n\u221240.26%\n1 year\n\u221262.29%\n5 years\n84.09%\nAll time\n120.14%\nCompare with XRP/USDT\ufeff\nETHUSDT.P\nEthereum / TetherUS PERPETUAL CONTRACT\n1,869.13\nUSDT\n\u22122.49%\nBTCUSDT.P\nBitcoin / TetherUS PERPETUAL CONTRACT\n63,852.3\nUSDT\n\u22121.34%\nSNDKUSDT.P\nSNDK / TetherUS PERPETUAL CONTRACT\n1,488.70\nUSDT\n\u22125.85%\nSKHYNIXUSDT.P\nSKHYNIX / TetherUS PERPETUAL CONTRACT\n1,211.37\nUSDT\n\u22125.89%\nSOXLUSDT.P\nSOXL / TetherUS PERPETUAL CONTRACT\n146.49\nUSDT\n\u221210.22%\nUSDCUSDT\nUSD Coin / TetherUS\n1.00062\nUSDT\n+0.01%\nBTCUSDT\nBitcoin / TetherUS\n63,882.00\nUSDT\n\u22121.35%\nSOLUSDT.P\nSOL / TetherUS PERPETUAL CONTRACT\n75.71\nUSDT\n\u22121.97%\nXAUUSDT.P\nXAU / TetherUS PERPETUAL CONTRACT\n4,003.94\nUSDT\n\u22121.39%\nMUUSDT.P\nMU / TetherUS PERPETUAL CONTRACT\n853.28\nUSDT\n\u22124.87%\nSKHYUSDT.P\nSKHY / TetherUS PERPETUAL CONTRACT\n162.81\nUSDT\n\u22124.25%\n\n\u00a0\nMore\n\nKey data points\ufeff\nVolume\n\u202a30.72\u202fM\u202c\u202fXRP\nPrevious close\n1.1133\u202fUSDT\nOpen\n1.1132\u202fUSDT\nDay's range\n1.0996\u00a0\u2013 1.1182USDT\nNews\ufeff\ufeff\nTradingView\nKey facts: XRPUSD Near $1.10; CLARITY Act Advances; Japan XRP Build\n99Bitcoins\nXRP News: XRP Jumps 2% as Binance\u2019s $800K RLUSD Reward Campaign Goes L",
+    "technicalsPage": {
+      "rating": "Neutral",
+      "oscillators": "Neutral",
+      "movingAverages": "Neutral",
+      "levels": []
+    }
+  },
+  "exchange": {
+    "funding_rate": 0.0001,
+    "mark_price": 1.1,
+    "index_price": 1.1005,
+    "open_interest_usd": 28531208.7899
+  },
+  "questdb": {
+    "count": 0,
+    "error": "Expecting value: line 1 column 1 (char 0)"
+  }
+}

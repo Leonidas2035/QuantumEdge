@@ -186,6 +186,9 @@ class HardRiskEngine:
 
     def check_limits(self):
         """Check limits and halt if necessary."""
+        if not getattr(self.config, "risk_management_enabled", True):
+            return
+
         if self.state.halted:
             return
 
@@ -260,6 +263,8 @@ class HardRiskEngine:
             self.logger.critical(f"RISK ENGINE HALT: {reason}")
 
     def evaluate_order(self, order: OrderRequest) -> RiskDecision:
+        if not getattr(self.config, "risk_management_enabled", True):
+            return RiskDecision(True, "ALLOWED", "OK", RiskAction.ALLOW)
         if self.state.halted:
             return RiskDecision(
                 False,

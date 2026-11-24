@@ -156,8 +156,11 @@ class BotEngine:
             alpha=self.config.strategy_config.get("atr_alpha", 0.01)
         )
 
-        self.strategy = AdaptiveGridStrategy(self.config.strategy_config)
+        strat_cfg = dict(self.config.strategy_config)
+        strat_cfg["symbol"] = self.config.symbol
+        self.strategy = AdaptiveGridStrategy(strat_cfg)
         logger.info("Initializing AdaptiveGridStrategy for AI Scalper")
+
 
         self.running = False
 
@@ -911,7 +914,16 @@ class BotEngine:
 
                     # Update Alpha Features
                     feat_vec = self.features.update(tick_obj, market_state)
+                    
+                    # Pass trade details to strategy for HFT trade intensity tracking
+                    if tick_obj is not None:
+                        try:
+                            self.strategy.add_trade(tick_obj.timestamp, tick_obj.quantity)
+                        except Exception as e:
+                            logger.error(f"Error adding trade to strategy: {e}")
+                            
                     atr_val = self.volatility.update(market_state.last_price)
+
 
                     # Override ATR with candle-based value from strategy oracle when available.
                     strategy_oracle = getattr(self.strategy, "vol_oracle", None)
@@ -967,6 +979,8 @@ class BotEngine:
                         market_state.grid_spacing_pct = strategy_oracle.get_dynamic_grid_spacing(
                             market_state.vol_index
                         )
+                        # Dynamic risk multiplier: calm = 2.0x qty, stormy = 0.5x qty
+                        market_state.risk_multiplier = 2.0 - (market_state.vol_index * 1.5)
 
                     # 3. Decision
                     # Format log with walls info

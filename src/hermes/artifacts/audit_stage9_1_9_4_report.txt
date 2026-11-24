@@ -1,0 +1,87 @@
+Stage 9 Audit Report (9.1-9.4)
+Timestamp: 2026-01-08T21:35:07.998683+00:00
+Git: b2b21e61c6fe769e6e8bba0be0e4cd107cec2bfd (feature/supervisor-orchestration)
+
+Stage status:
+- 9.1 Dashboard backend: PASS
+- 9.2 Alerts engine: PASS
+- 9.3 Dashboard UI: PASS
+- 9.4 Performance stats: PASS
+
+Checklist:
+- PASS: exists:SupervisorAgent\supervisor\dashboard\state_store.py
+- PASS: exists:SupervisorAgent\supervisor\dashboard\audit_log.py
+- PASS: exists:SupervisorAgent\static\index.html
+- PASS: exists:SupervisorAgent\static\app.js
+- PASS: exists:SupervisorAgent\config\alerts.yaml
+- PASS: exists:ai_scalper_bot\bot\trading\deal_events.py
+- PASS: docs:endpoints
+- PASS: stage9.4:dca_deal_emit
+- PASS: stage9.4:scalp_deal_emit
+- PASS: api:overview
+- PASS: api:strategies
+- PASS: api:performance
+- PASS: api:alerts
+- PASS: api:audit
+- PASS: api:reset
+- PASS: alerts:rules_present - missing=[]
+- PASS: alerts:stale_telemetry
+- PASS: alerts:api_errors
+- PASS: alerts:cancel_storm
+- PASS: alerts:stuck_sells
+- PASS: alerts:limit_breaches
+- PASS: alerts:resolve
+- PASS: alerts:audit_records
+- PASS: perf:closed_deals
+- PASS: perf:wins_losses
+- PASS: perf:reset
+- PASS: perf:audit_deal_closed
+- PASS: perf:audit_reset
+- PASS: ui:html:overview-strategies
+- PASS: ui:html:strategies-list
+- PASS: ui:html:performance-session
+- PASS: ui:html:audit-recent
+- PASS: ui:html:reset-counters
+- PASS: ui:js:/api/v1/dashboard/overview
+- PASS: ui:js:/api/v1/dashboard/strategies
+- PASS: ui:js:/api/v1/dashboard/performance
+- PASS: ui:js:/api/v1/dashboard/alerts
+- PASS: ui:js:/api/v1/dashboard/audit
+- PASS: ui:js:/api/v1/dashboard/reset-counters
+
+Overall: PASS
+Failures: 0
+
+Commands executed:
+- python -m tools.audit_stage9 (PASS)
+- pytest -q (PASS; warnings: websockets.WebSocketClientProtocol deprecation, websockets.legacy deprecation, datetime.utcnow deprecation in meta_agent, pandas 'S' deprecation in ai_scalper_bot feature builder)
+
+Findings and fixes applied:
+- Fixed dashboard overview deadlock by moving alert evaluation outside the state store lock (SupervisorAgent/supervisor/dashboard/state_store.py).
+- Avoided dashboard audit method shadowing by renaming the logger attribute (SupervisorAgent/supervisor.py).
+- Loaded alert rules from SupervisorAgent config with a fallback path (SupervisorAgent/supervisor.py).
+- Added missing config defaults for snapshot/autopilot history_window_minutes (SupervisorAgent/supervisor/config.py).
+- Updated audit harness alert resolution timing and stage9.4 detection (SupervisorAgent/tools/audit_stage9.py).
+
+Files changed:
+- SupervisorAgent/supervisor/dashboard/audit_log.py
+- SupervisorAgent/supervisor/dashboard/state_store.py
+- SupervisorAgent/supervisor.py
+- SupervisorAgent/supervisor/alerts/engine.py
+- SupervisorAgent/supervisor/alerts/rules.py
+- SupervisorAgent/supervisor/alerts/storage.py
+- SupervisorAgent/supervisor/api_server.py
+- SupervisorAgent/supervisor/config.py
+- SupervisorAgent/README.md
+- SupervisorAgent/config/alerts.yaml
+- SupervisorAgent/config/dashboard.yaml
+- SupervisorAgent/static/index.html
+- SupervisorAgent/static/app.js
+- SupervisorAgent/tools/audit_stage9.py
+- tools/audit_stage9.py
+- SupervisorAgent/tests/test_dashboard_state_store.py
+- SupervisorAgent/tests/test_dashboard_api.py
+- SupervisorAgent/tests/test_alerts_engine.py
+- ai_scalper_bot/bot/trading/deal_events.py
+- ai_scalper_bot/bot/run_bot.py
+- tests/test_deal_events.py

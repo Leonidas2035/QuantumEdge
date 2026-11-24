@@ -1,7 +1,7 @@
 import sys
 import os
 import ccxt
-sys.path.insert(0, "/home/korben/QuantumEdge-main/src")
+sys.path.insert(0, "/home/layman/QuantumEdge/src")
 from quantum_edge_core.dyn_dca_bot.main import _load_secrets
 _load_secrets()
 

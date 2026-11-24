@@ -157,7 +157,7 @@ class UnifiedOrchestrator:
 
         project_root = Path(__file__).resolve().parent
         src_path = project_root / "src"
-        hermes_path = Path("/home/korben/.hermes")
+        hermes_path = Path("/home/layman/QuantumEdge/src")
 
         paths = [str(src_path), str(hermes_path)]
         extra_path = comp_info.get("extra_pythonpath")
@@ -182,6 +182,36 @@ class UnifiedOrchestrator:
             except (ConnectionRefusedError, socket.timeout, OSError):
                 await asyncio.sleep(0.5)
         return False
+
+    def _find_external_process(self, name: str) -> Optional[psutil.Process]:
+        """Find a live process for a component NOT spawned by this orchestrator.
+
+        Some components (e.g. ai_scalper) may already be running as external
+        processes. We detect them by cmdline signature so the telemetry report
+        does not falsely report them as TERMINATED.
+        """
+        signatures = {
+            "ai_scalper": ("ai_scalper_bot", "run_bot"),
+            "dyndca": ("dyn_dca_bot",),
+            "lockbotbtc": ("lock_bot",),
+            "supervisor": ("supervisor",),
+            "hub": ("market_data", "hub"),
+        }
+        sig = signatures.get(name)
+        if not sig:
+            return None
+        try:
+            for proc in psutil.process_iter(["pid", "cmdline", "name"]):
+                try:
+                    cl = " ".join(proc.info.get("cmdline") or [])
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    continue
+                if all(token in cl for token in sig):
+                    if proc.is_running():
+                        return proc
+        except Exception:
+            return None
+        return None
 
     async def launch_module(self, comp_info: dict) -> bool:
         """Launches an isolated child process, handles dependency chains, and monitors status."""
@@ -263,12 +293,52 @@ class UnifiedOrchestrator:
                 except psutil.NoSuchProcess:
                     is_running = False
 
+            # If a spawned process died (or was replaced), try to locate a live
+            # external instance before declaring TERMINATED.
+            if not is_running:
+                ext = self._find_external_process(name)
+                if ext is not None:
+                    try:
+                        cpu_usage = ext.cpu_percent(interval=0.1)
+                        memory_mb = round(ext.memory_info().rss / (1024 * 1024), 2)
+                        report[name] = {
+                            "state": "RUNNING",
+                            "pid": ext.pid,
+                            "cpu_percent": cpu_usage,
+                            "ram_mb": memory_mb,
+                            "note": "external (re-detected; spawned proc died)",
+                        }
+                        continue
+                    except (psutil.NoSuchProcess, psutil.AccessDenied):
+                        pass
+
             report[name] = {
                 "state": "RUNNING" if is_running else "TERMINATED",
                 "pid": proc.pid if is_running else None,
                 "cpu_percent": cpu_usage,
                 "ram_mb": memory_mb
             }
+
+        # Fallback: detect components running as EXTERNAL processes (not spawned
+        # by this orchestrator) so they are not falsely reported as TERMINATED.
+        known = set(report.keys())
+        for name in ("hub", "supervisor", "ai_scalper", "dyndca", "lockbotbtc"):
+            if name in known:
+                continue
+            ext = self._find_external_process(name)
+            if ext is not None:
+                try:
+                    cpu_usage = ext.cpu_percent(interval=0.1)
+                    memory_mb = round(ext.memory_info().rss / (1024 * 1024), 2)
+                    report[name] = {
+                        "state": "RUNNING",
+                        "pid": ext.pid,
+                        "cpu_percent": cpu_usage,
+                        "ram_mb": memory_mb,
+                        "note": "external (not spawned by orchestrator)",
+                    }
+                except (psutil.NoSuchProcess, psutil.AccessDenied):
+                    pass
         return report
 
     async def halt_all_system(self):

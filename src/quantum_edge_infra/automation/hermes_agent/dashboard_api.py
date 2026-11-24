@@ -32,7 +32,7 @@ def get_dashboard_status():
         # Execute the zmq_mcp_bridge script to get the aggregated status
         # This isolates the ZMQ blocking poller from the FastAPI async event loop
         result = subprocess.run(
-            [sys.executable, "/home/korben/QuantumEdge-main/hermes_agent/zmq_mcp_bridge.py", "status"],
+            [sys.executable, "/home/layman/QuantumEdge/hermes_agent/zmq_mcp_bridge.py", "status"],
             capture_output=True,
             text=True,
             timeout=5.0

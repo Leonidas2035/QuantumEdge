@@ -54,26 +54,32 @@ class Config:
         self.supervisor_port = self.telemetry_port  # Legacy support
 
         self.symbol = os.getenv("MARKET_DATA_SYMBOLS", "BTCUSDT").split(",")[0]
+        if "ETH" in self.symbol:
+            base_qty = 0.55
+        elif "XRP" in self.symbol:
+            base_qty = 50.0  # ~25-30 USDT per order, very reasonable for UAT
+        else:
+            base_qty = 0.001
 
         # --- STRATEGY CONFIG ---
         # Moving strategy config here for centralization during UAT
         self.strategy_config = {
             "symbol": self.symbol,
-            "base_order_size_q": 0.001,  # VST BTC size
+            "base_order_size_q": base_qty,  # VST size
             "dry_run": False,  # Actual VST Execution on BingX
             "ofi_entry_threshold": 0.1,  # Low threshold for testing
             "take_profit_pct": 0.001,
             "atr_alpha": 0.1,
             # Core Strategy Params
-            "safety_order_multiplier": 1.5,
+            "safety_order_multiplier": 1.3,
             "hedge_trigger_dd": 0.02,
             "grid_step_atr_mult": 2.0,
             # Grid Config
-            "grid_min_spacing_pct": 0.002,  # 0.2%
-            "grid_max_spacing_pct": 0.01,  # 1.0%
+            "grid_min_spacing_pct": 0.006,  # 0.6%
+            "grid_max_spacing_pct": 0.012,  # 1.2%
             "volatility_window_days": 7,
-            "grid_levels_below": 15,  # кількість ордерів нижче поточної ціни
-            "grid_levels_above": 15,  # кількість ордерів вище поточної ціни
+            "grid_levels_below": 8,  # max 8 safety orders
+            "grid_levels_above": 8,  # max 8 safety orders
         }
 
     def _load_from_services_yaml(self):

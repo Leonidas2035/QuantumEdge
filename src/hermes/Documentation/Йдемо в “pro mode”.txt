@@ -1,0 +1,398 @@
+ЕТАП 0 — Фіксація поточного стану (ми майже тут)
+
+Ціль: застабілізувати те, що вже є, щоб не тягнути баги далі.
+
+Задачі (1–2 промти):
+
+В SupervisorAgent:
+
+Перевірити supervisor.yaml, risk.yaml, llm_supervisor.yaml, meta_supervisor.yaml на узгодженість (дефолти, коментарі, відсутність “мертвих” ключів).
+
+Маленький python supervisor.py diag:
+
+перевіряє наявність логів, state-файлів,
+
+валідність шляхів до QuantumEdge / Meta-Agent,
+
+доступність OpenAI ключів (мінімально).
+
+В QuantumEdge:
+
+Перевірити, що:
+
+secrets вантажаться без блокування,
+
+supervisor heartbeat і risk gateway справді викликаються в основному циклі,
+
+логіка “fail-open / fail-closed” працює як очікується.
+
+Це можна вже зробити зараз, але формальний “diag” варто додати — тоді всі наступні етапи простіше тестити.
+
+БЛОК A — AI-модерація та стратегічна надбудова над сигналами
+ЕТАП A1 — LLM-фільтр над DecisionEngine (м’який шар)
+
+Ціль: AI-коментатор над кожним сигналом, без права блокувати, тільки як аналітик.
+
+Ідея:
+
+QuantumEdge при генерації сигналу (ще до ордера) формує SignalContext:
+
+symbol, side, size,
+
+локальні фічі (volatility regime, recent PnL, winrate),
+
+короткий history snippet з останніх N рішень.
+
+Цей контекст періодично пишеться у SupervisorAgent як подія SIGNAL_CONTEXT (JSONL).
+
+Meta-Agent/LLM використовує ці логи для офлайн-аналізу: що за сигнали, які патерни.
+
+Реалізація по кроках (кожен — окремий промт для Codex):
+
+QuantumEdge:
+
+Ввести структуру SignalContext + функцію build_signal_context(order, features, pnl_state).
+
+Писати ці контексти у окремий лог (тимчасово JSONL поруч з трейдами).
+
+SupervisorAgent:
+
+Додати новий тип подій EventType.SIGNAL_CONTEXT.
+
+Додати log_signal_context(...) в events.py.
+
+API /api/v1/risk/evaluate може опційно приймати signal_context.
+
+Meta-Agent:
+
+Новий “off-market” таск:
+
+читає SIGNAL_CONTEXT за день,
+
+генерує високорівневий аналіз: де сигнали слабкі, де хороші.
+
+На цьому етапі AI ще не втручається в реальний час, тільки “дивиться”.
+
+ЕТАП A2 — Реальний AI-фільтр сигналів (runtime, але м’який)
+
+Ціль: AI додає “рекомендацію” по кожному сигналу (OK / CAUTION / AVOID), але останнє слово за RiskEngine.
+
+Кроки:
+
+SupervisorAgent:
+
+Новий endpoint /api/v1/signal/review:
+
+input: SignalContext,
+
+LLM: повертає JSON {"stance": "OK|CAUTION|AVOID", "comment": "...", "confidence": 0..1}.
+
+Впроваджується через окремий SignalLlmSupervisor модуль (аналог llm_supervisor.py, але для сигналів).
+
+QuantumEdge:
+
+Перед тим, як посилати /risk/evaluate, опційно викликати /signal/review:
+
+якщо stance=AVOID, лише зменшувати агресивність:
+
+знизити size,
+
+пропустити частину сигналів (sub-sampling),
+
+не блокує повністю, щоб уникати overfitting-а на LLM.
+
+Config:
+
+config/llm_signal_supervisor.yaml:
+
+enabled, max_calls_per_minute, apply_policy (як сильно вірити stance).
+
+ЕТАП A3 — Стратегічний AI-аналітик (Meta-Agent) поверх ClickHouse/TSDB
+
+Ціль: стратегічний аналіз: “яка стратегія приносить гроші, де просідання, які режими ринку”.
+
+Кроки:
+
+Після впровадження Time-series DB (див. блок D), Meta-Agent отримує:
+
+доступ до агрегованих таблиць: trades, equity_curve, signal_stats.
+
+Новий Meta-Agent stage:
+
+формує звіт раз/день/тиждень:
+
+PnL по годинах/днях,
+
+performance по режимах ринку (trend/range),
+
+аналіз навантаження на ризик і використання капіталу.
+
+Звіт зберігається у reports/strategy/.
+
+Це робить AI “стратегічним”, а не тільки “модератором”.
+
+БЛОК D — Time-series DB (ClickHouse / QuestDB / Timescale)
+
+Пропоную орієнтуватися на ClickHouse або QuestDB: вони дуже сильні по трейдингу.
+
+ЕТАП D1 — Обрати і підняти TSDB
+
+Ціль: dedicated time-series база, куди підуть трейди, heartbeats, сигнали.
+
+Кроки (можна в 1–2 промти, бо це більше DevOps ніж код):
+
+Обрати:
+
+ClickHouse:
+
+сильний по аналітиці, колонкове збереження, супер для PnL/запитів.
+
+QuestDB:
+
+орієнтований на time-series SQL, простий deployment.
+
+Апаратні рекомендації:
+
+Окремий сервер/VM або Docker-контейнер:
+
+CPU: 4–8 ядер (під майбутнє навантаження),
+
+RAM: 16–32 GB,
+
+SSD: 1–2 TB NVMe (важлива швидкість IOPS),
+
+окремий диск під базу.
+
+Налаштувати користувача/пароль, порт, retention-політику (наприклад, сирі тики тримаємо 90 днів, агрегації — довше).
+
+ЕТАП D2 — Data Ingestion з QuantumEdge → TSDB
+
+Ціль: замість мільйону JSON-файлів — збірка всіх трейдів у TSDB.
+
+Кроки:
+
+У QuantumEdge:
+
+створити модуль bot/storage/tsdb_writer.py:
+
+інтерфейс:
+
+log_trade(trade_record: dict)
+
+log_signal(signal_record: dict)
+
+log_equity(equity_record: dict)
+
+під капотом:
+
+для ClickHouse: HTTP INSERT або офіційний driver (якщо дозволимо дод. бібліотеку),
+
+для QuestDB: ILP протокол (TCP/UDP текстові рядки).
+
+Визначити схеми таблиць:
+
+trades(symbol, ts, side, price, qty, pnl, order_id, position_id, meta_json)
+
+signals(symbol, ts, decision, model_conf, stance, meta_json)
+
+equity(ts, equity, realized_pnl, unrealized_pnl, drawdown, regime)
+
+На перший час робити dual write:
+
+старі JSON / JSONL + TSDB.
+
+Пізніше JSON можна відключити або залишити тільки агрегаційні.
+
+ЕТАП D3 — SupervisorAgent & Meta-Agent читають з TSDB
+
+Ціль: весь аналіз/аудити/Meta-Agent працюють з централізованої бази, а не з купи файлів.
+
+SupervisorAgent:
+
+Аудит (audit_report.py) може брати PnL/рішення з TSDB,
+
+MetaSupervisor може враховувати реальну equity-криву для стратегічних рішень (коли запускати Meta-Agent, коли просадка).
+
+Meta-Agent:
+
+нові промти для Codex:
+
+“візьми дані з ClickHouse/QuestDB, побудуй performance-звіт за останній тиждень”.
+
+БЛОК B — Повністю автономний Supervisor (“операційний директор”)
+ЕТАП B1 — Policy Engine
+
+Ціль: Supervisor приймає операційні рішення за фіксованими правилами + AI-надбудова.
+
+Приклади політик:
+
+Якщо просадка за тиждень > X% →:
+
+вимкнути торгівлю, включити лише paper mode,
+
+запустити Meta-Agent audit run.
+
+Якщо winrate < Y% по певній стратегії →:
+
+зменшити llm_risk_multiplier,
+
+змінити режим з scalp на normal.
+
+Кроки:
+
+SupervisorAgent:
+
+створити модуль policy_engine.py:
+
+читає:
+
+risk_state,
+
+статистику з TSDB (через простий API),
+
+LLM-рекомендації.
+
+повертає список “операцій”: ["PAUSE_TRADING", "LOWER_RISK", "RUN_META_SUPERVISOR"].
+
+У run-foreground:
+
+періодично викликати policy_engine.evaluate().
+
+ЕТАП B2 — Автоматичне керування режимами QuantumEdge
+
+Ціль: Supervisor може:
+
+запустити QuantumEdge в paper/demo/live,
+
+перевести з live у paper і назад (з підтвердженням людини, якщо хочеш),
+
+enforce торгівлю тільки в певні години.
+
+Кроки:
+
+SupervisorAgent:
+
+розширити process_manager.py:
+
+підтримка “desired mode”: paper|demo|off.
+
+CLI:
+
+python supervisor.py set-mode --mode paper.
+
+PolicyEngine:
+
+має право змінювати режим за певних умов, описаних у policy.yaml.
+
+QuantumEdge:
+
+при старті читає mode із Supervisor config / аргументів.
+
+ЕТАП B3 — Людський “confirmation layer”
+
+Щоб Supervisor не став “богом”, можна додати:
+
+“proposed actions”:
+
+Supervisor пише у лог: “Пропоную SWITCH_TO_PAPER через drawdown”.
+
+Meta-Agent формує короткий звіт.
+
+Лише після підтвердження людиною (через dashboard) це застосовується.
+
+Це зручно вписати разом із Блоком C (dashboard).
+
+БЛОК C — Реальний dashboard / GUI
+
+Пропоную окремий невеликий web-dashboard сервіс:
+
+окремий репозиторій trading_dashboard,
+
+фронтенд (React/Vue/Svelte),
+
+бекенд (FastAPI/Flask) — може спілкуватися з:
+
+SupervisorAgent (HTTP API),
+
+TSDB (напряму через SQL/HTTP),
+
+Meta-Agent (читати готові звіти).
+
+ЕТАП C1 — Backend API для Dashboard
+
+Кроки:
+
+Створити простий FastAPI/Flask backend:
+
+ендпоінти:
+
+/status → дергає Supervisor /api/v1/status,
+
+/equity → читає з TSDB,
+
+/trades → останні N трейдів,
+
+/alerts → останні MetaSupervisor/LLM рішення.
+
+Auth (мінімум):
+
+simple токен / basic auth.
+
+ЕТАП C2 — Frontend
+
+Dashboard з основними панелями:
+
+Live статус:
+
+режим (paper/demo/live),
+
+Supervisor / LLM / Meta-Agent статус,
+
+heartbeat latency.
+
+Equity / PnL графіки:
+
+time-series з TSDB.
+
+Ризик та позиції:
+
+поточні open positions,
+
+використання плеча, margin, drawdown.
+
+AI-рішення та політики:
+
+останні LLM-і по risk/signal,
+
+останні policy-actions (PAUSE, LOWER_RISK,…).
+
+ЕТАП C3 — Control Panel
+
+Дозволяє з dashboard:
+
+перевести режим Supervisor:
+
+set-mode paper/demo/off (через API Supervisor),
+
+запускати Meta-Agent meta-supervisor вручну,
+
+підтверджувати або відхиляти “proposed actions” PolicyEngine.
+
+Це вже прям “операційний центр”.
+
+Як це інтегрувати з Codex-обмеженнями
+
+Кожен етап можна розкласти на 2–5 промтів:
+
+“Створити новий модуль + оновити 2–3 файли конфігів + README”
+(те, що ми вже робимо з SupervisorAgent).
+
+Наприклад:
+
+A1: 2 промти (QuantumEdge + SupervisorAgent події).
+
+D1–D2: 2–3 промти (конектор у TSDB, схеми таблиць).
+
+B1: 1–2 промти (policy_engine + інтеграція в run-foreground).
+
+C1–C3: по 1–2 промти (backend API, frontend, control panel).

@@ -86,6 +86,13 @@ class EnterpriseVolatilityOracle:
         elif z_score > 0.5:
             regime = MarketRegime.CHOPPY
             multiplier = 1.2
+        elif z_score < -0.5:
+            regime = MarketRegime.CALM
+            # Стискаємо сітку, коли волатильність суттєво нижча за середню
+            multiplier = max(0.5, 1.0 + (z_score * 0.3))
+        else:
+            regime = MarketRegime.CALM
+            multiplier = 1.0
             
         logger.debug("Volatility Oracle Evaluated", 
                      regime=regime.name, 

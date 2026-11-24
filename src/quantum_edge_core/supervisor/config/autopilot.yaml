@@ -35,7 +35,7 @@ autopilot:
     disable_entries_on_degrade: true
 
   policy:
-    symbol: "BTCUSDT"
+    symbol: "ETHUSDT"
     artifacts_dir: "ai_scalper_bot/artifacts/policy"
     runtime_dir: "ai_scalper_bot/runtime/policy"
     history_keep: 5

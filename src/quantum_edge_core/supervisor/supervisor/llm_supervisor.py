@@ -135,9 +135,9 @@ class ChatCompletionsClient:
                     f"Do not include any other text, markdown fences, or comments. Raw JSON only."
                 )
 
-            # Run /home/korben/.local/bin/hermes with --ignore-rules to avoid pollution
+            # Run /home/layman/.local/bin/hermes with --ignore-rules to avoid pollution
             cmd = [
-                "/home/korben/.local/bin/hermes",
+                "/home/layman/.local/bin/hermes",
                 "--ignore-rules",
                 "-z",
                 prompt_data,

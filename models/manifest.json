@@ -1,0 +1,32 @@
+{
+  "schema_version": "2.0.0",
+  "generated_timestamp": 1783944335.3826475,
+  "features": [
+    "spread",
+    "micro_imbalance",
+    "ofi_proxy",
+    "volatility_100t",
+    "ofi_z",
+    "ofi_ma5",
+    "top_qty_sum",
+    "trade_rate_1s",
+    "volume_1s"
+  ],
+  "models": {
+    "model_up": {
+      "file": "models/model_up.json",
+      "accuracy": 0.6664621049401657,
+      "scale_pos_weight": 6.330146231685433
+    },
+    "model_down": {
+      "file": "models/model_down.json",
+      "accuracy": 0.6977600490948144,
+      "scale_pos_weight": 6.617182933918077
+    }
+  },
+  "gating_thresholds": {
+    "p_up_threshold": 0.65,
+    "p_down_threshold": 0.65,
+    "p_cross_threshold": 0.3
+  }
+}

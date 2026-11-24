@@ -4,7 +4,7 @@ bot_path: "src/quantum_edge_core/ai_scalper_bot/run_bot.py"
 
 env_vars:
   MARKET_DATA_MODE: "live"
-  MARKET_DATA_SYMBOLS: "BTCUSDT"
+  MARKET_DATA_SYMBOLS: "ETHUSDT"
   MARKET_DATA_ZMQ_PORT: "5555"
   BINANCE_WS_URL: "wss://stream.binancefuture.com/ws"
   BINANCE_TESTNET: "True"
