@@ -375,6 +375,12 @@ class MarketDataHubService(BaseService):
                         if taker_side == "sell"
                         else False if taker_side == "buy" else None
                     )
+                    feed_source = (
+                        "mock_ws"
+                        if self.config.mode == "mock"
+                        or any(isinstance(f, MockLiveFeed) for f in self.feeds)
+                        else "bingx_ws"
+                    )
                     self.lockbot_engine.on_trade(
                         symbol=event.symbol,
                         price=event.price,
@@ -382,7 +388,7 @@ class MarketDataHubService(BaseService):
                         ts_event_ms=ts_event_ms,
                         is_buyer_maker=is_buyer_maker,
                         agg_trade_id=event.seq,
-                        source="binance_ws",
+                        source=feed_source,
                     )
                 if isinstance(
                     event, (TradeEvent, MarketTrade, KlineEvent, OrderBookUpdate)
