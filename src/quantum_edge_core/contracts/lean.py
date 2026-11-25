@@ -37,7 +37,7 @@ class TradeDecision(BaseModel):
     sl_price: float | None = None
     tp_price: float | None = None
     margin_vst: float = 0.0
-    leverage: int = 10
+    leverage: int | None = 1
     qty: float | None = None
     reason: str
 

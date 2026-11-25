@@ -118,7 +118,8 @@ class LeanExecutor:
         elif position_qty is not None and position_qty > 0:
             amount = float(position_qty)
         elif decision.margin_vst > 0 and ref_price > 0:
-            amount = round((decision.margin_vst * decision.leverage) / ref_price, 6)
+            lev = decision.leverage if decision.leverage is not None else 1
+            amount = round((decision.margin_vst * lev) / ref_price, 6)
         else:
             amount = 0.0
 

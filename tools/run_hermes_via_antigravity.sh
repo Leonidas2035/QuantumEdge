@@ -82,17 +82,23 @@ model:
   default: "${AG_MODEL}"
   api_key: "${AG_API_KEY}"
   context_length: 262144
+providers:
+  custom:
+    request_timeout_seconds: 180
+    stale_timeout_seconds: 300
 EOF
 chmod 600 "${CONFIG_FILE}"
 
 cat > "${ENV_FILE}" <<EOF
 OPENAI_API_KEY=${AG_API_KEY}
+HERMES_API_TIMEOUT=180
 EOF
 chmod 600 "${ENV_FILE}"
 
 export HERMES_HOME="${RESOLVED_HERMES_HOME}"
 export OPENAI_API_KEY="${AG_API_KEY}"
 export OPENAI_BASE_URL="${AG_BASE_URL}"
+export HERMES_API_TIMEOUT=180
 
 PYTHON_VERIFY="${REPO_ROOT}/.venv/bin/python"
 if [[ ! -x "${PYTHON_VERIFY}" ]]; then
