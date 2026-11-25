@@ -12,6 +12,7 @@ Subcommands:
 
 from __future__ import annotations
 
+from datetime import datetime, timezone
 import argparse
 import json
 import os
@@ -26,6 +27,7 @@ if str(SRC_DIR) not in sys.path:
 
 from quantum_edge_core.contracts.lean import TradeDecision
 from quantum_edge_core.execution.bingx_vst_adapter import (
+    cancel_vst_open_orders,
     create_bingx_vst_client,
     fetch_full_vst_context,
     fetch_vst_status,
@@ -90,6 +92,42 @@ def build_parser() -> argparse.ArgumentParser:
         "--allowed-symbols",
         default=os.getenv("QE_ALLOWED_SYMBOLS", ""),
         help="Comma-separated allowed symbols override (default: RiskConfig defaults)",
+    )
+    p_ctx.add_argument(
+        "--no-analytics",
+        action="store_true",
+        default=False,
+        help="Disable liqmap/orderflow/composite_signal enrichment for fast diagnostics",
+    )
+
+    # cancel-open-orders
+    p_cancel = sub.add_parser(
+        "cancel-open-orders",
+        help="Safely cancel open orders on BingX VST sandbox (--dry-run by default)",
+    )
+    p_cancel.add_argument(
+        "--symbol",
+        required=True,
+        help="Trading symbol (e.g. ETHUSDT) or ALL",
+    )
+    cancel_mode = p_cancel.add_mutually_exclusive_group()
+    cancel_mode.add_argument(
+        "--dry-run",
+        action="store_true",
+        default=False,
+        help="Simulate cancellation without exchange mutations (default)",
+    )
+    cancel_mode.add_argument(
+        "--live-vst",
+        action="store_true",
+        default=False,
+        help="Cancel open orders on BingX VST sandbox",
+    )
+    p_cancel.add_argument(
+        "--journal-path",
+        type=Path,
+        default=DEFAULT_JOURNAL_PATH,
+        help="Path to JSONL trade decision journal",
     )
 
     # execute
@@ -170,6 +208,7 @@ def _cmd_status() -> int:
 def _cmd_context(args: argparse.Namespace) -> int:
     client = create_bingx_vst_client()
     tfs = tuple(tf.strip() for tf in args.timeframes.split(",") if tf.strip())
+    include_analytics = not bool(args.no_analytics)
     ctx = fetch_full_vst_context(
         client,
         symbol=args.symbol,
@@ -177,11 +216,21 @@ def _cmd_context(args: argparse.Namespace) -> int:
         timeframes=tfs,
         ohlcv_limit=args.ohlcv_limit,
         orderbook_limit=args.orderbook_limit,
+        include_analytics=include_analytics,
     )
     payload_json = ctx.model_dump_json(indent=2)
     if args.out is not None:
         args.out.parent.mkdir(parents=True, exist_ok=True)
         args.out.write_text(payload_json, encoding="utf-8")
+        micro = ctx.microstructure_and_liquidity
+        analytics_status = (
+            {
+                k: micro.get(k, {}).get("status")
+                for k in ("liqmap", "orderflow", "composite_signal")
+            }
+            if include_analytics
+            else None
+        )
         summary = {
             "status": "ok",
             "sandbox": True,
@@ -189,11 +238,54 @@ def _cmd_context(args: argparse.Namespace) -> int:
             "out": str(args.out),
             "bytes": len(payload_json.encode("utf-8")),
             "timeframes": list(ctx.ohlcv_by_tf.keys()),
+            "analytics_enabled": include_analytics,
+            "analytics_status": analytics_status,
             "provider_gets": ctx.raw_extras.get("provider_gets"),
         }
         print(json.dumps(summary, ensure_ascii=False))
     else:
         print(payload_json)
+    return 0
+
+
+def _cmd_cancel_open_orders(args: argparse.Namespace) -> int:
+    sym = args.symbol.strip().upper()
+    if args.live_vst:
+        client = create_bingx_vst_client()
+        res = cancel_vst_open_orders(client, symbol=sym)
+        payload = {
+            "status": "ok" if not res["errors"] else "partial",
+            "mode": "live_vst",
+            **res,
+        }
+    else:
+        payload = {
+            "status": "ok",
+            "mode": "dry_run",
+            "sandbox": True,
+            "symbol": sym,
+            "found_open_orders": 0,
+            "cancelled_count": 0,
+            "cancelled_order_ids": [],
+            "errors": [],
+        }
+
+    args.journal_path.parent.mkdir(parents=True, exist_ok=True)
+    journal_row = {
+        "ts_utc": datetime.now(timezone.utc).isoformat(),
+        "decision_id": f"cancel-open-orders-{sym.lower()}-{int(datetime.now(timezone.utc).timestamp())}",
+        "symbol": sym,
+        "action": "CANCEL_OPEN_ORDERS",
+        "mode": payload["mode"],
+        "cancelled_count": payload["cancelled_count"],
+        "cancelled_order_ids": payload["cancelled_order_ids"],
+        "order_status": "CANCELLED" if payload["cancelled_count"] > 0 else "NOOP",
+        "error": None if not payload["errors"] else json.dumps(payload["errors"], ensure_ascii=False),
+    }
+    with args.journal_path.open("a", encoding="utf-8") as fh:
+        fh.write(json.dumps(journal_row, ensure_ascii=False) + "\n")
+
+    print(json.dumps(payload, ensure_ascii=False))
     return 0
 
 
@@ -258,6 +350,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _cmd_status()
     if args.command == "context":
         return _cmd_context(args)
+    if args.command == "cancel-open-orders":
+        return _cmd_cancel_open_orders(args)
     if args.command == "execute":
         return _cmd_execute(args)
     parser.error(f"Unknown command: {args.command}")
