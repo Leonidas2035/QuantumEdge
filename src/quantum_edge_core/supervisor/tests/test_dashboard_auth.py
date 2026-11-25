@@ -1,4 +1,4 @@
-from hermes.supervisor.security import (
+from quantum_edge_core.supervisor.supervisor.security import (
     check_dashboard_auth,
     dashboard_auth_required,
 )

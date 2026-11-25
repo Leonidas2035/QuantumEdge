@@ -1,4 +1,4 @@
-from hermes.supervisor.autopilot.state_machine import (
+from quantum_edge_core.supervisor.supervisor.autopilot.state_machine import (
     AutopilotState,
     AutopilotStateMachine,
 )

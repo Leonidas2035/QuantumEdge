@@ -1,10 +1,10 @@
 """LockBotBTC control-plane utilities."""
 
-from hermes.supervisor.lockbot.models import (
+from quantum_edge_core.supervisor.supervisor.lockbot.models import (
     PolicyRunnerConfig,
     load_lockbot_policy_config,
 )
-from hermes.supervisor.lockbot.policy_runner import (
+from quantum_edge_core.supervisor.supervisor.lockbot.policy_runner import (
     LockbotPolicyRunner,
 )
 

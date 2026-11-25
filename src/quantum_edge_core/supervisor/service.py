@@ -17,34 +17,34 @@ try:
 except ImportError:
     pass
 
-from hermes.supervisor.config import load_llm_supervisor_config
+from quantum_edge_core.supervisor.supervisor.config import load_llm_supervisor_config
 
 # Domain Imports
-from hermes.domain.models import (
+from quantum_edge_core.supervisor.domain.models import (
     RiskConfig,
     PortfolioState,
     RiskVerdict,
     RiskLevel,
 )
-from hermes.domain.risk import HardRiskEngine
-from hermes.domain.policy import PolicyManager
-from hermes.supervisor.ipc import PolicyPublisher
+from quantum_edge_core.supervisor.domain.risk import HardRiskEngine
+from quantum_edge_core.supervisor.domain.policy import PolicyManager
+from quantum_edge_core.supervisor.supervisor.ipc import PolicyPublisher
 
-from hermes.supervisor.gemini_client import GeminiClient
-from hermes.supervisor.data_ingest import ZmqListener
+from quantum_edge_core.supervisor.supervisor.gemini_client import GeminiClient
+from quantum_edge_core.supervisor.supervisor.data_ingest import ZmqListener
 
-from hermes.context.builder import ContextBuilder
-from hermes.supervisor.ai_bridge import (
+from quantum_edge_core.supervisor.context.builder import ContextBuilder
+from quantum_edge_core.supervisor.supervisor.ai_bridge import (
     AiBridge,
     MalformedResponseError,
 )
-from hermes.supervisor.prompts import (
+from quantum_edge_core.supervisor.supervisor.prompts import (
     SYSTEM_PROMPT,
     format_history,
 )
 from quantum_edge_core.logging.audit_logger import AuditLogger
-from hermes.supervisor.api import DashboardServer
-from hermes.state_manager import ThreadSafeStateManager
+from quantum_edge_core.supervisor.supervisor.api import DashboardServer
+from quantum_edge_core.supervisor.state_manager import ThreadSafeStateManager
 
 # Assuming we have a ZMQ wrapper or will verify connectivity briefly.
 # For this stage, we implement the loop logic.

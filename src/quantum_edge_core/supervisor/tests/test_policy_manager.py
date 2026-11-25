@@ -1,7 +1,7 @@
 import json
 from pathlib import Path
 
-from hermes.supervisor.autopilot.policy_manager import (
+from quantum_edge_core.supervisor.supervisor.autopilot.policy_manager import (
     PolicyManager,
 )
 

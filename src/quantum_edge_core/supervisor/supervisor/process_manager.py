@@ -15,13 +15,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Dict, Optional
 
-from hermes.supervisor.config import PathsConfig, SupervisorConfig
-from hermes.supervisor.events import (
+from quantum_edge_core.supervisor.supervisor.config import PathsConfig, SupervisorConfig
+from quantum_edge_core.supervisor.supervisor.events import (
     BaseEvent,
     EventLogger,
     EventType,
 )
-from hermes.supervisor.process_spec import (
+from quantum_edge_core.supervisor.supervisor.process_spec import (
     HealthCheckSpec,
     ProcessSpec,
     ProcessStatus,

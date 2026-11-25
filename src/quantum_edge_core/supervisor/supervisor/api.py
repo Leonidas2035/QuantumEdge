@@ -17,7 +17,7 @@ from fastapi import FastAPI
 
 logger = logging.getLogger(__name__)
 
-from hermes.state_manager import ThreadSafeStateManager
+from quantum_edge_core.supervisor.state_manager import ThreadSafeStateManager
 
 logger = logging.getLogger(__name__)
 

@@ -1,4 +1,4 @@
-from hermes.supervisor.security import (
+from quantum_edge_core.supervisor.supervisor.security import (
     validate_kill_switch_challenge,
 )
 

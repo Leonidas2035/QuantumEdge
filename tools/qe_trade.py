@@ -34,7 +34,42 @@ USE_TESTNET = str(os.getenv("USE_TESTNET", "1")).lower() in {"1","true","t"}
 BASE = SYMBOL.replace("USDT","")
 CCXT_SYMBOL = f"{BASE}/USDT:USDT"
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+SRC_DIR = os.path.join(ROOT, "src")
+if SRC_DIR not in sys.path:
+    sys.path.insert(0, SRC_DIR)
+
+try:
+    from quantum_edge_core.execution.bingx_intent import build_bingx_order_params
+except ImportError:
+    def build_bingx_order_params(intent: str, hedged: bool = True) -> dict:
+        mapping = {
+            "open_long": {"side": "buy", "positionSide": "LONG", "reduceOnly": False, "hedged": hedged},
+            "open_short": {"side": "sell", "positionSide": "SHORT", "reduceOnly": False, "hedged": hedged},
+            "close_long": {"side": "sell", "positionSide": "LONG", "reduceOnly": True, "hedged": hedged},
+            "close_short": {"side": "buy", "positionSide": "SHORT", "reduceOnly": True, "hedged": hedged},
+        }
+        if not isinstance(intent, str) or intent not in mapping:
+            raise ValueError(f"Unknown order intent: {intent!r}")
+        return dict(mapping[intent])
+
 JOURNAL = os.path.join(ROOT, "runtime", "trade_journal.jsonl")
+
+
+def _resolve_hedge_intent(side: str, pos_side: str, closing_only: bool = False) -> str:
+    s = str(side).strip().lower()
+    ps = str(pos_side).strip().upper()
+    if (s, ps) == ("sell", "LONG"):
+        return "close_long"
+    if (s, ps) == ("buy", "SHORT"):
+        return "close_short"
+    if not closing_only:
+        if (s, ps) == ("buy", "LONG"):
+            return "open_long"
+        if (s, ps) == ("sell", "SHORT"):
+            return "open_short"
+    raise ValueError(
+        f"Invalid BingX Hedge Mode order parameters (closing_only={closing_only}): side={side!r}, pos_side={pos_side!r}"
+    )
 
 
 def jlog(entry):
@@ -122,15 +157,22 @@ async def snapshot(ex):
 
 
 async def place(ex, side, pos_side, qty, price, tp=None, sl=None):
-    params = {"positionSide": pos_side.upper(), "hedged": True}
-    if tp is not None and str(tp).lower() not in ("none", "null", ""):
-        params["takeProfit"] = {"triggerPrice": float(tp)}
-    if sl is not None and str(sl).lower() not in ("none", "null", ""):
-        params["stopLoss"] = {"triggerPrice": float(sl)}
-    o = await ex.create_order(symbol=CCXT_SYMBOL, type="limit", side=side.lower(),
+    intent = _resolve_hedge_intent(side, pos_side, closing_only=False)
+    mapped = build_bingx_order_params(intent, hedged=True)
+    params = {
+        "positionSide": mapped["positionSide"],
+        "reduceOnly": mapped["reduceOnly"],
+        "hedged": mapped["hedged"],
+    }
+    if not mapped["reduceOnly"]:
+        if tp is not None and str(tp).lower() not in ("none", "null", ""):
+            params["takeProfit"] = {"triggerPrice": float(tp)}
+        if sl is not None and str(sl).lower() not in ("none", "null", ""):
+            params["stopLoss"] = {"triggerPrice": float(sl)}
+    o = await ex.create_order(symbol=CCXT_SYMBOL, type="limit", side=mapped["side"],
                                amount=float(qty), price=float(price), params=params)
-    jlog({"act":"place","side":side,"pos":pos_side,"qty":qty,"price":price,"tp":tp,"sl":sl,"id":o.get("id")})
-    return {"id":o.get("id"),"side":o.get("side"),"amount":o.get("amount"),"price":o.get("price"),"status":o.get("status"),"intended_tp":tp,"intended_sl":sl}
+    jlog({"act":"place","side":mapped["side"],"pos":mapped["positionSide"],"reduceOnly":mapped["reduceOnly"],"qty":qty,"price":price,"tp":tp,"sl":sl,"id":o.get("id")})
+    return {"id":o.get("id"),"side":o.get("side"),"amount":o.get("amount"),"price":o.get("price"),"status":o.get("status"),"reduceOnly":mapped["reduceOnly"],"intended_tp":tp,"intended_sl":sl}
 
 
 async def set_sl(ex, pos_side, new_sl):
@@ -196,6 +238,13 @@ async def set_sl(ex, pos_side, new_sl):
 
 
 async def market(ex, side, pos_side, qty):
+    intent = _resolve_hedge_intent(side, pos_side, closing_only=True)
+    mapped = build_bingx_order_params(intent, hedged=True)
+    close_params = {
+        "positionSide": mapped["positionSide"],
+        "reduceOnly": True,
+        "hedged": mapped["hedged"],
+    }
     # snapshot position entry BEFORE closing, to compute realized PnL ourselves
     # (BingX VST does not return realizedPnl via ccxt; fetchLedger unsupported)
     entry = None; mark = None
@@ -203,28 +252,28 @@ async def market(ex, side, pos_side, qty):
         await ex.load_markets()
         ps = await ex.fetch_positions(symbols=[CCXT_SYMBOL])
         for p in ps:
-            if str(p.get("side","")).upper() == pos_side.upper() and float(p.get("contracts") or 0)!=0:
+            if str(p.get("side","")).upper() == mapped["positionSide"] and float(p.get("contracts") or 0)!=0:
                 entry = float(p.get("entryPrice") or 0)
         ob = await ex.fetch_order_book(CCXT_SYMBOL, limit=5)
         bids, asks = ob.get("bids",[]), ob.get("asks",[])
         mark = (bids[0][0]+asks[0][0])/2 if bids and asks else None
     except Exception:
         pass
-    o = await ex.create_order(symbol=CCXT_SYMBOL, type="market", side=side,
-                              amount=float(qty), params={"positionSide": pos_side.upper()})
+    o = await ex.create_order(symbol=CCXT_SYMBOL, type="market", side=mapped["side"],
+                              amount=float(qty), params=close_params)
     # realized pnl: closing a LONG (side=sell) profits when mark>entry;
     # closing a SHORT (side=buy) profits when entry>mark.
     realized = None
     if entry and mark:
-        if pos_side.upper()=="LONG":
+        if mapped["positionSide"]=="LONG":
             realized = round((mark-entry)*float(qty), 4)
         else:  # SHORT
             realized = round((entry-mark)*float(qty), 4)
-    rec = {"act":"close","side":side,"pos":pos_side,"qty":float(qty),
+    rec = {"act":"close","side":mapped["side"],"pos":mapped["positionSide"],"reduceOnly":True,"qty":float(qty),
            "entry":entry,"exit":mark,"realized_pnl":realized,"id":o.get("id")}
     jlog(rec)
     return {"id":o.get("id"),"side":o.get("side"),"amount":o.get("amount"),
-            "status":o.get("status"),"entry":entry,"exit":mark,"realized_pnl":realized}
+            "status":o.get("status"),"reduceOnly":True,"entry":entry,"exit":mark,"realized_pnl":realized}
 
 
 async def cancel_all(ex):

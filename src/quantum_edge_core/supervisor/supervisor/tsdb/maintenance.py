@@ -7,11 +7,11 @@ import urllib.request
 from pathlib import Path
 from typing import Optional
 
-from hermes.supervisor.config import (
+from quantum_edge_core.supervisor.supervisor.config import (
     TsdbRetentionConfig,
     TsdbConfig,
 )
-from hermes.supervisor.tsdb.query import (
+from quantum_edge_core.supervisor.supervisor.tsdb.query import (
     derive_questdb_query_url,
     questdb_exec,
 )

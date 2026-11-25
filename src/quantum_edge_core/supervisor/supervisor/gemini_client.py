@@ -11,7 +11,7 @@ from typing import Any, Dict, Optional
 
 import httpx
 
-from hermes.supervisor.config import LlmSupervisorConfig
+from quantum_edge_core.supervisor.supervisor.config import LlmSupervisorConfig
 
 
 class CircuitState(str, Enum):

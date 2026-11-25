@@ -11,7 +11,7 @@ from typing import Dict, List, Optional
 import pandas as pd
 import xgboost as xgb
 
-from hermes.research.offline.scalper_bot.ml.eval.metrics import (
+from quantum_edge_core.supervisor.research.offline.scalper_bot.ml.eval.metrics import (
     compute_metrics,
 )
 from bot.ml.features.builder import feature_names, schema_hash

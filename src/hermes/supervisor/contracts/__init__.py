@@ -1,1 +1,0 @@
-"""SupervisorAgent contract definitions."""

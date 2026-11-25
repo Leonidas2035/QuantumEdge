@@ -8,12 +8,12 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from typing import Any, Dict, Literal, Optional
 
-from hermes.supervisor.config import TrendEvaluatorConfig
-from hermes.supervisor.llm.chat_client import (
+from quantum_edge_core.supervisor.supervisor.config import TrendEvaluatorConfig
+from quantum_edge_core.supervisor.supervisor.llm.chat_client import (
     ChatCompletionsClient,
 )
-from hermes.supervisor.utils.cache import TtlCache
-from hermes.supervisor.utils.rate_limit import (
+from quantum_edge_core.supervisor.supervisor.utils.cache import TtlCache
+from quantum_edge_core.supervisor.supervisor.utils.rate_limit import (
     PerMinuteRateLimiter,
 )
 

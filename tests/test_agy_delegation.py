@@ -5,11 +5,11 @@ from datetime import date
 from decimal import Decimal
 from pathlib import Path
 
-from hermes.supervisor.state import RiskStateSnapshot
-from hermes.supervisor.config import LlmSupervisorConfig, RiskConfig
-from hermes.supervisor.llm_supervisor import LlmSupervisor, LlmSupervisorAdvice
-from hermes.supervisor.utils.agy_delegator import delegate_to_agy
-from hermes.domain.models import TradingMode
+from quantum_edge_core.supervisor.supervisor.state import RiskStateSnapshot
+from quantum_edge_core.supervisor.supervisor.config import LlmSupervisorConfig, RiskConfig
+from quantum_edge_core.supervisor.supervisor.llm_supervisor import LlmSupervisor, LlmSupervisorAdvice
+from quantum_edge_core.supervisor.supervisor.utils.agy_delegator import delegate_to_agy
+from quantum_edge_core.supervisor.domain.models import TradingMode
 
 
 class TestAgyDelegation(unittest.TestCase):
@@ -68,10 +68,10 @@ class TestAgyDelegation(unittest.TestCase):
         self.assertEqual(res["status"], "error")
         self.assertIn("No response file generated", res["error"])
 
-    @patch("hermes.supervisor.llm_supervisor.load_events_for_date")
-    @patch("hermes.supervisor.llm_supervisor.build_summary")
-    @patch("hermes.supervisor.llm_supervisor.build_prompts")
-    @patch("hermes.supervisor.utils.agy_delegator.delegate_to_agy")
+    @patch("quantum_edge_core.supervisor.supervisor.llm_supervisor.load_events_for_date")
+    @patch("quantum_edge_core.supervisor.supervisor.llm_supervisor.build_summary")
+    @patch("quantum_edge_core.supervisor.supervisor.llm_supervisor.build_prompts")
+    @patch("quantum_edge_core.supervisor.supervisor.utils.agy_delegator.delegate_to_agy")
     def test_llm_supervisor_integration(self, mock_delegate, mock_build_prompts, mock_build_summary, mock_load_events):
         """Verify that LlmSupervisor.run_check triggers delegation to agy and prepends sentiment context."""
         

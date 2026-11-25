@@ -10,24 +10,24 @@ from collections import deque
 from pathlib import Path
 from typing import Any, Deque, Dict, Optional
 
-from hermes.supervisor.lockbot.hub_subscriber import (
+from quantum_edge_core.supervisor.supervisor.lockbot.hub_subscriber import (
     LockbotHubSubscriber,
     MarketDataCache,
 )
-from hermes.supervisor.lockbot.models import (
+from quantum_edge_core.supervisor.supervisor.lockbot.models import (
     BotStatusSnapshot,
     MarketSnapshot,
     PolicyIntent,
     PolicyRunnerConfig,
 )
-from hermes.supervisor.lockbot.regime_detector import (
+from quantum_edge_core.supervisor.supervisor.lockbot.regime_detector import (
     RegimeDetector,
     RegimeHysteresis,
 )
-from hermes.supervisor.lockbot.strategy_range import (
+from quantum_edge_core.supervisor.supervisor.lockbot.strategy_range import (
     evaluate_range,
 )
-from hermes.supervisor.lockbot.strategy_trend import (
+from quantum_edge_core.supervisor.supervisor.lockbot.strategy_trend import (
     evaluate_trend,
 )
 

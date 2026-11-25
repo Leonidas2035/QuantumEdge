@@ -9,7 +9,7 @@ from typing import Dict, Any, Optional
 import pandas as pd
 import pandas_ta as ta
 
-from hermes.supervisor.state import RiskStateSnapshot
+from quantum_edge_core.supervisor.supervisor.state import RiskStateSnapshot
 
 
 class MarketContextBuilder:

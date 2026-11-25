@@ -6,7 +6,7 @@ import json
 import re
 from typing import Dict, Any
 
-from hermes.supervisor.llm.chat_client import (
+from quantum_edge_core.supervisor.supervisor.llm.chat_client import (
     ChatCompletionsClient,
 )
 

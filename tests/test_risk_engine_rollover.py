@@ -7,7 +7,7 @@ from unittest.mock import MagicMock
 # Add src to PYTHONPATH
 sys.path.insert(0, os.path.abspath("src"))
 
-from hermes.supervisor.risk_engine import HardRiskEngine
+from quantum_edge_core.supervisor.supervisor.risk_engine import HardRiskEngine
 
 
 class MockRiskState:

@@ -4,10 +4,10 @@ from unittest.mock import patch, MagicMock, AsyncMock
 from urllib.error import HTTPError
 import io
 
-from hermes.supervisor.llm_supervisor import (
+from quantum_edge_core.supervisor.supervisor.llm_supervisor import (
     ChatCompletionsClient as SupervisorClient,
 )
-from hermes.supervisor.llm.chat_client import (
+from quantum_edge_core.supervisor.supervisor.llm.chat_client import (
     ChatCompletionsClient as StandardClient,
 )
 

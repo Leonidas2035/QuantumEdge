@@ -2,7 +2,7 @@ from dataclasses import replace
 import importlib.util
 from pathlib import Path
 
-from hermes.supervisor.config import (
+from quantum_edge_core.supervisor.supervisor.config import (
     load_autopilot_config,
     load_dashboard_config,
     load_llm_supervisor_config,
@@ -18,12 +18,12 @@ from hermes.supervisor.config import (
     load_tsdb_config,
     load_tsdb_retention_config,
 )
-from hermes.supervisor.config_loader import load_processes_spec
-from hermes.supervisor.guards import load_guard_config
-from hermes.supervisor.policy_store import (
+from quantum_edge_core.supervisor.supervisor.config_loader import load_processes_spec
+from quantum_edge_core.supervisor.supervisor.guards import load_guard_config
+from quantum_edge_core.supervisor.supervisor.policy_store import (
     resolve_active_policy_path,
 )
-from hermes.supervisor.regime_sm import (
+from quantum_edge_core.supervisor.supervisor.regime_sm import (
     load_directives_config,
     load_regime_config,
 )

@@ -20,12 +20,12 @@ import re
 import msgspec
 from typing import Any, Dict, Iterable, List, Optional, Tuple, Literal, Mapping
 from pydantic import BaseModel, Field, ValidationError
-from hermes.supervisor.audit_report import load_events_for_date
-from hermes.supervisor.config import (
+from quantum_edge_core.supervisor.supervisor.audit_report import load_events_for_date
+from quantum_edge_core.supervisor.supervisor.config import (
     LlmSupervisorConfig,
     RiskConfig,
 )
-from hermes.supervisor.events import (
+from quantum_edge_core.supervisor.supervisor.events import (
     BaseEvent,
     EventType,
     EventLogger,
@@ -163,7 +163,7 @@ class ChatCompletionsClient:
             )
 
             try:
-                from hermes.supervisor.utils.dataset_collector import (
+                from quantum_edge_core.supervisor.supervisor.utils.dataset_collector import (
                     collect_llm_sample,
                 )
 
@@ -258,7 +258,7 @@ class ChatCompletionsClient:
                 result_str = resp_json["choices"][0]["message"]["content"].strip()
 
             try:
-                from hermes.supervisor.utils.dataset_collector import (
+                from quantum_edge_core.supervisor.supervisor.utils.dataset_collector import (
                     collect_llm_sample,
                 )
 
@@ -330,7 +330,7 @@ class ChatCompletionsClient:
             result_str = text_result.strip()
 
             try:
-                from hermes.supervisor.utils.dataset_collector import (
+                from quantum_edge_core.supervisor.supervisor.utils.dataset_collector import (
                     collect_llm_sample,
                 )
 
@@ -380,8 +380,8 @@ class ChatCompletionsClient:
             return loop.run_until_complete(coro)
 
 
-from hermes.supervisor.state import RiskStateSnapshot
-from hermes.domain.models import LlmGridPolicy
+from quantum_edge_core.supervisor.supervisor.state import RiskStateSnapshot
+from quantum_edge_core.supervisor.domain.models import LlmGridPolicy
 
 ZmqPolicyPublisher = Any
 
@@ -525,7 +525,7 @@ class LlmSupervisor:
         if should_run_sentiment:
             self._logger.info("[SUP] Triggering market sentiment analysis delegation to Antigravity (agy)...")
             try:
-                from hermes.supervisor.utils.agy_delegator import delegate_to_agy
+                from quantum_edge_core.supervisor.supervisor.utils.agy_delegator import delegate_to_agy
                 context = {
                     "mode": mode,
                     "unrealized_pnl": float(snapshot.unrealized_pnl) if snapshot.unrealized_pnl else 0.0,
@@ -984,10 +984,10 @@ def _run_standalone(args: argparse.Namespace) -> None:
     load_dotenv()
     from datetime import date as _date
     import asyncio
-    from hermes.supervisor.policy_publisher import (
+    from quantum_edge_core.supervisor.supervisor.policy_publisher import (
         ZmqPolicyPublisher,
     )
-    from hermes.monitor import ZmqHeartbeatSubscriber
+    from quantum_edge_core.supervisor.monitor import ZmqHeartbeatSubscriber
 
     config_dir = Path(args.config_dir)
 
@@ -1008,7 +1008,7 @@ def _run_standalone(args: argparse.Namespace) -> None:
         )
         sys.exit(1)
 
-    from hermes.supervisor.config import (
+    from quantum_edge_core.supervisor.supervisor.config import (
         load_llm_supervisor_config,
         load_risk_config,
     )
@@ -1087,7 +1087,7 @@ def _run_standalone(args: argparse.Namespace) -> None:
     )
 
     # ── Phase 2: Import market data fetchers ─────────────────────────
-    from hermes.supervisor.market_client import (
+    from quantum_edge_core.supervisor.supervisor.market_client import (
         fetch_situation_summary,
         mock_situation_summary,
     )

@@ -10,12 +10,12 @@ from datetime import datetime
 from pathlib import Path
 from typing import List, Optional, Tuple
 
-from hermes.supervisor.config import (
+from quantum_edge_core.supervisor.supervisor.config import (
     MetaSupervisorConfig,
     PathsConfig,
 )
-from hermes.supervisor.events import EventLogger
-from hermes import state as state_utils
+from quantum_edge_core.supervisor.supervisor.events import EventLogger
+from quantum_edge_core.supervisor import state as state_utils
 
 
 @dataclass

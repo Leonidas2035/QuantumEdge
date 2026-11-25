@@ -9,11 +9,11 @@ import msgspec
 
 from market_data.lockbot.schema import LockbotMarketEvent
 from market_data.models.events import Priority
-from hermes.supervisor.contracts.lockbot_control_v1 import (
+from quantum_edge_core.supervisor.supervisor.contracts.lockbot_control_v1 import (
     build_command,
     validate_command,
 )
-from hermes.supervisor.lockbot.policy_runner import (
+from quantum_edge_core.supervisor.supervisor.lockbot.policy_runner import (
     LockbotPolicyRunner,
 )
 

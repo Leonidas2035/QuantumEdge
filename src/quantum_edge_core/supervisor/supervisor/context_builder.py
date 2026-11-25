@@ -6,7 +6,7 @@ Transforms raw data into an 'AI Context Contract'.
 from __future__ import annotations
 
 from typing import Dict, Any
-from hermes.supervisor.data_ingest import DataStore
+from quantum_edge_core.supervisor.supervisor.data_ingest import DataStore
 
 
 class ContextBuilder:

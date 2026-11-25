@@ -1,12 +1,12 @@
 from datetime import datetime, timezone
 from pathlib import Path
 
-from hermes.supervisor.config import PathsConfig, SupervisorConfig
-from hermes.supervisor.process_manager import (
+from quantum_edge_core.supervisor.supervisor.config import PathsConfig, SupervisorConfig
+from quantum_edge_core.supervisor.supervisor.process_manager import (
     ProcessManager,
     ProcessInfo,
 )
-from hermes.supervisor.process_spec import ProcessSpec
+from quantum_edge_core.supervisor.supervisor.process_spec import ProcessSpec
 
 
 class DummyPopen:

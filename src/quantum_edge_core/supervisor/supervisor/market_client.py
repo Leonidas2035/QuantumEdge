@@ -5,7 +5,7 @@ it into a token-efficient text summary for the LLM prompt.
 
 Usage (sync, for standalone / LLM Supervisor):
 
-    from hermes.supervisor.market_client import (
+    from quantum_edge_core.supervisor.supervisor.market_client import (
         fetch_situation_summary,
         mock_situation_summary,
     )
