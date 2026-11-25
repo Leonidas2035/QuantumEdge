@@ -81,6 +81,7 @@ model:
   base_url: "${AG_BASE_URL}"
   default: "${AG_MODEL}"
   api_key: "${AG_API_KEY}"
+  context_length: 262144
 EOF
 chmod 600 "${CONFIG_FILE}"
 
