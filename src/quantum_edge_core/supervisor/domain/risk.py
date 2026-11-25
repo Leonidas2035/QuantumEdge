@@ -5,7 +5,7 @@ Pure domain logic for enforcing safety limits.
 
 from __future__ import annotations
 
-from hermes.domain.models import (
+from quantum_edge_core.supervisor.domain.models import (
     RiskConfig,
     PortfolioState,
     RiskVerdict,

@@ -7,13 +7,13 @@ import random
 from pathlib import Path
 from typing import Any, Dict, Optional
 
-from hermes.supervisor.episodes.runner import (
+from quantum_edge_core.supervisor.supervisor.episodes.runner import (
     EpisodeRunConfig,
     run_episode_set,
 )
-from hermes.supervisor.episodes.report import generate_report
-from hermes.supervisor.episodes.cutter import load_scenarios
-from hermes.supervisor.ops.config import (
+from quantum_edge_core.supervisor.supervisor.episodes.report import generate_report
+from quantum_edge_core.supervisor.supervisor.episodes.cutter import load_scenarios
+from quantum_edge_core.supervisor.supervisor.ops.config import (
     load_ops_config,
     get_nested,
 )

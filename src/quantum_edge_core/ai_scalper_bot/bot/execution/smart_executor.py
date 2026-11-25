@@ -30,6 +30,7 @@ class OrderRequest:
     qty: float
     price: float | None = None  # None for market orders
     client_oid: str | None = None
+    reduce_only: bool = False
 
 
 class SmartExecutor:
@@ -48,9 +49,12 @@ class SmartExecutor:
         if request.qty <= 0:
             raise ValueError(f"Invalid order quantity: {request.qty}")
 
-        params = {
+        params: Dict[str, Any] = {
             "positionSide": request.position_side.value
         }
+
+        if request.reduce_only:
+            params["reduceOnly"] = True
 
         if request.client_oid:
             params["clientOrderId"] = request.client_oid

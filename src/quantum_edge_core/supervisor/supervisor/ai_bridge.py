@@ -8,7 +8,7 @@ from __future__ import annotations
 import logging
 from typing import Dict, Any
 
-from hermes.supervisor.prompts import JSON_SCHEMA
+from quantum_edge_core.supervisor.supervisor.prompts import JSON_SCHEMA
 
 logger = logging.getLogger(__name__)
 

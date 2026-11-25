@@ -1,4 +1,4 @@
-from hermes.supervisor.ingest.parsers import (
+from quantum_edge_core.supervisor.supervisor.ingest.parsers import (
     event_hash,
     event_to_point,
     parse_event_line,

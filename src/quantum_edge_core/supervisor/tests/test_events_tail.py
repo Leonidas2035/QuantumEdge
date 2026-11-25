@@ -2,7 +2,7 @@ import json
 from datetime import datetime, timezone
 from pathlib import Path
 
-from hermes.supervisor.events import (
+from quantum_edge_core.supervisor.supervisor.events import (
     BaseEvent,
     EventType,
     tail_events,

@@ -8,7 +8,7 @@ from __future__ import annotations
 import numpy as np
 import logging
 from typing import Dict
-from hermes.context.accumulator import MarketAccumulator
+from quantum_edge_core.supervisor.context.accumulator import MarketAccumulator
 
 logger = logging.getLogger(__name__)
 

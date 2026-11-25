@@ -1,7 +1,7 @@
 import numpy as np
 import pandas as pd
 
-from hermes.research.offline.scalper_bot.ml.eval.tune_policy import (
+from quantum_edge_core.supervisor.research.offline.scalper_bot.ml.eval.tune_policy import (
     CostConfig,
     select_thresholds,
 )

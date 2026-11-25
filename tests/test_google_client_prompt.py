@@ -5,7 +5,7 @@ from unittest.mock import patch
 
 pytest.importorskip("google.genai")
 
-from hermes.supervisor.llm.google_client import GoogleClient
+from quantum_edge_core.supervisor.supervisor.llm.google_client import GoogleClient
 
 
 class TestGoogleClient(unittest.TestCase):

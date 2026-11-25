@@ -109,7 +109,7 @@ class ChatCompletionsClient:
                 )
 
         try:
-            from hermes.supervisor.utils.dataset_collector import (
+            from quantum_edge_core.supervisor.supervisor.utils.dataset_collector import (
                 collect_llm_sample,
             )
 

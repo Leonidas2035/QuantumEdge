@@ -17,7 +17,7 @@ from bot.ml.features.builder import (
     schema_hash,
     schema_version,
 )
-from hermes.research.offline.scalper_bot.ml.labels.builder import (
+from quantum_edge_core.supervisor.research.offline.scalper_bot.ml.labels.builder import (
     LabelConfig,
     build_labels,
     parse_horizons,

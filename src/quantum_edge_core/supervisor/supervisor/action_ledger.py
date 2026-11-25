@@ -11,7 +11,7 @@ from typing import Any, Dict, Optional
 from uuid import uuid4
 from decimal import Decimal
 
-from hermes.supervisor.run_context import RunContext
+from quantum_edge_core.supervisor.supervisor.run_context import RunContext
 
 
 def _json_safe(obj: Any) -> Any:

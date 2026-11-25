@@ -1,11 +1,11 @@
 from pathlib import Path
 
-from hermes.supervisor.alerts.engine import AlertEngine
-from hermes.supervisor.alerts.storage import AlertStorage
-from hermes.supervisor.dashboard.audit_log import (
+from quantum_edge_core.supervisor.supervisor.alerts.engine import AlertEngine
+from quantum_edge_core.supervisor.supervisor.alerts.storage import AlertStorage
+from quantum_edge_core.supervisor.supervisor.dashboard.audit_log import (
     DashboardAuditLogger,
 )
-from hermes.supervisor.dashboard.state_store import (
+from quantum_edge_core.supervisor.supervisor.dashboard.state_store import (
     DashboardStateStore,
 )
 

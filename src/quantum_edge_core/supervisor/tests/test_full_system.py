@@ -7,22 +7,22 @@ import time
 import pytest
 from unittest.mock import MagicMock, AsyncMock, patch
 
-from hermes.service import AsyncSupervisor
-from hermes.domain.models import RiskLevel
+from quantum_edge_core.supervisor.service import AsyncSupervisor
+from quantum_edge_core.supervisor.domain.models import RiskLevel
 
 
 # Mock Zmq
 @pytest.fixture
 def mock_zmq():
     with patch(
-        "hermes.supervisor.ipc.zmq.asyncio.Context"
+        "quantum_edge_core.supervisor.supervisor.ipc.zmq.asyncio.Context"
     ) as mock_ctx:
         yield mock_ctx
 
 
 @pytest.fixture
 def mock_gemini():
-    with patch("hermes.service.GeminiClient") as mock_client:
+    with patch("quantum_edge_core.supervisor.service.GeminiClient") as mock_client:
         mock_instance = MagicMock()
         mock_instance.safe_analyze_risk = AsyncMock(
             return_value={
@@ -70,8 +70,8 @@ async def test_supervisor_flow(mock_zmq, mock_gemini):
 
     # Check Risk Logic (should be Normal)
     # In monitor loop:
-    from hermes.domain.models import PortfolioState
-    from hermes.domain.risk import HardRiskEngine
+    from quantum_edge_core.supervisor.domain.models import PortfolioState
+    from quantum_edge_core.supervisor.domain.risk import HardRiskEngine
 
     p_state = PortfolioState(
         equity_start_day=10000.0,

@@ -7,9 +7,9 @@ import time
 from dataclasses import dataclass, field
 from typing import Any, Dict, Optional, Tuple
 
-from hermes.supervisor.alerts.engine import AlertResult
-from hermes.supervisor.alerts.engine import AlertEngine
-from hermes.supervisor.dashboard.audit_log import (
+from quantum_edge_core.supervisor.supervisor.alerts.engine import AlertResult
+from quantum_edge_core.supervisor.supervisor.alerts.engine import AlertEngine
+from quantum_edge_core.supervisor.supervisor.dashboard.audit_log import (
     DashboardAuditLogger,
 )
 

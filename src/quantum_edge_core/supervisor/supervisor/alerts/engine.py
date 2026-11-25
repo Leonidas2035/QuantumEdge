@@ -7,8 +7,8 @@ import uuid
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
-from hermes.supervisor.alerts.rules import AlertRule
-from hermes.supervisor.alerts.storage import (
+from quantum_edge_core.supervisor.supervisor.alerts.rules import AlertRule
+from quantum_edge_core.supervisor.supervisor.alerts.storage import (
     AlertRecord,
     AlertStorage,
 )

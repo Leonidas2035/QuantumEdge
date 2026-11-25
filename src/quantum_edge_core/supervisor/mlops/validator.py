@@ -7,7 +7,7 @@ from typing import Dict, Tuple
 
 import pandas as pd
 
-from hermes.mlops.manifest import ModelManifest
+from quantum_edge_core.supervisor.mlops.manifest import ModelManifest
 
 
 def _load_dataset(path: Path) -> Tuple[pd.DataFrame, pd.Series]:

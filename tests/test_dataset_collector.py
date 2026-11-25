@@ -2,7 +2,7 @@ import json
 import os
 import pytest
 from pathlib import Path
-from hermes.supervisor.utils.dataset_collector import collect_llm_sample
+from quantum_edge_core.supervisor.supervisor.utils.dataset_collector import collect_llm_sample
 
 
 def test_collect_llm_sample_success(tmp_path):
@@ -55,7 +55,7 @@ def test_chat_completions_client_integration(tmp_path, monkeypatch):
     import asyncio
     import httpx
     from unittest.mock import AsyncMock
-    from hermes.supervisor.llm_supervisor import ChatCompletionsClient
+    from quantum_edge_core.supervisor.supervisor.llm_supervisor import ChatCompletionsClient
     
     dataset_file = tmp_path / "gemma_dataset.jsonl"
     
@@ -84,7 +84,7 @@ def test_chat_completions_client_integration(tmp_path, monkeypatch):
     monkeypatch.setattr(httpx.AsyncClient, "post", mock_post)
     
     # Monkeypatch the target dataset file path inside dataset_collector.py
-    import hermes.supervisor.utils.dataset_collector as dc
+    import quantum_edge_core.supervisor.supervisor.utils.dataset_collector as dc
     monkeypatch.setattr(dc, "collect_llm_sample", lambda messages, res, model, path=None: collect_llm_sample(messages, res, model, str(dataset_file)))
     
     client = ChatCompletionsClient(
@@ -115,7 +115,7 @@ def test_chat_completions_client_hermes_oneshot(tmp_path, monkeypatch):
     import asyncio
     import json
     from unittest.mock import AsyncMock
-    from hermes.supervisor.llm_supervisor import ChatCompletionsClient
+    from quantum_edge_core.supervisor.supervisor.llm_supervisor import ChatCompletionsClient
     
     dataset_file = tmp_path / "gemma_dataset.jsonl"
     
@@ -130,7 +130,7 @@ def test_chat_completions_client_hermes_oneshot(tmp_path, monkeypatch):
     monkeypatch.setattr(asyncio, "create_subprocess_exec", mock_create_subprocess_exec)
     
     # Monkeypatch the target dataset file path inside dataset_collector.py
-    import hermes.supervisor.utils.dataset_collector as dc
+    import quantum_edge_core.supervisor.supervisor.utils.dataset_collector as dc
     monkeypatch.setattr(dc, "collect_llm_sample", lambda messages, res, model, path=None: collect_llm_sample(messages, res, model, str(dataset_file)))
     
     client = ChatCompletionsClient(

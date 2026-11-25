@@ -7,9 +7,9 @@ from __future__ import annotations
 
 import logging
 from typing import Dict, Any
-from hermes.context.accumulator import MarketAccumulator
-from hermes.context.features import FeatureEngine
-from hermes.context.heatmap import LiquidationHeatmap
+from quantum_edge_core.supervisor.context.accumulator import MarketAccumulator
+from quantum_edge_core.supervisor.context.features import FeatureEngine
+from quantum_edge_core.supervisor.context.heatmap import LiquidationHeatmap
 
 logger = logging.getLogger(__name__)
 

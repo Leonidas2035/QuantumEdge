@@ -1,6 +1,6 @@
 import urllib.request
 
-from hermes.supervisor.process_manager import (
+from quantum_edge_core.supervisor.supervisor.process_manager import (
     _http_health,
     _tcp_health,
 )

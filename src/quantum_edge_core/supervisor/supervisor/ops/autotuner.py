@@ -11,7 +11,7 @@ from typing import Any, Dict, Optional, Tuple
 from quantum_edge_infra.tools.qe_paths import get_paths
 from quantum_edge_infra.tools.qe_config_loader import load_yaml
 
-from hermes.supervisor.ops.config import get_nested
+from quantum_edge_core.supervisor.supervisor.ops.config import get_nested
 
 
 def load_policy_bundle(active_policy: Dict[str, Any]) -> Dict[str, Any]:

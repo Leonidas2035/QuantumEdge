@@ -286,6 +286,9 @@ class BingXExecutionGateway:
             if pos_side:
                 params["positionSide"] = pos_side
 
+            if getattr(action, "reduce_only", False):
+                params["reduceOnly"] = True
+
             if isinstance(action, OrderRequest) and action.client_oid:
                 params["clientOrderId"] = action.client_oid
 

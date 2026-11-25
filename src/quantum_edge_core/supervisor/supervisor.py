@@ -23,7 +23,7 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-from hermes.supervisor.config import (
+from quantum_edge_core.supervisor.supervisor.config import (
     load_paths_config,
     load_supervisor_config,
     load_risk_config,
@@ -53,84 +53,84 @@ from hermes.supervisor.config import (
     TsdbRetentionConfig,
     AutopilotConfig,
 )
-from hermes.supervisor.heartbeat import (
+from quantum_edge_core.supervisor.supervisor.heartbeat import (
     HeartbeatServer,
     HeartbeatPayload,
 )
-from hermes.supervisor.logging_setup import setup_logging
-from hermes.supervisor.config_loader import load_processes_spec
-from hermes.supervisor.process_manager import (
+from quantum_edge_core.supervisor.supervisor.logging_setup import setup_logging
+from quantum_edge_core.supervisor.supervisor.config_loader import load_processes_spec
+from quantum_edge_core.supervisor.supervisor.process_manager import (
     ProcessManager,
     ProcessInfo,
 )
-from hermes.supervisor.risk_engine import (
+from quantum_edge_core.supervisor.supervisor.risk_engine import (
     HardRiskEngine,
     RiskDecision,
     OrderRequest,
     OrderSide,
     OrderType,
 )
-from hermes.supervisor import state as state_utils
-from hermes.supervisor.events import (
+from quantum_edge_core.supervisor.supervisor import state as state_utils
+from quantum_edge_core.supervisor.supervisor.events import (
     BaseEvent,
     EventLogger,
     EventType,
     new_run_id,
     prune_event_logs,
 )
-from hermes.supervisor.audit_report import (
+from quantum_edge_core.supervisor.supervisor.audit_report import (
     load_events_for_date,
     compute_stats,
     render_markdown_report,
 )
-from hermes.supervisor.llm_supervisor import LlmSupervisor
+from quantum_edge_core.supervisor.supervisor.llm_supervisor import LlmSupervisor
 
-from hermes.supervisor.llm.chat_client import (
+from quantum_edge_core.supervisor.supervisor.llm.chat_client import (
     ChatCompletionsClient,
 )
-from hermes.supervisor.llm.trend_evaluator import TrendEvaluator
-from hermes.supervisor.llm.market_risk_monitor import (
+from quantum_edge_core.supervisor.supervisor.llm.trend_evaluator import TrendEvaluator
+from quantum_edge_core.supervisor.supervisor.llm.market_risk_monitor import (
     MarketRiskMonitor,
 )
-from hermes.supervisor.llm.trading_behavior_analyzer import (
+from quantum_edge_core.supervisor.supervisor.llm.trading_behavior_analyzer import (
     TradingBehaviorAnalyzer,
 )
-from hermes.supervisor.meta_supervisor import (
+from quantum_edge_core.supervisor.supervisor.meta_supervisor import (
     MetaSupervisorRunner,
     MetaSupervisorContext,
 )
-from hermes.supervisor.api_server import (
+from quantum_edge_core.supervisor.supervisor.api_server import (
     ApiServer,
     ApiServerConfig,
 )
-from hermes.supervisor.snapshot_models import SnapshotReport
-from hermes.supervisor.tasks.snapshot_scheduler import (
+from quantum_edge_core.supervisor.supervisor.snapshot_models import SnapshotReport
+from quantum_edge_core.supervisor.supervisor.tasks.snapshot_scheduler import (
     SnapshotScheduler,
 )
-from hermes.supervisor.dashboard.service import DashboardService
-from hermes.supervisor.dashboard.audit_log import (
+from quantum_edge_core.supervisor.supervisor.dashboard.service import DashboardService
+from quantum_edge_core.supervisor.supervisor.dashboard.audit_log import (
     DashboardAuditLogger,
 )
-from hermes.supervisor.dashboard.state_store import (
+from quantum_edge_core.supervisor.supervisor.dashboard.state_store import (
     DashboardStateStore,
 )
-from hermes.supervisor.tsdb import (
+from quantum_edge_core.supervisor.supervisor.tsdb import (
     NoopTimeseriesStore,
     ClickHouseTimeseriesStore,
     QuestDbTimeseriesStore,
     TsdbWriter,
 )
-from hermes.supervisor.tsdb.maintenance import (
+from quantum_edge_core.supervisor.supervisor.tsdb.maintenance import (
     apply_retention_and_rollups,
 )
-from hermes.supervisor.tsdb.query import (
+from quantum_edge_core.supervisor.supervisor.tsdb.query import (
     build_timeseries_query,
     derive_questdb_query_url,
     questdb_query,
     sanitize_symbol,
 )
-from hermes.supervisor.ingest.pipeline import IngestPipeline
-from hermes.supervisor.ingest.parsers import (
+from quantum_edge_core.supervisor.supervisor.ingest.pipeline import IngestPipeline
+from quantum_edge_core.supervisor.supervisor.ingest.parsers import (
     parse_metrics_file,
     parse_event_line,
 )
@@ -139,27 +139,27 @@ from policy.policy_publisher import PolicyPublisher
 from policy.policy_engine import PolicyEngine, PolicyEngineConfig, HysteresisConfig
 from policy.heuristics import HeuristicThresholds
 from monitoring.api import TelemetryManager, TelemetryConfig
-from hermes.monitor import ZmqCommandPublisher
-from hermes.supervisor.stats import StatsAggregator
-from hermes.supervisor.run_context import RunContext
-from hermes.supervisor.regime_sm import (
+from quantum_edge_core.supervisor.monitor import ZmqCommandPublisher
+from quantum_edge_core.supervisor.supervisor.stats import StatsAggregator
+from quantum_edge_core.supervisor.supervisor.run_context import RunContext
+from quantum_edge_core.supervisor.supervisor.regime_sm import (
     RegimeStateMachine,
     RegimeConfig,
     DirectivesConfig,
     load_regime_config,
     load_directives_config,
 )
-from hermes.supervisor.guards import (
+from quantum_edge_core.supervisor.supervisor.guards import (
     GuardEvaluator,
     GuardResult,
     GuardConfig,
     load_guard_config,
 )
-from hermes.supervisor.action_ledger import ActionLedger
-from hermes.supervisor.policy_store import (
+from quantum_edge_core.supervisor.supervisor.action_ledger import ActionLedger
+from quantum_edge_core.supervisor.supervisor.policy_store import (
     resolve_active_policy_path,
 )
-from hermes.supervisor.autopilot.cli import (
+from quantum_edge_core.supervisor.supervisor.autopilot.cli import (
     build_controller,
     autopilot_enable,
     autopilot_set_target_state,
@@ -168,28 +168,28 @@ from hermes.supervisor.autopilot.cli import (
     policy_rollout,
     policy_rollback,
 )
-from hermes.supervisor.autopilot.policy_manager import (
+from quantum_edge_core.supervisor.supervisor.autopilot.policy_manager import (
     PolicyManager,
 )
-from hermes.supervisor.alerts.rules import load_alert_rules
-from hermes.supervisor.alerts.storage import AlertStorage
-from hermes.supervisor.alerts.engine import (
+from quantum_edge_core.supervisor.supervisor.alerts.rules import load_alert_rules
+from quantum_edge_core.supervisor.supervisor.alerts.storage import AlertStorage
+from quantum_edge_core.supervisor.supervisor.alerts.engine import (
     AlertEngine,
     AlertResult,
 )
-from hermes.supervisor.security import (
+from quantum_edge_core.supervisor.supervisor.security import (
     is_path_allowed,
     validate_kill_switch_challenge,
 )
-from hermes.supervisor.process_spec import ProcessSpec
-from hermes.supervisor.lockbot.control_client import (
+from quantum_edge_core.supervisor.supervisor.process_spec import ProcessSpec
+from quantum_edge_core.supervisor.supervisor.lockbot.control_client import (
     LockbotControlClient,
 )
-from hermes.supervisor.lockbot.models import (
+from quantum_edge_core.supervisor.supervisor.lockbot.models import (
     PolicyRunnerConfig,
     load_lockbot_policy_config,
 )
-from hermes.supervisor.lockbot.policy_runner import (
+from quantum_edge_core.supervisor.supervisor.lockbot.policy_runner import (
     LockbotPolicyRunner,
 )
 from monitor import ZmqHeartbeatSubscriber
@@ -624,7 +624,7 @@ class SupervisorApp:
         types: Optional[List[str]] = None,
         since_ts_ms: Optional[int] = None,
     ) -> Dict[str, Any]:
-        from hermes.supervisor.events import tail_events
+        from quantum_edge_core.supervisor.supervisor.events import tail_events
 
         events = tail_events(
             self.paths.events_dir / f"events_{date.today().isoformat()}.jsonl",
@@ -1318,7 +1318,7 @@ class SupervisorApp:
 
         try:
             import asyncio
-            from hermes.supervisor.market_context_builder import (
+            from quantum_edge_core.supervisor.supervisor.market_context_builder import (
                 MarketContextBuilder,
             )
 
@@ -2662,7 +2662,7 @@ def main(argv: Optional[list[str]] = None) -> None:
         elif args.command == "tsdb-status":
             print(json.dumps(app.get_tsdb_status(), indent=2))
         elif args.command == "tsdb-migrate":
-            from hermes.supervisor.tsdb.migrations import (
+            from quantum_edge_core.supervisor.supervisor.tsdb.migrations import (
                 run_tsdb_migrations,
             )
 
@@ -2684,7 +2684,7 @@ def main(argv: Optional[list[str]] = None) -> None:
                         file=sys.stderr,
                     )
                     sys.exit(1)
-                from hermes.supervisor.ingest.backfill import (
+                from quantum_edge_core.supervisor.supervisor.ingest.backfill import (
                     parse_range,
                     run_backfill,
                 )
@@ -2706,7 +2706,7 @@ def main(argv: Optional[list[str]] = None) -> None:
                 writer.flush()
                 sys.exit(0)
             days = args.days or app.tsdb_config.backfill_from_days
-            from hermes.supervisor.tsdb.backfill import (
+            from quantum_edge_core.supervisor.supervisor.tsdb.backfill import (
                 run_backfill,
             )
 
@@ -2800,7 +2800,7 @@ def main(argv: Optional[list[str]] = None) -> None:
             report = build_report(client, last=args.last, bucket=args.bucket)
             print(json.dumps(report, indent=2))
         elif args.command == "ml":
-            from hermes.mlops.cli import (
+            from quantum_edge_core.supervisor.mlops.cli import (
                 parse_ml_args,
                 run_ml_command,
             )
@@ -2809,7 +2809,7 @@ def main(argv: Optional[list[str]] = None) -> None:
             code = run_ml_command(ml_args)
             sys.exit(code)
         elif args.command == "telemetry":
-            from hermes.monitoring.cli import (
+            from quantum_edge_core.supervisor.monitoring.cli import (
                 parse_telemetry_args,
                 run_telemetry_command,
             )
@@ -2819,7 +2819,7 @@ def main(argv: Optional[list[str]] = None) -> None:
             sys.exit(code)
         elif args.command == "research":
             try:
-                from hermes.research.cli import (
+                from quantum_edge_core.supervisor.research.cli import (
                     parse_research_args,
                     run_research_command,
                 )
@@ -2830,7 +2830,7 @@ def main(argv: Optional[list[str]] = None) -> None:
             code = run_research_command(research_args)
             sys.exit(code)
         elif args.command in {"episodes-cut", "episodes-run", "episodes-report"}:
-            from hermes.supervisor.episodes.cli import (
+            from quantum_edge_core.supervisor.supervisor.episodes.cli import (
                 parse_episodes_args,
                 run_episodes_command,
             )
@@ -2839,20 +2839,20 @@ def main(argv: Optional[list[str]] = None) -> None:
             code = run_episodes_command(args.command, episodes_args)
             sys.exit(code)
         elif args.command == "ops-autotune":
-            from hermes.supervisor.policy_store import (
+            from quantum_edge_core.supervisor.supervisor.policy_store import (
                 load_active_policy,
                 save_new_policy,
                 activate_policy,
             )
-            from hermes.supervisor.ops.autotuner import (
+            from quantum_edge_core.supervisor.supervisor.ops.autotuner import (
                 load_policy_bundle,
                 collect_metrics,
                 propose_tuning,
             )
-            from hermes.supervisor.ops.config import (
+            from quantum_edge_core.supervisor.supervisor.ops.config import (
                 load_ops_config,
             )
-            from hermes.supervisor.ops.regression_gates import (
+            from quantum_edge_core.supervisor.supervisor.ops.regression_gates import (
                 run_regression_gates,
             )
 
@@ -2997,10 +2997,10 @@ def main(argv: Optional[list[str]] = None) -> None:
                     ctx, start_ts, {"status": "completed"}, finalize_only=True
                 )
         elif args.command == "ops-regression-gate":
-            from hermes.supervisor.policy_store import (
+            from quantum_edge_core.supervisor.supervisor.policy_store import (
                 load_active_policy,
             )
-            from hermes.supervisor.ops.regression_gates import (
+            from quantum_edge_core.supervisor.supervisor.ops.regression_gates import (
                 run_regression_gates,
             )
 
@@ -3040,7 +3040,7 @@ def main(argv: Optional[list[str]] = None) -> None:
             print(json.dumps(result, indent=2))
             sys.exit(0 if result.get("passed") else 1)
         elif args.command == "ops-daily-report":
-            from hermes.supervisor.ops.daily_report import (
+            from quantum_edge_core.supervisor.supervisor.ops.daily_report import (
                 generate_daily_report,
             )
 
@@ -3063,7 +3063,7 @@ def main(argv: Optional[list[str]] = None) -> None:
             )
             print(f"Daily report written to: {report_path}")
         elif args.command == "ops-rollback":
-            from hermes.supervisor.policy_store import rollback_to
+            from quantum_edge_core.supervisor.supervisor.policy_store import rollback_to
 
             if not args.policy_version:
                 print("Missing --policy-version for ops-rollback.", file=sys.stderr)

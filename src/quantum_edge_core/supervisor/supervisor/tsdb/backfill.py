@@ -7,9 +7,9 @@ import logging
 from datetime import date, timedelta
 from pathlib import Path
 
-from hermes.supervisor.audit_report import load_events_for_date
-from hermes.supervisor.tsdb.base import TimeseriesStore
-from hermes.supervisor.tsdb.mappers import event_to_points
+from quantum_edge_core.supervisor.supervisor.audit_report import load_events_for_date
+from quantum_edge_core.supervisor.supervisor.tsdb.base import TimeseriesStore
+from quantum_edge_core.supervisor.supervisor.tsdb.mappers import event_to_points
 
 
 def _load_checkpoint(path: Path) -> date | None:

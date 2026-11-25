@@ -7,7 +7,7 @@ from typing import Dict
 
 import yaml
 
-from hermes.supervisor.process_spec import (
+from quantum_edge_core.supervisor.supervisor.process_spec import (
     HealthCheckSpec,
     ProcessSpec,
     RestartPolicySpec,

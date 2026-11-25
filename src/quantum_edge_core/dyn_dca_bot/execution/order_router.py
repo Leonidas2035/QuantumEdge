@@ -45,8 +45,11 @@ class OrderRouter:
             return {"order_id": order_id, "status": "NEW"}
         
         if not position_side:
-            position_side = "LONG" if side.lower() == "buy" else "SHORT"
-            
+            if reduce_only:
+                position_side = "LONG" if side.lower() == "sell" else "SHORT"
+            else:
+                position_side = "LONG" if side.lower() == "buy" else "SHORT"
+
         params = {"positionSide": position_side}
         if reduce_only:
             params["reduceOnly"] = True
@@ -66,27 +69,8 @@ class OrderRouter:
             return {"order_id": str(order_id), "status": "NEW", "reduce_only": reduce_only}
         except Exception as e:
             err_msg = str(e)
-            if reduce_only and "ReduceOnly" in err_msg:
-                logger.warning("reduceOnly rejected, retrying without it", error=err_msg)
-                params.pop("reduceOnly", None)
-                try:
-                    order = self.exchange.create_order(
-                        symbol=ccxt_symbol,
-                        type='limit',
-                        side=side.lower(),
-                        amount=qty,
-                        price=price,
-                        params=params
-                    )
-                    order_id = order['id']
-                    logger.info("Real order placed (no reduceOnly)", side=side, price=price, qty=qty, order_id=order_id, symbol=ccxt_symbol)
-                    return {"order_id": str(order_id), "status": "NEW", "reduce_only": False}
-                except Exception as e2:
-                    logger.error("Order placement exception (retry failed)", error=str(e2))
-                    return {}
-            else:
-                logger.error("Order placement exception", error=err_msg)
-                return {}
+            logger.error("Order placement rejected/failed (fail-closed)", error=err_msg, reduce_only=reduce_only)
+            return {"status": "REJECTED", "error": err_msg, "reduce_only": reduce_only}
 
     def cancel_order(self, order_id: str):
         if not self.api_key or not self.api_secret:

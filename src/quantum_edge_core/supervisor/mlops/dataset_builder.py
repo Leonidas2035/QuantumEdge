@@ -8,7 +8,7 @@ from typing import Dict, Optional, Tuple
 
 import pandas as pd
 
-from hermes.research.offline.signal_model.dataset_builder import (
+from quantum_edge_core.supervisor.research.offline.signal_model.dataset_builder import (
     DatasetBuilder,
 )
 
