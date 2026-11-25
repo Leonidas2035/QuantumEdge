@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import datetime
-from typing import Literal
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -55,3 +55,18 @@ class OrderResult(BaseModel):
     filled_qty: float = 0.0
     avg_price: float | None = None
     error: str | None = None
+
+
+class FullMarketContext(BaseModel):
+    """Uncompressed, full-fidelity market and account context for external decision agents."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    market_snapshot: MarketSnapshot
+    ohlcv_by_tf: dict[str, list[dict[str, Any]]] = Field(default_factory=dict)
+    orderbook: dict[str, Any] = Field(default_factory=dict)
+    derivatives: dict[str, Any] = Field(default_factory=dict)
+    microstructure_and_liquidity: dict[str, Any] = Field(default_factory=dict)
+    account_state: dict[str, Any] = Field(default_factory=dict)
+    risk_limits: dict[str, Any] = Field(default_factory=dict)
+    raw_extras: dict[str, Any] = Field(default_factory=dict)

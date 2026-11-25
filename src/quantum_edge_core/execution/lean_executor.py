@@ -99,10 +99,10 @@ class LeanExecutor:
             "clientOrderId": coid,
         }
 
-        if not mapped["reduceOnly"]:
-            if decision.sl_price is not None and decision.sl_price > 0:
+        if decision.action in ("OPEN_LONG", "OPEN_SHORT") and not mapped["reduceOnly"]:
+            if decision.sl_price is not None:
                 params["stopLoss"] = {"triggerPrice": float(decision.sl_price)}
-            if decision.tp_price is not None and decision.tp_price > 0:
+            if decision.tp_price is not None:
                 params["takeProfit"] = {"triggerPrice": float(decision.tp_price)}
 
         order_type = decision.order_type.lower()
