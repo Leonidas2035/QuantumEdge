@@ -11,6 +11,7 @@ import ccxt
 from dotenv import load_dotenv
 
 from quantum_edge_core.contracts.lean import FullMarketContext, MarketSnapshot
+from quantum_edge_core.execution.analytics_enricher import compute_market_analytics
 from quantum_edge_core.execution.full_market_context import build_full_market_context
 from quantum_edge_core.execution.risk_guard import RiskConfig
 
@@ -87,7 +88,72 @@ def create_bingx_vst_client(*, load_env: bool = True) -> ccxt.bingx:
         }
     )
     client.set_sandbox_mode(True)
+    client._qe_sandbox_verified = True
     return client
+
+
+def is_vst_sandbox_client(client: Any) -> bool:
+    """Verify that the exchange client is strictly locked to BingX VST sandbox and REAL_TRADING is off."""
+    if str(os.getenv("REAL_TRADING", "false")).strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }:
+        return False
+    if getattr(client, "_qe_sandbox_verified", False) is True:
+        return True
+    urls = getattr(client, "urls", None)
+    if isinstance(urls, dict):
+        api_urls = urls.get("api")
+        if "open-api-vst" in str(api_urls):
+            return True
+    return False
+
+
+def cancel_vst_open_orders(
+    client: Any,
+    symbol: str | None = None,
+) -> dict[str, Any]:
+    """Safely cancel open orders on BingX VST sandbox for a symbol (or ALL symbols)."""
+    if not is_vst_sandbox_client(client):
+        raise RuntimeError(
+            "Refusing to cancel orders: client is not verified in BingX VST sandbox mode or REAL_TRADING is enabled."
+        )
+
+    compact_sym = normalize_compact_symbol(symbol) if (symbol and symbol.upper() != "ALL") else "ALL"
+    if compact_sym != "ALL":
+        ccxt_sym = to_ccxt_swap_symbol(compact_sym)
+        open_orders = list(client.fetch_open_orders(ccxt_sym) or [])
+    else:
+        status_info = fetch_vst_status(client)
+        open_orders = [
+            {"id": o["id"], "symbol": o["ccxt_symbol"] or to_ccxt_swap_symbol(str(o["symbol"]))}
+            for o in status_info.get("open_orders", [])
+            if o.get("id")
+        ]
+
+    cancelled_ids: list[str] = []
+    errors: list[dict[str, str]] = []
+    for o in open_orders:
+        oid = str(o.get("id") or "")
+        ord_sym = o.get("symbol") or (to_ccxt_swap_symbol(compact_sym) if compact_sym != "ALL" else "")
+        if not oid or not ord_sym:
+            continue
+        try:
+            client.cancel_order(oid, ord_sym)
+            cancelled_ids.append(oid)
+        except Exception as exc:
+            errors.append({"order_id": oid, "symbol": str(ord_sym), "error": str(exc)})
+
+    return {
+        "sandbox": True,
+        "symbol": compact_sym,
+        "found_open_orders": len(open_orders),
+        "cancelled_count": len(cancelled_ids),
+        "cancelled_order_ids": cancelled_ids,
+        "errors": errors,
+    }
 
 
 def fetch_vst_status(
@@ -228,6 +294,7 @@ def fetch_full_vst_context(
     timeframes: Sequence[str] = ("1m", "5m", "15m", "1h", "4h"),
     ohlcv_limit: int = 100,
     orderbook_limit: int = 50,
+    include_analytics: bool = True,
 ) -> FullMarketContext:
     """Fetch uncompressed multi-TF market, orderbook, derivatives, and VST account context."""
     effective_risk = risk_config or RiskConfig()
@@ -339,13 +406,35 @@ def fetch_full_vst_context(
         if (bid_vol_10 + ask_vol_10) > 0
         else 0.0
     )
-    microstructure = {
+    microstructure: dict[str, Any] = {
         "bid_vol_top10": round(bid_vol_10, 6),
         "ask_vol_top10": round(ask_vol_10, 6),
         "imbalance_top10": imbalance_top10,
         "bid_levels_count": len(bids),
         "ask_levels_count": len(asks),
     }
+
+    orderbook_dict: dict[str, Any] = {
+        "bids": bids,
+        "asks": asks,
+        "timestamp": orderbook_raw.get("timestamp"),
+        "datetime": orderbook_raw.get("datetime"),
+    }
+
+    if include_analytics:
+        analytics = compute_market_analytics(
+            symbol=compact_symbol,
+            ohlcv_by_tf=ohlcv_by_tf,
+            orderbook=orderbook_dict,
+            derivatives=derivatives,
+            ticker=ticker if isinstance(ticker, dict) else None,
+            client=client,
+        )
+        provider_gets += int(analytics.pop("_provider_gets", 0))
+        microstructure["analytics_enabled"] = True
+        microstructure.update(analytics)
+    else:
+        microstructure["analytics_enabled"] = False
 
     status_info = fetch_vst_status(client)
     provider_gets += int(status_info.get("provider_gets", 0))
