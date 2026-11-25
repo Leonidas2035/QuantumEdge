@@ -1,9 +1,15 @@
-"""Canonical execution helpers, FullMarketContext, and Execution Bridge for QuantumEdge."""
+"""Canonical execution helpers, FullMarketContext, BingX VST Adapter, and Execution Bridge."""
 
 from quantum_edge_core.contracts.lean import FullMarketContext
 from quantum_edge_core.execution.bingx_intent import (
     OrderIntent,
     build_bingx_order_params,
+)
+from quantum_edge_core.execution.bingx_vst_adapter import (
+    create_bingx_vst_client,
+    fetch_full_vst_context,
+    fetch_vst_status,
+    to_ccxt_swap_symbol,
 )
 from quantum_edge_core.execution.full_market_context import build_full_market_context
 from quantum_edge_core.execution.harness_bridge import (
@@ -25,4 +31,8 @@ __all__ = [
     "RiskConfig",
     "build_bingx_order_params",
     "build_full_market_context",
+    "create_bingx_vst_client",
+    "fetch_full_vst_context",
+    "fetch_vst_status",
+    "to_ccxt_swap_symbol",
 ]
