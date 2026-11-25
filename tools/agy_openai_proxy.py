@@ -24,6 +24,7 @@ import signal
 import subprocess
 import sys
 import tempfile
+import threading
 import time
 from typing import Any, Callable, Sequence
 import uuid
@@ -34,7 +35,8 @@ DEFAULT_AGY_BIN = os.environ.get("AGY_BIN", "/home/layman/.local/bin/agy")
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8045
 DEFAULT_MODEL = "gemini-4-hydrogen-medium"
-DEFAULT_TIMEOUT_SEC = 120
+DEFAULT_TIMEOUT_SEC = 180
+DEFAULT_KEEPALIVE_INTERVAL_SEC = 10.0
 DEFAULT_LOG_PATH = REPO_ROOT / "runtime" / "agy_openai_proxy.log"
 
 SUPPORTED_GEMINI4_MODELS: tuple[str, ...] = (
@@ -301,12 +303,14 @@ class AgyProxyEngine:
         agy_bin: str = DEFAULT_AGY_BIN,
         default_model: str = DEFAULT_MODEL,
         timeout_sec: float = DEFAULT_TIMEOUT_SEC,
+        keepalive_interval_sec: float = DEFAULT_KEEPALIVE_INTERVAL_SEC,
         log_path: Path = DEFAULT_LOG_PATH,
         runner: Callable[..., dict[str, Any]] = invoke_agy_cli,
     ) -> None:
         self.agy_bin = agy_bin
         self.default_model = default_model
         self.timeout_sec = timeout_sec
+        self.keepalive_interval_sec = keepalive_interval_sec
         self.log_path = log_path
         self.runner = runner
 
@@ -543,14 +547,39 @@ def make_http_handler(engine: AgyProxyEngine) -> type[BaseHTTPRequestHandler]:
         def log_message(self, format: str, *args: Any) -> None:
             return
 
+        def _safe_write(self, data: bytes, *, context: str = "response") -> bool:
+            try:
+                self.wfile.write(data)
+                self.wfile.flush()
+                return True
+            except (BrokenPipeError, ConnectionResetError):
+                engine.log_event(
+                    {
+                        "status": "client_disconnected",
+                        "context": context,
+                        "path": self.path.split("?", 1)[0],
+                    }
+                )
+                return False
+
         def _send_json(self, status_code: int, payload: dict[str, Any]) -> None:
             encoded = json.dumps(payload, ensure_ascii=False).encode("utf-8")
-            self.send_response(status_code)
-            self.send_header("Content-Type", "application/json; charset=utf-8")
-            self.send_header("Content-Length", str(len(encoded)))
-            self.send_header("Connection", "close")
-            self.end_headers()
-            self.wfile.write(encoded)
+            try:
+                self.send_response(status_code)
+                self.send_header("Content-Type", "application/json; charset=utf-8")
+                self.send_header("Content-Length", str(len(encoded)))
+                self.send_header("Connection", "close")
+                self.end_headers()
+            except (BrokenPipeError, ConnectionResetError):
+                engine.log_event(
+                    {
+                        "status": "client_disconnected",
+                        "context": "headers",
+                        "path": self.path.split("?", 1)[0],
+                    }
+                )
+                return
+            self._safe_write(encoded, context="json_body")
 
         def do_GET(self) -> None:
             path = self.path.split("?", 1)[0]
@@ -591,24 +620,72 @@ def make_http_handler(engine: AgyProxyEngine) -> type[BaseHTTPRequestHandler]:
                 return
 
             try:
-                completion = engine.create_chat_completion(request_body)
                 if request_body.get("stream"):
-                    sse_bytes = completion_to_sse_chunks(completion)
-                    self.send_response(200)
-                    self.send_header("Content-Type", "text/event-stream; charset=utf-8")
-                    self.send_header("Cache-Control", "no-cache")
-                    self.send_header("Content-Length", str(len(sse_bytes)))
-                    self.send_header("Connection", "close")
-                    self.end_headers()
-                    self.wfile.write(sse_bytes)
+                    self._handle_streaming_chat(request_body)
                 else:
+                    completion = engine.create_chat_completion(request_body)
                     self._send_json(200, completion)
+            except (BrokenPipeError, ConnectionResetError):
+                engine.log_event(
+                    {
+                        "status": "client_disconnected",
+                        "context": "post_chat",
+                        "path": path,
+                    }
+                )
             except Exception as exc:
                 engine.log_event({"status": "error", "error": str(exc)[:300]})
                 self._send_json(
                     500,
                     {"error": {"message": str(exc), "type": "proxy_runtime_error"}},
                 )
+
+        def _handle_streaming_chat(self, request_body: dict[str, Any]) -> None:
+            try:
+                self.send_response(200)
+                self.send_header("Content-Type", "text/event-stream; charset=utf-8")
+                self.send_header("Cache-Control", "no-cache")
+                self.send_header("Connection", "close")
+                self.end_headers()
+            except (BrokenPipeError, ConnectionResetError):
+                engine.log_event({"status": "client_disconnected", "context": "sse_headers"})
+                return
+
+            done_event = threading.Event()
+            result_box: dict[str, Any] = {}
+
+            def _worker() -> None:
+                try:
+                    result_box["completion"] = engine.create_chat_completion(request_body)
+                except Exception as exc:
+                    result_box["error"] = exc
+                finally:
+                    done_event.set()
+
+            worker = threading.Thread(target=_worker, daemon=True)
+            worker.start()
+
+            keepalive_interval = max(float(engine.keepalive_interval_sec), 0.05)
+            while not done_event.wait(timeout=keepalive_interval):
+                if not self._safe_write(b": keepalive\n\n", context="sse_keepalive"):
+                    return
+
+            if "error" in result_box:
+                exc = result_box["error"]
+                engine.log_event({"status": "error", "error": str(exc)[:300]})
+                err_payload = {
+                    "error": {"message": str(exc), "type": "proxy_runtime_error"}
+                }
+                self._safe_write(
+                    f"data: {json.dumps(err_payload, ensure_ascii=False)}\n\ndata: [DONE]\n\n".encode(
+                        "utf-8"
+                    ),
+                    context="sse_error",
+                )
+                return
+
+            sse_bytes = completion_to_sse_chunks(result_box["completion"])
+            self._safe_write(sse_bytes, context="sse_completion")
 
     return _AgyOpenAIRequestHandler
 

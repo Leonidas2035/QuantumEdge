@@ -9,7 +9,7 @@ from quantum_edge_core.contracts.lean import TradeDecision
 
 @dataclass(slots=True)
 class RiskConfig:
-    allowed_symbols: tuple[str, ...] = ("BTCUSDT", "ETHUSDT", "SOLUSDT")
+    allowed_symbols: tuple[str, ...] = ("BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT")
     max_margin_vst: float = 1000.0
     max_leverage: int = 50
     max_open_positions: int = 3
@@ -45,7 +45,7 @@ class LeanRiskGuard:
                 False,
                 f"INVALID_MARGIN: margin_vst={decision.margin_vst} must be in (0, {self.config.max_margin_vst}]",
             )
-        if decision.leverage < 1 or decision.leverage > self.config.max_leverage:
+        if decision.leverage is None or decision.leverage < 1 or decision.leverage > self.config.max_leverage:
             return (
                 False,
                 f"INVALID_LEVERAGE: leverage={decision.leverage} must be in [1, {self.config.max_leverage}]",

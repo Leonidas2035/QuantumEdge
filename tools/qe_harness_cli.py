@@ -14,6 +14,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import os
 from pathlib import Path
 import sys
 from typing import Sequence
@@ -85,6 +86,11 @@ def build_parser() -> argparse.ArgumentParser:
         default=50,
         help="Orderbook depth per side (default: 50)",
     )
+    p_ctx.add_argument(
+        "--allowed-symbols",
+        default=os.getenv("QE_ALLOWED_SYMBOLS", ""),
+        help="Comma-separated allowed symbols override (default: RiskConfig defaults)",
+    )
 
     # execute
     p_exec = sub.add_parser(
@@ -133,8 +139,25 @@ def build_parser() -> argparse.ArgumentParser:
         default=DEFAULT_JOURNAL_PATH,
         help="Path to JSONL trade decision journal",
     )
+    p_exec.add_argument(
+        "--allowed-symbols",
+        default=os.getenv("QE_ALLOWED_SYMBOLS", ""),
+        help="Comma-separated allowed symbols override (default: RiskConfig defaults)",
+    )
 
     return parser
+
+
+def _build_risk_config(allowed_symbols_raw: str | None) -> RiskConfig:
+    if allowed_symbols_raw and allowed_symbols_raw.strip():
+        syms = tuple(
+            s.strip().upper()
+            for s in allowed_symbols_raw.split(",")
+            if s.strip()
+        )
+        if syms:
+            return RiskConfig(allowed_symbols=syms)
+    return RiskConfig()
 
 
 def _cmd_status() -> int:
@@ -150,7 +173,7 @@ def _cmd_context(args: argparse.Namespace) -> int:
     ctx = fetch_full_vst_context(
         client,
         symbol=args.symbol,
-        risk_config=RiskConfig(),
+        risk_config=_build_risk_config(args.allowed_symbols),
         timeframes=tfs,
         ohlcv_limit=args.ohlcv_limit,
         orderbook_limit=args.orderbook_limit,
@@ -179,7 +202,7 @@ def _cmd_execute(args: argparse.Namespace) -> int:
     decision = TradeDecision.model_validate(raw_decision)
 
     ledger = OrderLedger(args.ledger_db)
-    risk_guard = LeanRiskGuard(RiskConfig())
+    risk_guard = LeanRiskGuard(_build_risk_config(args.allowed_symbols))
 
     if args.live_vst:
         client = create_bingx_vst_client()

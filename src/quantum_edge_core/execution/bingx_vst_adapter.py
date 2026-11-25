@@ -167,6 +167,21 @@ def fetch_vst_status(
         if compact_sym:
             order_symbols.add(compact_sym)
         info = o.get("info") if isinstance(o.get("info"), dict) else {}
+        trigger_price = None
+        for candidate in (
+            o.get("triggerPrice"),
+            o.get("stopPrice"),
+            o.get("stopLossPrice"),
+            o.get("takeProfitPrice"),
+            info.get("stopPrice"),
+            info.get("StopPrice"),
+            info.get("triggerPrice"),
+        ):
+            parsed = _opt_float(candidate)
+            if parsed is not None and parsed > 0:
+                trigger_price = parsed
+                break
+
         open_orders.append(
             {
                 "id": str(o.get("id")) if o.get("id") is not None else None,
@@ -174,11 +189,14 @@ def fetch_vst_status(
                 "symbol": compact_sym or o.get("symbol"),
                 "ccxt_symbol": o.get("symbol"),
                 "type": o.get("type"),
+                "rawType": info.get("type"),
+                "workingType": info.get("workingType"),
                 "side": o.get("side"),
                 "positionSide": info.get("positionSide"),
-                "reduceOnly": o.get("reduceOnly"),
+                "reduceOnly": o.get("reduceOnly") if o.get("reduceOnly") is not None else info.get("reduceOnly"),
                 "price": _opt_float(o.get("price")),
-                "stopPrice": _opt_float(o.get("stopPrice") or o.get("triggerPrice")),
+                "triggerPrice": trigger_price,
+                "stopPrice": trigger_price,
                 "amount": _opt_float(o.get("amount")),
                 "filled": _opt_float(o.get("filled")),
                 "status": o.get("status"),
