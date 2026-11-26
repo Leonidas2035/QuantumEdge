@@ -70,3 +70,5 @@ hub.log*
 !.env.example
 !.env.Example
 !.env.template
+
+*.sqlite3
