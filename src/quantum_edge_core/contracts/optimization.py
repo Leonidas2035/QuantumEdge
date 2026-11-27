@@ -5,6 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timezone
 from enum import Enum
 from typing import Any, Literal
+import uuid
 
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
@@ -255,8 +256,22 @@ class TradeDecisionV2(BaseModel):
         }
 
 
+class DecisionEventV1(BaseModel):
+    """Coalesced wakeup event emitted by EventDrivenWakeupGate."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    event_id: str = Field(default_factory=lambda: f"ev-{uuid.uuid4().hex[:12]}")
+    ts_utc: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    symbols: list[str]
+    reasons: list[str]
+    priority: Literal["NORMAL", "CRITICAL"] = "NORMAL"
+    metrics_snapshot: dict[str, Any] = Field(default_factory=dict)
+
+
 __all__ = [
     "DecisionAuditV1",
+    "DecisionEventV1",
     "HoldBlockerCode",
     "RequestStatus",
     "ScreeningDecisionV1",

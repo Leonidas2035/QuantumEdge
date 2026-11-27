@@ -288,6 +288,54 @@ def build_parser() -> argparse.ArgumentParser:
         help="Use StatelessStagePromptAssembler instead of 3-layer PrefixContextAssembler",
     )
 
+    # protect-once
+    p_prot = sub.add_parser(
+        "protect-once",
+        help="Run a single deterministic PositionProtectionWatcher check (--dry-run by default)",
+    )
+    prot_mode = p_prot.add_mutually_exclusive_group()
+    prot_mode.add_argument(
+        "--dry-run",
+        action="store_true",
+        default=False,
+        help="Inspect protection triggers without exchange mutations (default)",
+    )
+    prot_mode.add_argument(
+        "--live-vst",
+        action="store_true",
+        default=False,
+        help="Execute orphan cleanup / emergency exits on BingX VST sandbox",
+    )
+    p_prot.add_argument(
+        "--stale-limit-sec",
+        type=float,
+        default=30.0,
+        help="Stale feed threshold in seconds (default: 30.0)",
+    )
+    p_prot.add_argument(
+        "--max-liq-pct",
+        type=float,
+        default=2.0,
+        help="Liquidation distance emergency threshold in percent (default: 2.0)",
+    )
+    p_prot.add_argument(
+        "--order-ledger-db",
+        type=Path,
+        default=DEFAULT_LEDGER_DB,
+        help="Path to SQLite OrderLedger database",
+    )
+    p_prot.add_argument(
+        "--journal-path",
+        type=Path,
+        default=DEFAULT_JOURNAL_PATH,
+        help="Path to JSONL trade decision journal",
+    )
+    p_prot.add_argument(
+        "--mock-status-json",
+        default=None,
+        help="Optional inline JSON status dict for offline dry-run verification",
+    )
+
     return parser
 
 
@@ -681,6 +729,53 @@ def _cmd_run_cycle(args: argparse.Namespace) -> int:
     return 0
 
 
+def _cmd_protect_once(args: argparse.Namespace) -> int:
+    from quantum_edge_core.execution.position_protection import PositionProtectionWatcher
+
+    dry_run = not bool(args.live_vst)
+    order_ledger = OrderLedger(args.order_ledger_db)
+    risk_guard = LeanRiskGuard(RiskConfig())
+
+    if args.live_vst:
+        ex_client: Any = create_bingx_vst_client()
+    else:
+        mock_state = (
+            json.loads(args.mock_status_json)
+            if args.mock_status_json
+            else {"balance": {"VST": {"free": 10000.0, "total": 10000.0, "used": 0.0}}, "positions": [], "orders": []}
+        )
+
+        class _OfflineStatusClient(PaperExchangeClient):
+            _qe_sandbox_verified = True
+
+            def fetch_balance(self) -> dict[str, Any]:
+                return mock_state.get("balance") or {"VST": {"free": 10000.0, "total": 10000.0, "used": 0.0}}
+
+            def fetch_positions(self) -> list[dict[str, Any]]:
+                return list(mock_state.get("positions") or [])
+
+            def fetch_open_orders(self, symbol: str | None = None) -> list[dict[str, Any]]:
+                return list(mock_state.get("orders") or [])
+
+            def cancel_order(self, oid: str, sym: str) -> dict[str, Any]:
+                return {"id": oid, "status": "canceled"}
+
+        ex_client = _OfflineStatusClient()
+
+    executor = LeanExecutor(ex_client, order_ledger, risk_guard)
+    bridge = HarnessBridge(executor, journal_path=args.journal_path)
+    watcher = PositionProtectionWatcher(
+        ex_client,
+        bridge,
+        max_liq_distance_pct=args.max_liq_pct,
+        stale_feed_limit_sec=args.stale_limit_sec,
+        dry_run=dry_run,
+    )
+    res = asyncio.run(watcher.check_once())
+    print(json.dumps(res, ensure_ascii=False))
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -694,6 +789,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _cmd_execute(args)
     if args.command == "run-cycle":
         return _cmd_run_cycle(args)
+    if args.command == "protect-once":
+        return _cmd_protect_once(args)
     parser.error(f"Unknown command: {args.command}")
     return 2
 

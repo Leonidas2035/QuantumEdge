@@ -29,6 +29,7 @@ from quantum_edge_core.execution.harness_bridge import (
 )
 from quantum_edge_core.execution.lean_executor import LeanExecutor
 from quantum_edge_core.execution.order_ledger import OrderLedger
+from quantum_edge_core.execution.position_protection import PositionProtectionWatcher
 from quantum_edge_core.execution.risk_guard import LeanRiskGuard, RiskConfig
 
 __all__ = [
@@ -40,6 +41,7 @@ __all__ = [
     "OrderIntent",
     "OrderLedger",
     "PaperExchangeClient",
+    "PositionProtectionWatcher",
     "RiskConfig",
     "SerializedMarketPayload",
     "build_bingx_order_params",
