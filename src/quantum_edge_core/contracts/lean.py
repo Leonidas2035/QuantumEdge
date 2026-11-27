@@ -70,3 +70,12 @@ class FullMarketContext(BaseModel):
     account_state: dict[str, Any] = Field(default_factory=dict)
     risk_limits: dict[str, Any] = Field(default_factory=dict)
     raw_extras: dict[str, Any] = Field(default_factory=dict)
+
+
+from quantum_edge_core.contracts.optimization import (  # noqa: E402, F401
+    DecisionAuditV1,
+    RequestStatus,
+    ThinkingLevel,
+    TransportChannel,
+    UsageRecordV1,
+)
