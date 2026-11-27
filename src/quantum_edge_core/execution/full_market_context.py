@@ -6,6 +6,11 @@ from collections.abc import Mapping, Sequence
 from typing import Any
 
 from quantum_edge_core.contracts.lean import FullMarketContext, MarketSnapshot
+from quantum_edge_core.execution.market_context_serializer import (
+    MarketContextSerializer,
+    SerializationMode,
+    SerializedMarketPayload,
+)
 from quantum_edge_core.execution.risk_guard import RiskConfig
 
 
@@ -107,4 +112,23 @@ def build_full_market_context(
         account_state=acc_out,
         risk_limits=risk_out,
         raw_extras=extras_out,
+    )
+
+
+def serialize_for_llm(
+    ctx: FullMarketContext | Mapping[str, Any],
+    *,
+    mode: SerializationMode = "hybrid_webp",
+    ohlcv_tail: int = 25,
+    include_full_liqmap: bool = True,
+    serializer: MarketContextSerializer | None = None,
+) -> SerializedMarketPayload:
+    """Facade serializing a FullMarketContext (or dict) into compact LLM-ready payload."""
+    ctx_dict = ctx.model_dump(mode="json") if isinstance(ctx, FullMarketContext) else dict(ctx)
+    ser = serializer or MarketContextSerializer()
+    return ser.serialize_single_asset(
+        ctx_dict,
+        mode=mode,
+        ohlcv_tail=ohlcv_tail,
+        include_full_liqmap=include_full_liqmap,
     )

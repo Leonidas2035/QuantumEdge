@@ -2,8 +2,9 @@
 
 from __future__ import annotations
 
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
 from datetime import datetime, timezone
+from decimal import Decimal
 import os
 from typing import Any
 
@@ -42,6 +43,40 @@ def _opt_float(val: Any) -> float | None:
         return float(val)
     except (TypeError, ValueError):
         return None
+
+
+def extract_instrument_specs(client_or_markets: Any) -> dict[str, tuple[Decimal, Decimal]]:
+    """Extract (tick_size, qty_step) Decimal steps from a CCXT client or markets dict.
+
+    Supports both ``ccxt.TICK_SIZE`` (4) and ``ccxt.DECIMAL_PLACES`` (2) without
+    issuing network calls when ``markets`` is already populated.
+    """
+    from quantum_edge_core.execution.market_context_serializer import DEFAULT_INSTRUMENT_SPECS
+
+    specs: dict[str, tuple[Decimal, Decimal]] = dict(DEFAULT_INSTRUMENT_SPECS)
+    if isinstance(client_or_markets, Mapping):
+        markets = client_or_markets
+        precision_mode = ccxt.TICK_SIZE
+    else:
+        markets = getattr(client_or_markets, "markets", None) or {}
+        precision_mode = getattr(client_or_markets, "precisionMode", ccxt.TICK_SIZE)
+
+    is_tick_mode = int(precision_mode) == int(ccxt.TICK_SIZE)
+    for m in markets.values():
+        if not isinstance(m, Mapping):
+            continue
+        raw_sym = normalize_compact_symbol(str(m.get("symbol") or m.get("id") or ""))
+        prec = m.get("precision") or {}
+        p_raw, a_raw = prec.get("price"), prec.get("amount")
+        if raw_sym and p_raw is not None and a_raw is not None:
+            if is_tick_mode:
+                specs[raw_sym] = (Decimal(str(p_raw)), Decimal(str(a_raw)))
+            else:
+                specs[raw_sym] = (
+                    Decimal("10") ** (-int(p_raw)),
+                    Decimal("10") ** (-int(a_raw)),
+                )
+    return specs
 
 
 def create_bingx_vst_client(*, load_env: bool = True) -> ccxt.bingx:
