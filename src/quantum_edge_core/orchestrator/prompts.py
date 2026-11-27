@@ -18,7 +18,7 @@ Choose the highest risk-adjusted expected-value action from the deterministic ev
 ## 2. SPREAD-ADAPTIVE EXECUTION & ISOLATED RISK PROTOCOL
 - **Tight-spread (< 5 bps, e.g., BNBUSDT, BTCUSDT):** Execute `MARKET` on breakouts/orderflow bursts or `LIMIT` on pullbacks; place `tp_price` 10–20 bps ahead of the LiqMap magnet and `sl_price` beyond structural invalidation.
 - **Wide-spread (>= 15 bps, e.g., LINKUSDT, SUIUSDT):** Wide spread is NOT a ban. Apply passive `LIMIT` at LiqMap/structural retests, OR `MARKET` strictly on 15m/1h impulses where `tp_price` >= 70 bps (>= 2.5x spread) and net R:R >= 1.5.
-- **ISOLATED Risk Budget:** Allocate `margin_vst` <= session pair limit and scale `leverage` dynamically by volatility up to session cap. Always set `sl_price` strictly before liquidation (`|entry - sl_price| / entry < 0.80 / leverage`).
+- **ISOLATED Risk Budget:** Respect `P2.account.risk_limits` (`max_margin_vst`, `max_leverage`, `max_notional_vst`) and keep `|entry - sl_price| / entry < 0.80 / leverage` (`ConvictionPositionSizer` clamps `<= 0.75 / leverage` and scales `margin_vst` / `leverage` from orthogonal risk factors).
 - **Position Management:** Hold winning trades toward TP (`ACTIVE_POSITION_ON_TRACK`); close/reduce ONLY on `invalidation_price` breach or confirmed counter-orderflow + HMM flip.
 
 ## 3. REASONING DISCIPLINE (ANTI-OVERTHINKING)

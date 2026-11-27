@@ -11,15 +11,17 @@ from dataclasses import dataclass, field
 from datetime import datetime, timedelta, timezone
 from enum import Enum
 from pathlib import Path
-from typing import Any
+from typing import Any, Mapping
 
 from quantum_edge_core.contracts.optimization import ForecastBundleV1, TradeDecisionV2
 from quantum_edge_core.execution.market_context_serializer import MarketContextSerializer
+from quantum_edge_core.execution.risk_guard import RiskConfig
 from quantum_edge_core.execution.storage_policy import (
     CANONICAL_SSD_DURABLE_PATHS,
     apply_sqlite_wal_pragmas,
 )
 from quantum_edge_core.orchestrator.deterministic_orchestrator import (
+    extract_account_risk_limits,
     format_forecast_for_prompt,
     serialize_stage2_candidate,
 )
@@ -326,11 +328,14 @@ class PrefixContextAssembler:
         *,
         include_images: bool = False,
         extra_reference_playbook: str = "",
+        risk_limits: RiskConfig | Mapping[str, Any] | None = None,
     ) -> None:
         self.serializer = serializer or MarketContextSerializer()
         self.thesis_store = thesis_store or ThesisMemoryStore()
         self.snapshot_store = snapshot_store or SnapshotStore()
         self.include_images = include_images
+        self.risk_limits = risk_limits
+        self.last_resync_mode: ResyncMode | None = None
         self.p0_static = build_p0_static_prefix(
             extra_reference_playbook=extra_reference_playbook
         )
@@ -425,6 +430,7 @@ class PrefixContextAssembler:
             regime_signature=regime_signature,
             now_ts=now_ts,
         )
+        self.last_resync_mode = resync_mode
         p2_parts: list[str] = [
             "=== P2_STAGE1_DYNAMIC_SCREENING ===",
             json.dumps(
@@ -436,6 +442,7 @@ class PrefixContextAssembler:
                         "free_vst": (bundle.vst_status.get("balance_vst") or {}).get("free"),
                         "open_pos": bundle.vst_status.get("open_positions", []),
                         "open_ord_cnt": bundle.vst_status.get("open_orders_count", 0),
+                        "risk_limits": extract_account_risk_limits(bundle, self.risk_limits),
                     },
                 },
                 separators=(",", ":"),
@@ -510,6 +517,7 @@ class PrefixContextAssembler:
                 "free_vst": (bundle.vst_status.get("balance_vst") or {}).get("free"),
                 "open_pos": bundle.vst_status.get("open_positions", []),
                 "open_orders": bundle.vst_status.get("open_orders", []),
+                "risk_limits": extract_account_risk_limits(bundle, self.risk_limits),
             },
         }
         if not isinstance(fc_fmt, str):

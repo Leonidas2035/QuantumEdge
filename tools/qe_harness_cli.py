@@ -218,9 +218,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_cycle.add_argument(
         "--transport",
-        choices=("mock", "agy-proxy", "gemini-direct"),
-        default="agy-proxy",
-        help="LLM transport backend (default: agy-proxy OAuth proxy)",
+        choices=("agy-direct", "agy-proxy", "gemini-direct", "mock"),
+        default="agy-direct",
+        help="LLM transport backend (default: agy-direct subprocess without HTTP proxy)",
     )
     p_cycle.add_argument(
         "--proxy-url",
@@ -342,6 +342,34 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         default=False,
         help="Disable adaptive ReasoningEffortRouter and use fixed MEDIUM on Stage 2",
+    )
+    fc_group = p_cycle.add_mutually_exclusive_group()
+    fc_group.add_argument(
+        "--enable-forecast",
+        dest="enable_forecast",
+        action="store_true",
+        default=True,
+        help="Enable in-RAM LocalForecastProvider (default: enabled)",
+    )
+    fc_group.add_argument(
+        "--no-forecast",
+        dest="enable_forecast",
+        action="store_false",
+        help="Disable local ForecastPipeline predictions",
+    )
+    sz_group = p_cycle.add_mutually_exclusive_group()
+    sz_group.add_argument(
+        "--enable-conviction-sizer",
+        dest="enable_conviction_sizer",
+        action="store_true",
+        default=True,
+        help="Enable deterministic ConvictionPositionSizer (default: enabled)",
+    )
+    sz_group.add_argument(
+        "--no-conviction-sizer",
+        dest="enable_conviction_sizer",
+        action="store_false",
+        help="Disable ConvictionPositionSizer and pass raw LLM margin/leverage to LeanRiskGuard",
     )
 
     # protect-once
@@ -641,12 +669,14 @@ def _cmd_run_cycle(args: argparse.Namespace) -> int:
         TransportChannel,
         UsageRecordV1,
     )
+    from quantum_edge_core.execution.position_sizer import ConvictionPositionSizer
     from quantum_edge_core.execution.storage_policy import (
         CANONICAL_SSD_DURABLE_PATHS,
         get_ram_tmp_dir,
     )
     from quantum_edge_core.orchestrator.deterministic_orchestrator import (
         DeterministicTradingOrchestrator,
+        LocalForecastProvider,
         PreFetchCoordinator,
         StatelessStagePromptAssembler,
     )
@@ -656,6 +686,7 @@ def _cmd_run_cycle(args: argparse.Namespace) -> int:
     )
     from quantum_edge_ml.model_router.backends.google_gemini import GeminiDirectClient
     from quantum_edge_ml.model_router.backends.transport import (
+        AgyDirectCliTransport,
         AgyProxyTransport,
         ImageAttachment,
         LLMRequest,
@@ -740,10 +771,12 @@ def _cmd_run_cycle(args: argparse.Namespace) -> int:
         )
     elif args.transport == "gemini-direct":
         transport = GeminiDirectClient(usage_ledger, mode="interactions")
-    else:
+    elif args.transport == "agy-proxy":
         # AgyProxyTransport writes full UsageRecordV1 (decision_id/stage/prefix_hash/context_hash)
         # into usage_ledger; agy_openai_proxy.py should run without --ledger-db (JSONL log only).
         transport = AgyProxyTransport(usage_ledger, base_url=args.proxy_url, record_to_ledger=True)
+    else:
+        transport = AgyDirectCliTransport(usage_ledger, record_to_ledger=True)
 
     async def _execute_cycle() -> dict[str, Any]:
         try:
@@ -764,7 +797,9 @@ def _cmd_run_cycle(args: argparse.Namespace) -> int:
             bridge = HarnessBridge(executor, journal_path=args.journal_path)
             thesis_store: ThesisMemoryStore | None = None
             if args.stateless:
-                assembler: Any = StatelessStagePromptAssembler(include_images=include_images)
+                assembler: Any = StatelessStagePromptAssembler(
+                    include_images=include_images, risk_limits=risk_cfg
+                )
             else:
                 thesis_db_path = args.thesis_db
                 if thesis_db_path is None:
@@ -776,11 +811,22 @@ def _cmd_run_cycle(args: argparse.Namespace) -> int:
                 assembler = PrefixContextAssembler(
                     thesis_store=thesis_store,
                     include_images=include_images,
+                    risk_limits=risk_cfg,
                 )
             effort_router = (
                 None
                 if args.fixed_thinking_medium
                 else ReasoningEffortRouter(model_id=args.model)
+            )
+            position_sizer = (
+                ConvictionPositionSizer()
+                if getattr(args, "enable_conviction_sizer", True)
+                else None
+            )
+            forecast_provider = (
+                LocalForecastProvider()
+                if getattr(args, "enable_forecast", True)
+                else None
             )
             orchestrator = DeterministicTradingOrchestrator(
                 transport=transport,
@@ -788,22 +834,36 @@ def _cmd_run_cycle(args: argparse.Namespace) -> int:
                 assembler=assembler,
                 bridge=bridge,
                 effort_router=effort_router,
+                position_sizer=position_sizer,
                 model_id=args.model,
                 stage1_timeout_sec=args.stage1_timeout,
                 stage2_timeout_sec=args.stage2_timeout,
             )
             try:
+                forecasts = (
+                    forecast_provider.build_forecasts(bundle)
+                    if forecast_provider is not None
+                    else None
+                )
                 audit = await orchestrator.run_decision_cycle(
                     bundle,
                     trigger_summary=args.trigger,
+                    forecasts_by_symbol=forecasts,
                     dry_run=dry_run,
                 )
                 out_dict = audit.model_dump(mode="json")
                 out_dict["stage2_thinking_level"] = audit.thinking_level.value
                 out_dict["effort_router_enabled"] = effort_router is not None
+                out_dict["conviction_sizer_enabled"] = position_sizer is not None
+                out_dict["forecast_enabled"] = forecast_provider is not None
+                out_dict["forecast_symbols"] = sorted(forecasts.keys()) if forecasts else []
                 if isinstance(assembler, PrefixContextAssembler):
                     cp = assembler.snapshot_store.current
-                    out_dict["resync_mode"] = "RESYNC" if cp is not None else "UNKNOWN"
+                    out_dict["resync_mode"] = (
+                        assembler.last_resync_mode.value
+                        if assembler.last_resync_mode is not None
+                        else ("RESYNC" if cp is not None else "UNKNOWN")
+                    )
                     out_dict["cache_eviction_alert"] = (
                         assembler.snapshot_store.eviction_monitor.alert_active
                     )

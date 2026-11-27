@@ -11,11 +11,13 @@ from __future__ import annotations
 import asyncio
 import hashlib
 import json
+import logging
 import time
 import uuid
 from dataclasses import dataclass, field
 from typing import Any, Literal, Mapping, Protocol, Sequence, TypeVar
 
+import pandas as pd
 from pydantic import BaseModel
 
 from quantum_edge_core.contracts.lean import TradeDecision
@@ -33,6 +35,7 @@ from quantum_edge_core.execution.bingx_vst_adapter import (
 )
 from quantum_edge_core.execution.harness_bridge import HarnessBridge
 from quantum_edge_core.execution.market_context_serializer import MarketContextSerializer
+from quantum_edge_core.execution.position_sizer import ConvictionPositionSizer
 from quantum_edge_core.execution.risk_guard import RiskConfig
 from quantum_edge_core.orchestrator.prompts import build_p0_static_prefix
 from quantum_edge_ml.model_router.backends.transport import (
@@ -42,7 +45,141 @@ from quantum_edge_ml.model_router.backends.transport import (
 )
 from quantum_edge_ml.model_router.usage_ledger import UsageLedger
 
+logger = logging.getLogger("quantum_edge_core.orchestrator.deterministic_orchestrator")
+
 ModelT = TypeVar("ModelT", bound=BaseModel)
+
+
+def extract_account_risk_limits(
+    bundle: Any,
+    override: RiskConfig | Mapping[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Build compact session risk_limits block for P2.account so the LLM sees actual caps."""
+    if isinstance(override, RiskConfig):
+        return {
+            "max_margin_vst": override.max_margin_vst,
+            "max_leverage": override.max_leverage,
+            "max_notional_vst": override.max_notional_per_pair_vst,
+            "max_open_pos": override.max_open_positions,
+        }
+    if isinstance(override, Mapping):
+        return {
+            "max_margin_vst": override.get("max_margin_vst", 1000.0),
+            "max_leverage": override.get("max_leverage", 50),
+            "max_notional_vst": override.get("max_notional_vst", override.get("max_notional_per_pair_vst", 50_000.0)),
+            "max_open_pos": override.get("max_open_pos", override.get("max_open_positions", 3)),
+        }
+    vst_rl = (getattr(bundle, "vst_status", None) or {}).get("risk_limits")
+    if isinstance(vst_rl, Mapping):
+        return dict(vst_rl)
+    for ctx in (getattr(bundle, "contexts_by_symbol", None) or {}).values():
+        ctx_rl = (ctx or {}).get("risk_limits")
+        if isinstance(ctx_rl, Mapping) and ctx_rl:
+            return {
+                "max_margin_vst": ctx_rl.get("max_margin_vst", 1000.0),
+                "max_leverage": ctx_rl.get("max_leverage", 50),
+                "max_notional_vst": ctx_rl.get(
+                    "max_notional_vst",
+                    float(ctx_rl.get("max_margin_vst", 1000.0)) * float(ctx_rl.get("max_leverage", 50)),
+                ),
+                "max_open_pos": ctx_rl.get("max_open_positions", ctx_rl.get("max_open_pos", 3)),
+            }
+    dflt = RiskConfig()
+    return {
+        "max_margin_vst": dflt.max_margin_vst,
+        "max_leverage": dflt.max_leverage,
+        "max_notional_vst": dflt.max_notional_per_pair_vst,
+        "max_open_pos": dflt.max_open_positions,
+    }
+
+
+class LocalForecastProvider:
+    """In-RAM cached ForecastPipeline manager producing calibrated ForecastBundleV1 per cycle."""
+
+    def __init__(
+        self,
+        *,
+        horizon: Literal["5m", "15m", "1h"] = "15m",
+        timeframe: str = "5m",
+        horizon_steps: int = 3,
+        refit_interval_sec: float = 900.0,
+        random_state: int = 42,
+    ) -> None:
+        self.horizon = horizon
+        self.timeframe = timeframe
+        self.horizon_steps = int(horizon_steps)
+        self.refit_interval_sec = float(refit_interval_sec)
+        self.random_state = int(random_state)
+        self._pipelines: dict[str, tuple[float, Any]] = {}
+
+    @staticmethod
+    def _bars_to_ohlcv_df(bars: Sequence[Any]) -> pd.DataFrame:
+        rows: list[dict[str, float]] = []
+        for b in bars:
+            if isinstance(b, Mapping):
+                rows.append(
+                    {
+                        "ts": float(b.get("ts") if b.get("ts") is not None else b.get("timestamp", 0)),
+                        "open": float(b["open"]),
+                        "high": float(b["high"]),
+                        "low": float(b["low"]),
+                        "close": float(b["close"]),
+                        "volume": float(b.get("volume", 0.0)),
+                    }
+                )
+            elif isinstance(b, (list, tuple)) and len(b) >= 6:
+                rows.append(
+                    {
+                        "ts": float(b[0]),
+                        "open": float(b[1]),
+                        "high": float(b[2]),
+                        "low": float(b[3]),
+                        "close": float(b[4]),
+                        "volume": float(b[5]),
+                    }
+                )
+        rows.sort(key=lambda r: r["ts"])
+        return pd.DataFrame(rows, columns=["open", "high", "low", "close", "volume"]).astype(float)
+
+    def build_forecasts(
+        self,
+        bundle: PreFetchedBundle,
+        *,
+        now_monotonic: float | None = None,
+    ) -> dict[str, ForecastBundleV1]:
+        """Fit/reuse cached in-RAM ForecastPipelines and return per-symbol ForecastBundleV1."""
+        from quantum_edge_ml.forecasting.pipeline import ForecastPipeline
+
+        now = time.monotonic() if now_monotonic is None else float(now_monotonic)
+        out: dict[str, ForecastBundleV1] = {}
+        for sym, ctx in bundle.contexts_by_symbol.items():
+            ohlcv = (ctx or {}).get("ohlcv_by_tf") or {}
+            bars = ohlcv.get(self.timeframe) or ohlcv.get("5m") or ohlcv.get("15m") or []
+            if len(bars) < 40:
+                continue
+            try:
+                df = self._bars_to_ohlcv_df(bars)
+                if len(df) < 40 or df["close"].nunique() < 5:
+                    continue
+                cached = self._pipelines.get(sym)
+                if cached is None or (now - cached[0]) >= self.refit_interval_sec:
+                    pipe = ForecastPipeline.fit_from_ohlcv(
+                        df,
+                        horizon_steps=self.horizon_steps,
+                        random_state=self.random_state,
+                    )
+                    self._pipelines[sym] = (now, pipe)
+                else:
+                    pipe = cached[1]
+                out[sym] = pipe.predict_bundle(
+                    symbol=sym,
+                    ohlcv_df=df,
+                    horizon=self.horizon,
+                    horizon_steps=self.horizon_steps,
+                )
+            except Exception as exc:
+                logger.warning("LocalForecastProvider failed soft for %s: %s", sym, exc)
+        return out
 
 
 def scope_vst_status_to_symbols(
@@ -292,9 +429,11 @@ class StatelessStagePromptAssembler:
         *,
         include_images: bool = False,
         extra_reference_playbook: str = "",
+        risk_limits: RiskConfig | Mapping[str, Any] | None = None,
     ) -> None:
         self.serializer = serializer or MarketContextSerializer()
         self.include_images = include_images
+        self.risk_limits = risk_limits
         self.p0_static = build_p0_static_prefix(
             extra_reference_playbook=extra_reference_playbook
         )
@@ -358,6 +497,7 @@ class StatelessStagePromptAssembler:
                         "free_vst": (bundle.vst_status.get("balance_vst") or {}).get("free"),
                         "open_pos": bundle.vst_status.get("open_positions", []),
                         "open_ord_cnt": bundle.vst_status.get("open_orders_count", 0),
+                        "risk_limits": extract_account_risk_limits(bundle, self.risk_limits),
                     },
                 },
                 separators=(",", ":"),
@@ -425,6 +565,7 @@ class StatelessStagePromptAssembler:
                 "free_vst": (bundle.vst_status.get("balance_vst") or {}).get("free"),
                 "open_pos": bundle.vst_status.get("open_positions", []),
                 "open_orders": bundle.vst_status.get("open_orders", []),
+                "risk_limits": extract_account_risk_limits(bundle, self.risk_limits),
             },
         }
         if not isinstance(fc_fmt, str):
@@ -515,6 +656,7 @@ class DeterministicTradingOrchestrator:
         bridge: HarnessBridge,
         assembler: Any | None = None,
         effort_router: EffortRouterProtocol | None = None,
+        position_sizer: ConvictionPositionSizer | None = None,
         model_id: str = "gemini-4-carbon",
         stage1_timeout_sec: float = 90.0,
         stage2_timeout_sec: float = 150.0,
@@ -524,9 +666,16 @@ class DeterministicTradingOrchestrator:
         self.assembler = assembler or StatelessStagePromptAssembler(include_images=False)
         self.bridge = bridge
         self.effort_router = effort_router
+        self.position_sizer = position_sizer
         self.model_id = model_id
         self.stage1_timeout_sec = float(stage1_timeout_sec)
         self.stage2_timeout_sec = float(stage2_timeout_sec)
+
+    def _get_risk_config(self) -> RiskConfig:
+        executor = getattr(self.bridge, "executor", None)
+        guard = getattr(executor, "risk_guard", None)
+        cfg = getattr(guard, "config", None)
+        return cfg if isinstance(cfg, RiskConfig) else RiskConfig()
 
     def _notify_cache_result(
         self,
@@ -579,9 +728,11 @@ class DeterministicTradingOrchestrator:
         usage_ids: list[str] = []
 
         # Defensive symbol scoping so foreign positions/orders never reach LLM, router, or RiskGuard
+        risk_cfg = self._get_risk_config()
         scoped_vst = scope_vst_status_to_symbols(
             bundle.vst_status, list(bundle.contexts_by_symbol.keys())
         )
+        scoped_vst["risk_limits"] = extract_account_risk_limits(bundle, risk_cfg)
         scoped_bundle = PreFetchedBundle(
             snapshot_id=bundle.snapshot_id,
             vst_status=scoped_vst,
@@ -733,20 +884,32 @@ class DeterministicTradingOrchestrator:
             target_ctx = scoped_bundle.contexts_by_symbol[decision_v2.symbol]
             ok_val, val_reason = self._post_validate_trade(decision_v2, target_ctx)
         exec_res: dict[str, Any] | None = None
+        decision_payload = decision_v2.model_dump(mode="json")
 
         if ok_val and decision_v2.action != "HOLD":
             target_ctx = scoped_bundle.contexts_by_symbol[decision_v2.symbol]
             active_side, pos_qty = self._find_open_position(
                 scoped_bundle.vst_status, decision_v2.symbol
             )
-            lean_dec = TradeDecision.model_validate(
-                decision_v2.to_lean_decision_dict(
-                    decision_id, active_position_side=active_side
-                )
+            lean_dict = decision_v2.to_lean_decision_dict(
+                decision_id, active_position_side=active_side
             )
             ref_price = float(
                 (target_ctx.get("market_snapshot") or {}).get("last_price") or 0.0
             )
+            if self.position_sizer is not None and decision_v2.action in ("OPEN_LONG", "OPEN_SHORT"):
+                sizing = self.position_sizer.size_order(
+                    decision=decision_v2,
+                    ctx=target_ctx,
+                    forecast=cand_fc,
+                    risk_config=risk_cfg,
+                    current_price=ref_price,
+                )
+                lean_dict["margin_vst"] = sizing.margin_vst
+                lean_dict["leverage"] = sizing.leverage
+                decision_payload["sizing"] = sizing.to_audit_dict()
+
+            lean_dec = TradeDecision.model_validate(lean_dict)
             res = self.bridge.submit_decision(
                 lean_dec,
                 current_price=ref_price,
@@ -774,7 +937,7 @@ class DeterministicTradingOrchestrator:
             thinking_level=s2_level,
             complexity_score=complexity_score,
             usage_record_ids=usage_ids,
-            decision_payload=decision_v2.model_dump(mode="json"),
+            decision_payload=decision_payload,
             validator_passed=ok_val,
             validator_reason=val_reason,
             execution_result=exec_res,
@@ -830,10 +993,12 @@ __all__ = [
     "AssembledStagePrompt",
     "DeterministicTradingOrchestrator",
     "EffortRouterProtocol",
+    "LocalForecastProvider",
     "PreFetchCoordinator",
     "PreFetchedBundle",
     "StagePromptAssemblerProtocol",
     "StatelessStagePromptAssembler",
+    "extract_account_risk_limits",
     "format_forecast_for_prompt",
     "parse_structured_model_json",
     "scope_vst_status_to_symbols",

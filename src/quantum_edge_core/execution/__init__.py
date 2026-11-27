@@ -30,9 +30,14 @@ from quantum_edge_core.execution.harness_bridge import (
 from quantum_edge_core.execution.lean_executor import LeanExecutor
 from quantum_edge_core.execution.order_ledger import OrderLedger
 from quantum_edge_core.execution.position_protection import PositionProtectionWatcher
+from quantum_edge_core.execution.position_sizer import (
+    ConvictionPositionSizer,
+    SizingResult,
+)
 from quantum_edge_core.execution.risk_guard import LeanRiskGuard, RiskConfig
 
 __all__ = [
+    "ConvictionPositionSizer",
     "FullMarketContext",
     "HarnessBridge",
     "LeanExecutor",
@@ -44,6 +49,7 @@ __all__ = [
     "PositionProtectionWatcher",
     "RiskConfig",
     "SerializedMarketPayload",
+    "SizingResult",
     "build_bingx_order_params",
     "build_full_market_context",
     "cancel_vst_open_orders",
