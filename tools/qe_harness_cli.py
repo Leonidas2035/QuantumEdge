@@ -88,8 +88,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_ctx.add_argument(
         "--timeframes",
-        default="1m,5m,15m,1h,4h",
-        help="Comma-separated OHLCV timeframes (default: 1m,5m,15m,1h,4h)",
+        default="5m,15m,1h,4h,1d",
+        help="Comma-separated OHLCV timeframes (default: 5m,15m,1h,4h,1d)",
     )
     p_ctx.add_argument(
         "--ohlcv-limit",
@@ -638,7 +638,7 @@ def _build_offline_mock_bundle(
                 "spread_bps": spr,
                 "is_stale": False,
             },
-            "ohlcv_by_tf": {"4h": bars_5m, "1h": bars_5m, "15m": bars_5m, "5m": bars_5m, "1m": bars_5m},
+            "ohlcv_by_tf": {"1d": bars_5m, "4h": bars_5m, "1h": bars_5m, "15m": bars_5m, "5m": bars_5m},
             "orderbook": {"bids": [[px, 10.0]], "asks": [[round(px * 1.001, 6), 10.0]]},
             "derivatives": {"funding_rate": 0.0001, "open_interest": 50000.0},
             "microstructure_and_liquidity": {

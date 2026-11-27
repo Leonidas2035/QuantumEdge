@@ -34,7 +34,10 @@ from quantum_edge_core.execution.bingx_vst_adapter import (
     normalize_compact_symbol,
 )
 from quantum_edge_core.execution.harness_bridge import HarnessBridge
-from quantum_edge_core.execution.market_context_serializer import MarketContextSerializer
+from quantum_edge_core.execution.market_context_serializer import (
+    MarketContextSerializer,
+    resolve_tf_hierarchy,
+)
 from quantum_edge_core.execution.position_sizer import ConvictionPositionSizer
 from quantum_edge_core.execution.risk_guard import RiskConfig
 from quantum_edge_core.orchestrator.prompts import build_p0_static_prefix
@@ -253,6 +256,29 @@ def format_forecast_for_prompt(
     return forecast
 
 
+def format_tactical_indicators_line(
+    serializer: MarketContextSerializer,
+    symbol: str,
+    ctx: Mapping[str, Any],
+) -> str:
+    """Render compact tactical TF indicators (1h/15m/5m or legacy) for Stage-1 screening."""
+    ohlcv = (ctx or {}).get("ohlcv_by_tf") or {}
+    _, tact_tfs = resolve_tf_hierarchy(ohlcv)
+    chunks: list[str] = []
+    for tf in tact_tfs:
+        bars = ohlcv.get(tf) or []
+        if not bars:
+            continue
+        p = serializer.build_structural_profile(tf, bars)
+        chunks.append(
+            f"{tf}:rsi={p['rsi14']},adx={p['adx14']},mc={p['macd_cross']},"
+            f"bb={p['bb_pos']},div={p['rsi_div']}/{p['macd_div']}"
+        )
+    if not chunks:
+        return ""
+    return f"TAC_IND|{symbol.upper()}|" + "|".join(chunks)
+
+
 def serialize_stage2_candidate(
     serializer: MarketContextSerializer,
     cand_ctx: Mapping[str, Any],
@@ -260,7 +286,7 @@ def serialize_stage2_candidate(
     include_images: bool,
     ohlcv_tail: int = 25,
 ) -> tuple[str, list[ImageAttachment]]:
-    """Serialize Stage-2 candidate context without duplicating 25-bar 15m/5m/1m candles."""
+    """Serialize Stage-2 candidate context without duplicating 25-bar tactical candles."""
     if include_images:
         ser_cand = serializer.serialize_single_asset(
             cand_ctx,
@@ -298,7 +324,8 @@ def serialize_stage2_candidate(
     if "orderbook" in cand_ctx:
         sections.append(serializer.encode_orderbook_csv(cand_ctx["orderbook"], top_n=15))
 
-    for tf in ("4h", "1h", "15m", "5m", "1m"):
+    strat_tfs, tact_tfs = resolve_tf_hierarchy(ohlcv)
+    for tf in (*strat_tfs, *tact_tfs):
         bars = ohlcv.get(tf) or []
         if not bars:
             continue
@@ -308,11 +335,11 @@ def serialize_stage2_candidate(
         prof = serializer.build_structural_profile(tf, bars)
         sections.append(
             f"PROF_{tf}:"
-            + json.dumps(prof, separators=(",", ":"), sort_keys=True)
+            + serializer.encode_structural_profile_wire(prof)
             + f"|ref={ref_hash}"
         )
-        if tf in ("15m", "5m", "1m"):
-            # Lossless OHLCV_TICK_V1 for 15m/5m/1m only (no duplicate DELTA_BPS_V1)
+        if tf in tact_tfs:
+            # Lossless OHLCV_TICK_V1 for tactical TFs only (no duplicate DELTA_BPS_V1)
             sections.append(serializer.encode_ohlcv_tick_delta(sym, tf, bars[-ohlcv_tail:]))
 
     return "\n".join(sections), []
@@ -399,7 +426,7 @@ class PreFetchCoordinator:
                 self.client,
                 sym,
                 self.risk_config,
-                ("1m", "5m", "15m", "1h", "4h"),
+                ("5m", "15m", "1h", "4h", "1d"),
                 100,
                 50,
                 include_analytics,
@@ -444,13 +471,14 @@ class StatelessStagePromptAssembler:
         for sym in sorted(contexts_by_symbol.keys()):
             ctx = contexts_by_symbol[sym]
             ohlcv = ctx.get("ohlcv_by_tf") or {}
-            for tf in ("4h", "1h"):
+            strat_tfs, _ = resolve_tf_hierarchy(ohlcv)
+            for tf in strat_tfs:
                 bars = ohlcv.get(tf) or []
                 if bars:
                     prof = self.serializer.build_structural_profile(tf, bars)
                     parts.append(
                         f"MACRO|{sym}|{tf}|"
-                        + json.dumps(prof, separators=(",", ":"), sort_keys=True)
+                        + self.serializer.encode_structural_profile_wire(prof)
                     )
             liq = (ctx.get("microstructure_and_liquidity") or {}).get("liqmap") or {}
             if liq.get("status") == "OK":
@@ -526,6 +554,9 @@ class StatelessStagePromptAssembler:
             )
             if isinstance(fc_fmt, str):
                 p2_parts.append(fc_fmt)
+            tac_line = format_tactical_indicators_line(self.serializer, sym, ctx)
+            if tac_line:
+                p2_parts.append(tac_line)
             bars_5m = (ctx.get("ohlcv_by_tf") or {}).get("5m") or []
             if bars_5m:
                 p2_parts.append(
@@ -1000,6 +1031,7 @@ __all__ = [
     "StatelessStagePromptAssembler",
     "extract_account_risk_limits",
     "format_forecast_for_prompt",
+    "format_tactical_indicators_line",
     "parse_structured_model_json",
     "scope_vst_status_to_symbols",
     "serialize_stage2_candidate",

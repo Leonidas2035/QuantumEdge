@@ -401,21 +401,40 @@ class AgyDirectCliTransport(LLMTransport):
             response_schema=req.response_schema,
         )
         t0 = time.perf_counter()
-        try:
+
+        async def _call_once(target_cmd: list[str]) -> dict[str, Any]:
             if self.runner_override is not None:
                 res = self.runner_override(
                     prompt=prompt_text,
                     agy_model=agy_alias,
-                    cmd=cmd,
+                    cmd=target_cmd,
                     timeout_sec=req.timeout_sec,
                     workdir=self.workdir,
                 )
-                payload = await res if inspect.isawaitable(res) else res
-                if not isinstance(payload, dict) or payload.get("status") != "SUCCESS":
-                    err_detail = payload.get("error") if isinstance(payload, dict) else payload
+                out = await res if inspect.isawaitable(res) else res
+                if not isinstance(out, dict) or out.get("status") != "SUCCESS":
+                    err_detail = out.get("error") if isinstance(out, dict) else out
                     raise RuntimeError(f"agy returned non-SUCCESS status: {err_detail}")
-            else:
-                payload = await self._invoke_subprocess(cmd, prompt_text, req.timeout_sec)
+                return out
+            return await self._invoke_subprocess(target_cmd, prompt_text, req.timeout_sec)
+
+        try:
+            try:
+                payload = await _call_once(cmd)
+            except (TimeoutError, asyncio.TimeoutError, subprocess.TimeoutExpired, httpx.TimeoutException):
+                raise
+            except Exception:
+                if not resume_id:
+                    raise
+                # Fail-soft retry without --resume if agy rejected a stale/invalid session ID
+                self._session_ids_by_decision.pop(req.decision_id, None)
+                fallback_cmd = self.build_command(
+                    agy_alias=agy_alias,
+                    timeout_sec=req.timeout_sec,
+                    resume_session_id=None,
+                    response_schema=req.response_schema,
+                )
+                payload = await _call_once(fallback_cmd)
 
             text = str(payload.get("response") or "")
             u = payload.get("usage") if isinstance(payload.get("usage"), dict) else {}

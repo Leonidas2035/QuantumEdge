@@ -33,7 +33,168 @@ TF_STEP_MS: dict[str, int] = {
     "15m": 900_000,
     "1h": 3_600_000,
     "4h": 14_400_000,
+    "1d": 86_400_000,
 }
+
+STRATEGIC_TFS: tuple[str, ...] = ("1d", "4h")
+TACTICAL_TFS: tuple[str, ...] = ("1h", "15m", "5m")
+DEFAULT_ALL_TFS: tuple[str, ...] = ("1d", "4h", "1h", "15m", "5m")
+LEGACY_STRATEGIC_TFS: tuple[str, ...] = ("4h", "1h")
+LEGACY_TACTICAL_TFS: tuple[str, ...] = ("15m", "5m", "1m")
+LEGACY_ALL_TFS: tuple[str, ...] = ("4h", "1h", "15m", "5m", "1m")
+
+
+def resolve_tf_hierarchy(
+    ohlcv_by_tf: Mapping[str, Any] | None,
+) -> tuple[tuple[str, ...], tuple[str, ...]]:
+    """Return (strategic_tfs, tactical_tfs) favoring 1d/4h + 1h/15m/5m with 1m legacy fallback."""
+    if isinstance(ohlcv_by_tf, Mapping):
+        has_1d = bool(ohlcv_by_tf.get("1d"))
+        has_1m = bool(ohlcv_by_tf.get("1m"))
+        if not has_1d and has_1m:
+            return LEGACY_STRATEGIC_TFS, LEGACY_TACTICAL_TFS
+    return STRATEGIC_TFS, TACTICAL_TFS
+
+
+def _compute_rsi_wilder(closes: np.ndarray, period: int = 14) -> np.ndarray:
+    """Strictly causal Wilder RSI(14) in [0, 100]."""
+    n = len(closes)
+    if n < 2:
+        return np.full(n, 50.0, dtype=np.float64)
+    deltas = np.diff(closes)
+    gains = np.maximum(deltas, 0.0)
+    losses = np.maximum(-deltas, 0.0)
+    alpha = 1.0 / float(max(1, period))
+    avg_gain = pd.Series(gains).ewm(alpha=alpha, adjust=False).mean().values
+    avg_loss = pd.Series(losses).ewm(alpha=alpha, adjust=False).mean().values
+    rsi_tail = np.empty(len(deltas), dtype=np.float64)
+    for i in range(len(deltas)):
+        ag, al = float(avg_gain[i]), float(avg_loss[i])
+        if al <= 1e-12 and ag <= 1e-12:
+            rsi_tail[i] = 50.0
+        elif al <= 1e-12:
+            rsi_tail[i] = 100.0
+        else:
+            rs = ag / al
+            rsi_tail[i] = 100.0 - 100.0 / (1.0 + rs)
+    return np.clip(np.concatenate([[50.0], rsi_tail]), 0.0, 100.0)
+
+
+def _compute_macd(
+    closes: np.ndarray,
+    fast: int = 12,
+    slow: int = 26,
+    signal: int = 9,
+) -> tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """Strictly causal MACD(12, 26, 9) returning (macd_line, signal_line, histogram)."""
+    s = pd.Series(closes, dtype=np.float64)
+    ema_fast = s.ewm(span=fast, adjust=False).mean().values
+    ema_slow = s.ewm(span=slow, adjust=False).mean().values
+    macd_line = ema_fast - ema_slow
+    sig_line = pd.Series(macd_line).ewm(span=signal, adjust=False).mean().values
+    hist = macd_line - sig_line
+    return macd_line, sig_line, hist
+
+
+def _compute_bollinger(
+    closes: np.ndarray,
+    period: int = 20,
+    num_std: float = 2.0,
+) -> tuple[float, float]:
+    """Strictly causal Bollinger Bands(20, 2.0) returning (bb_pos %B, bb_bw_bps)."""
+    s = pd.Series(closes, dtype=np.float64)
+    mid = float(s.rolling(period, min_periods=1).mean().iloc[-1])
+    std = float(s.rolling(period, min_periods=1).std(ddof=0).fillna(0.0).iloc[-1])
+    upper = mid + num_std * std
+    lower = mid - num_std * std
+    bw = upper - lower
+    bb_pos = (float(closes[-1]) - lower) / bw if bw > 1e-12 else 0.5
+    bb_bw_bps = bw / max(abs(mid), 1e-12) * 10_000.0
+    return float(bb_pos), float(max(0.0, bb_bw_bps))
+
+
+def _compute_adx_wilder(
+    highs: np.ndarray,
+    lows: np.ndarray,
+    closes: np.ndarray,
+    period: int = 14,
+) -> tuple[float, float]:
+    """Strictly causal Wilder ADX(14) returning (adx14, di_diff = +DI14 - -DI14)."""
+    n = len(closes)
+    if n < 3:
+        return 0.0, 0.0
+    prev_c = np.concatenate([[closes[0]], closes[:-1]])
+    prev_h = np.concatenate([[highs[0]], highs[:-1]])
+    prev_l = np.concatenate([[lows[0]], lows[:-1]])
+    tr = np.maximum(
+        highs - lows,
+        np.maximum(np.abs(highs - prev_c), np.abs(lows - prev_c)),
+    )
+    up_move = highs - prev_h
+    dn_move = prev_l - lows
+    plus_dm = np.where((up_move > dn_move) & (up_move > 0.0), up_move, 0.0)
+    minus_dm = np.where((dn_move > up_move) & (dn_move > 0.0), dn_move, 0.0)
+
+    alpha = 1.0 / float(max(1, period))
+    tr_rma = pd.Series(tr).ewm(alpha=alpha, adjust=False).mean().values
+    p_rma = pd.Series(plus_dm).ewm(alpha=alpha, adjust=False).mean().values
+    m_rma = pd.Series(minus_dm).ewm(alpha=alpha, adjust=False).mean().values
+
+    plus_di = np.divide(100.0 * p_rma, tr_rma, out=np.zeros_like(tr_rma), where=tr_rma > 1e-12)
+    minus_di = np.divide(100.0 * m_rma, tr_rma, out=np.zeros_like(tr_rma), where=tr_rma > 1e-12)
+    di_sum = plus_di + minus_di
+    dx = np.divide(100.0 * np.abs(plus_di - minus_di), di_sum, out=np.zeros_like(di_sum), where=di_sum > 1e-12)
+    adx_series = pd.Series(dx).ewm(alpha=alpha, adjust=False).mean().values
+    return float(np.clip(adx_series[-1], 0.0, 100.0)), float(plus_di[-1] - minus_di[-1])
+
+
+def _detect_causal_divergence(
+    highs: np.ndarray,
+    lows: np.ndarray,
+    indicator: np.ndarray,
+    lookback: int = 40,
+    pivot_window: int = 2,
+) -> Literal["BULL", "BEAR", "NONE"]:
+    """Detect BULL/BEAR divergence strictly from confirmed past pivots (zero look-ahead)."""
+    n_total = min(len(highs), len(lows), len(indicator))
+    if n_total < 2 * pivot_window + 3:
+        return "NONE"
+    h = highs[-lookback:]
+    l = lows[-lookback:]
+    ind = indicator[-lookback:]
+    n = len(h)
+    if n < 2 * pivot_window + 3:
+        return "NONE"
+
+    pivot_lows: list[int] = []
+    pivot_highs: list[int] = []
+    for i in range(pivot_window, n - pivot_window):
+        win_l = l[i - pivot_window : i + pivot_window + 1]
+        if l[i] <= float(np.min(win_l)) and (l[i] < l[i - 1] or l[i] < l[i + 1]):
+            pivot_lows.append(i)
+        win_h = h[i - pivot_window : i + pivot_window + 1]
+        if h[i] >= float(np.max(win_h)) and (h[i] > h[i - 1] or h[i] > h[i + 1]):
+            pivot_highs.append(i)
+
+    bull_idx = -1
+    if len(pivot_lows) >= 2:
+        p1, p2 = pivot_lows[-2], pivot_lows[-1]
+        if l[p2] < l[p1] and ind[p2] > ind[p1]:
+            bull_idx = p2
+
+    bear_idx = -1
+    if len(pivot_highs) >= 2:
+        q1, q2 = pivot_highs[-2], pivot_highs[-1]
+        if h[q2] > h[q1] and ind[q2] < ind[q1]:
+            bear_idx = q2
+
+    if bull_idx == -1 and bear_idx == -1:
+        return "NONE"
+    if bull_idx > bear_idx:
+        return "BULL"
+    if bear_idx > bull_idx:
+        return "BEAR"
+    return "NONE"
 
 _CACHED_MPF_STYLE = mpf.make_mpf_style(base_mpf_style="yahoo")
 
@@ -369,6 +530,23 @@ class MarketContextSerializer:
         ema20 = float(pd.Series(closes).ewm(span=20, adjust=False).mean().iloc[-1])
         ema50 = float(pd.Series(closes).ewm(span=50, adjust=False).mean().iloc[-1])
         last_c = float(closes[-1])
+
+        rsi_series = _compute_rsi_wilder(closes, period=14)
+        macd_line, _, macd_hist = _compute_macd(closes, fast=12, slow=26, signal=9)
+        bb_pos, bb_bw_bps = _compute_bollinger(closes, period=20, num_std=2.0)
+        adx14, di_diff = _compute_adx_wilder(highs, lows, closes, period=14)
+        rsi_div = _detect_causal_divergence(highs, lows, rsi_series, lookback=40, pivot_window=2)
+        macd_div = _detect_causal_divergence(highs, lows, macd_line, lookback=40, pivot_window=2)
+
+        h_curr = float(macd_hist[-1])
+        h_prev = float(macd_hist[-2]) if len(macd_hist) >= 2 else h_curr
+        if h_curr > 0.0 and (h_curr >= h_prev or h_prev <= 0.0):
+            macd_cross = "BULL"
+        elif h_curr < 0.0 and (h_curr <= h_prev or h_prev >= 0.0):
+            macd_cross = "BEAR"
+        else:
+            macd_cross = "FLAT"
+
         return {
             "tf": tf,
             "n": len(s),
@@ -382,7 +560,43 @@ class MarketContextSerializer:
             "ret_full_bps": round(
                 (last_c - float(closes[0])) / max(float(closes[0]), 1e-12) * 10_000.0, 1
             ),
+            "rsi14": round(float(rsi_series[-1]), 1),
+            "macd_hist_bps": round(h_curr / max(abs(last_c), 1e-12) * 10_000.0, 2),
+            "macd_cross": macd_cross,
+            "bb_pos": round(bb_pos, 3),
+            "bb_bw_bps": round(bb_bw_bps, 1),
+            "adx14": round(adx14, 1),
+            "di_diff": round(di_diff, 1),
+            "rsi_div": rsi_div,
+            "macd_div": macd_div,
         }
+
+    @staticmethod
+    def encode_structural_profile_wire(prof: Mapping[str, Any]) -> str:
+        """Render structural profile + causal indicators compactly to save ~40% prompt tokens."""
+        base_keys = (
+            "tf",
+            "n",
+            "hi",
+            "lo",
+            "last",
+            "vwap",
+            "ema20_bps",
+            "ema50_bps",
+            "atr14_bps",
+            "ret_full_bps",
+        )
+        base_obj = {k: prof[k] for k in base_keys if k in prof}
+        base_json = json.dumps(base_obj, separators=(",", ":"), sort_keys=True)
+        if "rsi14" not in prof:
+            return base_json
+        return (
+            f"{base_json}|ind="
+            f"rsi={prof['rsi14']},mh={prof['macd_hist_bps']},mc={prof['macd_cross']},"
+            f"bb={prof['bb_pos']},bw={prof['bb_bw_bps']},"
+            f"adx={prof['adx14']},di={prof['di_diff']},"
+            f"div={prof['rsi_div']}/{prof['macd_div']}"
+        )
 
     @staticmethod
     def encode_liqmap_csv(liqmap: Mapping[str, Any]) -> str:
@@ -478,8 +692,11 @@ class MarketContextSerializer:
         self,
         symbol: str,
         ctx: Mapping[str, Any],
-        tfs: Sequence[str] = ("4h", "1h", "15m", "5m", "1m"),
+        tfs: Sequence[str] | None = None,
     ) -> ImageAttachment:
+        if tfs is None:
+            strat_tfs, tact_tfs = resolve_tf_hierarchy(ctx.get("ohlcv_by_tf"))
+            tfs = (*strat_tfs, *tact_tfs)
         fig, axes = plt.subplots(3, 2, figsize=(9.2, 6.4), dpi=90, facecolor="white")
         try:
             flat = list(axes.flat)
@@ -579,7 +796,8 @@ class MarketContextSerializer:
         if "orderbook" in ctx:
             sections.append(self.encode_orderbook_csv(ctx["orderbook"], top_n=15))
 
-        for tf in ("4h", "1h", "15m", "5m", "1m"):
+        strat_tfs, tact_tfs = resolve_tf_hierarchy(ohlcv)
+        for tf in (*strat_tfs, *tact_tfs):
             bars = ohlcv.get(tf) or []
             if not bars:
                 continue
@@ -595,16 +813,16 @@ class MarketContextSerializer:
                 prof = self.build_structural_profile(tf, bars)
                 sections.append(
                     f"PROF_{tf}:"
-                    + json.dumps(prof, separators=(",", ":"), sort_keys=True)
+                    + self.encode_structural_profile_wire(prof)
                     + f"|ref={ref_hash}"
                 )
                 sections.append(self.encode_ohlcv_delta_bps(symbol, tf, bars, tail=ohlcv_tail))
             elif mode == "hybrid_webp":
                 prof = self.build_structural_profile(tf, bars)
                 sections.append(
-                    f"PROF_{tf}:" + json.dumps(prof, separators=(",", ":"), sort_keys=True)
+                    f"PROF_{tf}:" + self.encode_structural_profile_wire(prof)
                 )
-                if tf in ("15m", "5m", "1m"):
+                if tf in tact_tfs:
                     # Exact lossless tick_delta tail for precise SL/TP anchoring in Stage 2
                     sections.append(self.encode_ohlcv_tick_delta(symbol, tf, bars[-ohlcv_tail:]))
 
@@ -637,10 +855,17 @@ def _extract_specs_from_ccxt(client_or_markets: Any) -> dict[str, tuple[Decimal,
 
 
 __all__ = [
+    "DEFAULT_ALL_TFS",
     "DEFAULT_INSTRUMENT_SPECS",
+    "LEGACY_ALL_TFS",
+    "LEGACY_STRATEGIC_TFS",
+    "LEGACY_TACTICAL_TFS",
     "MarketContextSerializer",
+    "STRATEGIC_TFS",
     "SerializationMode",
     "SerializedMarketPayload",
+    "TACTICAL_TFS",
     "TF_STEP_MS",
     "_extract_specs_from_ccxt",
+    "resolve_tf_hierarchy",
 ]

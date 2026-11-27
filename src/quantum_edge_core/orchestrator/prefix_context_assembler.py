@@ -14,7 +14,10 @@ from pathlib import Path
 from typing import Any, Mapping
 
 from quantum_edge_core.contracts.optimization import ForecastBundleV1, TradeDecisionV2
-from quantum_edge_core.execution.market_context_serializer import MarketContextSerializer
+from quantum_edge_core.execution.market_context_serializer import (
+    MarketContextSerializer,
+    resolve_tf_hierarchy,
+)
 from quantum_edge_core.execution.risk_guard import RiskConfig
 from quantum_edge_core.execution.storage_policy import (
     CANONICAL_SSD_DURABLE_PATHS,
@@ -23,6 +26,7 @@ from quantum_edge_core.execution.storage_policy import (
 from quantum_edge_core.orchestrator.deterministic_orchestrator import (
     extract_account_risk_limits,
     format_forecast_for_prompt,
+    format_tactical_indicators_line,
     serialize_stage2_candidate,
 )
 from quantum_edge_core.orchestrator.prompts import build_p0_static_prefix
@@ -345,13 +349,14 @@ class PrefixContextAssembler:
         for sym in sorted(contexts_by_symbol.keys()):
             ctx = contexts_by_symbol[sym]
             ohlcv = ctx.get("ohlcv_by_tf") or {}
-            for tf in ("4h", "1h"):
+            strat_tfs, _ = resolve_tf_hierarchy(ohlcv)
+            for tf in strat_tfs:
                 bars = ohlcv.get(tf) or []
                 if bars:
                     prof = self.serializer.build_structural_profile(tf, bars)
                     parts.append(
                         f"MACRO|{sym}|{tf}|"
-                        + json.dumps(prof, separators=(",", ":"), sort_keys=True)
+                        + self.serializer.encode_structural_profile_wire(prof)
                     )
                     parts.append(
                         self.serializer.encode_ohlcv_delta_bps(sym, tf, bars, tail=30)
@@ -474,6 +479,9 @@ class PrefixContextAssembler:
             )
             if isinstance(fc_fmt, str):
                 p2_parts.append(fc_fmt)
+            tac_line = format_tactical_indicators_line(self.serializer, sym, ctx)
+            if tac_line:
+                p2_parts.append(tac_line)
             bars_5m = (ctx.get("ohlcv_by_tf") or {}).get("5m") or []
             if bars_5m:
                 p2_parts.append(

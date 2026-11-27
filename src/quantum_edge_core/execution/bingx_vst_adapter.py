@@ -410,7 +410,7 @@ def fetch_full_vst_context(
     client: Any,
     symbol: str,
     risk_config: RiskConfig | None = None,
-    timeframes: Sequence[str] = ("1m", "5m", "15m", "1h", "4h"),
+    timeframes: Sequence[str] = ("5m", "15m", "1h", "4h", "1d"),
     ohlcv_limit: int = 100,
     orderbook_limit: int = 50,
     include_analytics: bool = True,
