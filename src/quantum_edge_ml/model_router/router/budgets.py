@@ -1,9 +1,14 @@
 from __future__ import annotations
 
 import json
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Dict
+from typing import TYPE_CHECKING, Dict
+
+if TYPE_CHECKING:
+    from quantum_edge_core.contracts.optimization import UsageRecordV1
+    from quantum_edge_ml.model_router.usage_ledger import UsageLedger
 
 
 @dataclass
@@ -13,9 +18,17 @@ class BudgetConfig:
 
 
 class TeacherBudgets:
-    def __init__(self, path: Path, config: BudgetConfig) -> None:
+    """Backward-compatible daily teacher budget tracker with optional UsageLedger sync."""
+
+    def __init__(
+        self,
+        path: Path,
+        config: BudgetConfig,
+        ledger: UsageLedger | None = None,
+    ) -> None:
         self.path = path
         self.config = config
+        self.ledger = ledger
         self.path.parent.mkdir(parents=True, exist_ok=True)
 
     def _load(self) -> Dict[str, int | str]:
@@ -56,6 +69,33 @@ class TeacherBudgets:
         state["requests"] = int(state.get("requests", 0)) + 1
         state["tokens"] = int(state.get("tokens", 0)) + int(tokens_used)
         self._save(state)
+        if self.ledger is not None:
+            from quantum_edge_core.contracts.optimization import (
+                RequestStatus,
+                TransportChannel,
+                UsageRecordV1,
+            )
+
+            self.ledger.record_usage(
+                UsageRecordV1(
+                    record_id=f"bgt-{uuid.uuid4().hex[:16]}",
+                    decision_id=f"budget-{day}",
+                    stage="proxy_legacy",
+                    transport=TransportChannel.AGY_CLI_PROXY,
+                    model_provider_id="teacher_legacy",
+                    request_status=RequestStatus.OK,
+                    total_tokens=int(tokens_used),
+                    latency_ms=0.0,
+                    timeout_ms=0.0,
+                )
+            )
+
+    def record_usage(self, rec: UsageRecordV1) -> None:
+        """Forward a native UsageRecordV1 to both the ledger and daily JSON counter."""
+        if self.ledger is not None:
+            self.ledger.record_usage(rec)
+        tokens_used = int(rec.total_tokens or 0)
+        self.record(rec.ts_utc.isoformat(), tokens_used)
 
     def remaining(self, now_utc: str) -> Dict[str, int]:
         state = self._load()

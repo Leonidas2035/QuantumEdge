@@ -31,6 +31,16 @@ import uuid
 
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+_SRC_ROOT = REPO_ROOT / "src"
+if str(_SRC_ROOT) not in sys.path:
+    sys.path.insert(0, str(_SRC_ROOT))
+
+from quantum_edge_core.contracts.optimization import (  # noqa: E402
+    RequestStatus,
+    ThinkingLevel,
+    TransportChannel,
+    UsageRecordV1,
+)
 DEFAULT_AGY_BIN = os.environ.get("AGY_BIN", "/home/layman/.local/bin/agy")
 DEFAULT_HOST = "127.0.0.1"
 DEFAULT_PORT = 8045
@@ -306,6 +316,7 @@ class AgyProxyEngine:
         keepalive_interval_sec: float = DEFAULT_KEEPALIVE_INTERVAL_SEC,
         log_path: Path = DEFAULT_LOG_PATH,
         runner: Callable[..., dict[str, Any]] = invoke_agy_cli,
+        ledger: Any | None = None,
     ) -> None:
         self.agy_bin = agy_bin
         self.default_model = default_model
@@ -313,6 +324,22 @@ class AgyProxyEngine:
         self.keepalive_interval_sec = keepalive_interval_sec
         self.log_path = log_path
         self.runner = runner
+        self.ledger = ledger
+
+    @staticmethod
+    def _infer_thinking_level(agy_model: str) -> ThinkingLevel | None:
+        for lvl in (ThinkingLevel.XHIGH, ThinkingLevel.HIGH, ThinkingLevel.MEDIUM, ThinkingLevel.LOW):
+            if agy_model.endswith(f"-{lvl.value}"):
+                return lvl
+        return None
+
+    @staticmethod
+    def _base_model_id(agy_model: str) -> str:
+        for lvl in (ThinkingLevel.XHIGH, ThinkingLevel.HIGH, ThinkingLevel.MEDIUM, ThinkingLevel.LOW):
+            suffix = f"-{lvl.value}"
+            if agy_model.endswith(suffix):
+                return agy_model[: -len(suffix)]
+        return agy_model
 
     def log_event(self, meta: dict[str, Any]) -> None:
         try:
@@ -359,19 +386,83 @@ class AgyProxyEngine:
             tools=tools,
             tool_choice=tool_choice,
         )
+        input_chars = len(prompt)
+        stream_flag = bool(request_body.get("stream"))
+        rec_id = f"pxy-{uuid.uuid4().hex[:16]}"
+        decision_id = str(request_body.get("decision_id") or rec_id)
+        t_level = self._infer_thinking_level(agy_model)
+        base_model = self._base_model_id(agy_model)
 
-        agy_out = self.runner(
-            prompt,
-            agy_model=agy_model,
-            use_tool_schema=use_tool_schema,
-            agy_bin=self.agy_bin,
-            timeout_sec=self.timeout_sec,
-        )
+        try:
+            agy_out = self.runner(
+                prompt,
+                agy_model=agy_model,
+                use_tool_schema=use_tool_schema,
+                agy_bin=self.agy_bin,
+                timeout_sec=self.timeout_sec,
+            )
+        except Exception as exc:
+            latency_ms = round((time.perf_counter() - t0) * 1000.0, 2)
+            is_timeout = isinstance(exc, subprocess.TimeoutExpired) or "timeout" in str(exc).lower()
+            status_str = "timeout" if is_timeout else "error"
+            self.log_event(
+                {
+                    "model": requested_model,
+                    "agy_model": agy_model,
+                    "stream": stream_flag,
+                    "input_chars": input_chars,
+                    "output_chars": 0,
+                    "latency_ms": latency_ms,
+                    "timeout_ms": self.timeout_sec * 1000.0,
+                    "is_censored": is_timeout,
+                    "status": status_str,
+                    "error": str(exc)[:300],
+                    # Explicit UNKNOWN (null in JSON, NULL in SQLite) — NEVER 0!
+                    "input_tokens": None,
+                    "output_tokens": None,
+                    "thinking_tokens": None,
+                    "cache_read_tokens": None,
+                    "total_tokens": None,
+                    "num_turns": None,
+                    "duration_seconds": None,
+                }
+            )
+            if self.ledger is not None:
+                self.ledger.record_usage(
+                    UsageRecordV1(
+                        record_id=rec_id,
+                        decision_id=decision_id,
+                        stage="proxy_legacy",
+                        transport=TransportChannel.AGY_CLI_PROXY,
+                        model_provider_id=base_model,
+                        agy_alias=agy_model,
+                        thinking_level=t_level,
+                        request_status=RequestStatus.TIMEOUT if is_timeout else RequestStatus.ERROR,
+                        error_code=type(exc).__name__ if is_timeout else str(exc)[:180],
+                        input_chars=input_chars,
+                        output_chars=0,
+                        latency_ms=latency_ms,
+                        timeout_ms=self.timeout_sec * 1000.0,
+                        is_censored=is_timeout,
+                    )
+                )
+            setattr(exc, "_already_logged", True)
+            raise
 
         raw_response_str = str(agy_out.get("response") or "")
         usage_raw = agy_out.get("usage") if isinstance(agy_out.get("usage"), dict) else {}
-        prompt_tokens = int(usage_raw.get("input_tokens") or 0)
-        completion_tokens = int(usage_raw.get("output_tokens") or 0)
+        in_tok = int(usage_raw["input_tokens"]) if usage_raw.get("input_tokens") is not None else None
+        out_tok = int(usage_raw["output_tokens"]) if usage_raw.get("output_tokens") is not None else None
+        think_tok = int(usage_raw["thinking_tokens"]) if usage_raw.get("thinking_tokens") is not None else None
+        cache_tok = int(usage_raw["cache_read_tokens"]) if usage_raw.get("cache_read_tokens") is not None else None
+        tot_tok = int(usage_raw["total_tokens"]) if usage_raw.get("total_tokens") is not None else None
+        num_turns_raw = agy_out.get("num_turns")
+        duration_seconds_raw = agy_out.get("duration_seconds")
+        prompt_tokens = in_tok or 0
+        completion_tokens = (out_tok or 0) + (think_tok or 0)
+        total_tokens_resp = (
+            tot_tok if tot_tok is not None else (prompt_tokens + completion_tokens)
+        )
 
         openai_tool_calls: list[dict[str, Any]] = []
         assistant_content: str | None = None
@@ -432,14 +523,47 @@ class AgyProxyEngine:
             {
                 "model": requested_model,
                 "agy_model": agy_model,
-                "stream": bool(request_body.get("stream")),
-                "input_chars": len(prompt),
+                "stream": stream_flag,
+                "input_chars": input_chars,
                 "output_chars": output_chars,
                 "tool_calls_count": len(openai_tool_calls),
                 "latency_ms": latency_ms,
+                "timeout_ms": self.timeout_sec * 1000.0,
+                "is_censored": False,
                 "status": "ok",
+                "input_tokens": in_tok,
+                "output_tokens": out_tok,
+                "thinking_tokens": think_tok,
+                "cache_read_tokens": cache_tok,
+                "total_tokens": tot_tok,
+                "num_turns": num_turns_raw,
+                "duration_seconds": duration_seconds_raw,
             }
         )
+        if self.ledger is not None:
+            self.ledger.record_usage(
+                UsageRecordV1(
+                    record_id=rec_id,
+                    decision_id=decision_id,
+                    stage="proxy_legacy",
+                    transport=TransportChannel.AGY_CLI_PROXY,
+                    model_provider_id=base_model,
+                    agy_alias=agy_model,
+                    thinking_level=t_level,
+                    request_status=RequestStatus.OK,
+                    provider_input_tokens=in_tok,
+                    cache_read_tokens=cache_tok,
+                    output_tokens=out_tok,
+                    thinking_tokens=think_tok,
+                    total_tokens=tot_tok,
+                    input_chars=input_chars,
+                    output_chars=output_chars,
+                    latency_ms=latency_ms,
+                    timeout_ms=self.timeout_sec * 1000.0,
+                    is_censored=False,
+                    num_turns=int(num_turns_raw) if num_turns_raw is not None else 1,
+                )
+            )
 
         return {
             "id": f"chatcmpl-{uuid.uuid4().hex[:20]}",
@@ -456,7 +580,9 @@ class AgyProxyEngine:
             "usage": {
                 "prompt_tokens": prompt_tokens,
                 "completion_tokens": completion_tokens,
-                "total_tokens": prompt_tokens + completion_tokens,
+                "total_tokens": total_tokens_resp,
+                "prompt_tokens_details": {"cached_tokens": cache_tok or 0},
+                "completion_tokens_details": {"reasoning_tokens": think_tok or 0},
             },
         }
 
@@ -634,7 +760,20 @@ def make_http_handler(engine: AgyProxyEngine) -> type[BaseHTTPRequestHandler]:
                     }
                 )
             except Exception as exc:
-                engine.log_event({"status": "error", "error": str(exc)[:300]})
+                if not getattr(exc, "_already_logged", False):
+                    engine.log_event(
+                        {
+                            "status": "error",
+                            "error": str(exc)[:300],
+                            "input_tokens": None,
+                            "output_tokens": None,
+                            "thinking_tokens": None,
+                            "cache_read_tokens": None,
+                            "total_tokens": None,
+                            "num_turns": None,
+                            "duration_seconds": None,
+                        }
+                    )
                 self._send_json(
                     500,
                     {"error": {"message": str(exc), "type": "proxy_runtime_error"}},
@@ -672,7 +811,20 @@ def make_http_handler(engine: AgyProxyEngine) -> type[BaseHTTPRequestHandler]:
 
             if "error" in result_box:
                 exc = result_box["error"]
-                engine.log_event({"status": "error", "error": str(exc)[:300]})
+                if not getattr(exc, "_already_logged", False):
+                    engine.log_event(
+                        {
+                            "status": "error",
+                            "error": str(exc)[:300],
+                            "input_tokens": None,
+                            "output_tokens": None,
+                            "thinking_tokens": None,
+                            "cache_read_tokens": None,
+                            "total_tokens": None,
+                            "num_turns": None,
+                            "duration_seconds": None,
+                        }
+                    )
                 err_payload = {
                     "error": {"message": str(exc), "type": "proxy_runtime_error"}
                 }
@@ -733,16 +885,28 @@ def build_parser() -> argparse.ArgumentParser:
         default=DEFAULT_LOG_PATH,
         help=f"Metadata log file path (default: {DEFAULT_LOG_PATH})",
     )
+    parser.add_argument(
+        "--ledger-db",
+        type=Path,
+        default=None,
+        help="Optional UsageLedger SQLite path (e.g. runtime/usage_ledger.sqlite3)",
+    )
     return parser
 
 
 def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
+    ledger = None
+    if args.ledger_db is not None:
+        from quantum_edge_ml.model_router.usage_ledger import UsageLedger
+
+        ledger = UsageLedger(args.ledger_db)
     engine = AgyProxyEngine(
         agy_bin=args.agy_bin,
         default_model=args.default_model,
         timeout_sec=args.timeout,
         log_path=args.log_path,
+        ledger=ledger,
     )
     server = create_server(host=args.host, port=args.port, engine=engine)
 
@@ -769,6 +933,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         server.serve_forever()
     finally:
         server.server_close()
+        if ledger is not None:
+            ledger.close()
     return 0
 
 
