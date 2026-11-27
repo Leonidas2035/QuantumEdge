@@ -177,9 +177,96 @@ def _estimate_elapsed_hours(session_data: dict[str, Any], ledger_path: Path | No
     return max(elapsed_sec, 60.0) / 3600.0
 
 
+def _discover_latest_event_log() -> Path | None:
+    sess_dir = ROOT / "runtime" / "sessions"
+    if not sess_dir.is_dir():
+        return None
+    candidates = sorted(
+        sess_dir.glob("*.jsonl"),
+        key=lambda p: p.stat().st_mtime if p.exists() else 0.0,
+        reverse=True,
+    )
+    return candidates[0] if candidates else None
+
+
+def _reconstruct_session_from_event_log(event_log_path: Path | None) -> dict[str, Any]:
+    if event_log_path is None or not event_log_path.is_file():
+        return {}
+    sess: dict[str, Any] = {
+        "status": "IN_PROGRESS",
+        "cycles": [],
+        "watcher_actions": [],
+        "errors": [],
+    }
+    try:
+        lines = event_log_path.read_text(encoding="utf-8").splitlines()
+    except Exception:
+        return {}
+    parsed_any = False
+    for raw in lines:
+        raw = raw.strip()
+        if not raw:
+            continue
+        try:
+            rec = json.loads(raw)
+        except Exception:
+            continue
+        if not isinstance(rec, dict):
+            continue
+        parsed_any = True
+        ev = rec.get("event")
+        if ev == "SESSION_START":
+            sess.update(
+                {
+                    "started_utc": rec.get("ts_utc"),
+                    "dry_run": rec.get("mode") == "DRY_RUN",
+                    "transport": rec.get("transport"),
+                    "model": rec.get("model"),
+                    "reuse_session": rec.get("reuse_session", False),
+                    "symbols": rec.get("symbols") or [],
+                    "start_equity_vst": rec.get("start_equity_vst"),
+                    "current_equity_vst": rec.get("start_equity_vst"),
+                }
+            )
+        elif ev == "CYCLE_COMPLETE":
+            cyc = rec.get("cycle")
+            if isinstance(cyc, dict):
+                sess["cycles"].append(cyc)
+            sess["cycles_count"] = len(sess["cycles"])
+            sess["updated_utc"] = rec.get("ts_utc")
+            if rec.get("current_equity_vst") is not None:
+                sess["current_equity_vst"] = rec.get("current_equity_vst")
+            if isinstance(rec.get("usage_summary"), dict):
+                sess["usage_summary"] = rec["usage_summary"]
+            if isinstance(rec.get("api_stats"), dict):
+                sess["api_stats"] = rec["api_stats"]
+        elif ev == "CYCLE_ERROR":
+            sess["errors"].append(rec)
+            sess["cycle_errors_count"] = len(sess["errors"])
+            sess["updated_utc"] = rec.get("ts_utc")
+        elif ev == "WATCHER_ACTION":
+            sess["watcher_actions"].extend(rec.get("actions") or [])
+            if rec.get("watcher_mode"):
+                sess["watcher_mode"] = rec["watcher_mode"]
+        elif ev == "FATAL_CRASH":
+            sess["status"] = "CRASHED"
+            sess["fatal_traceback"] = rec.get("traceback")
+        elif ev == "SESSION_END":
+            sess["status"] = rec.get("session_status") or "COMPLETED"
+            sess["finished_utc"] = rec.get("ts_utc")
+            sess["end_equity_vst"] = rec.get("end_equity_vst")
+            sess["current_equity_vst"] = rec.get("end_equity_vst")
+            if isinstance(rec.get("usage_summary"), dict):
+                sess["usage_summary"] = rec["usage_summary"]
+            if isinstance(rec.get("api_stats"), dict):
+                sess["api_stats"] = rec["api_stats"]
+    return sess if parsed_any else {}
+
+
 def build_briefing_payload(
     *,
     session_json: Path | None = None,
+    event_log: Path | None = None,
     ledger_db: Path | None = None,
     thesis_db: Path | None = None,
     journal_path: Path | None = None,
@@ -187,6 +274,14 @@ def build_briefing_payload(
 ) -> dict[str, Any]:
     sess_path = session_json or default_latest_session_path()
     sess = _read_json_if_exists(sess_path)
+    source_used = "ram_json" if sess else "none"
+    if not sess:
+        eff_ev = event_log or _discover_latest_event_log()
+        if eff_ev is not None:
+            sess = _reconstruct_session_from_event_log(eff_ev)
+            if sess:
+                sess_path = eff_ev
+                source_used = "event_log"
     eff_ledger = ledger_db or _discover_latest_ledger_db()
     eff_thesis = thesis_db or (ROOT / CANONICAL_SSD_DURABLE_PATHS["thesis_memory"])
     eff_journal = journal_path or (ROOT / CANONICAL_SSD_DURABLE_PATHS["lean_trade_journal"])
@@ -229,6 +324,7 @@ def build_briefing_payload(
     return {
         "generated_utc": datetime.now(timezone.utc).isoformat(),
         "session_path": str(sess_path),
+        "session_source": source_used,
         "session_found": bool(sess),
         "status": sess.get("status", "UNKNOWN"),
         "mode": "DRY_RUN" if sess.get("dry_run", True) else "LIVE_VST",
@@ -341,6 +437,7 @@ def build_parser() -> argparse.ArgumentParser:
         description="Human & AGY TUI live session briefing reader (RAM-First, 0 LLM tokens)",
     )
     p.add_argument("--session-json", type=Path, default=None, help="Path to RAM latest_session.json")
+    p.add_argument("--event-log", type=Path, default=None, help="Fallback durable JSONL event log path when RAM session JSON is absent")
     p.add_argument("--ledger-db", type=Path, default=None, help="Path to UsageLedger SQLite DB")
     p.add_argument("--thesis-db", type=Path, default=None, help="Path to ThesisMemoryStore SQLite DB")
     p.add_argument("--journal", type=Path, default=None, help="Path to lean_trade_journal.jsonl")
@@ -353,6 +450,7 @@ def main(argv: Sequence[str] | None = None) -> int:
     args = build_parser().parse_args(argv)
     payload = build_briefing_payload(
         session_json=args.session_json,
+        event_log=args.event_log,
         ledger_db=args.ledger_db,
         thesis_db=args.thesis_db,
         journal_path=args.journal,

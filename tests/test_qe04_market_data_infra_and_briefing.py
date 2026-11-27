@@ -525,7 +525,276 @@ def test_qe_briefing_cli_renders_human_and_json_briefing_from_ram_session_and_le
     assert rc_json == 0
     parsed = json.loads(capsys.readouterr().out)
     assert parsed["session_found"] is True
-    assert parsed["status"] == "FINISHED"
+    assert parsed["status"] in ("COMPLETED", "FINISHED")
     assert len(parsed["recent_decisions"]) >= 1
     assert parsed["projections"]["iecu_1h_proj"] >= 0.0
     assert "rest_calls_total" in parsed["api_stats"]
+
+
+def test_run_vst_session_writes_incremental_report_and_durable_event_log_on_every_cycle_and_crash(
+    tmp_path: Path,
+) -> None:
+    from quantum_edge_ml.model_router.backends.transport import LLMRequest, LLMResponse, LLMTransport
+
+    report_path = tmp_path / "inc_report.md"
+    event_log = tmp_path / "events.jsonl"
+    observed_in_progress_states: list[bool] = []
+
+    class _CheckingTransport(LLMTransport):
+        def __init__(self, ledger: UsageLedger) -> None:
+            super().__init__(ledger)
+            self.calls = 0
+
+        async def generate(self, req: LLMRequest) -> LLMResponse:
+            self.calls += 1
+            if self.calls == 1:
+                txt = json.dumps(
+                    {
+                        "market_regime_summary": "Cycle 1 mock hold.",
+                        "action": "HOLD",
+                        "candidate_symbol": "BNBUSDT",
+                        "hold_blocker_code": "NO_LIQ_ASYMMETRY",
+                        "candidate_rationale": "Checking incremental report.",
+                        "estimated_edge_bps": 4.0,
+                    }
+                )
+                usage = UsageRecordV1(
+                    record_id=f"inc-1",
+                    decision_id=req.decision_id,
+                    stage=req.stage,
+                    transport=TransportChannel.AGY_CLI_PROXY,
+                    model_provider_id=req.model,
+                    agy_alias=f"{req.model}-low",
+                    thinking_level=req.thinking_level,
+                    request_status=RequestStatus.OK,
+                    provider_input_tokens=100,
+                    output_tokens=20,
+                    total_tokens=120,
+                    input_chars=len(req.combined_user_text),
+                    output_chars=len(txt),
+                    latency_ms=2.0,
+                    timeout_ms=req.timeout_sec * 1000.0,
+                    prefix_hash=req.prefix_hash,
+                    context_hash=req.context_hash,
+                    snapshot_id=req.snapshot_id,
+                )
+                self.ledger.record_usage(usage)
+                return LLMResponse(text=txt, usage=usage)
+            # On Cycle #2, verify Cycle #1 already wrote IN_PROGRESS report & durable log to SSD!
+            observed_in_progress_states.append(
+                report_path.is_file()
+                and "SESSION_STATUS=IN_PROGRESS" in report_path.read_text(encoding="utf-8")
+                and event_log.is_file()
+                and "CYCLE_COMPLETE" in event_log.read_text(encoding="utf-8")
+            )
+            raise RuntimeError("simulated cycle 2 transient traceback error")
+
+        async def count_tokens(self, model: str, text_parts: list[str], images: Any = None) -> dict[str, int]:
+            return {}
+
+        async def close(self) -> None:
+            return None
+
+    args = session_runner.build_parser().parse_args(
+        [
+            "--transport",
+            "mock",
+            "--dry-run",
+            "--duration-minutes",
+            "0.03",
+            "--cycle-interval-sec",
+            "0.25",
+            "--protection-interval-sec",
+            "1.0",
+            "--ledger-db",
+            str(tmp_path / "u_inc.sqlite3"),
+            "--order-ledger-db",
+            str(tmp_path / "o_inc.sqlite3"),
+            "--thesis-db",
+            str(tmp_path / "t_inc.sqlite3"),
+            "--journal-path",
+            str(tmp_path / "j_inc.jsonl"),
+            "--session-summary-ram",
+            str(tmp_path / "s_inc.json"),
+            "--latest-session-ram",
+            str(tmp_path / "latest_inc.json"),
+            "--report-out",
+            str(report_path),
+            "--event-log-path",
+            str(event_log),
+        ]
+    )
+    tr_ledger = UsageLedger(tmp_path / "tr_inc.sqlite3")
+    tr = _CheckingTransport(tr_ledger)
+    try:
+        summary = asyncio.run(session_runner.run_persistent_session(args, transport_override=tr))
+    finally:
+        tr_ledger.close()
+
+    assert len(observed_in_progress_states) >= 1 and all(observed_in_progress_states)
+    assert summary["session_status"] == "COMPLETED"
+    final_md = report_path.read_text(encoding="utf-8")
+    assert "SESSION_STATUS=COMPLETED" in final_md
+    assert "## 4. Full Thesis & Decision Chronology" in final_md
+    assert "## 6. Cycle Errors, Rate-Limit Retries & Crash Traceback" in final_md
+    assert "simulated cycle 2 transient traceback error" in final_md
+    assert "Traceback (most recent call last):" in final_md
+
+    ev_lines = [json.loads(line) for line in event_log.read_text(encoding="utf-8").splitlines() if line.strip()]
+    ev_types = [e["event"] for e in ev_lines]
+    assert ev_types[0] == "SESSION_START"
+    assert "CYCLE_COMPLETE" in ev_types
+    assert "CYCLE_ERROR" in ev_types
+    assert ev_types[-1] == "SESSION_END"
+
+
+def test_run_vst_session_quota_cooldown_waits_and_resumes_instead_of_aborting(
+    tmp_path: Path,
+) -> None:
+    from quantum_edge_ml.model_router.backends.transport import LLMRequest, LLMResponse, LLMTransport
+
+    class _QuotaCooldownTransport(LLMTransport):
+        def __init__(self, ledger: UsageLedger) -> None:
+            super().__init__(ledger)
+            self.calls = 0
+
+        async def generate(self, req: LLMRequest) -> LLMResponse:
+            self.calls += 1
+            if self.calls == 1:
+                raise RuntimeError("Individual quota reached: please try again later")
+            txt = json.dumps(
+                {
+                    "market_regime_summary": "Resumed cleanly after quota cooldown.",
+                    "action": "HOLD",
+                    "candidate_symbol": "BNBUSDT",
+                    "hold_blocker_code": "NO_LIQ_ASYMMETRY",
+                    "candidate_rationale": "Post-cooldown Cycle 2 OK.",
+                    "estimated_edge_bps": 6.0,
+                }
+            )
+            usage = UsageRecordV1(
+                record_id=f"qcd-{self.calls}",
+                decision_id=req.decision_id,
+                stage=req.stage,
+                transport=TransportChannel.AGY_CLI_PROXY,
+                model_provider_id=req.model,
+                agy_alias=f"{req.model}-low",
+                thinking_level=req.thinking_level,
+                request_status=RequestStatus.OK,
+                provider_input_tokens=100,
+                output_tokens=20,
+                total_tokens=120,
+                input_chars=len(req.combined_user_text),
+                output_chars=len(txt),
+                latency_ms=2.0,
+                timeout_ms=req.timeout_sec * 1000.0,
+                prefix_hash=req.prefix_hash,
+                context_hash=req.context_hash,
+                snapshot_id=req.snapshot_id,
+            )
+            self.ledger.record_usage(usage)
+            return LLMResponse(text=txt, usage=usage)
+
+        async def count_tokens(self, model: str, text_parts: list[str], images: Any = None) -> dict[str, int]:
+            return {}
+
+        async def close(self) -> None:
+            return None
+
+    event_log = tmp_path / "qcd_events.jsonl"
+    args = session_runner.build_parser().parse_args(
+        [
+            "--transport",
+            "mock",
+            "--dry-run",
+            "--duration-minutes",
+            "0.04",
+            "--cycle-interval-sec",
+            "0.10",
+            "--quota-cooldown-sec",
+            "0.05",
+            "--ledger-db",
+            str(tmp_path / "u_qcd.sqlite3"),
+            "--order-ledger-db",
+            str(tmp_path / "o_qcd.sqlite3"),
+            "--thesis-db",
+            str(tmp_path / "t_qcd.sqlite3"),
+            "--journal-path",
+            str(tmp_path / "j_qcd.jsonl"),
+            "--session-summary-ram",
+            str(tmp_path / "s_qcd.json"),
+            "--latest-session-ram",
+            str(tmp_path / "latest_qcd.json"),
+            "--event-log-path",
+            str(event_log),
+        ]
+    )
+    tr_ledger = UsageLedger(tmp_path / "tr_qcd.sqlite3")
+    tr = _QuotaCooldownTransport(tr_ledger)
+    try:
+        summary = asyncio.run(session_runner.run_persistent_session(args, transport_override=tr))
+    finally:
+        tr_ledger.close()
+
+    assert summary["quota_stopped"] is False
+    assert summary["session_status"] == "COMPLETED"
+    assert any(c.get("action") == "HOLD" for c in summary["cycles"])
+    assert "QUOTA_COOLDOWN_WAIT" in event_log.read_text(encoding="utf-8")
+
+
+def test_qe_briefing_falls_back_to_durable_event_log_when_ram_snapshot_missing(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    missing_ram = tmp_path / "nonexistent_latest_session.json"
+    event_log = tmp_path / "durable_events.jsonl"
+    ledger_db = tmp_path / "fb_usage.sqlite3"
+
+    args = session_runner.build_parser().parse_args(
+        [
+            "--transport",
+            "mock",
+            "--dry-run",
+            "--duration-minutes",
+            "0.02",
+            "--cycle-interval-sec",
+            "0.20",
+            "--ledger-db",
+            str(ledger_db),
+            "--order-ledger-db",
+            str(tmp_path / "fb_orders.sqlite3"),
+            "--thesis-db",
+            str(tmp_path / "fb_thesis.sqlite3"),
+            "--journal-path",
+            str(tmp_path / "fb_journal.jsonl"),
+            "--session-summary-ram",
+            str(tmp_path / "fb_sess.json"),
+            "--latest-session-ram",
+            str(tmp_path / "fb_latest_ignored.json"),
+            "--event-log-path",
+            str(event_log),
+        ]
+    )
+    asyncio.run(session_runner.run_persistent_session(args))
+    capsys.readouterr()
+
+    rc = qe_briefing.main(
+        [
+            "--session-json",
+            str(missing_ram),
+            "--event-log",
+            str(event_log),
+            "--ledger-db",
+            str(ledger_db),
+            "--thesis-db",
+            str(tmp_path / "fb_thesis.sqlite3"),
+            "--journal",
+            str(tmp_path / "fb_journal.jsonl"),
+            "--json",
+        ]
+    )
+    assert rc == 0
+    out = json.loads(capsys.readouterr().out)
+    assert out["session_found"] is True
+    assert out["session_source"] == "event_log"
+    assert out["status"] == "COMPLETED"
+    assert out["cycles_count"] >= 1
