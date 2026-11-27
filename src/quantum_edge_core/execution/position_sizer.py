@@ -74,6 +74,38 @@ class ConvictionPositionSizer:
             return dict(forecast)
         return {}
 
+    @staticmethod
+    def _extract_1d_di_diff(ctx: Mapping[str, Any]) -> float | None:
+        indicators = ctx.get("indicators")
+        if isinstance(indicators, Mapping):
+            for key in ("1d_di_diff", "di_diff_1d", "di_diff"):
+                if indicators.get(key) is not None:
+                    try:
+                        return float(indicators[key])
+                    except (TypeError, ValueError):
+                        pass
+        prof_map = ctx.get("structural_profiles")
+        if isinstance(prof_map, Mapping) and isinstance(prof_map.get("1d"), Mapping):
+            val = prof_map["1d"].get("di_diff")
+            if val is not None:
+                try:
+                    return float(val)
+                except (TypeError, ValueError):
+                    pass
+        bars_1d = ((ctx.get("ohlcv_by_tf") or {}).get("1d")) or []
+        if bars_1d:
+            try:
+                from quantum_edge_core.execution.market_context_serializer import (
+                    MarketContextSerializer,
+                )
+
+                prof = MarketContextSerializer().build_structural_profile("1d", bars_1d)
+                if prof.get("di_diff") is not None:
+                    return float(prof["di_diff"])
+            except Exception:
+                return None
+        return None
+
     def compute_risk_score(
         self,
         *,
@@ -81,6 +113,7 @@ class ConvictionPositionSizer:
         forecast: Any | None,
         decision: Any,
         current_price: float | None = None,
+        market_leader: Mapping[str, Any] | None = None,
     ) -> tuple[float, dict[str, float]]:
         """Evaluate composite risk_score in [0, 1] from 6 orthogonal factors."""
         fc = self._extract_forecast_dict(forecast)
@@ -111,7 +144,7 @@ class ConvictionPositionSizer:
         spread_bps = max(0.0, float(snap.get("spread_bps") or 0.0))
         micro = ctx.get("microstructure_and_liquidity") or {}
 
-        # 1. Regime alignment & maturity risk (weight 0.20)
+        # 1. Regime alignment & maturity risk (weight 0.20) + Macro-Beta BTC filter (QE-04)
         if fc and isinstance(fc.get("regime_probs"), Mapping):
             rp = fc["regime_probs"]
             p_fav = float(rp.get("UP" if side == "LONG" else "DOWN", 0.33))
@@ -121,6 +154,20 @@ class ConvictionPositionSizer:
             regime_alignment_risk = _clip01(base_reg + mat_pen)
         else:
             regime_alignment_risk = 0.45
+
+        if isinstance(market_leader, Mapping) and side in ("LONG", "SHORT"):
+            btc_4h = float(market_leader.get("chg_4h_bps") or 0.0)
+            di_1d = self._extract_1d_di_diff(ctx)
+            if btc_4h <= -150.0:
+                if side == "LONG" and di_1d is not None and di_1d < 0.0:
+                    regime_alignment_risk = _clip01(regime_alignment_risk + 0.25)
+                elif side == "SHORT":
+                    regime_alignment_risk = _clip01(regime_alignment_risk - 0.10)
+            elif btc_4h >= 150.0:
+                if side == "SHORT" and di_1d is not None and di_1d > 0.0:
+                    regime_alignment_risk = _clip01(regime_alignment_risk + 0.25)
+                elif side == "LONG":
+                    regime_alignment_risk = _clip01(regime_alignment_risk - 0.10)
 
         # 2. Volatility & MAE tail risk (weight 0.20)
         if fc:
@@ -187,6 +234,7 @@ class ConvictionPositionSizer:
         forecast: Any | None,
         risk_config: RiskConfig,
         current_price: float | None = None,
+        market_leader: Mapping[str, Any] | None = None,
     ) -> SizingResult:
         """Compute risk-scaled ISOLATED margin and leverage guaranteeing SL before liquidation."""
         risk_score, components = self.compute_risk_score(
@@ -194,6 +242,7 @@ class ConvictionPositionSizer:
             forecast=forecast,
             decision=decision,
             current_price=current_price,
+            market_leader=market_leader,
         )
         action = str(getattr(decision, "action", "HOLD")).upper()
         if action not in ("OPEN_LONG", "OPEN_SHORT"):

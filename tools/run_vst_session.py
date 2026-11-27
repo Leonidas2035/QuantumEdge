@@ -38,10 +38,15 @@ from quantum_edge_core.contracts.optimization import (
     UsageRecordV1,
 )
 from quantum_edge_core.execution.bingx_vst_adapter import (
+    ApiBudgetStats,
+    BingXRestRateLimiter,
+    OhlcvRamTtlCache,
     cancel_vst_open_orders,
     create_bingx_vst_client,
     fetch_vst_status,
 )
+from quantum_edge_core.market_data.hub_bridge import HubSnapshotBridge
+from quantum_edge_core.market_data.replay_store import MarketSnapshotRecorder
 from quantum_edge_core.execution.harness_bridge import (
     HarnessBridge,
     PaperExchangeClient,
@@ -172,8 +177,16 @@ def _format_tf_indicator_snippet(serializer: MarketContextSerializer, ctx: dict[
     )
 
 
+def _atomic_write_ram_json(target: Path, payload: dict[str, Any]) -> None:
+    target.parent.mkdir(parents=True, exist_ok=True)
+    tmp = target.parent / f".{target.name}.{uuid.uuid4().hex[:8]}.tmp"
+    tmp.write_text(json.dumps(payload, indent=2, ensure_ascii=False), encoding="utf-8")
+    tmp.replace(target)
+
+
 def _render_session_markdown(summary: dict[str, Any]) -> str:
     u = summary.get("usage_summary") or {}
+    api = summary.get("api_stats") or {}
     lines = [
         "# QuantumEdge Persistent VST Session Report",
         "",
@@ -185,7 +198,8 @@ def _render_session_markdown(summary: dict[str, Any]) -> str:
         f"- **Universe (1d/4h + 1h/15m/5m):** `{','.join(summary.get('symbols') or [])}`",
         f"- **Start Equity (VST):** `{summary.get('start_equity_vst')}` -> **End Equity (VST):** `{summary.get('end_equity_vst')}`",
         f"- **Cycles Executed:** `{summary.get('cycles_count')}` (cycle_errors=`{summary.get('cycle_errors_count', 0)}`, quota_stopped=`{summary.get('quota_stopped', False)}`) | **Prefix Hash Stable:** `{summary.get('prefix_hash_stable')}` (`{summary.get('unique_prefix_hashes')}`)",
-        f"- **PositionProtectionWatcher Runs:** `{summary.get('watcher_runs')}`",
+        f"- **PositionProtectionWatcher Runs:** `{summary.get('watcher_runs')}` (mode=`{summary.get('watcher_mode', 'IDLE')}`)",
+        f"- **BingX API Budget:** REST calls=`{api.get('rest_calls_total', 0)}` | Cache hits=`{api.get('rest_cache_hits', 0)}` | WS updates=`{api.get('ws_updates_applied', 0)}` | Rate-limit retries=`{api.get('rate_limit_retries', 0)}`",
         "",
         "## 2. UsageLedger Telemetry",
         f"- Total Requests: `{u.get('total_requests', 0)}` (failures=`{u.get('failure_rate', 0.0)}`)",
@@ -300,6 +314,7 @@ async def run_persistent_session(
         bridge,
         allowed_symbols=symbols,
         interval_sec=float(args.protection_interval_sec),
+        idle_interval_sec=float(getattr(args, "protection_idle_interval_sec", 25.0)),
         enable_breakeven_sl=bool(getattr(args, "enable_breakeven_sl", True)),
         breakeven_trigger_pct=float(getattr(args, "be_trigger_pct", 0.50)),
         breakeven_offset_pct=float(getattr(args, "be_offset_pct", 0.20)),
@@ -307,6 +322,29 @@ async def run_persistent_session(
     )
     watcher_runs = 0
     watcher_actions: list[str] = []
+    session_api_stats = ApiBudgetStats()
+    session_ohlcv_cache = OhlcvRamTtlCache()
+    session_rate_limiter = (
+        BingXRestRateLimiter(stats=session_api_stats) if not dry_run else None
+    )
+
+    hub_ep = getattr(args, "hub_zmq_endpoint", None)
+    hub_bridge: HubSnapshotBridge | None = None
+    if hub_ep:
+        hub_bridge = HubSnapshotBridge(endpoint=str(hub_ep))
+        hub_bridge.start_background()
+
+    replay_arg = getattr(args, "record_replay", None)
+    replay_recorder: MarketSnapshotRecorder | None = None
+    if replay_arg:
+        r_target = None if str(replay_arg) == "AUTO_RAM" else Path(str(replay_arg))
+        replay_recorder = MarketSnapshotRecorder(path=r_target)
+
+    latest_session_path = (
+        Path(getattr(args, "latest_session_ram"))
+        if getattr(args, "latest_session_ram", None) is not None
+        else get_ram_tmp_dir("sessions") / "latest_session.json"
+    )
 
     stop_requested = asyncio.Event()
     old_handlers: dict[int, Any] = {}
@@ -317,7 +355,13 @@ async def run_persistent_session(
         except (ValueError, RuntimeError):
             pass
 
-    init_status = await asyncio.to_thread(fetch_vst_status, ex_client, fallback_symbols=symbols)
+    init_status = await asyncio.to_thread(
+        fetch_vst_status,
+        ex_client,
+        fallback_symbols=symbols,
+        rate_limiter=session_rate_limiter,
+        stats=session_api_stats,
+    )
     start_equity_vst = (init_status.get("balance_vst") or {}).get("total")
     print(
         f"[START] QuantumEdge VST Session | mode={'DRY_RUN' if dry_run else 'LIVE_VST'} "
@@ -337,7 +381,7 @@ async def run_persistent_session(
             except Exception:
                 pass
             try:
-                await asyncio.wait_for(watcher._stop.wait(), timeout=watcher.interval_sec)
+                await asyncio.wait_for(watcher._stop.wait(), timeout=watcher.next_sleep_sec)
             except asyncio.TimeoutError:
                 continue
 
@@ -351,6 +395,11 @@ async def run_persistent_session(
         symbols=symbols,
         risk_config=risk_cfg,
         include_btc_leader=bool(getattr(args, "include_btc_leader", True)),
+        ohlcv_cache=session_ohlcv_cache,
+        market_bridge=hub_bridge,
+        replay_recorder=replay_recorder,
+        rate_limiter=session_rate_limiter,
+        api_stats=session_api_stats,
     )
     seq = 0
     cycle_errors_count = 0
@@ -474,6 +523,13 @@ async def run_persistent_session(
                     f"| IECU={usage_snap.get('sum_iecu', 0.0)} p95={usage_snap.get('latency_imputed_p95_ms')}ms",
                     flush=True,
                 )
+                api_snap = session_api_stats.snapshot()
+                print(
+                    f"  API      | rest_calls={api_snap['rest_calls_total']} cache_hits={api_snap['rest_cache_hits']} "
+                    f"ws_updates={api_snap['ws_updates_applied']} rl_retries={api_snap['rate_limit_retries']} "
+                    f"| watcher_mode={watcher.last_mode}",
+                    flush=True,
+                )
 
                 cycles.append(
                     {
@@ -485,6 +541,14 @@ async def run_persistent_session(
                         "resync_mode": resync_mode_val,
                         "action": dp.get("action"),
                         "symbol": dp.get("symbol"),
+                        "order_type": dp.get("order_type"),
+                        "entry_price": dp.get("entry_price"),
+                        "sl_price": dp.get("sl_price"),
+                        "tp_price": dp.get("tp_price"),
+                        "confidence": dp.get("confidence"),
+                        "regime_read": dp.get("regime_read"),
+                        "primary_edge": dp.get("primary_edge"),
+                        "counter_thesis": dp.get("counter_thesis"),
                         "thinking_level": audit.thinking_level.value,
                         "complexity_score": audit.complexity_score,
                         "validator_passed": audit.validator_passed,
@@ -494,6 +558,36 @@ async def run_persistent_session(
                         "forecast_symbols": sorted(forecasts.keys()),
                     }
                 )
+                cur_eq_live = (bundle.vst_status.get("balance_vst") or {}).get("total", start_equity_vst)
+                with contextlib.suppress(Exception):
+                    _atomic_write_ram_json(
+                        latest_session_path,
+                        {
+                            "status": "RUNNING",
+                            "started_utc": started_utc,
+                            "updated_utc": datetime.now(timezone.utc).isoformat(),
+                            "elapsed_sec": elapsed_s,
+                            "duration_sec": duration_sec,
+                            "dry_run": dry_run,
+                            "transport": args.transport,
+                            "model": args.model,
+                            "reuse_session": reuse_session,
+                            "symbols": list(symbols),
+                            "start_equity_vst": start_equity_vst,
+                            "current_equity_vst": cur_eq_live,
+                            "unrealized_pnl_vst": upnl_sum,
+                            "open_positions": post_scoped.get("open_positions", []),
+                            "open_orders": post_scoped.get("open_orders", []),
+                            "cycles_count": len(cycles),
+                            "cycle_errors_count": cycle_errors_count,
+                            "cycles": cycles[-10:],
+                            "watcher_runs": watcher_runs,
+                            "watcher_mode": watcher.last_mode,
+                            "watcher_actions": watcher_actions[-20:],
+                            "usage_summary": usage_snap,
+                            "api_stats": api_snap,
+                        },
+                    )
             except Exception as cycle_exc:
                 cycle_errors_count += 1
                 is_quota = AgyDirectCliTransport._is_quota_error(cycle_exc)
@@ -561,6 +655,13 @@ async def run_persistent_session(
             with contextlib.suppress(Exception):
                 await watcher_task
 
+        if hub_bridge is not None:
+            with contextlib.suppress(Exception):
+                await hub_bridge.stop()
+        if replay_recorder is not None:
+            with contextlib.suppress(Exception):
+                replay_recorder.close()
+
         should_close_on_exit = (
             not dry_run
             and bool(args.close_on_exit)
@@ -608,8 +709,15 @@ async def run_persistent_session(
                 c_res = await asyncio.to_thread(cancel_vst_open_orders, ex_client, sym)
                 exit_cleanup["cancelled_orders"][sym] = c_res.get("cancelled_count", 0)
 
-        end_status = await asyncio.to_thread(fetch_vst_status, ex_client, fallback_symbols=symbols)
+        end_status = await asyncio.to_thread(
+            fetch_vst_status,
+            ex_client,
+            fallback_symbols=symbols,
+            rate_limiter=session_rate_limiter,
+            stats=session_api_stats,
+        )
         end_equity_vst = (end_status.get("balance_vst") or {}).get("total")
+        end_scoped = scope_vst_status_to_symbols(end_status, symbols)
         usage_summary = usage_ledger.summarize()
         await transport.close()
         thesis_store.close()
@@ -617,6 +725,7 @@ async def run_persistent_session(
 
     prefix_hashes = [c["prefix_hash"] for c in cycles if c.get("prefix_hash")]
     prefix_hash_stable = len(set(prefix_hashes)) <= 1 if prefix_hashes else False
+    final_api_stats = session_api_stats.snapshot()
 
     ram_path = (
         Path(args.session_summary_ram)
@@ -624,16 +733,23 @@ async def run_persistent_session(
         else get_ram_tmp_dir("sessions") / f"session_{int(time.time())}_{uuid.uuid4().hex[:6]}.json"
     )
     ram_path.parent.mkdir(parents=True, exist_ok=True)
+    finished_utc = datetime.now(timezone.utc).isoformat()
     summary = {
+        "status": "FINISHED",
         "started_utc": started_utc,
-        "finished_utc": datetime.now(timezone.utc).isoformat(),
+        "updated_utc": finished_utc,
+        "finished_utc": finished_utc,
+        "elapsed_sec": round(time.monotonic() - t_start_mono, 2),
         "dry_run": dry_run,
         "transport": args.transport,
         "model": args.model,
         "reuse_session": reuse_session,
         "symbols": list(symbols),
         "start_equity_vst": start_equity_vst,
+        "current_equity_vst": end_equity_vst,
         "end_equity_vst": end_equity_vst,
+        "open_positions": end_scoped.get("open_positions", []),
+        "open_orders": end_scoped.get("open_orders", []),
         "cycles_count": len(cycles),
         "cycle_errors_count": cycle_errors_count,
         "quota_stopped": quota_stopped,
@@ -642,12 +758,18 @@ async def run_persistent_session(
         "unique_prefix_hashes": sorted(set(prefix_hashes)),
         "cycles": cycles,
         "watcher_runs": watcher_runs,
+        "watcher_mode": watcher.last_mode,
         "watcher_actions": watcher_actions,
         "exit_cleanup": exit_cleanup,
         "usage_summary": usage_summary,
+        "api_stats": final_api_stats,
         "ram_summary_path": str(ram_path),
+        "latest_session_ram_path": str(latest_session_path),
+        "replay_path": str(replay_recorder.path) if replay_recorder is not None else None,
     }
     ram_path.write_text(json.dumps(summary, indent=2, ensure_ascii=False), encoding="utf-8")
+    with contextlib.suppress(Exception):
+        _atomic_write_ram_json(latest_session_path, summary)
 
     report_out = getattr(args, "report_out", None)
     if report_out is not None:
@@ -688,7 +810,8 @@ def build_parser() -> argparse.ArgumentParser:
     )
     parser.add_argument("--duration-minutes", type=float, default=15.0, help="Session duration in minutes (default: 15.0)")
     parser.add_argument("--cycle-interval-sec", type=float, default=180.0, help="Seconds between decision cycles (default: 180.0)")
-    parser.add_argument("--protection-interval-sec", type=float, default=5.0, help="PositionProtectionWatcher interval in seconds (default: 5.0)")
+    parser.add_argument("--protection-interval-sec", type=float, default=5.0, help="PositionProtectionWatcher active interval in seconds (default: 5.0)")
+    parser.add_argument("--protection-idle-interval-sec", type=float, default=25.0, help="PositionProtectionWatcher FLAT idle interval in seconds (default: 25.0)")
     parser.add_argument("--symbols", default=",".join(QUANTUMEDGE_DEFAULT_UNIVERSE), help="Comma-separated symbols (default: BNBUSDT,LINKUSDT,SUIUSDT)")
     parser.add_argument("--model", default="gemini-4-carbon", help="Canonical Gemini 4 model (default: gemini-4-carbon)")
     parser.add_argument("--transport", choices=("agy-direct", "agy-proxy", "mock"), default="agy-direct", help="LLM transport (default: agy-direct)")
@@ -707,6 +830,9 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--be-offset-pct", type=float, default=0.20, help="Breakeven SL lock offset pct (default: 0.20)")
     parser.add_argument("--no-breakeven-sl", dest="enable_breakeven_sl", action="store_false", default=True, help="Disable deterministic breakeven SL move in watcher")
     parser.add_argument("--no-btc-leader", dest="include_btc_leader", action="store_false", default=True, help="Disable read-only BTC_LEADER pulse in PreFetchCoordinator")
+    parser.add_argument("--hub-zmq-endpoint", default=None, help="Optional MarketDataHub ZMQ PUB endpoint (e.g. tcp://127.0.0.1:5555) for WS-First RAM snapshots")
+    parser.add_argument("--record-replay", nargs="?", const="AUTO_RAM", default=None, help="Record PreFetchedBundles via RAM-buffered MarketSnapshotRecorder")
+    parser.add_argument("--latest-session-ram", type=Path, default=None, help=argparse.SUPPRESS)
     exit_grp = parser.add_mutually_exclusive_group()
     exit_grp.add_argument("--close-on-exit", dest="close_on_exit", action="store_true", default=True, help="Close scoped positions & cancel orders on clean exit/SIGINT/SIGTERM (default)")
     exit_grp.add_argument("--keep-positions-on-exit", dest="close_on_exit", action="store_false", help="Leave scoped positions open on exit")

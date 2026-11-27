@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping, Sequence
+from collections.abc import Callable, Mapping, Sequence
+from dataclasses import dataclass, field
 from datetime import datetime, timezone
 from decimal import ROUND_CEILING, ROUND_FLOOR, ROUND_HALF_UP, Decimal
 import logging
 import os
+import random
+import threading
+import time
 from typing import Any
 import uuid
 
@@ -45,6 +49,240 @@ def _opt_float(val: Any) -> float | None:
         return float(val)
     except (TypeError, ValueError):
         return None
+
+
+@dataclass
+class ApiBudgetStats:
+    """Thread-safe in-RAM telemetry counters for BingX API rate optimization (QE-04)."""
+
+    rest_calls_total: int = 0
+    rest_cache_hits: int = 0
+    rate_limit_retries: int = 0
+    ws_updates_applied: int = 0
+    _lock: threading.Lock = field(default_factory=threading.Lock, repr=False)
+
+    def inc_rest_call(self, n: int = 1) -> None:
+        with self._lock:
+            self.rest_calls_total += int(n)
+
+    def inc_cache_hit(self, n: int = 1) -> None:
+        with self._lock:
+            self.rest_cache_hits += int(n)
+
+    def inc_rate_limit_retry(self, n: int = 1) -> None:
+        with self._lock:
+            self.rate_limit_retries += int(n)
+
+    def inc_ws_update(self, n: int = 1) -> None:
+        with self._lock:
+            self.ws_updates_applied += int(n)
+
+    def snapshot(self) -> dict[str, int]:
+        with self._lock:
+            return {
+                "rest_calls_total": self.rest_calls_total,
+                "rest_cache_hits": self.rest_cache_hits,
+                "rate_limit_retries": self.rate_limit_retries,
+                "ws_updates_applied": self.ws_updates_applied,
+            }
+
+    def reset(self) -> None:
+        with self._lock:
+            self.rest_calls_total = 0
+            self.rest_cache_hits = 0
+            self.rate_limit_retries = 0
+            self.ws_updates_applied = 0
+
+
+GLOBAL_API_BUDGET_STATS = ApiBudgetStats()
+
+
+def _is_bingx_rate_limit_error(exc: Exception) -> bool:
+    msg = str(exc).lower()
+    return any(
+        token in msg
+        for token in (
+            "100410",
+            "429",
+            "too many requests",
+            "rate limit",
+            "frequency limit",
+            "ddosprotection",
+            "ratelimitexceeded",
+        )
+    )
+
+
+class BingXRestRateLimiter:
+    """Thread-safe token-bucket limiter with jittered retry on BingX code=100410 / HTTP 429."""
+
+    def __init__(
+        self,
+        *,
+        rate_per_sec: float = 5.0,
+        burst: int = 8,
+        stats: ApiBudgetStats | None = None,
+        sleep_fn: Callable[[float], None] = time.sleep,
+        base_backoff_sec: float = 0.35,
+    ) -> None:
+        if rate_per_sec <= 0 or burst <= 0:
+            raise ValueError("rate_per_sec and burst must be positive")
+        self.rate_per_sec = float(rate_per_sec)
+        self.burst = float(burst)
+        self.stats = stats or GLOBAL_API_BUDGET_STATS
+        self._sleep_fn = sleep_fn
+        self.base_backoff_sec = float(base_backoff_sec)
+        self._tokens = float(burst)
+        self._last_refill = time.monotonic()
+        self._lock = threading.Lock()
+
+    def acquire(self, tokens: float = 1.0) -> float:
+        needed = max(0.0, float(tokens))
+        waited = 0.0
+        while True:
+            with self._lock:
+                now = time.monotonic()
+                elapsed = max(0.0, now - self._last_refill)
+                self._tokens = min(self.burst, self._tokens + elapsed * self.rate_per_sec)
+                self._last_refill = now
+                if self._tokens >= needed:
+                    self._tokens -= needed
+                    return waited
+                deficit = needed - self._tokens
+                sleep_sec = deficit / self.rate_per_sec
+            self._sleep_fn(sleep_sec)
+            waited += sleep_sec
+
+    def call_with_rate_limit(
+        self,
+        fn: Callable[..., Any],
+        *args: Any,
+        max_retries: int = 2,
+        enforce_bucket: bool = True,
+        stats_override: ApiBudgetStats | None = None,
+        **kwargs: Any,
+    ) -> Any:
+        target_stats = stats_override or self.stats
+        attempts = max(0, int(max_retries)) + 1
+        for attempt in range(attempts):
+            if enforce_bucket:
+                self.acquire(1.0)
+            target_stats.inc_rest_call(1)
+            try:
+                return fn(*args, **kwargs)
+            except Exception as exc:
+                if attempt + 1 < attempts and _is_bingx_rate_limit_error(exc):
+                    target_stats.inc_rate_limit_retry(1)
+                    jitter = 0.85 + 0.30 * random.random()
+                    delay = self.base_backoff_sec * (2**attempt) * jitter
+                    if delay > 0:
+                        self._sleep_fn(delay)
+                    continue
+                raise
+
+
+DEFAULT_BINGX_RATE_LIMITER = BingXRestRateLimiter()
+
+
+def _exec_rest_call(
+    client: Any,
+    fn: Callable[..., Any],
+    *args: Any,
+    rate_limiter: BingXRestRateLimiter | None = None,
+    stats: ApiBudgetStats | None = None,
+    **kwargs: Any,
+) -> Any:
+    limiter = rate_limiter or DEFAULT_BINGX_RATE_LIMITER
+    enforce = rate_limiter is not None or isinstance(client, ccxt.Exchange)
+    return limiter.call_with_rate_limit(
+        fn,
+        *args,
+        enforce_bucket=enforce,
+        stats_override=stats,
+        **kwargs,
+    )
+
+
+DEFAULT_OHLCV_TTL_SEC: dict[str, float] = {
+    "1d": 3600.0,
+    "4h": 900.0,
+    "1h": 300.0,
+    "15m": 60.0,
+    "5m": 30.0,
+    "1m": 15.0,
+}
+
+
+class OhlcvRamTtlCache:
+    """Pure in-RAM TTL cache preventing redundant 1d/4h/1h OHLCV REST downloads across cycles."""
+
+    def __init__(self, ttl_by_tf: Mapping[str, float] | None = None) -> None:
+        self.ttl_by_tf: dict[str, float] = dict(DEFAULT_OHLCV_TTL_SEC)
+        if ttl_by_tf:
+            for k, v in ttl_by_tf.items():
+                self.ttl_by_tf[str(k)] = float(v)
+        self._store: dict[tuple[str, str, int], tuple[float, list[dict[str, Any]]]] = {}
+        self._lock = threading.Lock()
+
+    def get(
+        self,
+        symbol: str,
+        timeframe: str,
+        limit: int,
+        *,
+        now_mono: float | None = None,
+    ) -> list[dict[str, Any]] | None:
+        key = (normalize_compact_symbol(symbol) or symbol.strip().upper(), str(timeframe), int(limit))
+        ttl = self.ttl_by_tf.get(str(timeframe), 30.0)
+        if ttl <= 0:
+            return None
+        now = time.monotonic() if now_mono is None else float(now_mono)
+        with self._lock:
+            entry = self._store.get(key)
+            if entry is None:
+                return None
+            stored_at, bars = entry
+            if (now - stored_at) > ttl:
+                self._store.pop(key, None)
+                return None
+            return [dict(b) for b in bars]
+
+    def put(
+        self,
+        symbol: str,
+        timeframe: str,
+        limit: int,
+        bars: Sequence[Mapping[str, Any]],
+        *,
+        now_mono: float | None = None,
+    ) -> None:
+        key = (normalize_compact_symbol(symbol) or symbol.strip().upper(), str(timeframe), int(limit))
+        now = time.monotonic() if now_mono is None else float(now_mono)
+        copied = [dict(b) for b in bars]
+        with self._lock:
+            self._store[key] = (now, copied)
+
+    def invalidate(self, symbol: str | None = None) -> None:
+        with self._lock:
+            if symbol is None:
+                self._store.clear()
+                return
+            sym = normalize_compact_symbol(symbol) or symbol.strip().upper()
+            for k in [k for k in self._store if k[0] == sym]:
+                self._store.pop(k, None)
+
+
+_VST_POS_ORD_CACHE_LOCK = threading.Lock()
+_VST_POS_ORD_CACHE: dict[int, tuple[float, dict[str, Any]]] = {}
+
+
+def invalidate_vst_status_cache(client: Any | None = None) -> None:
+    """Invalidate RAM positions/orders snapshot cache on order mutation."""
+    with _VST_POS_ORD_CACHE_LOCK:
+        if client is None:
+            _VST_POS_ORD_CACHE.clear()
+        else:
+            _VST_POS_ORD_CACHE.pop(id(client), None)
 
 
 def extract_instrument_specs(client_or_markets: Any) -> dict[str, tuple[Decimal, Decimal]]:
@@ -262,11 +500,12 @@ def cancel_vst_open_orders(
         if not oid or not ord_sym:
             continue
         try:
-            client.cancel_order(oid, ord_sym)
+            _exec_rest_call(client, client.cancel_order, oid, ord_sym)
             cancelled_ids.append(oid)
         except Exception as exc:
             errors.append({"order_id": oid, "symbol": str(ord_sym), "error": str(exc)})
 
+    invalidate_vst_status_cache(client)
     return {
         "sandbox": True,
         "symbol": compact_sym,
@@ -277,26 +516,17 @@ def cancel_vst_open_orders(
     }
 
 
-def fetch_vst_status(
+def _fetch_raw_positions_and_orders(
     client: Any,
     *,
     fallback_symbols: Sequence[str] = ("BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT"),
+    rate_limiter: BingXRestRateLimiter | None = None,
+    stats: ApiBudgetStats | None = None,
 ) -> dict[str, Any]:
-    """Read-only fetch of VST balance, active positions, and open orders on BingX sandbox."""
     provider_gets = 0
-
-    balance_raw = client.fetch_balance()
-    provider_gets += 1
-    vst_bucket = (
-        balance_raw.get("VST")
-        if isinstance(balance_raw, dict) and isinstance(balance_raw.get("VST"), dict)
-        else (balance_raw.get("USDT", {}) if isinstance(balance_raw, dict) else {})
+    positions_raw = _exec_rest_call(
+        client, client.fetch_positions, rate_limiter=rate_limiter, stats=stats
     )
-    free_vst = _opt_float(vst_bucket.get("free"))
-    total_vst = _opt_float(vst_bucket.get("total"))
-    used_vst = _opt_float(vst_bucket.get("used"))
-
-    positions_raw = client.fetch_positions()
     provider_gets += 1
     active_positions: list[dict[str, Any]] = []
     pos_symbols: set[str] = set()
@@ -330,14 +560,28 @@ def fetch_vst_status(
 
     open_orders_raw: list[dict[str, Any]] = []
     try:
-        open_orders_raw = list(client.fetch_open_orders() or [])
+        open_orders_raw = list(
+            _exec_rest_call(
+                client, client.fetch_open_orders, rate_limiter=rate_limiter, stats=stats
+            )
+            or []
+        )
         provider_gets += 1
     except Exception:
         seen_ids: set[str] = set()
         scan_syms = set(fallback_symbols) | pos_symbols
         for sym in sorted(scan_syms):
             try:
-                per_sym = client.fetch_open_orders(to_ccxt_swap_symbol(sym)) or []
+                per_sym = (
+                    _exec_rest_call(
+                        client,
+                        client.fetch_open_orders,
+                        to_ccxt_swap_symbol(sym),
+                        rate_limiter=rate_limiter,
+                        stats=stats,
+                    )
+                    or []
+                )
                 provider_gets += 1
                 for o in per_sym:
                     oid = str(o.get("id") or "")
@@ -398,13 +642,7 @@ def fetch_vst_status(
             }
         )
 
-    return {
-        "sandbox": True,
-        "balance_vst": {
-            "free": free_vst,
-            "total": total_vst,
-            "used": used_vst,
-        },
+    snap = {
         "open_positions_count": len(active_positions),
         "open_positions_symbols": sorted(pos_symbols),
         "open_positions": active_positions,
@@ -412,6 +650,120 @@ def fetch_vst_status(
         "open_orders_symbols": sorted(order_symbols),
         "open_orders": open_orders,
         "provider_gets": provider_gets,
+    }
+    with _VST_POS_ORD_CACHE_LOCK:
+        _VST_POS_ORD_CACHE[id(client)] = (time.monotonic(), snap)
+    return snap
+
+
+def fetch_vst_positions_and_orders(
+    client: Any,
+    *,
+    fallback_symbols: Sequence[str] = ("BNBUSDT", "LINKUSDT", "SUIUSDT"),
+    allowed_symbols: Sequence[str] | None = None,
+    cache_ttl_sec: float = 3.0,
+    rate_limiter: BingXRestRateLimiter | None = None,
+    stats: ApiBudgetStats | None = None,
+) -> dict[str, Any]:
+    """Lightweight positions + open_orders fetch (skips fetch_balance, uses thread-safe RAM TTL cache)."""
+    target_stats = stats or GLOBAL_API_BUDGET_STATS
+    base_snap: dict[str, Any] | None = None
+    from_cache = False
+    if cache_ttl_sec > 0:
+        now = time.monotonic()
+        with _VST_POS_ORD_CACHE_LOCK:
+            cached = _VST_POS_ORD_CACHE.get(id(client))
+            if cached is not None and (now - cached[0]) <= float(cache_ttl_sec):
+                base_snap = cached[1]
+                from_cache = True
+    if base_snap is not None:
+        target_stats.inc_cache_hit(1)
+        pos_list = [dict(p) for p in base_snap["open_positions"]]
+        ord_list = [dict(o) for o in base_snap["open_orders"]]
+        p_gets = 0
+    else:
+        fresh = _fetch_raw_positions_and_orders(
+            client,
+            fallback_symbols=fallback_symbols,
+            rate_limiter=rate_limiter,
+            stats=target_stats,
+        )
+        pos_list = [dict(p) for p in fresh["open_positions"]]
+        ord_list = [dict(o) for o in fresh["open_orders"]]
+        p_gets = int(fresh["provider_gets"])
+
+    if allowed_symbols is not None:
+        allowed_set = {
+            normalize_compact_symbol(str(s)) or str(s).strip().upper()
+            for s in allowed_symbols
+            if str(s).strip()
+        }
+        pos_list = [
+            p
+            for p in pos_list
+            if (normalize_compact_symbol(str(p.get("symbol") or "")) or str(p.get("symbol") or "").upper())
+            in allowed_set
+        ]
+        ord_list = [
+            o
+            for o in ord_list
+            if (normalize_compact_symbol(str(o.get("symbol") or "")) or str(o.get("symbol") or "").upper())
+            in allowed_set
+        ]
+
+    return {
+        "sandbox": True,
+        "from_cache": from_cache,
+        "open_positions_count": len(pos_list),
+        "open_positions_symbols": sorted({str(p.get("symbol") or "") for p in pos_list if p.get("symbol")}),
+        "open_positions": pos_list,
+        "open_orders_count": len(ord_list),
+        "open_orders_symbols": sorted({str(o.get("symbol") or "") for o in ord_list if o.get("symbol")}),
+        "open_orders": ord_list,
+        "provider_gets": p_gets,
+    }
+
+
+def fetch_vst_status(
+    client: Any,
+    *,
+    fallback_symbols: Sequence[str] = ("BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT"),
+    rate_limiter: BingXRestRateLimiter | None = None,
+    stats: ApiBudgetStats | None = None,
+) -> dict[str, Any]:
+    """Read-only fetch of VST balance, active positions, and open orders on BingX sandbox."""
+    balance_raw = _exec_rest_call(
+        client, client.fetch_balance, rate_limiter=rate_limiter, stats=stats
+    )
+    vst_bucket = (
+        balance_raw.get("VST")
+        if isinstance(balance_raw, dict) and isinstance(balance_raw.get("VST"), dict)
+        else (balance_raw.get("USDT", {}) if isinstance(balance_raw, dict) else {})
+    )
+    free_vst = _opt_float(vst_bucket.get("free"))
+    total_vst = _opt_float(vst_bucket.get("total"))
+    used_vst = _opt_float(vst_bucket.get("used"))
+
+    po = _fetch_raw_positions_and_orders(
+        client,
+        fallback_symbols=fallback_symbols,
+        rate_limiter=rate_limiter,
+        stats=stats,
+    )
+    return {
+        "sandbox": True,
+        "balance_vst": {
+            "free": free_vst,
+            "total": total_vst,
+            "used": used_vst,
+        },
+        "open_positions_count": po["open_positions_count"],
+        "open_positions_symbols": po["open_positions_symbols"],
+        "open_positions": po["open_positions"],
+        "open_orders_count": po["open_orders_count"],
+        "open_orders_symbols": po["open_orders_symbols"],
+        "open_orders": po["open_orders"],
+        "provider_gets": 1 + int(po["provider_gets"]),
     }
 
 
@@ -423,53 +775,131 @@ def fetch_full_vst_context(
     ohlcv_limit: int = 100,
     orderbook_limit: int = 50,
     include_analytics: bool = True,
+    *,
+    ohlcv_cache: OhlcvRamTtlCache | None = None,
+    market_bridge: Any | None = None,
+    shared_vst_status: Mapping[str, Any] | None = None,
+    rate_limiter: BingXRestRateLimiter | None = None,
+    api_stats: ApiBudgetStats | None = None,
 ) -> FullMarketContext:
     """Fetch uncompressed multi-TF market, orderbook, derivatives, and VST account context."""
+    target_stats = api_stats or GLOBAL_API_BUDGET_STATS
     effective_risk = risk_config or RiskConfig()
     compact_symbol = normalize_compact_symbol(symbol) or symbol.upper()
     ccxt_symbol = to_ccxt_swap_symbol(compact_symbol)
     provider_gets = 0
+    snapshot_source = "bingx_vst_sandbox"
 
-    orderbook_raw = client.fetch_order_book(ccxt_symbol, limit=orderbook_limit)
-    provider_gets += 1
-    bids = [
-        [float(level[0]), float(level[1])]
-        for level in (orderbook_raw.get("bids") or [])
-    ]
-    asks = [
-        [float(level[0]), float(level[1])]
-        for level in (orderbook_raw.get("asks") or [])
-    ]
-
-    ticker = client.fetch_ticker(ccxt_symbol)
-    provider_gets += 1
-    best_bid = _opt_float(ticker.get("bid"))
-    if (best_bid is None or best_bid <= 0) and bids:
-        best_bid = bids[0][0]
-    best_ask = _opt_float(ticker.get("ask"))
-    if (best_ask is None or best_ask <= 0) and asks:
-        best_ask = asks[0][0]
-    last_price = _opt_float(ticker.get("last"))
-    if last_price is None or last_price <= 0:
-        if best_bid and best_ask:
-            last_price = (best_bid + best_ask) / 2.0
-        else:
-            last_price = best_bid or best_ask or 0.0
-
-    bid_val = best_bid if best_bid is not None else last_price
-    ask_val = best_ask if best_ask is not None else last_price
-    mid_val = (bid_val + ask_val) / 2.0 if (bid_val > 0 and ask_val > 0) else last_price
-    spread_bps = (
-        round(((ask_val - bid_val) / mid_val) * 10_000.0, 4)
-        if (mid_val and mid_val > 0 and ask_val >= bid_val)
-        else 0.0
+    ws_snap = (
+        market_bridge.get_fresh_snapshot(compact_symbol)
+        if (market_bridge is not None and hasattr(market_bridge, "get_fresh_snapshot"))
+        else None
     )
+    if (
+        isinstance(ws_snap, Mapping)
+        and ws_snap.get("bids")
+        and ws_snap.get("asks")
+        and float(ws_snap.get("last_price") or 0.0) > 0
+    ):
+        target_stats.inc_ws_update(1)
+        snapshot_source = "hub_ws_ram"
+        bids = [[float(lvl[0]), float(lvl[1])] for lvl in (ws_snap.get("bids") or [])[:orderbook_limit]]
+        asks = [[float(lvl[0]), float(lvl[1])] for lvl in (ws_snap.get("asks") or [])[:orderbook_limit]]
+        last_price = float(ws_snap["last_price"])
+        bid_val = float(ws_snap.get("bid") or (bids[0][0] if bids else last_price))
+        ask_val = float(ws_snap.get("ask") or (asks[0][0] if asks else last_price))
+        mid_val = (bid_val + ask_val) / 2.0 if (bid_val > 0 and ask_val > 0) else last_price
+        spread_bps = (
+            float(ws_snap["spread_bps"])
+            if ws_snap.get("spread_bps") is not None
+            else (
+                round(((ask_val - bid_val) / mid_val) * 10_000.0, 4)
+                if (mid_val and mid_val > 0 and ask_val >= bid_val)
+                else 0.0
+            )
+        )
+        orderbook_raw: dict[str, Any] = {
+            "bids": bids,
+            "asks": asks,
+            "timestamp": ws_snap.get("timestamp"),
+            "datetime": None,
+        }
+        ticker: dict[str, Any] = {"bid": bid_val, "ask": ask_val, "last": last_price}
+    else:
+        orderbook_raw = _exec_rest_call(
+            client,
+            client.fetch_order_book,
+            ccxt_symbol,
+            limit=orderbook_limit,
+            rate_limiter=rate_limiter,
+            stats=target_stats,
+        )
+        provider_gets += 1
+        bids = [
+            [float(level[0]), float(level[1])]
+            for level in (orderbook_raw.get("bids") or [])
+        ]
+        asks = [
+            [float(level[0]), float(level[1])]
+            for level in (orderbook_raw.get("asks") or [])
+        ]
+
+        ticker = _exec_rest_call(
+            client,
+            client.fetch_ticker,
+            ccxt_symbol,
+            rate_limiter=rate_limiter,
+            stats=target_stats,
+        )
+        provider_gets += 1
+        best_bid = _opt_float(ticker.get("bid"))
+        if (best_bid is None or best_bid <= 0) and bids:
+            best_bid = bids[0][0]
+        best_ask = _opt_float(ticker.get("ask"))
+        if (best_ask is None or best_ask <= 0) and asks:
+            best_ask = asks[0][0]
+        last_price = _opt_float(ticker.get("last"))
+        if last_price is None or last_price <= 0:
+            if best_bid and best_ask:
+                last_price = (best_bid + best_ask) / 2.0
+            else:
+                last_price = best_bid or best_ask or 0.0
+
+        bid_val = best_bid if best_bid is not None else last_price
+        ask_val = best_ask if best_ask is not None else last_price
+        mid_val = (bid_val + ask_val) / 2.0 if (bid_val > 0 and ask_val > 0) else last_price
+        spread_bps = (
+            round(((ask_val - bid_val) / mid_val) * 10_000.0, 4)
+            if (mid_val and mid_val > 0 and ask_val >= bid_val)
+            else 0.0
+        )
 
     ohlcv_by_tf: dict[str, list[dict[str, Any]]] = {}
     for tf in timeframes:
-        raw_bars = client.fetch_ohlcv(ccxt_symbol, timeframe=tf, limit=ohlcv_limit) or []
+        tf_str = str(tf)
+        cached_bars = (
+            ohlcv_cache.get(compact_symbol, tf_str, ohlcv_limit)
+            if ohlcv_cache is not None
+            else None
+        )
+        if cached_bars is not None:
+            target_stats.inc_cache_hit(1)
+            ohlcv_by_tf[tf_str] = cached_bars
+            continue
+        raw_bars = (
+            _exec_rest_call(
+                client,
+                client.fetch_ohlcv,
+                ccxt_symbol,
+                timeframe=tf_str,
+                limit=ohlcv_limit,
+                rate_limiter=rate_limiter,
+                stats=target_stats,
+            )
+            or []
+        )
         provider_gets += 1
-        ohlcv_by_tf[str(tf)] = [
+        parsed_bars = [
             {
                 "ts": int(bar[0]),
                 "open": float(bar[1]),
@@ -480,6 +910,9 @@ def fetch_full_vst_context(
             }
             for bar in raw_bars
         ]
+        ohlcv_by_tf[tf_str] = parsed_bars
+        if ohlcv_cache is not None and parsed_bars:
+            ohlcv_cache.put(compact_symbol, tf_str, ohlcv_limit, parsed_bars)
 
     derivatives: dict[str, Any] = {
         "funding_rate": None,
@@ -489,43 +922,57 @@ def fetch_full_vst_context(
         "index_price": None,
         "long_short_ratio": None,
     }
-    try:
-        fr = client.fetch_funding_rate(ccxt_symbol)
-        provider_gets += 1
-        if isinstance(fr, dict):
-            fr_info = fr.get("info") if isinstance(fr.get("info"), dict) else {}
-            derivatives["funding_rate"] = _opt_float(fr.get("fundingRate"))
-            derivatives["next_funding_time"] = (
-                fr.get("fundingTimestamp")
-                or fr.get("fundingDatetime")
-                or fr_info.get("nextFundingTime")
+    if hasattr(client, "fetch_funding_rate"):
+        try:
+            fr = _exec_rest_call(
+                client,
+                client.fetch_funding_rate,
+                ccxt_symbol,
+                rate_limiter=rate_limiter,
+                stats=target_stats,
             )
-            derivatives["mark_price"] = _opt_float(
-                fr.get("markPrice") if fr.get("markPrice") is not None else fr_info.get("markPrice")
-            )
-            derivatives["index_price"] = _opt_float(
-                fr.get("indexPrice") if fr.get("indexPrice") is not None else fr_info.get("indexPrice")
-            )
-    except Exception:
-        pass
-
-    try:
-        oi = client.fetch_open_interest(ccxt_symbol)
-        provider_gets += 1
-        if isinstance(oi, dict):
-            oi_info = oi.get("info") if isinstance(oi.get("info"), dict) else {}
-            oi_val = (
-                oi.get("openInterestAmount")
-                if oi.get("openInterestAmount") is not None
-                else (
-                    oi.get("openInterestValue")
-                    if oi.get("openInterestValue") is not None
-                    else oi_info.get("openInterest")
+            provider_gets += 1
+            if isinstance(fr, dict):
+                fr_info = fr.get("info") if isinstance(fr.get("info"), dict) else {}
+                derivatives["funding_rate"] = _opt_float(fr.get("fundingRate"))
+                derivatives["next_funding_time"] = (
+                    fr.get("fundingTimestamp")
+                    or fr.get("fundingDatetime")
+                    or fr_info.get("nextFundingTime")
                 )
+                derivatives["mark_price"] = _opt_float(
+                    fr.get("markPrice") if fr.get("markPrice") is not None else fr_info.get("markPrice")
+                )
+                derivatives["index_price"] = _opt_float(
+                    fr.get("indexPrice") if fr.get("indexPrice") is not None else fr_info.get("indexPrice")
+                )
+        except Exception:
+            pass
+
+    if hasattr(client, "fetch_open_interest"):
+        try:
+            oi = _exec_rest_call(
+                client,
+                client.fetch_open_interest,
+                ccxt_symbol,
+                rate_limiter=rate_limiter,
+                stats=target_stats,
             )
-            derivatives["open_interest"] = _opt_float(oi_val)
-    except Exception:
-        pass
+            provider_gets += 1
+            if isinstance(oi, dict):
+                oi_info = oi.get("info") if isinstance(oi.get("info"), dict) else {}
+                oi_val = (
+                    oi.get("openInterestAmount")
+                    if oi.get("openInterestAmount") is not None
+                    else (
+                        oi.get("openInterestValue")
+                        if oi.get("openInterestValue") is not None
+                        else oi_info.get("openInterest")
+                    )
+                )
+                derivatives["open_interest"] = _opt_float(oi_val)
+        except Exception:
+            pass
 
     bid_vol_10 = sum(b[1] for b in bids[:10])
     ask_vol_10 = sum(a[1] for a in asks[:10])
@@ -564,13 +1011,28 @@ def fetch_full_vst_context(
     else:
         microstructure["analytics_enabled"] = False
 
-    status_info = fetch_vst_status(client)
-    provider_gets += int(status_info.get("provider_gets", 0))
+    if shared_vst_status is not None:
+        status_info = dict(shared_vst_status)
+    else:
+        status_info = fetch_vst_status(
+            client, rate_limiter=rate_limiter, stats=target_stats
+        )
+        provider_gets += int(status_info.get("provider_gets", 0))
 
     recent_trades: list[dict[str, Any]] = []
     if hasattr(client, "fetch_my_trades"):
         try:
-            raw_my_trades = client.fetch_my_trades(ccxt_symbol, limit=20) or []
+            raw_my_trades = (
+                _exec_rest_call(
+                    client,
+                    client.fetch_my_trades,
+                    ccxt_symbol,
+                    limit=20,
+                    rate_limiter=rate_limiter,
+                    stats=target_stats,
+                )
+                or []
+            )
             provider_gets += 1
             for t in raw_my_trades:
                 recent_trades.append(
@@ -588,12 +1050,13 @@ def fetch_full_vst_context(
         except Exception:
             pass
 
+    bal = status_info.get("balance_vst") or {}
     account_state = {
-        "free_margin_vst": status_info["balance_vst"]["free"],
-        "total_equity_vst": status_info["balance_vst"]["total"],
-        "used_margin_vst": status_info["balance_vst"]["used"],
-        "open_positions": status_info["open_positions"],
-        "open_orders": status_info["open_orders"],
+        "free_margin_vst": bal.get("free"),
+        "total_equity_vst": bal.get("total"),
+        "used_margin_vst": bal.get("used"),
+        "open_positions": status_info.get("open_positions", []),
+        "open_orders": status_info.get("open_orders", []),
         "recent_trades": recent_trades,
     }
 
@@ -604,7 +1067,7 @@ def fetch_full_vst_context(
         last_price=last_price,
         spread_bps=spread_bps,
         ts_utc=datetime.now(timezone.utc),
-        source="bingx_vst_sandbox",
+        source=snapshot_source,
         is_stale=False,
         indicators={},
     )
@@ -715,7 +1178,9 @@ def move_vst_stop_loss(
         "workingType": "MARK_PRICE",
         "clientOrderId": coid,
     }
-    created = client.create_order(
+    created = _exec_rest_call(
+        client,
+        client.create_order,
         ccxt_sym,
         "STOP_MARKET",
         close_side,
@@ -739,7 +1204,7 @@ def move_vst_stop_loss(
     cancel_error: str | None = None
     if old_order_id:
         try:
-            client.cancel_order(str(old_order_id), ccxt_sym)
+            _exec_rest_call(client, client.cancel_order, str(old_order_id), ccxt_sym)
             old_cancelled = True
         except Exception as exc:
             cancel_error = str(exc)
@@ -752,6 +1217,7 @@ def move_vst_stop_loss(
                 exc,
             )
 
+    invalidate_vst_status_cache(client)
     return {
         "symbol": compact,
         "ccxt_symbol": ccxt_sym,

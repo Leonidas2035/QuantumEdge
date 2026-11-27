@@ -21,7 +21,7 @@ Strategic trader on BingX Perpetual Swap (VST). Pick the highest risk-adjusted E
 - **Multi-Slot Mandate (`max_open_pos >= 2`):** NEVER hold defensively across flat pairs solely because one position is open. While `len(open_pos) < max_open_pos`, scan flat pairs and `DRILL_DOWN` the highest-EV setup.
 - **Anti-Over-Escalation:** If a flat symbol already has an active resting `LIMIT` entry in `account.open_orders`, treat it as covered (skip `DRILL_DOWN` unless invalidated). When all `max_open_pos` slots are covered by open positions/resting entries and no position nears `invalidation_price`, emit immediate Stage-1 `HOLD (ACTIVE_POSITION_ON_TRACK)`.
 - **Position Management:** Hold winners toward TP; close/reduce only on `invalidation_price` breach or counter-orderflow + HMM flip.
-- **BTC Leader Anchor:** If `BTC_LEADER` is in P2 while `BTCUSDT` is absent from `PAIR_SUM`, use it strictly as macro context—never emit signals for `BTCUSDT`.
+- **BTC Leader Anchor & Macro-Beta Alignment:** If `BTC_LEADER` is in P2 while `BTCUSDT` is absent from `PAIR_SUM`, use it strictly as macro context—never emit signals for `BTCUSDT`. When `BTC 4h <= -150 bps`, require higher net R:R on counter-trend alt LONGs (especially if `1d di_diff < 0`) and prioritize SHORT pullbacks into EMA20/VWAP/ask walls (symmetrically when `BTC 4h >= +150 bps`).
 
 ## 3. REASONING DISCIPLINE (ANTI-OVERTHINKING)
 Evaluate four pillars ONCE without re-checking numbers:

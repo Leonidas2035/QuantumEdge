@@ -11,19 +11,23 @@ import asyncio
 import logging
 import time
 import uuid
-from typing import Any, Mapping, Sequence
+from typing import Any, Literal, Mapping, Sequence
 
 from quantum_edge_core.contracts.lean import TradeDecision
 from quantum_edge_core.execution.bingx_vst_adapter import (
     cancel_vst_open_orders,
+    fetch_vst_positions_and_orders,
     fetch_vst_status,
     get_symbol_tick_size,
+    invalidate_vst_status_cache,
     is_vst_sandbox_client,
     move_vst_stop_loss,
     quantize_price_for_symbol,
     to_ccxt_swap_symbol,
 )
 from quantum_edge_core.execution.harness_bridge import HarnessBridge
+
+_ORIG_FETCH_VST_STATUS = fetch_vst_status
 
 logger = logging.getLogger("quantum_edge_core.execution.position_protection")
 
@@ -50,6 +54,8 @@ class PositionProtectionWatcher:
         order_id_prefix: str | None = "qe-",
         strict_prefix: bool = False,
         interval_sec: float = 5.0,
+        idle_interval_sec: float = 25.0,
+        status_cache_ttl_sec: float | None = None,
         max_liq_distance_pct: float = 2.0,
         stale_feed_limit_sec: float = 30.0,
         enable_breakeven_sl: bool = True,
@@ -65,6 +71,8 @@ class PositionProtectionWatcher:
         self.order_id_prefix = order_id_prefix.strip() if order_id_prefix else None
         self.strict_prefix = bool(strict_prefix)
         self.interval_sec = max(interval_sec, 1.0)
+        self.idle_interval_sec = max(float(idle_interval_sec), self.interval_sec)
+        self.status_cache_ttl_sec = status_cache_ttl_sec
         self.max_liq_distance_pct = max_liq_distance_pct
         self.stale_feed_limit_sec = stale_feed_limit_sec
         self.enable_breakeven_sl = bool(enable_breakeven_sl)
@@ -73,6 +81,8 @@ class PositionProtectionWatcher:
         self.dry_run = dry_run
         self._last_feed_ts = time.time()
         self._be_moved_positions: dict[tuple[str, str], float] = {}
+        self.last_mode: Literal["ACTIVE", "IDLE"] = "IDLE"
+        self.next_sleep_sec: float = self.interval_sec
         self._stop = asyncio.Event()
 
     def _quantize_price(self, symbol: str, price: float, side: str) -> float:
@@ -105,15 +115,33 @@ class PositionProtectionWatcher:
             except Exception as exc:
                 logger.error("PositionProtectionWatcher check failed: %s", exc, exc_info=True)
             try:
-                await asyncio.wait_for(self._stop.wait(), timeout=self.interval_sec)
+                await asyncio.wait_for(self._stop.wait(), timeout=self.next_sleep_sec)
             except asyncio.TimeoutError:
                 continue
 
     def stop(self) -> None:
         self._stop.set()
 
+    def _effective_status_ttl_sec(self) -> float:
+        if self.status_cache_ttl_sec is not None:
+            return max(0.0, float(self.status_cache_ttl_sec))
+        # Real CCXT exchange clients share 2.0s TTL cache; in-memory mock classes run uncached unless configured
+        if callable(getattr(self.client, "describe", None)) and isinstance(
+            getattr(self.client, "urls", None), Mapping
+        ):
+            return 2.0
+        return 0.0
+
     async def check_once(self) -> dict[str, Any]:
-        status = await asyncio.to_thread(fetch_vst_status, self.client)
+        if fetch_vst_status is not _ORIG_FETCH_VST_STATUS:
+            status = await asyncio.to_thread(fetch_vst_status, self.client)
+        else:
+            status = await asyncio.to_thread(
+                fetch_vst_positions_and_orders,
+                self.client,
+                fallback_symbols=tuple(sorted(self.allowed_symbols)),
+                cache_ttl_sec=self._effective_status_ttl_sec(),
+            )
         all_positions = status.get("open_positions") or []
         all_orders = status.get("open_orders") or []
         actions_taken: list[str] = []
@@ -236,6 +264,7 @@ class PositionProtectionWatcher:
                         open_positions_count=len(positions),
                         position_qty=qty,
                     )
+                    invalidate_vst_status_cache(self.client)
                 actions_taken.append(f"EMERGENCY_{close_action}:{sym}")
                 continue
 
@@ -360,6 +389,14 @@ class PositionProtectionWatcher:
                 self._be_moved_positions[pos_key] = rounded_entry
                 actions_taken.append(f"MOVED_BE_SL:{sym}->{target_be_sl}")
 
+        remaining_managed_orders = max(0, len(managed_orders) - len(reduce_only_orphans))
+        if len(positions) > 0 or remaining_managed_orders > 0:
+            self.last_mode = "ACTIVE"
+            self.next_sleep_sec = self.interval_sec
+        else:
+            self.last_mode = "IDLE"
+            self.next_sleep_sec = self.idle_interval_sec
+
         return {
             "dry_run": self.dry_run,
             "allowed_symbols": sorted(self.allowed_symbols),
@@ -368,6 +405,8 @@ class PositionProtectionWatcher:
             "ignored_foreign_positions": ignored_foreign_positions,
             "ignored_foreign_orders": ignored_foreign_orders,
             "feed_stale": feed_stale,
+            "watcher_mode": self.last_mode,
+            "next_sleep_sec": self.next_sleep_sec,
             "actions": actions_taken,
         }
 

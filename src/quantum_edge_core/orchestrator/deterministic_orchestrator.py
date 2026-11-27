@@ -30,6 +30,11 @@ from quantum_edge_core.contracts.optimization import (
     TradeDecisionV2,
 )
 from quantum_edge_core.execution.bingx_vst_adapter import (
+    ApiBudgetStats,
+    BingXRestRateLimiter,
+    GLOBAL_API_BUDGET_STATS,
+    OhlcvRamTtlCache,
+    _exec_rest_call,
     fetch_full_vst_context,
     fetch_vst_status,
     normalize_compact_symbol,
@@ -107,7 +112,7 @@ class LocalForecastProvider:
         self,
         *,
         horizon: Literal["5m", "15m", "1h"] = "15m",
-        timeframe: str = "5m",
+        timeframe: str = "15m",
         horizon_steps: int = 3,
         refit_interval_sec: float = 900.0,
         random_state: int = 42,
@@ -118,6 +123,7 @@ class LocalForecastProvider:
         self.refit_interval_sec = float(refit_interval_sec)
         self.random_state = int(random_state)
         self._pipelines: dict[str, tuple[float, Any]] = {}
+        self.last_used_tf_by_symbol: dict[str, str] = {}
 
     @staticmethod
     def _bars_to_ohlcv_df(bars: Sequence[Any]) -> pd.DataFrame:
@@ -161,9 +167,21 @@ class LocalForecastProvider:
         out: dict[str, ForecastBundleV1] = {}
         for sym, ctx in bundle.contexts_by_symbol.items():
             ohlcv = (ctx or {}).get("ohlcv_by_tf") or {}
-            bars = ohlcv.get(self.timeframe) or ohlcv.get("5m") or ohlcv.get("15m") or []
-            if len(bars) < 40:
+            chosen_tf: str | None = None
+            bars: Sequence[Any] = ()
+            seen_tfs: set[str] = set()
+            for cand_tf in (self.timeframe, "15m", "1h", "5m"):
+                if cand_tf in seen_tfs:
+                    continue
+                seen_tfs.add(cand_tf)
+                cand_bars = ohlcv.get(cand_tf) or []
+                if len(cand_bars) >= 40:
+                    chosen_tf = cand_tf
+                    bars = cand_bars
+                    break
+            if len(bars) < 40 or chosen_tf is None:
                 continue
+            self.last_used_tf_by_symbol[sym] = chosen_tf
             try:
                 df = self._bars_to_ohlcv_df(bars)
                 if len(df) < 40 or df["close"].nunique() < 5:
@@ -275,22 +293,62 @@ def format_btc_leader_line(market_leader: Mapping[str, Any] | None) -> str:
     )
 
 
-def _fetch_btc_leader_pulse(client: Any) -> dict[str, Any] | None:
-    """Lightweight fail-soft read-only BTCUSDT pulse (30x15m + 20x1h bars)."""
+def _fetch_btc_leader_pulse(
+    client: Any,
+    *,
+    ohlcv_cache: OhlcvRamTtlCache | None = None,
+    rate_limiter: BingXRestRateLimiter | None = None,
+    api_stats: ApiBudgetStats | None = None,
+) -> dict[str, Any] | None:
+    """Lightweight fail-soft read-only BTCUSDT pulse (30x15m + 20x1h bars, RAM-cached)."""
     if not hasattr(client, "fetch_ohlcv"):
         return None
+    target_stats = api_stats or GLOBAL_API_BUDGET_STATS
     try:
         ccxt_sym = to_ccxt_swap_symbol("BTCUSDT")
-        bars_15m = client.fetch_ohlcv(ccxt_sym, "15m", limit=30) or []
-        if len(bars_15m) < 2:
-            return None
-        bars_1h = []
-        try:
-            bars_1h = client.fetch_ohlcv(ccxt_sym, "1h", limit=20) or []
-        except Exception:
-            bars_1h = []
 
-        closes_15m = np.array([float(b[4]) for b in bars_15m], dtype=np.float64)
+        def _get_tf_closes(tf: str, limit: int) -> list[float]:
+            if ohlcv_cache is not None:
+                cached = ohlcv_cache.get("BTCUSDT", tf, limit)
+                if cached is not None:
+                    target_stats.inc_cache_hit(1)
+                    return [float(b["close"]) for b in cached]
+            raw = (
+                _exec_rest_call(
+                    client,
+                    client.fetch_ohlcv,
+                    ccxt_sym,
+                    timeframe=tf,
+                    limit=limit,
+                    rate_limiter=rate_limiter,
+                    stats=target_stats,
+                )
+                or []
+            )
+            parsed = [
+                {
+                    "ts": int(b[0]),
+                    "open": float(b[1]),
+                    "high": float(b[2]),
+                    "low": float(b[3]),
+                    "close": float(b[4]),
+                    "volume": float(b[5]),
+                }
+                for b in raw
+            ]
+            if ohlcv_cache is not None and parsed:
+                ohlcv_cache.put("BTCUSDT", tf, limit, parsed)
+            return [b["close"] for b in parsed]
+
+        closes_15m_list = _get_tf_closes("15m", 30)
+        if len(closes_15m_list) < 2:
+            return None
+        try:
+            closes_1h_list = _get_tf_closes("1h", 20)
+        except Exception:
+            closes_1h_list = []
+
+        closes_15m = np.array(closes_15m_list, dtype=np.float64)
         px = float(closes_15m[-1])
         if px <= 0:
             return None
@@ -298,17 +356,17 @@ def _fetch_btc_leader_pulse(client: Any) -> dict[str, Any] | None:
         chg_15m_bps = ((px - prev_15m) / prev_15m * 10_000.0) if prev_15m > 0 else 0.0
 
         chg_1h_bps = 0.0
-        if len(bars_1h) >= 2 and float(bars_1h[-2][4]) > 0:
-            c1 = float(bars_1h[-2][4])
-            chg_1h_bps = (float(bars_1h[-1][4]) - c1) / c1 * 10_000.0
+        if len(closes_1h_list) >= 2 and float(closes_1h_list[-2]) > 0:
+            c1 = float(closes_1h_list[-2])
+            chg_1h_bps = (float(closes_1h_list[-1]) - c1) / c1 * 10_000.0
         elif len(closes_15m) >= 5 and float(closes_15m[-5]) > 0:
             c1 = float(closes_15m[-5])
             chg_1h_bps = (px - c1) / c1 * 10_000.0
 
         chg_4h_bps = 0.0
-        if len(bars_1h) >= 5 and float(bars_1h[-5][4]) > 0:
-            c4 = float(bars_1h[-5][4])
-            chg_4h_bps = (float(bars_1h[-1][4]) - c4) / c4 * 10_000.0
+        if len(closes_1h_list) >= 5 and float(closes_1h_list[-5]) > 0:
+            c4 = float(closes_1h_list[-5])
+            chg_4h_bps = (float(closes_1h_list[-1]) - c4) / c4 * 10_000.0
         elif len(closes_15m) >= 17 and float(closes_15m[-17]) > 0:
             c4 = float(closes_15m[-17])
             chg_4h_bps = (px - c4) / c4 * 10_000.0
@@ -500,16 +558,30 @@ class PreFetchCoordinator:
         risk_config: RiskConfig | None = None,
         *,
         include_btc_leader: bool = True,
+        ohlcv_cache: OhlcvRamTtlCache | None = None,
+        market_bridge: Any | None = None,
+        replay_recorder: Any | None = None,
+        rate_limiter: BingXRestRateLimiter | None = None,
+        api_stats: ApiBudgetStats | None = None,
     ) -> None:
         self.client = exchange_client
         self.symbols = tuple(s.upper() for s in symbols)
         self.risk_config = risk_config or RiskConfig()
         self.include_btc_leader = bool(include_btc_leader)
+        self.ohlcv_cache = ohlcv_cache if ohlcv_cache is not None else OhlcvRamTtlCache()
+        self.market_bridge = market_bridge
+        self.replay_recorder = replay_recorder
+        self.rate_limiter = rate_limiter
+        self.api_stats = api_stats
 
     async def fetch_all(self, *, include_analytics: bool = True) -> PreFetchedBundle:
         t0 = time.perf_counter()
-        status_task = asyncio.to_thread(
-            fetch_vst_status, self.client, fallback_symbols=self.symbols
+        raw_vst_status = await asyncio.to_thread(
+            fetch_vst_status,
+            self.client,
+            fallback_symbols=self.symbols,
+            rate_limiter=self.rate_limiter,
+            stats=self.api_stats,
         )
         ctx_tasks = [
             asyncio.to_thread(
@@ -521,34 +593,46 @@ class PreFetchCoordinator:
                 100,
                 50,
                 include_analytics,
+                ohlcv_cache=self.ohlcv_cache,
+                market_bridge=self.market_bridge,
+                shared_vst_status=raw_vst_status,
+                rate_limiter=self.rate_limiter,
+                api_stats=self.api_stats,
             )
             for sym in self.symbols
         ]
         fetch_btc = self.include_btc_leader and "BTCUSDT" not in self.symbols
         btc_task = (
-            asyncio.to_thread(_fetch_btc_leader_pulse, self.client)
+            asyncio.to_thread(
+                _fetch_btc_leader_pulse,
+                self.client,
+                ohlcv_cache=self.ohlcv_cache,
+                rate_limiter=self.rate_limiter,
+                api_stats=self.api_stats,
+            )
             if fetch_btc
             else None
         )
         if btc_task is not None:
-            raw_vst_status, market_leader, *ctx_models = await asyncio.gather(
-                status_task, btc_task, *ctx_tasks
-            )
+            market_leader, *ctx_models = await asyncio.gather(btc_task, *ctx_tasks)
         else:
-            raw_vst_status, *ctx_models = await asyncio.gather(status_task, *ctx_tasks)
+            ctx_models = list(await asyncio.gather(*ctx_tasks))
             market_leader = None
         vst_status = scope_vst_status_to_symbols(raw_vst_status, self.symbols)
         contexts = {
             sym: m.model_dump(mode="json") for sym, m in zip(self.symbols, ctx_models)
         }
         snap_id = f"snap-{int(time.time() * 1000)}-{uuid.uuid4().hex[:8]}"
-        return PreFetchedBundle(
+        bundle = PreFetchedBundle(
             snapshot_id=snap_id,
             vst_status=vst_status,
             contexts_by_symbol=contexts,
             fetch_ms=round((time.perf_counter() - t0) * 1000.0, 2),
             market_leader=market_leader,
         )
+        if self.replay_recorder is not None and hasattr(self.replay_recorder, "record_bundle"):
+            self.replay_recorder.record_bundle(bundle)
+        return bundle
 
 
 class StatelessStagePromptAssembler:
@@ -1046,6 +1130,7 @@ class DeterministicTradingOrchestrator:
                     forecast=cand_fc,
                     risk_config=risk_cfg,
                     current_price=ref_price,
+                    market_leader=scoped_bundle.market_leader,
                 )
                 lean_dict["margin_vst"] = sizing.margin_vst
                 lean_dict["leverage"] = sizing.leverage
