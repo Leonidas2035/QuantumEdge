@@ -420,4 +420,99 @@ def test_cli_protect_once_mock_dry_run(tmp_path: Path, capsys: pytest.CaptureFix
     assert rc == 0
     out = json.loads(capsys.readouterr().out.strip())
     assert out["dry_run"] is True
+    assert out["source"] == "mock_status"
     assert "EMERGENCY_CLOSE_LONG:BTCUSDT" in out["actions"]
+
+
+def test_position_protection_ignores_foreign_symbols_and_never_cancels_all(
+    tmp_path: Path,
+) -> None:
+    class _ForeignScopeClient:
+        _qe_sandbox_verified = True
+
+        def __init__(self) -> None:
+            self.cancelled_symbols: list[str] = []
+            self.submitted_orders: list[dict[str, Any]] = []
+
+        def fetch_balance(self) -> dict[str, Any]:
+            return {"VST": {"free": 10000.0, "total": 10000.0, "used": 0.0}}
+
+        def fetch_positions(self) -> list[dict[str, Any]]:
+            return [
+                {
+                    "symbol": "BNB/USDT:USDT",
+                    "side": "long",
+                    "contracts": 522.67,
+                    "entryPrice": 548.18,
+                    "markPrice": 563.87,
+                    "liquidationPrice": 550.0,
+                    "info": {"positionSide": "LONG"},
+                }
+            ]
+
+        def fetch_open_orders(self, symbol: str | None = None) -> list[dict[str, Any]]:
+            orders = [
+                {
+                    "id": "bnb-sl-1",
+                    "symbol": "BNB/USDT:USDT",
+                    "type": "market",
+                    "side": "sell",
+                    "reduceOnly": True,
+                    "stopPrice": 551.03,
+                    "info": {"rawType": "STOP_MARKET", "positionSide": "LONG"},
+                },
+                {
+                    "id": "btc-orphan-1",
+                    "symbol": "BTC/USDT:USDT",
+                    "type": "market",
+                    "side": "sell",
+                    "reduceOnly": True,
+                    "stopPrice": 59000.0,
+                    "info": {"rawType": "STOP_MARKET", "positionSide": "LONG"},
+                },
+            ]
+            if symbol is None:
+                return orders
+            return [o for o in orders if o["symbol"] == symbol]
+
+        def cancel_order(self, oid: str, sym: str) -> dict[str, Any]:
+            self.cancelled_symbols.append(sym)
+            return {"id": oid, "status": "canceled"}
+
+        def create_order(
+            self,
+            symbol: str,
+            type: str,
+            side: str,
+            amount: float,
+            price: float | None = None,
+            params: dict[str, Any] | None = None,
+        ) -> dict[str, Any]:
+            self.submitted_orders.append({"symbol": symbol, "params": params or {}})
+            return {"id": "emerg-1", "status": "closed"}
+
+    from quantum_edge_core.execution.risk_guard import RiskConfig
+
+    client = _ForeignScopeClient()
+    ledger = OrderLedger(tmp_path / "scope_orders.sqlite3")
+    executor = LeanExecutor(client, ledger, LeanRiskGuard(RiskConfig()))
+    bridge = HarnessBridge(executor, journal_path=tmp_path / "scope_journal.jsonl")
+    watcher = PositionProtectionWatcher(
+        client,
+        bridge,
+        allowed_symbols=("BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT"),
+        stale_feed_limit_sec=1.0,
+        dry_run=False,
+    )
+    watcher.touch_feed_heartbeat(ts_sec=1.0)
+    res = asyncio.run(watcher.check_once())
+
+    assert res["open_positions"] == 0
+    assert res["open_orders"] == 1
+    assert res["ignored_foreign_positions"] == 1
+    assert res["ignored_foreign_orders"] == 1
+    assert res["actions"] == ["CANCELLED_ORPHANS:1"]
+    assert client.cancelled_symbols == ["BTC/USDT:USDT"]
+    assert "ALL" not in client.cancelled_symbols
+    assert "BNB/USDT:USDT" not in client.cancelled_symbols
+    assert client.submitted_orders == []

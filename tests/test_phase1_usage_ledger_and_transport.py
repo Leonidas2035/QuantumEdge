@@ -451,3 +451,44 @@ def test_ab_transport_bench_dry_run_end_to_end(tmp_path: Path) -> None:
     assert branches["B_gemini_interactions"]["failure_rate"] == 0.0
     assert branches["B_gemini_interactions"]["sum_iecu"] < branches["A_agy_proxy"]["sum_iecu"]
     assert branches["B_gemini_interactions"]["sum_provider_input_tokens"] < branches["A_agy_proxy"]["sum_provider_input_tokens"]
+
+
+def test_cold_start_subprocess_imports_no_circular_import() -> None:
+    import os
+    import subprocess
+    import sys
+
+    repo_root = Path(__file__).resolve().parents[1]
+    env = {**os.environ, "PYTHONPATH": str(repo_root / "src")}
+    p1 = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            "from quantum_edge_ml.model_router.usage_ledger import UsageLedger; print(UsageLedger.__name__)",
+        ],
+        cwd=str(repo_root),
+        env=env,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert p1.returncode == 0, f"UsageLedger cold import failed: {p1.stderr}"
+    assert "UsageLedger" in p1.stdout
+
+    p2 = subprocess.run(
+        [sys.executable, "tools/agy_openai_proxy.py", "--help"],
+        cwd=str(repo_root),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert p2.returncode == 0, f"agy_openai_proxy.py --help failed: {p2.stderr}"
+
+    p3 = subprocess.run(
+        [sys.executable, "tools/qe_harness_cli.py", "--help"],
+        cwd=str(repo_root),
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert p3.returncode == 0, f"qe_harness_cli.py --help failed: {p3.stderr}"

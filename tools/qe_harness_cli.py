@@ -341,6 +341,17 @@ def build_parser() -> argparse.ArgumentParser:
         default=None,
         help="Optional inline JSON status dict for offline dry-run verification",
     )
+    p_prot.add_argument(
+        "--allowed-symbols",
+        default=None,
+        help="Comma-separated allowed symbols for PositionProtectionWatcher",
+    )
+    p_prot.add_argument(
+        "--read-live-vst",
+        action="store_true",
+        default=False,
+        help="In --dry-run mode, read real BingX VST status instead of offline mock/paper client",
+    )
 
     return parser
 
@@ -749,11 +760,25 @@ def _cmd_protect_once(args: argparse.Namespace) -> int:
 
     dry_run = not bool(args.live_vst)
     order_ledger = OrderLedger(args.order_ledger_db)
-    risk_guard = LeanRiskGuard(RiskConfig())
+    risk_cfg = RiskConfig()
+    risk_guard = LeanRiskGuard(risk_cfg)
+
+    raw_allowed = args.allowed_symbols or os.environ.get("QE_ALLOWED_SYMBOLS")
+    if raw_allowed:
+        allowed_symbols = tuple(
+            s.strip().upper() for s in str(raw_allowed).split(",") if s.strip()
+        )
+    else:
+        allowed_symbols = tuple(risk_cfg.allowed_symbols)
 
     if args.live_vst:
         ex_client: Any = create_bingx_vst_client()
+        source = "bingx_vst_live"
+    elif args.read_live_vst:
+        ex_client = create_bingx_vst_client()
+        source = "bingx_vst_readonly"
     else:
+        source = "mock_status" if args.mock_status_json else "paper_client"
         mock_state = (
             json.loads(args.mock_status_json)
             if args.mock_status_json
@@ -782,11 +807,13 @@ def _cmd_protect_once(args: argparse.Namespace) -> int:
     watcher = PositionProtectionWatcher(
         ex_client,
         bridge,
+        allowed_symbols=allowed_symbols,
         max_liq_distance_pct=args.max_liq_pct,
         stale_feed_limit_sec=args.stale_limit_sec,
         dry_run=dry_run,
     )
     res = asyncio.run(watcher.check_once())
+    res["source"] = source
     print(json.dumps(res, ensure_ascii=False))
     return 0
 

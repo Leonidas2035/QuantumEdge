@@ -11,7 +11,7 @@ import asyncio
 import logging
 import time
 import uuid
-from typing import Any
+from typing import Any, Sequence
 
 from quantum_edge_core.contracts.lean import TradeDecision
 from quantum_edge_core.execution.bingx_vst_adapter import (
@@ -22,6 +22,8 @@ from quantum_edge_core.execution.harness_bridge import HarnessBridge
 
 logger = logging.getLogger("quantum_edge_core.execution.position_protection")
 
+DEFAULT_ALLOWED_SYMBOLS: tuple[str, ...] = ("BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT")
+
 
 class PositionProtectionWatcher:
     """Always-on 5-second deterministic position safety loop (0 LLM tokens, single writer)."""
@@ -31,6 +33,7 @@ class PositionProtectionWatcher:
         exchange_client: Any,
         bridge: HarnessBridge,
         *,
+        allowed_symbols: Sequence[str] = DEFAULT_ALLOWED_SYMBOLS,
         interval_sec: float = 5.0,
         max_liq_distance_pct: float = 2.0,
         stale_feed_limit_sec: float = 30.0,
@@ -38,6 +41,9 @@ class PositionProtectionWatcher:
     ) -> None:
         self.client = exchange_client
         self.bridge = bridge
+        self.allowed_symbols: frozenset[str] = frozenset(
+            str(s).strip().upper() for s in allowed_symbols if str(s).strip()
+        )
         self.interval_sec = max(interval_sec, 1.0)
         self.max_liq_distance_pct = max_liq_distance_pct
         self.stale_feed_limit_sec = stale_feed_limit_sec
@@ -64,11 +70,20 @@ class PositionProtectionWatcher:
 
     async def check_once(self) -> dict[str, Any]:
         status = await asyncio.to_thread(fetch_vst_status, self.client)
-        positions = status.get("open_positions") or []
-        open_orders = status.get("open_orders") or []
+        all_positions = status.get("open_positions") or []
+        all_orders = status.get("open_orders") or []
         actions_taken: list[str] = []
 
-        # 1. Clean up orphan protective orders when account is FLAT
+        positions = [
+            p for p in all_positions if str(p.get("symbol") or "").upper() in self.allowed_symbols
+        ]
+        open_orders = [
+            o for o in all_orders if str(o.get("symbol") or "").upper() in self.allowed_symbols
+        ]
+        ignored_foreign_positions = len(all_positions) - len(positions)
+        ignored_foreign_orders = len(all_orders) - len(open_orders)
+
+        # 1. Clean up orphan protective orders when scoped account positions are FLAT
         if len(positions) == 0 and len(open_orders) > 0:
             reduce_only_orphans = [
                 o
@@ -78,11 +93,19 @@ class PositionProtectionWatcher:
                 in ("STOP_MARKET", "TAKE_PROFIT_MARKET")
             ]
             if reduce_only_orphans:
+                orphan_symbols = sorted(
+                    {
+                        str(o.get("symbol") or "").upper()
+                        for o in reduce_only_orphans
+                        if str(o.get("symbol") or "").strip()
+                    }
+                )
                 if not self.dry_run:
-                    await asyncio.to_thread(cancel_vst_open_orders, self.client, "ALL")
+                    for sym in orphan_symbols:
+                        await asyncio.to_thread(cancel_vst_open_orders, self.client, sym)
                 actions_taken.append(f"CANCELLED_ORPHANS:{len(reduce_only_orphans)}")
 
-        # 2. Check open positions for missing SL + stale feed or imminent liquidation
+        # 2. Check open scoped positions for missing SL + stale feed or imminent liquidation
         now_ts = time.time()
         feed_stale = (now_ts - self._last_feed_ts) > self.stale_feed_limit_sec
 
@@ -135,8 +158,11 @@ class PositionProtectionWatcher:
 
         return {
             "dry_run": self.dry_run,
+            "allowed_symbols": sorted(self.allowed_symbols),
             "open_positions": len(positions),
             "open_orders": len(open_orders),
+            "ignored_foreign_positions": ignored_foreign_positions,
+            "ignored_foreign_orders": ignored_foreign_orders,
             "feed_stale": feed_stale,
             "actions": actions_taken,
         }

@@ -7,7 +7,7 @@ import base64
 import time
 import uuid
 from dataclasses import dataclass, field
-from typing import Any, Literal
+from typing import TYPE_CHECKING, Any, Literal
 
 import httpx
 
@@ -17,7 +17,9 @@ from quantum_edge_core.contracts.optimization import (
     TransportChannel,
     UsageRecordV1,
 )
-from quantum_edge_ml.model_router.usage_ledger import UsageLedger
+
+if TYPE_CHECKING:
+    from quantum_edge_ml.model_router.usage_ledger import UsageLedger
 
 # Official Gemini 4 media_resolution token budget table
 GEMINI4_IMAGE_TOKENS: dict[str, int] = {

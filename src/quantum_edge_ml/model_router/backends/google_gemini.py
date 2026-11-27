@@ -7,7 +7,7 @@ import os
 import time
 import uuid
 from pathlib import Path
-from typing import Any, Literal, Optional
+from typing import TYPE_CHECKING, Any, Literal, Optional
 
 import httpx
 from google import genai
@@ -26,7 +26,9 @@ from quantum_edge_ml.model_router.backends.transport import (
     LLMResponse,
     LLMTransport,
 )
-from quantum_edge_ml.model_router.usage_ledger import UsageLedger
+
+if TYPE_CHECKING:
+    from quantum_edge_ml.model_router.usage_ledger import UsageLedger
 
 logger = logging.getLogger("GoogleGeminiBackend")
 
