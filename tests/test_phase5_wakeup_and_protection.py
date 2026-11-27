@@ -26,7 +26,10 @@ from quantum_edge_core.execution import (
     PaperExchangeClient,
     PositionProtectionWatcher,
 )
-from quantum_edge_core.execution.bingx_vst_adapter import move_vst_stop_loss
+from quantum_edge_core.execution.bingx_vst_adapter import (
+    fetch_vst_status,
+    move_vst_stop_loss,
+)
 from quantum_edge_core.market_data.wakeup_gate import (
     EventDrivenWakeupGate,
     HawkesTracker,
@@ -878,3 +881,201 @@ def test_position_protection_breakeven_sl_long_and_short_and_never_backward(
     r3 = asyncio.run(watcher.check_once())
     assert not any("MOVED_BE_SL" in a for a in r3["actions"])
     assert client.events == events_before
+
+
+def test_position_protection_be_sl_quantized_and_idempotent_zero_spam(
+    tmp_path: Path,
+) -> None:
+    class _SpamGuardClient:
+        _qe_sandbox_verified = True
+
+        def __init__(self) -> None:
+            self.create_calls: list[dict[str, Any]] = []
+            self.positions: list[dict[str, Any]] = [
+                {
+                    "symbol": "SUI/USDT:USDT",
+                    "side": "long",
+                    "contracts": 100.0,
+                    "entryPrice": 0.6688,
+                    "markPrice": 0.6740,
+                    "liquidationPrice": 0.50,
+                    "info": {"positionSide": "LONG"},
+                },
+                {
+                    "symbol": "LINK/USDT:USDT",
+                    "side": "long",
+                    "contracts": 10.0,
+                    "entryPrice": 9.317,
+                    "markPrice": 9.370,
+                    "liquidationPrice": 7.00,
+                    "info": {"positionSide": "LONG"},
+                },
+            ]
+            # Initial SL with NO top-level stopPrice; adapter must extract from info.stopPrice
+            self.orders: list[dict[str, Any]] = [
+                {
+                    "id": "sui-sl-0",
+                    "clientOrderId": "qe-sui-init",
+                    "symbol": "SUI/USDT:USDT",
+                    "type": "STOP_MARKET",
+                    "side": "sell",
+                    "reduceOnly": True,
+                    "info": {"type": "STOP_MARKET", "stopPrice": "0.6610", "positionSide": "LONG"},
+                },
+                {
+                    "id": "link-sl-0",
+                    "clientOrderId": "qe-link-init",
+                    "symbol": "LINK/USDT:USDT",
+                    "type": "STOP_MARKET",
+                    "side": "sell",
+                    "reduceOnly": True,
+                    "info": {"type": "STOP_MARKET", "stopPrice": "9.200", "positionSide": "LONG"},
+                },
+            ]
+
+        def fetch_balance(self) -> dict[str, Any]:
+            return {"VST": {"free": 900.0, "total": 1000.0, "used": 100.0}}
+
+        def fetch_positions(self) -> list[dict[str, Any]]:
+            return list(self.positions)
+
+        def fetch_open_orders(self, symbol: str | None = None) -> list[dict[str, Any]]:
+            if symbol is None:
+                return list(self.orders)
+            return [o for o in self.orders if o["symbol"] == symbol]
+
+        def create_order(
+            self,
+            symbol: str,
+            type: str,
+            side: str,
+            amount: float,
+            price: float | None = None,
+            params: dict[str, Any] | None = None,
+        ) -> dict[str, Any]:
+            _ = price
+            p = dict(params or {})
+            oid = f"be-ord-{len(self.create_calls) + 1}"
+            self.create_calls.append({"symbol": symbol, "type": type, "side": side, "amount": amount, "params": p})
+            self.orders.append(
+                {
+                    "id": oid,
+                    "symbol": symbol,
+                    "type": type,
+                    "side": side,
+                    "reduceOnly": True,
+                    # Simulate BingX CCXT returning nested stopPrice & clientOrderId in info only
+                    "info": {
+                        "type": type,
+                        "stopPrice": str(p.get("stopPrice")),
+                        "positionSide": p.get("positionSide"),
+                        "clientOrderId": p.get("clientOrderId"),
+                    },
+                }
+            )
+            return {"id": oid, "status": "open"}
+
+        def cancel_order(self, oid: str, symbol: str) -> dict[str, Any]:
+            _ = symbol
+            self.orders = [o for o in self.orders if o["id"] != oid]
+            return {"id": oid, "status": "canceled"}
+
+    from quantum_edge_core.execution.risk_guard import RiskConfig
+
+    client = _SpamGuardClient()
+    ledger = OrderLedger(tmp_path / "spam_orders.sqlite3")
+    executor = LeanExecutor(client, ledger, LeanRiskGuard(RiskConfig.for_qe_isolated_50x()))
+    bridge = HarnessBridge(executor, journal_path=tmp_path / "spam_journal.jsonl")
+    watcher = PositionProtectionWatcher(
+        client,
+        bridge,
+        allowed_symbols=("BNBUSDT", "LINKUSDT", "SUIUSDT"),
+        order_id_prefix="qe-",
+        enable_breakeven_sl=True,
+        breakeven_trigger_pct=0.50,
+        breakeven_offset_pct=0.20,
+        dry_run=False,
+    )
+    watcher.touch_feed_heartbeat()
+
+    all_actions: list[str] = []
+    for _ in range(10):
+        res = asyncio.run(watcher.check_once())
+        all_actions.extend(res["actions"])
+
+    # Exactly 1 move for SUI (0.6688 * 1.0020 -> 0.6702) and 1 move for LINK (9.317 * 1.0020 -> 9.336)
+    assert len(client.create_calls) == 2
+    assert all_actions == [
+        "MOVED_BE_SL:SUIUSDT->0.6702",
+        "MOVED_BE_SL:LINKUSDT->9.336",
+    ]
+
+    # Close SUI position -> tick clears RAM tracker and orphan cleanup removes SUI BE order
+    client.positions = [p for p in client.positions if p["symbol"] != "SUI/USDT:USDT"]
+    asyncio.run(watcher.check_once())
+
+    # Open a brand-new SUI LONG position -> BE protection must fire once cleanly for new entry
+    client.positions.append(
+        {
+            "symbol": "SUI/USDT:USDT",
+            "side": "long",
+            "contracts": 100.0,
+            "entryPrice": 0.6800,
+            "markPrice": 0.6850,
+            "liquidationPrice": 0.50,
+            "info": {"positionSide": "LONG"},
+        }
+    )
+    client.orders.append(
+        {
+            "id": "sui-sl-new-0",
+            "clientOrderId": "qe-sui-init-2",
+            "symbol": "SUI/USDT:USDT",
+            "type": "STOP_MARKET",
+            "side": "sell",
+            "reduceOnly": True,
+            "info": {"type": "STOP_MARKET", "stopPrice": "0.6720", "positionSide": "LONG"},
+        }
+    )
+    r_reopen = asyncio.run(watcher.check_once())
+    assert len(client.create_calls) == 3
+    assert any(a == "MOVED_BE_SL:SUIUSDT->0.6814" for a in r_reopen["actions"])
+
+
+def test_fetch_vst_status_extracts_nested_bingx_stop_price() -> None:
+    class _NestedStopClient:
+        def fetch_balance(self) -> dict[str, Any]:
+            return {"VST": {"free": 500.0, "total": 500.0, "used": 0.0}}
+
+        def fetch_positions(self) -> list[dict[str, Any]]:
+            return []
+
+        def fetch_open_orders(self, symbol: str | None = None) -> list[dict[str, Any]]:
+            _ = symbol
+            return [
+                {
+                    "id": "ord-nested-1",
+                    "symbol": "SUI/USDT:USDT",
+                    "type": "STOP_MARKET",
+                    "side": "sell",
+                    "reduceOnly": True,
+                    "price": None,
+                    "stopPrice": None,
+                    "triggerPrice": None,
+                    "info": {
+                        "type": "STOP_MARKET",
+                        "stopPrice": "0.6702",
+                        "positionSide": "LONG",
+                        "clientOrderId": "qe-be-suiusdt-abc",
+                    },
+                }
+            ]
+
+    st = fetch_vst_status(_NestedStopClient(), fallback_symbols=("SUIUSDT",))
+    assert len(st["open_orders"]) == 1
+    ord0 = st["open_orders"][0]
+    assert ord0["stopPrice"] == 0.6702
+    assert ord0["triggerPrice"] == 0.6702
+    assert ord0["clientOrderId"] == "qe-be-suiusdt-abc"
+    assert ord0["rawType"] == "STOP_MARKET"
+    assert ord0["positionSide"] == "LONG"

@@ -152,7 +152,11 @@ def _derive_regime_signature(forecasts: dict[str, Any]) -> str:
     for sym in sorted(forecasts.keys()):
         fc = forecasts[sym]
         rp = fc.regime_probs if hasattr(fc, "regime_probs") else (fc.get("regime_probs") or {})
-        dom = max(rp.items(), key=lambda kv: float(kv[1]))[0] if rp else "RANGE"
+        if rp:
+            best_k, best_v = max(rp.items(), key=lambda kv: float(kv[1]))
+            dom = str(best_k) if float(best_v) >= 0.55 else "MIXED"
+        else:
+            dom = "RANGE"
         tags.append(f"{sym}:{dom}")
     return ",".join(tags)
 
@@ -211,7 +215,7 @@ async def run_persistent_session(
     started_utc = datetime.now(timezone.utc).isoformat()
     symbols = tuple(s.strip().upper() for s in str(args.symbols).split(",") if s.strip())
     dry_run = not bool(args.live_vst)
-    reuse_session = bool(getattr(args, "reuse_session", True) or getattr(args, "reuse_agy_session", False))
+    reuse_session = bool(getattr(args, "reuse_session", False) or getattr(args, "reuse_agy_session", False))
 
     usage_ledger = UsageLedger(args.ledger_db)
     order_ledger = OrderLedger(args.order_ledger_db)
@@ -297,8 +301,8 @@ async def run_persistent_session(
         allowed_symbols=symbols,
         interval_sec=float(args.protection_interval_sec),
         enable_breakeven_sl=bool(getattr(args, "enable_breakeven_sl", True)),
-        breakeven_trigger_pct=float(getattr(args, "be_trigger_pct", 0.40)),
-        breakeven_offset_pct=float(getattr(args, "be_offset_pct", 0.12)),
+        breakeven_trigger_pct=float(getattr(args, "be_trigger_pct", 0.50)),
+        breakeven_offset_pct=float(getattr(args, "be_offset_pct", 0.20)),
         dry_run=dry_run,
     )
     watcher_runs = 0
@@ -690,8 +694,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--transport", choices=("agy-direct", "agy-proxy", "mock"), default="agy-direct", help="LLM transport (default: agy-direct)")
     parser.add_argument("--proxy-url", default="http://127.0.0.1:8045/v1", help="Proxy URL if --transport agy-proxy")
     reuse_grp = parser.add_mutually_exclusive_group()
-    reuse_grp.add_argument("--reuse-session", dest="reuse_session", action="store_true", default=True, help="Enable fail-soft --resume chaining in AgyDirectCliTransport (default)")
-    reuse_grp.add_argument("--no-reuse-session", dest="reuse_session", action="store_false", help="Disable --resume chaining in AgyDirectCliTransport")
+    reuse_grp.add_argument("--reuse-session", dest="reuse_session", action="store_true", default=False, help="Enable fail-soft --resume chaining in AgyDirectCliTransport (opt-in)")
+    reuse_grp.add_argument("--no-reuse-session", dest="reuse_session", action="store_false", help="Disable --resume chaining in AgyDirectCliTransport (stateless default)")
     parser.add_argument("--reuse-agy-session", action="store_true", default=False, help=argparse.SUPPRESS)
     parser.add_argument("--max-margin-vst", type=float, default=1000.0)
     parser.add_argument("--max-leverage", type=int, default=50)
@@ -699,8 +703,8 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-notional-vst", type=float, default=50_000.0)
     parser.add_argument("--stage1-timeout", type=float, default=90.0)
     parser.add_argument("--stage2-timeout", type=float, default=150.0)
-    parser.add_argument("--be-trigger-pct", type=float, default=0.40, help="Breakeven SL trigger move pct (default: 0.40)")
-    parser.add_argument("--be-offset-pct", type=float, default=0.12, help="Breakeven SL lock offset pct (default: 0.12)")
+    parser.add_argument("--be-trigger-pct", type=float, default=0.50, help="Breakeven SL trigger move pct (default: 0.50)")
+    parser.add_argument("--be-offset-pct", type=float, default=0.20, help="Breakeven SL lock offset pct (default: 0.20)")
     parser.add_argument("--no-breakeven-sl", dest="enable_breakeven_sl", action="store_false", default=True, help="Disable deterministic breakeven SL move in watcher")
     parser.add_argument("--no-btc-leader", dest="include_btc_leader", action="store_false", default=True, help="Disable read-only BTC_LEADER pulse in PreFetchCoordinator")
     exit_grp = parser.add_mutually_exclusive_group()

@@ -280,3 +280,40 @@ def test_cli_run_cycle_with_reasoning_router_mock_dry_run(
     out = json.loads(capsys.readouterr().out.strip())
     assert out["effort_router_enabled"] is True
     assert out["validator_passed"] is True
+
+
+def test_reasoning_router_normal_vst_25bps_spread_does_not_inflate_complexity_to_high() -> None:
+    router = ReasoningEffortRouter(model_id="gemini-4-carbon", hysteresis=0.05)
+    calm_ctx = {
+        "market_snapshot": {"symbol": "LINKUSDT", "spread_bps": 25.0},
+        "microstructure_and_liquidity": {
+            "composite_signal": {"score": 45.0},
+            "orderflow": {"imbalance": 0.35},
+        },
+    }
+    calm_fc = {"regime_entropy": 0.45, "vol_zscore": 0.4, "tsfm_disagreement": 0.0}
+    calm_status = {"open_positions_count": 3}
+
+    d_calm = router.compute_complexity(ctx=calm_ctx, forecast=calm_fc, vst_status=calm_status)
+    assert d_calm < 0.65
+    score, level = router.select_level(
+        symbol="LINKUSDT",
+        ctx=calm_ctx,
+        forecast=calm_fc,
+        vst_status=calm_status,
+        stage=2,
+    )
+    assert score < 0.65
+    assert level in (ThinkingLevel.LOW, ThinkingLevel.MEDIUM)
+
+    # Genuine stress (wide 60bps spread + signal conflict + high entropy & disagreement) escalates cleanly
+    stress_ctx = {
+        "market_snapshot": {"symbol": "LINKUSDT", "spread_bps": 60.0},
+        "microstructure_and_liquidity": {
+            "composite_signal": {"score": 40.0},
+            "orderflow": {"imbalance": -0.5},
+        },
+    }
+    stress_fc = {"regime_entropy": 0.90, "vol_zscore": 2.4, "tsfm_disagreement": 0.80}
+    d_stress = router.compute_complexity(ctx=stress_ctx, forecast=stress_fc, vst_status=calm_status)
+    assert d_stress >= 0.70

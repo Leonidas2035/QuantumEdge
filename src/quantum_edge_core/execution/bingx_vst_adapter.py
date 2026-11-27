@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping, Sequence
 from datetime import datetime, timezone
-from decimal import Decimal
+from decimal import ROUND_CEILING, ROUND_FLOOR, ROUND_HALF_UP, Decimal
 import logging
 import os
 from typing import Any
@@ -356,13 +356,16 @@ def fetch_vst_status(
         info = o.get("info") if isinstance(o.get("info"), dict) else {}
         trigger_price = None
         for candidate in (
-            o.get("triggerPrice"),
             o.get("stopPrice"),
+            o.get("triggerPrice"),
             o.get("stopLossPrice"),
             o.get("takeProfitPrice"),
             info.get("stopPrice"),
             info.get("StopPrice"),
             info.get("triggerPrice"),
+            info.get("stopLossPrice"),
+            o.get("price"),
+            info.get("price"),
         ):
             parsed = _opt_float(candidate)
             if parsed is not None and parsed > 0:
@@ -372,14 +375,18 @@ def fetch_vst_status(
         open_orders.append(
             {
                 "id": str(o.get("id")) if o.get("id") is not None else None,
-                "clientOrderId": o.get("clientOrderId") or info.get("clientOrderID"),
+                "clientOrderId": (
+                    o.get("clientOrderId")
+                    or info.get("clientOrderId")
+                    or info.get("clientOrderID")
+                ),
                 "symbol": compact_sym or o.get("symbol"),
                 "ccxt_symbol": o.get("symbol"),
                 "type": o.get("type"),
-                "rawType": info.get("type") or info.get("rawType"),
+                "rawType": info.get("type") or info.get("rawType") or o.get("type"),
                 "workingType": info.get("workingType"),
                 "side": o.get("side"),
-                "positionSide": info.get("positionSide"),
+                "positionSide": o.get("positionSide") or info.get("positionSide"),
                 "reduceOnly": o.get("reduceOnly") if o.get("reduceOnly") is not None else info.get("reduceOnly"),
                 "price": _opt_float(o.get("price")),
                 "triggerPrice": trigger_price,
@@ -626,6 +633,37 @@ def fetch_full_vst_context(
 _vst_logger = logging.getLogger("quantum_edge_core.execution.bingx_vst_adapter")
 
 
+def get_symbol_tick_size(symbol: str, *, client: Any | None = None) -> Decimal:
+    """Return instrument tick_size Decimal for compact symbol (markets -> DEFAULT_INSTRUMENT_SPECS -> 0.0001)."""
+    compact = normalize_compact_symbol(symbol) or str(symbol).strip().upper()
+    specs = extract_instrument_specs(client) if client is not None else extract_instrument_specs({})
+    pair = specs.get(compact)
+    if pair is not None and pair[0] > 0:
+        return pair[0]
+    return Decimal("0.0001")
+
+
+def quantize_price_for_symbol(
+    symbol: str,
+    price: float,
+    *,
+    client: Any | None = None,
+    position_side: str | None = None,
+) -> float:
+    """Quantize price cleanly to exchange tick_size (ceiling for LONG SL protection, floor for SHORT)."""
+    tick = get_symbol_tick_size(symbol, client=client)
+    side_norm = str(position_side or "").strip().upper()
+    if "LONG" in side_norm:
+        rounding = ROUND_CEILING
+    elif "SHORT" in side_norm:
+        rounding = ROUND_FLOOR
+    else:
+        rounding = ROUND_HALF_UP
+    # Clean binary float noise (e.g. 100.20000000000001) before Decimal rounding
+    d_price = Decimal(f"{float(price):.10f}")
+    return float(d_price.quantize(tick, rounding=rounding))
+
+
 def move_vst_stop_loss(
     client: Any,
     *,
@@ -646,10 +684,10 @@ def move_vst_stop_loss(
             "Refusing to move stop loss: client is not verified in BingX VST sandbox mode or REAL_TRADING is enabled."
         )
     qty = float(contracts)
-    stop_p = float(new_stop_price)
-    if qty <= 0 or stop_p <= 0:
+    raw_stop_p = float(new_stop_price)
+    if qty <= 0 or raw_stop_p <= 0:
         raise ValueError(
-            f"move_vst_stop_loss requires positive contracts ({qty}) and new_stop_price ({stop_p})."
+            f"move_vst_stop_loss requires positive contracts ({qty}) and new_stop_price ({raw_stop_p})."
         )
     compact = normalize_compact_symbol(symbol) or str(symbol).strip().upper()
     ccxt_sym = to_ccxt_swap_symbol(compact)
@@ -662,6 +700,9 @@ def move_vst_stop_loss(
         close_side = "buy"
     else:
         raise ValueError(f"Unsupported position_side for move_vst_stop_loss: {position_side!r}")
+    stop_p = quantize_price_for_symbol(
+        compact, raw_stop_p, client=client, position_side=pos_side
+    )
 
     suffix = (decision_id or uuid.uuid4().hex[:8]).replace(" ", "")[:18]
     coid = f"qe-be-{compact.lower()}-{suffix}"[:36]

@@ -46,10 +46,15 @@ class ReasoningEffortRouter:
         vol_anomaly = min(1.0, vol_z / 3.0)
 
         open_cnt = int(vst_status.get("open_positions_count") or 0)
-        exposure = min(1.0, open_cnt / 3.0)
+        if open_cnt <= 1:
+            exposure = 0.0
+        elif open_cnt == 2:
+            exposure = 0.35
+        else:
+            exposure = 0.60
 
         spread_bps = float((ctx.get("market_snapshot") or {}).get("spread_bps") or 0.0)
-        liq_risk = min(1.0, spread_bps / 30.0)
+        liq_risk = min(1.0, max(0.0, spread_bps - 25.0) / 35.0)
 
         disagreement = float((forecast or {}).get("tsfm_disagreement", 0.0))
 

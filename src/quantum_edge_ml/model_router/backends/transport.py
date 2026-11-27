@@ -354,6 +354,30 @@ class AgyDirectCliTransport(LLMTransport):
         return isinstance(exc, (RuntimeError, ConnectionError, OSError, json.JSONDecodeError))
 
     @staticmethod
+    def _normalize_output_and_thinking_tokens(
+        *,
+        in_tok: int | None,
+        raw_out_tok: int | None,
+        think_tok: int | None,
+        tot_tok: int | None,
+        text_len: int,
+    ) -> tuple[int | None, int | None]:
+        """Deduplicate thinking_tokens when agy CLI folds them into usage.output_tokens."""
+        if raw_out_tok is None or think_tok is None or think_tok <= 0:
+            return raw_out_tok, think_tok
+        if raw_out_tok < think_tok:
+            return raw_out_tok, think_tok
+        total_matches_combined = (
+            in_tok is not None
+            and tot_tok is not None
+            and abs((in_tok + raw_out_tok) - tot_tok) <= 2
+        )
+        exceeds_visible_floor = raw_out_tok >= think_tok + max(1, text_len // 6)
+        if total_matches_combined or exceeds_visible_floor:
+            return max(0, raw_out_tok - think_tok), think_tok
+        return raw_out_tok, think_tok
+
+    @staticmethod
     def _format_stdin_prompt(req: LLMRequest) -> str:
         user_text = req.combined_user_text
         if req.system_instruction.strip():
@@ -481,10 +505,17 @@ class AgyDirectCliTransport(LLMTransport):
                 text = str(payload.get("response") or "")
                 u = payload.get("usage") if isinstance(payload.get("usage"), dict) else {}
                 in_tok = int(u["input_tokens"]) if u.get("input_tokens") is not None else None
-                out_tok = int(u["output_tokens"]) if u.get("output_tokens") is not None else None
-                think_tok = int(u["thinking_tokens"]) if u.get("thinking_tokens") is not None else None
+                raw_out_tok = int(u["output_tokens"]) if u.get("output_tokens") is not None else None
+                raw_think_tok = int(u["thinking_tokens"]) if u.get("thinking_tokens") is not None else None
                 cache_tok = int(u["cache_read_tokens"]) if u.get("cache_read_tokens") is not None else None
                 tot_tok = int(u["total_tokens"]) if u.get("total_tokens") is not None else None
+                out_tok, think_tok = self._normalize_output_and_thinking_tokens(
+                    in_tok=in_tok,
+                    raw_out_tok=raw_out_tok,
+                    think_tok=raw_think_tok,
+                    tot_tok=tot_tok,
+                    text_len=len(text),
+                )
                 num_turns = int(payload.get("num_turns") or 1)
                 conv_id = payload.get("conversation_id") or payload.get("session_id")
                 if self.reuse_session and isinstance(conv_id, str) and conv_id.strip():

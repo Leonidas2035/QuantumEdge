@@ -648,3 +648,89 @@ def test_agy_direct_auto_resets_session_after_max_resume_turns(tmp_path: Path) -
         assert "--resume" not in seen_cmds[2]
     finally:
         ledger.close()
+
+
+def test_agy_direct_deduplicates_thinking_from_output_tokens_in_iecu(tmp_path: Path) -> None:
+    responses = [
+        {
+            "status": "SUCCESS",
+            "response": '{"action":"HOLD"}',
+            "usage": {
+                "input_tokens": 20_000,
+                "output_tokens": 3_625,
+                "thinking_tokens": 2_931,
+                "cache_read_tokens": 0,
+                "total_tokens": 23_625,
+            },
+        },
+        {
+            "status": "SUCCESS",
+            "response": '{"action":"HOLD"}',
+            "usage": {
+                "input_tokens": 20_000,
+                "output_tokens": 200,
+                "thinking_tokens": 500,
+                "cache_read_tokens": 0,
+                "total_tokens": 20_700,
+            },
+        },
+    ]
+
+    def _usage_runner(**_kwargs: Any) -> dict[str, Any]:
+        return responses.pop(0)
+
+    ledger = UsageLedger(tmp_path / "dedup_iecu.sqlite3")
+    transport = AgyDirectCliTransport(
+        ledger,
+        workdir=tmp_path / "ram_dedup",
+        runner_override=_usage_runner,
+    )
+    try:
+        r_folded = asyncio.run(
+            transport.generate(
+                LLMRequest(
+                    decision_id="d-fold-1",
+                    stage="stage1_screen",
+                    model="gemini-4-carbon",
+                    system_instruction="P0",
+                    p2_dynamic_tail="P2",
+                    thinking_level=ThinkingLevel.HIGH,
+                )
+            )
+        )
+        assert r_folded.usage.output_tokens == 694
+        assert r_folded.usage.thinking_tokens == 2931
+
+        r_split = asyncio.run(
+            transport.generate(
+                LLMRequest(
+                    decision_id="d-split-2",
+                    stage="stage1_screen",
+                    model="gemini-4-carbon",
+                    system_instruction="P0",
+                    p2_dynamic_tail="P2",
+                    thinking_level=ThinkingLevel.MEDIUM,
+                )
+            )
+        )
+        assert r_split.usage.output_tokens == 200
+        assert r_split.usage.thinking_tokens == 500
+
+        rows = {r["decision_id"]: r for r in ledger.fetch_usage_rows()}
+        assert rows["d-fold-1"]["iecu"] == 38125.0  # 20000 + 5*(694 + 2931)
+        assert rows["d-split-2"]["iecu"] == 23500.0  # 20000 + 5*(200 + 500)
+    finally:
+        ledger.close()
+
+
+def test_run_vst_session_defaults_stateless_and_be_050_020(tmp_path: Path) -> None:
+    args = session_runner.build_parser().parse_args([])
+    assert args.reuse_session is False
+    assert args.be_trigger_pct == 0.50
+    assert args.be_offset_pct == 0.20
+
+    ledger = UsageLedger(tmp_path / "default_stateless.sqlite3")
+    try:
+        assert AgyDirectCliTransport(ledger).reuse_session is False
+    finally:
+        ledger.close()

@@ -17,8 +17,10 @@ from quantum_edge_core.contracts.lean import TradeDecision
 from quantum_edge_core.execution.bingx_vst_adapter import (
     cancel_vst_open_orders,
     fetch_vst_status,
+    get_symbol_tick_size,
     is_vst_sandbox_client,
     move_vst_stop_loss,
+    quantize_price_for_symbol,
     to_ccxt_swap_symbol,
 )
 from quantum_edge_core.execution.harness_bridge import HarnessBridge
@@ -51,8 +53,8 @@ class PositionProtectionWatcher:
         max_liq_distance_pct: float = 2.0,
         stale_feed_limit_sec: float = 30.0,
         enable_breakeven_sl: bool = True,
-        breakeven_trigger_pct: float = 0.40,
-        breakeven_offset_pct: float = 0.12,
+        breakeven_trigger_pct: float = 0.50,
+        breakeven_offset_pct: float = 0.20,
         dry_run: bool = False,
     ) -> None:
         self.client = exchange_client
@@ -70,7 +72,13 @@ class PositionProtectionWatcher:
         self.breakeven_offset_pct = float(breakeven_offset_pct)
         self.dry_run = dry_run
         self._last_feed_ts = time.time()
+        self._be_moved_positions: dict[tuple[str, str], float] = {}
         self._stop = asyncio.Event()
+
+    def _quantize_price(self, symbol: str, price: float, side: str) -> float:
+        return quantize_price_for_symbol(
+            symbol, price, client=self.client, position_side=side
+        )
 
     def _is_managed_order(self, order: Mapping[str, Any]) -> bool:
         """Check whether an open order belongs to QuantumEdge via clientOrderId prefix."""
@@ -113,6 +121,19 @@ class PositionProtectionWatcher:
         positions = [
             p for p in all_positions if str(p.get("symbol") or "").upper() in self.allowed_symbols
         ]
+        # Prune closed positions from RAM BE-SL tracker so new future entries get BE protection
+        active_pos_keys = {
+            (
+                str(p.get("symbol") or "").upper(),
+                "LONG"
+                if "LONG" in str(p.get("positionSide") or p.get("side") or "").upper()
+                else "SHORT",
+            )
+            for p in positions
+            if str(p.get("symbol") or "").strip() and float(p.get("contracts") or 0.0) > 0
+        }
+        for stale_key in [k for k in self._be_moved_positions if k not in active_pos_keys]:
+            del self._be_moved_positions[stale_key]
         scoped_orders = [
             o for o in all_orders if str(o.get("symbol") or "").upper() in self.allowed_symbols
         ]
@@ -228,6 +249,11 @@ class PositionProtectionWatcher:
             if not (is_long or is_short):
                 continue
             pos_side = "LONG" if is_long else "SHORT"
+            pos_key = (sym, pos_side)
+            rounded_entry = round(entry, 6)
+            if self._be_moved_positions.get(pos_key) == rounded_entry:
+                continue
+
             fav_move_pct = (
                 (mark - entry) / entry * 100.0
                 if is_long
@@ -236,11 +262,12 @@ class PositionProtectionWatcher:
             if fav_move_pct < self.breakeven_trigger_pct:
                 continue
 
-            target_be_sl = (
-                round(entry * (1.0 + self.breakeven_offset_pct / 100.0), 6)
+            raw_target_be = (
+                entry * (1.0 + self.breakeven_offset_pct / 100.0)
                 if is_long
-                else round(entry * (1.0 - self.breakeven_offset_pct / 100.0), 6)
+                else entry * (1.0 - self.breakeven_offset_pct / 100.0)
             )
+            target_be_sl = self._quantize_price(sym, raw_target_be, pos_side)
             # Ensure target breakeven stop stays strictly behind current mark price
             if (is_long and target_be_sl >= mark) or (is_short and target_be_sl <= mark):
                 continue
@@ -260,17 +287,43 @@ class PositionProtectionWatcher:
             if has_sl and not managed_sl_orders:
                 continue
 
+            # If a qe-be-* SL order already exists on exchange for this position, mark idempotent and skip
+            if any(
+                str(
+                    sl_ord.get("clientOrderId")
+                    or (sl_ord.get("info") or {}).get("clientOrderId")
+                    or (sl_ord.get("info") or {}).get("clientOrderID")
+                    or ""
+                )
+                .strip()
+                .startswith("qe-be-")
+                for sl_ord in managed_sl_orders
+            ):
+                self._be_moved_positions[pos_key] = rounded_entry
+                continue
+
             old_sl_id: str | None = None
             existing_sl_price: float | None = None
             for sl_ord in managed_sl_orders:
-                p_raw = sl_ord.get("triggerPrice") or sl_ord.get("stopPrice")
-                if p_raw is None:
-                    continue
-                try:
-                    p_val = float(p_raw)
-                except (TypeError, ValueError):
-                    continue
-                if p_val <= 0:
+                ord_info = sl_ord.get("info") if isinstance(sl_ord.get("info"), Mapping) else {}
+                p_val = None
+                for cand in (
+                    sl_ord.get("stopPrice"),
+                    sl_ord.get("triggerPrice"),
+                    ord_info.get("stopPrice"),
+                    ord_info.get("triggerPrice"),
+                    sl_ord.get("price"),
+                ):
+                    if cand is None:
+                        continue
+                    try:
+                        parsed = float(cand)
+                    except (TypeError, ValueError):
+                        continue
+                    if parsed > 0:
+                        p_val = parsed
+                        break
+                if p_val is None:
                     continue
                 if existing_sl_price is None or (
                     (is_long and p_val > existing_sl_price)
@@ -279,11 +332,16 @@ class PositionProtectionWatcher:
                     existing_sl_price = p_val
                     old_sl_id = str(sl_ord["id"]) if sl_ord.get("id") is not None else None
 
-            # Never loosen SL: only move strictly closer to profit / above entry (LONG) or below (SHORT)
+            tick = float(get_symbol_tick_size(sym, client=self.client))
+            # Never loosen or churn within 0.5*tick of existing protective SL
             if existing_sl_price is not None:
-                if is_long and target_be_sl <= existing_sl_price * (1.0 + 1e-6):
+                if is_long and target_be_sl <= existing_sl_price + tick * 0.5:
+                    if existing_sl_price >= entry:
+                        self._be_moved_positions[pos_key] = rounded_entry
                     continue
-                if is_short and target_be_sl >= existing_sl_price * (1.0 - 1e-6):
+                if is_short and target_be_sl >= existing_sl_price - tick * 0.5:
+                    if existing_sl_price <= entry:
+                        self._be_moved_positions[pos_key] = rounded_entry
                     continue
 
             if self.dry_run:
@@ -299,6 +357,7 @@ class PositionProtectionWatcher:
                     old_order_id=old_sl_id,
                     decision_id=f"{int(now_ts)}",
                 )
+                self._be_moved_positions[pos_key] = rounded_entry
                 actions_taken.append(f"MOVED_BE_SL:{sym}->{target_be_sl}")
 
         return {
