@@ -53,6 +53,12 @@ Example 4 (BTCUSDT Justified HOLD on winning trade + wide alt spreads):
 {"regime_read":"BTC 1h uptrend intact (uPnL +13.6 VST); alts choppy with 25-27bps spreads.","primary_edge":"Existing BTCUSDT LONG tracking toward 60640 TP with positive CVD and intact invalidation.","counter_thesis":"5m stall near 60350 may delay TP fill.","invalidation_price":59880.0,"action":"HOLD","symbol":"BTCUSDT","hold_blocker_code":"ACTIVE_POSITION_ON_TRACK","thesis_status":"CONFIRMED","confidence":0.82,"evidence_refs":["BTCUSDT:position","ETHUSDT:spread"],"order_type":"MARKET","entry_price":null,"sl_price":null,"tp_price":null,"margin_vst":null,"leverage":null,"qty":null}
 """
 
+QUANTUMEDGE_INTER_HOUR_PLAYBOOK = """## 5B. BINGX HEDGE MODE & RESYNC PROTOCOL REFERENCE
+- **BingX Hedge Mode Execution**: All orders map to `positionSide` (`LONG` or `SHORT`) with `reduceOnly=True` on exits (`CLOSE_LONG`, `CLOSE_SHORT`, `REDUCE`). Opening orders attach exchange-side `STOP_MARKET` (`sl_price`) and `TAKE_PROFIT_MARKET` (`tp_price`).
+- **LiqMap & Orderflow Interpretation**: High-intensity `SHORT_LIQ` above mark price acts as an upward magnet; high-intensity `LONG_LIQ` below mark price acts as a downward magnet. Confirm magnet asymmetry with `imbalance_top10` and `cvd_or_delta` before entry.
+- **Checkpoint Resync Modes**: `CACHE_HIT` / `LOCAL_RECONSTRUCT` preserve the hourly P1 macro prefix and append-only `THESIS_MEMORY_V1` block; `RESYNC` rebuilds P1 at hour boundaries, regime flips, or cache eviction alerts.
+"""
+
 
 def build_p0_static_prefix(extra_reference_playbook: str = "") -> str:
     """Build byte-stable P0 prefix (no dynamic timestamps, UUIDs, or counters)."""
@@ -83,6 +89,7 @@ def build_p0_static_prefix(extra_reference_playbook: str = "") -> str:
 
 __all__ = [
     "CANONICAL_FEW_SHOT_EXAMPLES",
+    "QUANTUMEDGE_INTER_HOUR_PLAYBOOK",
     "SYSTEM_PROMPT_P0_CORE",
     "build_p0_static_prefix",
 ]

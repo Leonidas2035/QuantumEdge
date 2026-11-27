@@ -202,7 +202,10 @@ class StatelessStagePromptAssembler:
         bundle: PreFetchedBundle,
         trigger_summary: str,
         forecasts_by_symbol: dict[str, dict[str, Any]] | None = None,
+        current_seq: int = 0,
+        regime_signature: str = "DEFAULT",
     ) -> AssembledStagePrompt:
+        _ = (current_seq, regime_signature)
         p1_slow = self._get_p1_for_bundle(bundle)
         p2_parts: list[str] = [
             "=== P2_STAGE1_SCREENING ===",
@@ -392,11 +395,18 @@ class DeterministicTradingOrchestrator:
         self.effort_router = effort_router
         self.model_id = model_id
 
-    def _notify_cache_result(self, cache_read_tokens: int | None) -> None:
+    def _notify_cache_result(
+        self,
+        cache_read_tokens: int | None,
+        *,
+        prompt_tokens: int | None = None,
+    ) -> None:
         if hasattr(self.assembler, "snapshot_store") and hasattr(
             self.assembler.snapshot_store, "observe_cache_result"
         ):
-            self.assembler.snapshot_store.observe_cache_result(cache_read_tokens)
+            self.assembler.snapshot_store.observe_cache_result(
+                cache_read_tokens, prompt_tokens=prompt_tokens, stage="stage2_drill"
+            )
         elif hasattr(self.assembler, "observe_cache_result"):
             self.assembler.observe_cache_result(cache_read_tokens)
 
@@ -429,6 +439,8 @@ class DeterministicTradingOrchestrator:
         trigger_summary: str = "HEARTBEAT_1H",
         forecasts_by_symbol: dict[str, dict[str, Any]] | None = None,
         dry_run: bool = False,
+        current_seq: int = 0,
+        regime_signature: str = "DEFAULT",
     ) -> DecisionAuditV1:
         decision_id = f"qe-{int(time.time())}-{uuid.uuid4().hex[:8]}"
         usage_ids: list[str] = []
@@ -438,6 +450,8 @@ class DeterministicTradingOrchestrator:
             bundle=bundle,
             trigger_summary=trigger_summary,
             forecasts_by_symbol=forecasts_by_symbol,
+            current_seq=current_seq,
+            regime_signature=regime_signature,
         )
         s1_resp = await self.transport.generate(
             LLMRequest(
@@ -540,7 +554,10 @@ class DeterministicTradingOrchestrator:
         )
         usage_ids.append(s2_resp.usage.record_id)
         decision_v2 = parse_structured_model_json(s2_resp.text, TradeDecisionV2)
-        self._notify_cache_result(s2_resp.usage.cache_read_tokens)
+        self._notify_cache_result(
+            s2_resp.usage.cache_read_tokens,
+            prompt_tokens=s2_resp.usage.provider_input_tokens,
+        )
 
         ok_val, val_reason = self._post_validate_trade(decision_v2, cand_ctx)
         exec_res: dict[str, Any] | None = None

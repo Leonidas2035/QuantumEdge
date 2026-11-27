@@ -275,6 +275,18 @@ def build_parser() -> argparse.ArgumentParser:
         default=False,
         help="Dump cycle DecisionAuditV1 JSON to /dev/shm/quantumedge/cycles",
     )
+    p_cycle.add_argument(
+        "--thesis-db",
+        type=Path,
+        default=None,
+        help="Path to SQLite ThesisMemoryStore (default: runtime/thesis_memory.sqlite3 or RAM in mock dry-run)",
+    )
+    p_cycle.add_argument(
+        "--stateless",
+        action="store_true",
+        default=False,
+        help="Use StatelessStagePromptAssembler instead of 3-layer PrefixContextAssembler",
+    )
 
     return parser
 
@@ -511,11 +523,18 @@ def _cmd_run_cycle(args: argparse.Namespace) -> int:
         TransportChannel,
         UsageRecordV1,
     )
-    from quantum_edge_core.execution.storage_policy import get_ram_tmp_dir
+    from quantum_edge_core.execution.storage_policy import (
+        CANONICAL_SSD_DURABLE_PATHS,
+        get_ram_tmp_dir,
+    )
     from quantum_edge_core.orchestrator.deterministic_orchestrator import (
         DeterministicTradingOrchestrator,
         PreFetchCoordinator,
         StatelessStagePromptAssembler,
+    )
+    from quantum_edge_core.orchestrator.prefix_context_assembler import (
+        PrefixContextAssembler,
+        ThesisMemoryStore,
     )
     from quantum_edge_ml.model_router.backends.google_gemini import GeminiDirectClient
     from quantum_edge_ml.model_router.backends.transport import (
@@ -610,7 +629,21 @@ def _cmd_run_cycle(args: argparse.Namespace) -> int:
 
             executor = LeanExecutor(ex_client, order_ledger, risk_guard)
             bridge = HarnessBridge(executor, journal_path=args.journal_path)
-            assembler = StatelessStagePromptAssembler(include_images=include_images)
+            thesis_store: ThesisMemoryStore | None = None
+            if args.stateless:
+                assembler: Any = StatelessStagePromptAssembler(include_images=include_images)
+            else:
+                thesis_db_path = args.thesis_db
+                if thesis_db_path is None:
+                    if args.transport == "mock" and dry_run:
+                        thesis_db_path = get_ram_tmp_dir("cycles") / "mock_thesis_memory.sqlite3"
+                    else:
+                        thesis_db_path = CANONICAL_SSD_DURABLE_PATHS["thesis_memory"]
+                thesis_store = ThesisMemoryStore(thesis_db_path)
+                assembler = PrefixContextAssembler(
+                    thesis_store=thesis_store,
+                    include_images=include_images,
+                )
             orchestrator = DeterministicTradingOrchestrator(
                 transport=transport,
                 ledger=usage_ledger,
@@ -618,17 +651,27 @@ def _cmd_run_cycle(args: argparse.Namespace) -> int:
                 bridge=bridge,
                 model_id=args.model,
             )
-            audit = await orchestrator.run_decision_cycle(
-                bundle,
-                trigger_summary=args.trigger,
-                dry_run=dry_run,
-            )
-            out_dict = audit.model_dump(mode="json")
-            if args.dump_ram:
-                ram_file = get_ram_tmp_dir("cycles") / f"{audit.decision_id}.json"
-                ram_file.write_text(json.dumps(out_dict, indent=2), encoding="utf-8")
-                out_dict["ram_dump_path"] = str(ram_file)
-            return out_dict
+            try:
+                audit = await orchestrator.run_decision_cycle(
+                    bundle,
+                    trigger_summary=args.trigger,
+                    dry_run=dry_run,
+                )
+                out_dict = audit.model_dump(mode="json")
+                if isinstance(assembler, PrefixContextAssembler):
+                    cp = assembler.snapshot_store.current
+                    out_dict["resync_mode"] = "RESYNC" if cp is not None else "UNKNOWN"
+                    out_dict["cache_eviction_alert"] = (
+                        assembler.snapshot_store.eviction_monitor.alert_active
+                    )
+                if args.dump_ram:
+                    ram_file = get_ram_tmp_dir("cycles") / f"{audit.decision_id}.json"
+                    ram_file.write_text(json.dumps(out_dict, indent=2), encoding="utf-8")
+                    out_dict["ram_dump_path"] = str(ram_file)
+                return out_dict
+            finally:
+                if thesis_store is not None:
+                    thesis_store.close()
         finally:
             await transport.close()
             usage_ledger.close()
