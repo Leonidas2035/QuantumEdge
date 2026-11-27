@@ -17,6 +17,7 @@ import uuid
 from dataclasses import dataclass, field
 from typing import Any, Literal, Mapping, Protocol, Sequence, TypeVar
 
+import numpy as np
 import pandas as pd
 from pydantic import BaseModel
 
@@ -32,10 +33,13 @@ from quantum_edge_core.execution.bingx_vst_adapter import (
     fetch_full_vst_context,
     fetch_vst_status,
     normalize_compact_symbol,
+    to_ccxt_swap_symbol,
 )
 from quantum_edge_core.execution.harness_bridge import HarnessBridge
 from quantum_edge_core.execution.market_context_serializer import (
     MarketContextSerializer,
+    _compute_macd,
+    _compute_rsi_wilder,
     resolve_tf_hierarchy,
 )
 from quantum_edge_core.execution.position_sizer import ConvictionPositionSizer
@@ -256,6 +260,89 @@ def format_forecast_for_prompt(
     return forecast
 
 
+def format_btc_leader_line(market_leader: Mapping[str, Any] | None) -> str:
+    """Render compact read-only BTC_LEADER macro pulse line for Stage-1/Stage-2 P2."""
+    if not isinstance(market_leader, Mapping) or market_leader.get("px") is None:
+        return ""
+    return (
+        f"BTC_LEADER|px={market_leader.get('px')}"
+        f"|15m={market_leader.get('chg_15m_bps', 0.0)}bps"
+        f"|1h={market_leader.get('chg_1h_bps', 0.0)}bps"
+        f"|4h={market_leader.get('chg_4h_bps', 0.0)}bps"
+        f"|rsi15m={market_leader.get('rsi14_15m', 50.0)}"
+        f"|mc15m={market_leader.get('macd_15m', 'FLAT')}"
+        f"|trend={market_leader.get('trend', 'RANGE')}"
+    )
+
+
+def _fetch_btc_leader_pulse(client: Any) -> dict[str, Any] | None:
+    """Lightweight fail-soft read-only BTCUSDT pulse (30x15m + 20x1h bars)."""
+    if not hasattr(client, "fetch_ohlcv"):
+        return None
+    try:
+        ccxt_sym = to_ccxt_swap_symbol("BTCUSDT")
+        bars_15m = client.fetch_ohlcv(ccxt_sym, "15m", limit=30) or []
+        if len(bars_15m) < 2:
+            return None
+        bars_1h = []
+        try:
+            bars_1h = client.fetch_ohlcv(ccxt_sym, "1h", limit=20) or []
+        except Exception:
+            bars_1h = []
+
+        closes_15m = np.array([float(b[4]) for b in bars_15m], dtype=np.float64)
+        px = float(closes_15m[-1])
+        if px <= 0:
+            return None
+        prev_15m = float(closes_15m[-2])
+        chg_15m_bps = ((px - prev_15m) / prev_15m * 10_000.0) if prev_15m > 0 else 0.0
+
+        chg_1h_bps = 0.0
+        if len(bars_1h) >= 2 and float(bars_1h[-2][4]) > 0:
+            c1 = float(bars_1h[-2][4])
+            chg_1h_bps = (float(bars_1h[-1][4]) - c1) / c1 * 10_000.0
+        elif len(closes_15m) >= 5 and float(closes_15m[-5]) > 0:
+            c1 = float(closes_15m[-5])
+            chg_1h_bps = (px - c1) / c1 * 10_000.0
+
+        chg_4h_bps = 0.0
+        if len(bars_1h) >= 5 and float(bars_1h[-5][4]) > 0:
+            c4 = float(bars_1h[-5][4])
+            chg_4h_bps = (float(bars_1h[-1][4]) - c4) / c4 * 10_000.0
+        elif len(closes_15m) >= 17 and float(closes_15m[-17]) > 0:
+            c4 = float(closes_15m[-17])
+            chg_4h_bps = (px - c4) / c4 * 10_000.0
+
+        rsi14_15m = round(float(_compute_rsi_wilder(closes_15m, 14)[-1]), 1)
+        macd_l, sig_l, hist = _compute_macd(closes_15m)
+        if float(hist[-1]) > 0 and float(macd_l[-1]) >= float(sig_l[-1]):
+            macd_15m = "BULL"
+        elif float(hist[-1]) < 0 and float(macd_l[-1]) <= float(sig_l[-1]):
+            macd_15m = "BEAR"
+        else:
+            macd_15m = "FLAT"
+
+        if chg_4h_bps >= 15.0 or (chg_1h_bps >= 10.0 and macd_15m == "BULL"):
+            trend = "BULL"
+        elif chg_4h_bps <= -15.0 or (chg_1h_bps <= -10.0 and macd_15m == "BEAR"):
+            trend = "BEAR"
+        else:
+            trend = "RANGE"
+
+        return {
+            "symbol": "BTCUSDT",
+            "px": round(px, 2),
+            "chg_15m_bps": round(chg_15m_bps, 1),
+            "chg_1h_bps": round(chg_1h_bps, 1),
+            "chg_4h_bps": round(chg_4h_bps, 1),
+            "rsi14_15m": rsi14_15m,
+            "macd_15m": macd_15m,
+            "trend": trend,
+        }
+    except Exception:
+        return None
+
+
 def format_tactical_indicators_line(
     serializer: MarketContextSerializer,
     symbol: str,
@@ -271,7 +358,7 @@ def format_tactical_indicators_line(
             continue
         p = serializer.build_structural_profile(tf, bars)
         chunks.append(
-            f"{tf}:rsi={p['rsi14']},adx={p['adx14']},mc={p['macd_cross']},"
+            f"{tf}:rsi={p['rsi14']},adx={p['adx14']},di={p['di_diff']},mc={p['macd_cross']},"
             f"bb={p['bb_pos']},div={p['rsi_div']}/{p['macd_div']}"
         )
     if not chunks:
@@ -400,6 +487,7 @@ class PreFetchedBundle:
     vst_status: dict[str, Any]
     contexts_by_symbol: dict[str, dict[str, Any]]
     fetch_ms: float
+    market_leader: dict[str, Any] | None = None
 
 
 class PreFetchCoordinator:
@@ -410,10 +498,13 @@ class PreFetchCoordinator:
         exchange_client: Any,
         symbols: Sequence[str] = ("BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT"),
         risk_config: RiskConfig | None = None,
+        *,
+        include_btc_leader: bool = True,
     ) -> None:
         self.client = exchange_client
         self.symbols = tuple(s.upper() for s in symbols)
         self.risk_config = risk_config or RiskConfig()
+        self.include_btc_leader = bool(include_btc_leader)
 
     async def fetch_all(self, *, include_analytics: bool = True) -> PreFetchedBundle:
         t0 = time.perf_counter()
@@ -433,7 +524,19 @@ class PreFetchCoordinator:
             )
             for sym in self.symbols
         ]
-        raw_vst_status, *ctx_models = await asyncio.gather(status_task, *ctx_tasks)
+        fetch_btc = self.include_btc_leader and "BTCUSDT" not in self.symbols
+        btc_task = (
+            asyncio.to_thread(_fetch_btc_leader_pulse, self.client)
+            if fetch_btc
+            else None
+        )
+        if btc_task is not None:
+            raw_vst_status, market_leader, *ctx_models = await asyncio.gather(
+                status_task, btc_task, *ctx_tasks
+            )
+        else:
+            raw_vst_status, *ctx_models = await asyncio.gather(status_task, *ctx_tasks)
+            market_leader = None
         vst_status = scope_vst_status_to_symbols(raw_vst_status, self.symbols)
         contexts = {
             sym: m.model_dump(mode="json") for sym, m in zip(self.symbols, ctx_models)
@@ -444,6 +547,7 @@ class PreFetchCoordinator:
             vst_status=vst_status,
             contexts_by_symbol=contexts,
             fetch_ms=round((time.perf_counter() - t0) * 1000.0, 2),
+            market_leader=market_leader,
         )
 
 
@@ -532,6 +636,9 @@ class StatelessStagePromptAssembler:
                 sort_keys=True,
             ),
         ]
+        btc_line = format_btc_leader_line(getattr(bundle, "market_leader", None))
+        if btc_line:
+            p2_parts.append(btc_line)
         for sym in sorted(bundle.contexts_by_symbol.keys()):
             ctx = bundle.contexts_by_symbol[sym]
             snap = ctx.get("market_snapshot") or {}
@@ -606,6 +713,9 @@ class StatelessStagePromptAssembler:
             "=== P2_STAGE2_DEEP_DRILLDOWN ===",
             json.dumps(s2_header, separators=(",", ":"), sort_keys=True),
         ]
+        btc_line = format_btc_leader_line(getattr(bundle, "market_leader", None))
+        if btc_line:
+            p2_parts.append(btc_line)
         if isinstance(fc_fmt, str):
             p2_parts.append(fc_fmt)
         p2_parts.append(cand_text)
@@ -769,6 +879,7 @@ class DeterministicTradingOrchestrator:
             vst_status=scoped_vst,
             contexts_by_symbol=bundle.contexts_by_symbol,
             fetch_ms=bundle.fetch_ms,
+            market_leader=bundle.market_leader,
         )
 
         # === STAGE 1: Cross-Asset Screening (thinking_level=LOW) ===
@@ -1030,6 +1141,7 @@ __all__ = [
     "StagePromptAssemblerProtocol",
     "StatelessStagePromptAssembler",
     "extract_account_risk_limits",
+    "format_btc_leader_line",
     "format_forecast_for_prompt",
     "format_tactical_indicators_line",
     "parse_structured_model_json",

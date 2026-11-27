@@ -26,6 +26,7 @@ from quantum_edge_core.execution import (
     PaperExchangeClient,
     PositionProtectionWatcher,
 )
+from quantum_edge_core.execution.bingx_vst_adapter import move_vst_stop_loss
 from quantum_edge_core.market_data.wakeup_gate import (
     EventDrivenWakeupGate,
     HawkesTracker,
@@ -659,3 +660,221 @@ def test_position_protection_per_symbol_orphan_cleanup_with_other_open_position(
         ("xrp-qe-orphan", "XRP/USDT:USDT"),
     ]
     assert client.submitted_orders == []
+
+
+def test_move_vst_stop_loss_creates_new_first_and_cancels_old() -> None:
+    events: list[tuple[str, Any]] = []
+
+    class _SafeStopClient:
+        _qe_sandbox_verified = True
+
+        def __init__(self, *, fail_create: bool = False, fail_cancel: bool = False) -> None:
+            self.fail_create = fail_create
+            self.fail_cancel = fail_cancel
+            self.last_create_params: dict[str, Any] = {}
+
+        def create_order(
+            self,
+            symbol: str,
+            type: str,
+            side: str,
+            amount: float,
+            price: float | None = None,
+            params: dict[str, Any] | None = None,
+        ) -> dict[str, Any]:
+            self.last_create_params = dict(params or {})
+            events.append(("create_order", symbol, type, side, amount, price, dict(params or {})))
+            if self.fail_create:
+                return {}
+            return {"id": "new-be-sl-99", "status": "open"}
+
+        def cancel_order(self, oid: str, symbol: str) -> dict[str, Any]:
+            events.append(("cancel_order", oid, symbol))
+            if self.fail_cancel:
+                raise RuntimeError("already filled/canceled")
+            return {"id": oid, "status": "canceled"}
+
+    c_ok = _SafeStopClient()
+    res = move_vst_stop_loss(
+        c_ok,
+        symbol="BNBUSDT",
+        position_side="LONG",
+        contracts=5.0,
+        new_stop_price=600.72,
+        old_order_id="old-sl-1",
+        decision_id="testbe",
+    )
+    assert res["new_order_id"] == "new-be-sl-99"
+    assert res["old_cancelled"] is True
+    assert events[0][0] == "create_order"
+    assert events[0][1] == "BNB/USDT:USDT"
+    assert events[0][2] == "STOP_MARKET"
+    assert events[0][3] == "sell"
+    assert events[1] == ("cancel_order", "old-sl-1", "BNB/USDT:USDT")
+    assert c_ok.last_create_params["positionSide"] == "LONG"
+    assert c_ok.last_create_params["reduceOnly"] is True
+    assert c_ok.last_create_params["stopPrice"] == 600.72
+    assert str(c_ok.last_create_params["clientOrderId"]).startswith("qe-be-")
+
+    # Failed create must NEVER cancel old SL
+    events.clear()
+    c_fail_create = _SafeStopClient(fail_create=True)
+    with pytest.raises(RuntimeError, match="no order id"):
+        move_vst_stop_loss(
+            c_fail_create,
+            symbol="BNBUSDT",
+            position_side="LONG",
+            contracts=5.0,
+            new_stop_price=600.72,
+            old_order_id="old-sl-keep",
+        )
+    assert [e[0] for e in events] == ["create_order"]
+
+    # Cancel failure after confirmed replacement SL logs warning and succeeds without throwing
+    events.clear()
+    c_fail_cancel = _SafeStopClient(fail_cancel=True)
+    res_warn = move_vst_stop_loss(
+        c_fail_cancel,
+        symbol="LINKUSDT",
+        position_side="SHORT",
+        contracts=20.0,
+        new_stop_price=14.98,
+        old_order_id="old-sl-missing",
+    )
+    assert res_warn["new_order_id"] == "new-be-sl-99"
+    assert res_warn["old_cancelled"] is False
+    assert "already filled" in str(res_warn["cancel_error"])
+
+
+def test_position_protection_breakeven_sl_long_and_short_and_never_backward(
+    tmp_path: Path,
+) -> None:
+    class _BeClient:
+        _qe_sandbox_verified = True
+
+        def __init__(self) -> None:
+            self.positions: list[dict[str, Any]] = [
+                {
+                    "symbol": "BNB/USDT:USDT",
+                    "side": "long",
+                    "contracts": 4.0,
+                    "entryPrice": 100.0,
+                    "markPrice": 100.45,
+                    "liquidationPrice": 80.0,
+                    "info": {"positionSide": "LONG"},
+                },
+                {
+                    "symbol": "LINK/USDT:USDT",
+                    "side": "short",
+                    "contracts": 10.0,
+                    "entryPrice": 100.0,
+                    "markPrice": 99.55,
+                    "liquidationPrice": 120.0,
+                    "info": {"positionSide": "SHORT"},
+                },
+            ]
+            self.orders: list[dict[str, Any]] = [
+                {
+                    "id": "bnb-old-sl",
+                    "clientOrderId": "qe-bnb-sl-init",
+                    "symbol": "BNB/USDT:USDT",
+                    "type": "market",
+                    "side": "sell",
+                    "reduceOnly": True,
+                    "stopPrice": 99.2,
+                    "info": {"rawType": "STOP_MARKET", "positionSide": "LONG"},
+                },
+                {
+                    "id": "link-old-sl",
+                    "clientOrderId": "qe-link-sl-init",
+                    "symbol": "LINK/USDT:USDT",
+                    "type": "market",
+                    "side": "buy",
+                    "reduceOnly": True,
+                    "stopPrice": 100.8,
+                    "info": {"rawType": "STOP_MARKET", "positionSide": "SHORT"},
+                },
+            ]
+            self.events: list[str] = []
+
+        def fetch_balance(self) -> dict[str, Any]:
+            return {"VST": {"free": 900.0, "total": 1000.0, "used": 100.0}}
+
+        def fetch_positions(self) -> list[dict[str, Any]]:
+            return list(self.positions)
+
+        def fetch_open_orders(self, symbol: str | None = None) -> list[dict[str, Any]]:
+            if symbol is None:
+                return list(self.orders)
+            return [o for o in self.orders if o["symbol"] == symbol]
+
+        def create_order(
+            self,
+            symbol: str,
+            type: str,
+            side: str,
+            amount: float,
+            price: float | None = None,
+            params: dict[str, Any] | None = None,
+        ) -> dict[str, Any]:
+            _ = (amount, price)
+            p = dict(params or {})
+            oid = f"be-{len(self.events) + 1}"
+            self.events.append(f"CREATE:{symbol}:{p.get('stopPrice')}")
+            self.orders.append(
+                {
+                    "id": oid,
+                    "clientOrderId": p.get("clientOrderId"),
+                    "symbol": symbol,
+                    "type": "market",
+                    "side": side,
+                    "reduceOnly": True,
+                    "stopPrice": p.get("stopPrice"),
+                    "info": {"rawType": type, "positionSide": p.get("positionSide")},
+                }
+            )
+            return {"id": oid, "status": "open"}
+
+        def cancel_order(self, oid: str, symbol: str) -> dict[str, Any]:
+            self.events.append(f"CANCEL:{oid}:{symbol}")
+            self.orders = [o for o in self.orders if o["id"] != oid]
+            return {"id": oid, "status": "canceled"}
+
+    from quantum_edge_core.execution.risk_guard import RiskConfig
+
+    client = _BeClient()
+    ledger = OrderLedger(tmp_path / "be_orders.sqlite3")
+    executor = LeanExecutor(client, ledger, LeanRiskGuard(RiskConfig.for_qe_isolated_50x()))
+    bridge = HarnessBridge(executor, journal_path=tmp_path / "be_journal.jsonl")
+    watcher = PositionProtectionWatcher(
+        client,
+        bridge,
+        allowed_symbols=("BNBUSDT", "LINKUSDT", "SUIUSDT"),
+        order_id_prefix="qe-",
+        enable_breakeven_sl=True,
+        breakeven_trigger_pct=0.40,
+        breakeven_offset_pct=0.12,
+        dry_run=False,
+    )
+    watcher.touch_feed_heartbeat()
+    r1 = asyncio.run(watcher.check_once())
+    assert "MOVED_BE_SL:BNBUSDT->100.12" in r1["actions"]
+    assert "MOVED_BE_SL:LINKUSDT->99.88" in r1["actions"]
+    # Strictly CREATE before CANCEL for each moved SL
+    assert client.events[0].startswith("CREATE:BNB/USDT:USDT:100.12")
+    assert client.events[1] == "CANCEL:bnb-old-sl:BNB/USDT:USDT"
+    assert client.events[2].startswith("CREATE:LINK/USDT:USDT:99.88")
+    assert client.events[3] == "CANCEL:link-old-sl:LINK/USDT:USDT"
+
+    # Second tick must be idempotent (never move SL again or backward)
+    events_before = list(client.events)
+    r2 = asyncio.run(watcher.check_once())
+    assert not any("MOVED_BE_SL" in a for a in r2["actions"])
+    assert client.events == events_before
+
+    # Tighter trailing SL already at 100.25 (LONG) must NOT move backward to 100.12
+    client.orders[0]["stopPrice"] = 100.25
+    client.orders[1]["stopPrice"] = 99.75
+    r3 = asyncio.run(watcher.check_once())
+    assert not any("MOVED_BE_SL" in a for a in r3["actions"])
+    assert client.events == events_before

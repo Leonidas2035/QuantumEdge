@@ -131,6 +131,7 @@ def test_agy_direct_cli_transport_parses_usage_and_logs_unknown_on_timeout(
         workdir=tmp_path / "ram_ws",
         runner_override=_fake_runner,
         reuse_session=True,
+        max_transient_retries=0,
     )
 
     async def _run() -> None:
@@ -474,3 +475,176 @@ def test_persistent_run_vst_session_mock_preserves_prefix_hash_and_runs_protecti
     assert summary["watcher_runs"] >= 1
     # Mock HOLD triggers 1 LLM call per cycle (never called by PositionProtectionWatcher)
     assert summary["usage_summary"]["total_requests"] == summary["cycles_count"]
+
+
+def test_agy_direct_transient_crash_recovery_logs_retry_of_and_clears_resume(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen_cmds: list[list[str]] = []
+    sleep_calls: list[float] = []
+
+    async def _fake_sleep(delay: float) -> None:
+        sleep_calls.append(float(delay))
+
+    monkeypatch.setattr(asyncio, "sleep", _fake_sleep)
+
+    call_no = {"n": 0}
+
+    def _flaky_runner(**kwargs: Any) -> dict[str, Any]:
+        call_no["n"] += 1
+        seen_cmds.append(list(kwargs["cmd"]))
+        if call_no["n"] == 1:
+            return {
+                "status": "SUCCESS",
+                "response": '{"action":"HOLD"}',
+                "conversation_id": "conv-prev-1",
+                "usage": {"input_tokens": 1000, "output_tokens": 20, "total_tokens": 1020},
+            }
+        if call_no["n"] == 2:
+            raise RuntimeError("agy exited with code 1: HTTP 503 service unavailable")
+        return {
+            "status": "SUCCESS",
+            "response": '{"action":"DRILL_DOWN","candidate_symbol":"BNBUSDT"}',
+            "conversation_id": "conv-fresh-2",
+            "usage": {"input_tokens": 4200, "output_tokens": 60, "total_tokens": 4260},
+        }
+
+    ledger = UsageLedger(tmp_path / "retry_ledger.sqlite3")
+    transport = AgyDirectCliTransport(
+        ledger,
+        workdir=tmp_path / "ram_retry",
+        runner_override=_flaky_runner,
+        reuse_session=True,
+        max_transient_retries=2,
+        retry_backoff_sec=(2.0, 5.0),
+    )
+    try:
+        async def _run() -> None:
+            await transport.generate(
+                LLMRequest(
+                    decision_id="d-init",
+                    stage="stage1_screen",
+                    model="gemini-4-carbon",
+                    system_instruction="P0",
+                    p2_dynamic_tail="P2",
+                    thinking_level=ThinkingLevel.LOW,
+                )
+            )
+            r2 = await transport.generate(
+                LLMRequest(
+                    decision_id="d-retry",
+                    stage="stage1_screen",
+                    model="gemini-4-carbon",
+                    system_instruction="P0",
+                    p2_dynamic_tail="P2",
+                    thinking_level=ThinkingLevel.LOW,
+                )
+            )
+            assert r2.usage.request_status == RequestStatus.OK
+            await transport.close()
+
+        asyncio.run(_run())
+        assert sleep_calls == [2.0]
+        assert "--resume" in seen_cmds[1]
+        # After transient crash, session was reset so retry omits --resume
+        assert "--resume" not in seen_cmds[2]
+
+        rows = ledger.fetch_usage_rows()
+        err_rows = [r for r in rows if r["decision_id"] == "d-retry" and r["request_status"] == "error"]
+        ok_rows = [r for r in rows if r["decision_id"] == "d-retry" and r["request_status"] == "ok"]
+        assert len(err_rows) == 1
+        assert err_rows[0]["provider_input_tokens"] is None
+        assert len(ok_rows) == 1
+        assert ok_rows[0]["retry_of"] == err_rows[0]["record_id"]
+    finally:
+        ledger.close()
+
+
+def test_agy_direct_quota_reached_does_not_retry(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    calls = {"n": 0}
+    sleep_calls: list[float] = []
+
+    async def _fake_sleep(delay: float) -> None:
+        sleep_calls.append(float(delay))
+
+    monkeypatch.setattr(asyncio, "sleep", _fake_sleep)
+
+    def _quota_runner(**_kwargs: Any) -> dict[str, Any]:
+        calls["n"] += 1
+        raise RuntimeError("API error: RESOURCE_EXHAUSTED quota exhausted for project")
+
+    ledger = UsageLedger(tmp_path / "quota_ledger.sqlite3")
+    transport = AgyDirectCliTransport(
+        ledger,
+        workdir=tmp_path / "ram_quota",
+        runner_override=_quota_runner,
+        max_transient_retries=2,
+        retry_backoff_sec=(2.0, 5.0),
+    )
+    try:
+        with pytest.raises(RuntimeError, match="RESOURCE_EXHAUSTED"):
+            asyncio.run(
+                transport.generate(
+                    LLMRequest(
+                        decision_id="d-quota",
+                        stage="stage1_screen",
+                        model="gemini-4-carbon",
+                        system_instruction="P0",
+                        p2_dynamic_tail="P2",
+                        thinking_level=ThinkingLevel.LOW,
+                    )
+                )
+            )
+        assert calls["n"] == 1
+        assert sleep_calls == []
+        rows = ledger.fetch_usage_rows()
+        assert len(rows) == 1
+        assert rows[0]["request_status"] == "quota_reached"
+    finally:
+        ledger.close()
+
+
+def test_agy_direct_auto_resets_session_after_max_resume_turns(tmp_path: Path) -> None:
+    seen_cmds: list[list[str]] = []
+
+    def _ok_runner(**kwargs: Any) -> dict[str, Any]:
+        seen_cmds.append(list(kwargs["cmd"]))
+        return {
+            "status": "SUCCESS",
+            "response": '{"action":"HOLD"}',
+            "conversation_id": f"conv-turn-{len(seen_cmds)}",
+            "usage": {"input_tokens": 1000, "output_tokens": 20, "total_tokens": 1020},
+        }
+
+    ledger = UsageLedger(tmp_path / "turns_ledger.sqlite3")
+    transport = AgyDirectCliTransport(
+        ledger,
+        workdir=tmp_path / "ram_turns",
+        runner_override=_ok_runner,
+        reuse_session=True,
+        max_resume_turns=2,
+    )
+    try:
+        async def _run() -> None:
+            for idx in range(3):
+                await transport.generate(
+                    LLMRequest(
+                        decision_id=f"d-turn-{idx}",
+                        stage="stage1_screen",
+                        model="gemini-4-carbon",
+                        system_instruction="P0",
+                        p2_dynamic_tail="P2",
+                        thinking_level=ThinkingLevel.LOW,
+                    )
+                )
+            await transport.close()
+
+        asyncio.run(_run())
+        assert len(seen_cmds) == 3
+        assert "--resume" not in seen_cmds[0]
+        assert "--resume" in seen_cmds[1] and "conv-turn-1" in seen_cmds[1]
+        assert "--resume" not in seen_cmds[2]
+    finally:
+        ledger.close()

@@ -357,3 +357,297 @@ def test_run_vst_session_foreground_output_and_report_export_mock(
     assert "# QuantumEdge Persistent VST Session Report" in md_text
     assert "## 2. UsageLedger Telemetry" in md_text
     assert "| 1 |" in md_text and "| 2 |" in md_text
+
+
+def test_prefetch_btc_leader_pulse_and_multislot_prompt_budget(tmp_path: Path) -> None:
+    p0_text = build_p0_static_prefix()
+    assert "Multi-Slot Mandate" in p0_text
+    assert "BTC_LEADER" in p0_text
+    assert "di_diff > 0" in p0_text
+    p0_tok = estimate_gemini_sp_tokens(p0_text)
+    assert p0_tok >= 4_096
+
+    class _BtcPulseMockClient:
+        _qe_sandbox_verified = True
+
+        def fetch_balance(self) -> dict[str, Any]:
+            return {"VST": {"free": 950.0, "total": 1000.0, "used": 50.0}}
+
+        def fetch_positions(self) -> list[dict[str, Any]]:
+            return []
+
+        def fetch_open_orders(self, symbol: str | None = None) -> list[dict[str, Any]]:
+            _ = symbol
+            return []
+
+        def fetch_ticker(self, symbol: str) -> dict[str, Any]:
+            px = {"BNB/USDT:USDT": 612.0, "LINK/USDT:USDT": 15.4, "SUI/USDT:USDT": 2.15}.get(symbol, 95000.0)
+            return {"bid": px * 0.9999, "ask": px * 1.0001, "last": px}
+
+        def fetch_order_book(self, symbol: str, limit: int = 50) -> dict[str, Any]:
+            _ = limit
+            px = {"BNB/USDT:USDT": 612.0, "LINK/USDT:USDT": 15.4, "SUI/USDT:USDT": 2.15}.get(symbol, 95000.0)
+            return {
+                "bids": [[round(px * (1 - 0.0002 * i), 4), 5.0] for i in range(1, 16)],
+                "asks": [[round(px * (1 + 0.0002 * i), 4), 4.5] for i in range(1, 16)],
+                "timestamp": 1_795_641_840_000,
+            }
+
+        def fetch_ohlcv(self, symbol: str, timeframe: str = "15m", limit: int = 100) -> list[list[float]]:
+            base = 95_000.0 if symbol.startswith("BTC/") else 600.0
+            n = max(limit, 30)
+            step = 900_000 if timeframe == "15m" else 3_600_000
+            out: list[list[float]] = []
+            for i in range(n):
+                c = base * (1.0 + 0.0004 * i)
+                out.append([1_795_600_000_000 + i * step, c * 0.999, c * 1.001, c * 0.998, c, 100.0 + i])
+            return out[-limit:]
+
+    coord = PreFetchCoordinator(_BtcPulseMockClient(), symbols=("BNBUSDT", "LINKUSDT", "SUIUSDT"))
+    bundle = asyncio.run(coord.fetch_all(include_analytics=False))
+    assert "BTCUSDT" not in bundle.contexts_by_symbol
+    assert set(bundle.contexts_by_symbol.keys()) == {"BNBUSDT", "LINKUSDT", "SUIUSDT"}
+    assert bundle.market_leader is not None
+    assert bundle.market_leader["px"] > 0
+    assert "chg_15m_bps" in bundle.market_leader
+    assert "trend" in bundle.market_leader
+
+    store = ThesisMemoryStore(tmp_path / "p0_p1_btc.sqlite3")
+    try:
+        asm = PrefixContextAssembler(thesis_store=store, include_images=False)
+        s1 = asm.assemble_stage1(bundle=bundle, trigger_summary="BTC_LEADER_CHK", current_seq=1)
+        s2 = asm.assemble_stage2(
+            bundle=bundle,
+            candidate_symbol="BNBUSDT",
+            stage1_summary={"action": "DRILL_DOWN", "candidate_symbol": "BNBUSDT"},
+        )
+        assert "BTC_LEADER|px=" in s1.p2_dynamic
+        assert "BTC_LEADER|px=" in s2.p2_dynamic
+        assert estimate_gemini_sp_tokens(s1.p0_static + "\n" + s1.p1_slow) <= 9_500
+    finally:
+        store.close()
+
+
+def test_run_vst_session_resilient_cycle_error_quota_stop_and_safe_exit(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
+    from quantum_edge_core.contracts import RequestStatus, TransportChannel, UsageRecordV1
+    from quantum_edge_ml.model_router.backends.transport import LLMResponse, LLMTransport
+
+    class _FlakySessionTransport(LLMTransport):
+        def __init__(self, ledger: UsageLedger, *, quota_on_first: bool = False) -> None:
+            super().__init__(ledger)
+            self.quota_on_first = quota_on_first
+            self.calls = 0
+
+        async def generate(self, req: LLMRequest) -> LLMResponse:
+            self.calls += 1
+            if self.calls == 1:
+                if self.quota_on_first:
+                    raise RuntimeError("RESOURCE_EXHAUSTED: quota exceeded")
+                raise RuntimeError("transient connection reset during cycle 1")
+            txt = json.dumps(
+                {
+                    "market_regime_summary": "BNBUSDT steady hold for test.",
+                    "action": "HOLD",
+                    "candidate_symbol": "BNBUSDT",
+                    "hold_blocker_code": "NO_LIQ_ASYMMETRY",
+                    "candidate_rationale": "Resilience cycle 2 recovery.",
+                    "estimated_edge_bps": 5.0,
+                }
+            )
+            usage = UsageRecordV1(
+                record_id=f"flaky-ok-{self.calls}",
+                decision_id=req.decision_id,
+                stage=req.stage,
+                transport=TransportChannel.AGY_CLI_PROXY,
+                model_provider_id=req.model,
+                agy_alias=f"{req.model}-low",
+                thinking_level=req.thinking_level,
+                request_status=RequestStatus.OK,
+                provider_input_tokens=100,
+                output_tokens=20,
+                total_tokens=120,
+                input_chars=len(req.combined_user_text),
+                output_chars=len(txt),
+                latency_ms=2.0,
+                timeout_ms=req.timeout_sec * 1000.0,
+                prefix_hash=req.prefix_hash,
+                context_hash=req.context_hash,
+                snapshot_id=req.snapshot_id,
+            )
+            self.ledger.record_usage(usage)
+            return LLMResponse(text=txt, usage=usage)
+
+        async def count_tokens(self, model: str, text_parts: list[str], images: Any = None) -> dict[str, int]:
+            _ = (model, text_parts, images)
+            return {"text_tokens": 0, "image_tokens_media_res": 0, "total_tokens": 0}
+
+        async def close(self) -> None:
+            return None
+
+    # 1. Transient cycle error on Cycle #1 does NOT kill session -> Cycle #2 recovers
+    args_res = session_runner.build_parser().parse_args(
+        [
+            "--transport",
+            "mock",
+            "--dry-run",
+            "--duration-minutes",
+            "0.03",
+            "--cycle-interval-sec",
+            "0.25",
+            "--protection-interval-sec",
+            "1.0",
+            "--ledger-db",
+            str(tmp_path / "u_res.sqlite3"),
+            "--order-ledger-db",
+            str(tmp_path / "o_res.sqlite3"),
+            "--thesis-db",
+            str(tmp_path / "t_res.sqlite3"),
+            "--journal-path",
+            str(tmp_path / "j_res.jsonl"),
+            "--session-summary-ram",
+            str(tmp_path / "s_res.json"),
+        ]
+    )
+    ledger_res = UsageLedger(tmp_path / "u_res_dummy.sqlite3")
+    tr_res = _FlakySessionTransport(ledger_res, quota_on_first=False)
+    try:
+        summary_res = asyncio.run(session_runner.run_persistent_session(args_res, transport_override=tr_res))
+    finally:
+        ledger_res.close()
+    out_text = capsys.readouterr().out
+    assert summary_res["cycle_errors_count"] >= 1
+    assert summary_res["quota_stopped"] is False
+    assert any(c.get("action") == "HOLD" for c in summary_res["cycles"])
+    assert "THESIS   |" in out_text
+    assert ",di=" in out_text
+    assert "pre_pos=" in out_text
+
+    # 2. Quota reached stops session cleanly
+    args_q = session_runner.build_parser().parse_args(
+        [
+            "--transport",
+            "mock",
+            "--dry-run",
+            "--duration-minutes",
+            "0.03",
+            "--cycle-interval-sec",
+            "0.25",
+            "--ledger-db",
+            str(tmp_path / "u_q.sqlite3"),
+            "--order-ledger-db",
+            str(tmp_path / "o_q.sqlite3"),
+            "--thesis-db",
+            str(tmp_path / "t_q.sqlite3"),
+            "--journal-path",
+            str(tmp_path / "j_q.jsonl"),
+            "--session-summary-ram",
+            str(tmp_path / "s_q.json"),
+        ]
+    )
+    ledger_q = UsageLedger(tmp_path / "u_q_dummy.sqlite3")
+    tr_q = _FlakySessionTransport(ledger_q, quota_on_first=True)
+    try:
+        summary_q = asyncio.run(session_runner.run_persistent_session(args_q, transport_override=tr_q))
+    finally:
+        ledger_q.close()
+    assert summary_q["quota_stopped"] is True
+    assert summary_q["cycles_count"] == 1
+
+    # 3. Unhandled crash leaves --live-vst positions untouched when --close-on-exit=True & --close-on-crash=False
+    class _CrashClient:
+        _qe_sandbox_verified = True
+
+        def __init__(self) -> None:
+            self.cancelled_all: list[str] = []
+            self.created: list[Any] = []
+
+        def fetch_balance(self) -> dict[str, Any]:
+            return {"VST": {"free": 900.0, "total": 1000.0, "used": 100.0}}
+
+        def fetch_positions(self) -> list[dict[str, Any]]:
+            return [
+                {
+                    "symbol": "BNB/USDT:USDT",
+                    "side": "long",
+                    "contracts": 1.0,
+                    "entryPrice": 600.0,
+                    "markPrice": 601.0,
+                    "liquidationPrice": 500.0,
+                    "info": {"positionSide": "LONG"},
+                }
+            ]
+
+        def fetch_open_orders(self, symbol: str | None = None) -> list[dict[str, Any]]:
+            _ = symbol
+            return []
+
+        def fetch_ticker(self, symbol: str) -> dict[str, Any]:
+            _ = symbol
+            return {"bid": 599.9, "ask": 600.1, "last": 600.0}
+
+        def fetch_order_book(self, symbol: str, limit: int = 50) -> dict[str, Any]:
+            _ = (symbol, limit)
+            return {
+                "bids": [[599.9 - i * 0.1, 2.0] for i in range(15)],
+                "asks": [[600.1 + i * 0.1, 2.0] for i in range(15)],
+                "timestamp": 1_795_641_840_000,
+            }
+
+        def fetch_ohlcv(self, symbol: str, timeframe: str = "15m", limit: int = 100) -> list[list[float]]:
+            _ = (symbol, timeframe)
+            n = max(limit, 30)
+            return [[1_795_600_000_000 + i * 900_000, 600.0, 601.0, 599.0, 600.0 + i * 0.05, 50.0] for i in range(n)][-limit:]
+
+        def cancel_all_orders(self, symbol: str) -> list[Any]:
+            self.cancelled_all.append(symbol)
+            return []
+
+        def create_order(self, *a: Any, **kw: Any) -> dict[str, Any]:
+            self.created.append((a, kw))
+            return {"id": "unexpected"}
+
+    class _FatalBaseTransport(LLMTransport):
+        async def generate(self, req: LLMRequest) -> LLMResponse:
+            _ = req
+            raise BaseException("simulated fatal crash")
+
+        async def count_tokens(self, model: str, text_parts: list[str], images: Any = None) -> dict[str, int]:
+            return {}
+
+        async def close(self) -> None:
+            return None
+
+    crash_client = _CrashClient()
+    args_c = session_runner.build_parser().parse_args(
+        [
+            "--live-vst",
+            "--close-on-exit",
+            "--duration-minutes",
+            "0.03",
+            "--ledger-db",
+            str(tmp_path / "u_c.sqlite3"),
+            "--order-ledger-db",
+            str(tmp_path / "o_c.sqlite3"),
+            "--thesis-db",
+            str(tmp_path / "t_c.sqlite3"),
+            "--journal-path",
+            str(tmp_path / "j_c.jsonl"),
+            "--session-summary-ram",
+            str(tmp_path / "s_c.json"),
+        ]
+    )
+    ledger_c = UsageLedger(tmp_path / "u_c_dummy.sqlite3")
+    tr_c = _FatalBaseTransport(ledger_c)
+    try:
+        with pytest.raises(BaseException, match="simulated fatal crash"):
+            asyncio.run(
+                session_runner.run_persistent_session(
+                    args_c, transport_override=tr_c, exchange_client_override=crash_client
+                )
+            )
+    finally:
+        ledger_c.close()
+    assert crash_client.created == []
+    assert crash_client.cancelled_all == []

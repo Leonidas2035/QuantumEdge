@@ -299,6 +299,9 @@ class AgyDirectCliTransport(LLMTransport):
         reuse_session: bool = False,
         record_to_ledger: bool = True,
         pass_json_schema: bool = False,
+        max_transient_retries: int = 2,
+        retry_backoff_sec: tuple[float, ...] = (2.0, 5.0),
+        max_resume_turns: int = 4,
     ) -> None:
         super().__init__(ledger)
         self.agy_bin = agy_bin
@@ -308,7 +311,47 @@ class AgyDirectCliTransport(LLMTransport):
         self.reuse_session = bool(reuse_session)
         self.record_to_ledger = bool(record_to_ledger)
         self.pass_json_schema = bool(pass_json_schema)
+        self.max_transient_retries = max(0, int(max_transient_retries))
+        self.retry_backoff_sec = (
+            tuple(float(x) for x in retry_backoff_sec)
+            if retry_backoff_sec
+            else (2.0, 5.0)
+        )
+        self.max_resume_turns = max(1, int(max_resume_turns))
+        self._last_session_id: str | None = None
+        self._session_turns_count: int = 0
         self._session_ids_by_decision: dict[str, str] = {}
+
+    def reset_session(self) -> None:
+        """Reset chained --resume session state cleanly (after crash or turn cap)."""
+        self._last_session_id = None
+        self._session_turns_count = 0
+        self._session_ids_by_decision.clear()
+
+    @staticmethod
+    def _is_quota_error(exc: Exception) -> bool:
+        msg = str(exc).lower()
+        return any(
+            marker in msg
+            for marker in (
+                "quota",
+                "exhausted",
+                "usage limit",
+                "resource_exhausted",
+                "quota_reached",
+            )
+        )
+
+    @staticmethod
+    def _is_transient_error(exc: Exception) -> bool:
+        if isinstance(
+            exc,
+            (TimeoutError, asyncio.TimeoutError, subprocess.TimeoutExpired, httpx.TimeoutException),
+        ):
+            return True
+        if AgyDirectCliTransport._is_quota_error(exc):
+            return False
+        return isinstance(exc, (RuntimeError, ConnectionError, OSError, json.JSONDecodeError))
 
     @staticmethod
     def _format_stdin_prompt(req: LLMRequest) -> str:
@@ -384,23 +427,10 @@ class AgyDirectCliTransport(LLMTransport):
         return payload
 
     async def generate(self, req: LLMRequest) -> LLMResponse:
-        rec_id = f"agydir-{uuid.uuid4().hex[:14]}"
         agy_alias = normalize_agy_model_alias(req.model, req.thinking_level)
         effective_level = ThinkingLevel(agy_alias.rsplit("-", 1)[-1])
         prompt_text = self._format_stdin_prompt(req)
         input_chars = len(prompt_text)
-        resume_id = (
-            self._session_ids_by_decision.get(req.decision_id)
-            if self.reuse_session
-            else None
-        )
-        cmd = self.build_command(
-            agy_alias=agy_alias,
-            timeout_sec=req.timeout_sec,
-            resume_session_id=resume_id,
-            response_schema=req.response_schema,
-        )
-        t0 = time.perf_counter()
 
         async def _call_once(target_cmd: list[str]) -> dict[str, Any]:
             if self.runner_override is not None:
@@ -418,117 +448,152 @@ class AgyDirectCliTransport(LLMTransport):
                 return out
             return await self._invoke_subprocess(target_cmd, prompt_text, req.timeout_sec)
 
-        try:
+        first_record_id: str | None = None
+        parent_retry_of = req.retry_of
+        max_attempts = 1 + self.max_transient_retries
+
+        for attempt in range(1, max_attempts + 1):
+            rec_id = f"agydir-{uuid.uuid4().hex[:14]}"
+            if first_record_id is None:
+                first_record_id = rec_id
+            effective_retry_of = parent_retry_of if attempt == 1 else first_record_id
+
+            if not self.reuse_session or attempt > 1:
+                resume_id = None
+            else:
+                if self._session_turns_count >= self.max_resume_turns:
+                    self.reset_session()
+                resume_id = (
+                    self._session_ids_by_decision.get(req.decision_id)
+                    or self._last_session_id
+                )
+
+            cmd = self.build_command(
+                agy_alias=agy_alias,
+                timeout_sec=req.timeout_sec,
+                resume_session_id=resume_id,
+                response_schema=req.response_schema,
+            )
+            t0 = time.perf_counter()
+
             try:
                 payload = await _call_once(cmd)
-            except (TimeoutError, asyncio.TimeoutError, subprocess.TimeoutExpired, httpx.TimeoutException):
-                raise
-            except Exception:
-                if not resume_id:
-                    raise
-                # Fail-soft retry without --resume if agy rejected a stale/invalid session ID
-                self._session_ids_by_decision.pop(req.decision_id, None)
-                fallback_cmd = self.build_command(
+                text = str(payload.get("response") or "")
+                u = payload.get("usage") if isinstance(payload.get("usage"), dict) else {}
+                in_tok = int(u["input_tokens"]) if u.get("input_tokens") is not None else None
+                out_tok = int(u["output_tokens"]) if u.get("output_tokens") is not None else None
+                think_tok = int(u["thinking_tokens"]) if u.get("thinking_tokens") is not None else None
+                cache_tok = int(u["cache_read_tokens"]) if u.get("cache_read_tokens") is not None else None
+                tot_tok = int(u["total_tokens"]) if u.get("total_tokens") is not None else None
+                num_turns = int(payload.get("num_turns") or 1)
+                conv_id = payload.get("conversation_id") or payload.get("session_id")
+                if self.reuse_session and isinstance(conv_id, str) and conv_id.strip():
+                    cid = conv_id.strip()
+                    self._last_session_id = cid
+                    self._session_ids_by_decision[req.decision_id] = cid
+                    self._session_turns_count += 1
+
+                usage = UsageRecordV1(
+                    record_id=rec_id,
+                    decision_id=req.decision_id,
+                    stage=req.stage,
+                    transport=TransportChannel.AGY_CLI_PROXY,
+                    model_provider_id=req.model,
                     agy_alias=agy_alias,
-                    timeout_sec=req.timeout_sec,
-                    resume_session_id=None,
-                    response_schema=req.response_schema,
+                    thinking_level=effective_level,
+                    request_status=RequestStatus.OK,
+                    retry_of=effective_retry_of,
+                    provider_input_tokens=in_tok,
+                    cache_read_tokens=cache_tok,
+                    output_tokens=out_tok,
+                    thinking_tokens=think_tok,
+                    total_tokens=tot_tok,
+                    input_chars=input_chars,
+                    output_chars=len(text),
+                    latency_ms=round((time.perf_counter() - t0) * 1000.0, 2),
+                    timeout_ms=req.timeout_sec * 1000.0,
+                    is_censored=False,
+                    num_turns=num_turns,
+                    prefix_hash=req.prefix_hash,
+                    context_hash=req.context_hash,
+                    snapshot_id=req.snapshot_id,
+                    interaction_id=str(conv_id) if conv_id else None,
                 )
-                payload = await _call_once(fallback_cmd)
-
-            text = str(payload.get("response") or "")
-            u = payload.get("usage") if isinstance(payload.get("usage"), dict) else {}
-            in_tok = int(u["input_tokens"]) if u.get("input_tokens") is not None else None
-            out_tok = int(u["output_tokens"]) if u.get("output_tokens") is not None else None
-            think_tok = int(u["thinking_tokens"]) if u.get("thinking_tokens") is not None else None
-            cache_tok = int(u["cache_read_tokens"]) if u.get("cache_read_tokens") is not None else None
-            tot_tok = int(u["total_tokens"]) if u.get("total_tokens") is not None else None
-            num_turns = int(payload.get("num_turns") or 1)
-            conv_id = payload.get("conversation_id") or payload.get("session_id")
-            if self.reuse_session and isinstance(conv_id, str) and conv_id.strip():
-                self._session_ids_by_decision[req.decision_id] = conv_id.strip()
-
-            usage = UsageRecordV1(
-                record_id=rec_id,
-                decision_id=req.decision_id,
-                stage=req.stage,
-                transport=TransportChannel.AGY_CLI_PROXY,
-                model_provider_id=req.model,
-                agy_alias=agy_alias,
-                thinking_level=effective_level,
-                request_status=RequestStatus.OK,
-                retry_of=req.retry_of,
-                provider_input_tokens=in_tok,
-                cache_read_tokens=cache_tok,
-                output_tokens=out_tok,
-                thinking_tokens=think_tok,
-                total_tokens=tot_tok,
-                input_chars=input_chars,
-                output_chars=len(text),
-                latency_ms=round((time.perf_counter() - t0) * 1000.0, 2),
-                timeout_ms=req.timeout_sec * 1000.0,
-                is_censored=False,
-                num_turns=num_turns,
-                prefix_hash=req.prefix_hash,
-                context_hash=req.context_hash,
-                snapshot_id=req.snapshot_id,
-                interaction_id=str(conv_id) if conv_id else None,
-            )
-            if self.record_to_ledger:
-                self.ledger.record_usage(usage)
-            return LLMResponse(
-                text=text,
-                usage=usage,
-                interaction_id=str(conv_id) if conv_id else None,
-            )
-        except (TimeoutError, asyncio.TimeoutError, subprocess.TimeoutExpired, httpx.TimeoutException) as exc:
-            if self.record_to_ledger:
-                self.ledger.record_usage(
-                    UsageRecordV1(
-                        record_id=rec_id,
-                        decision_id=req.decision_id,
-                        stage=req.stage,
-                        transport=TransportChannel.AGY_CLI_PROXY,
-                        model_provider_id=req.model,
-                        agy_alias=agy_alias,
-                        thinking_level=effective_level,
-                        request_status=RequestStatus.TIMEOUT,
-                        error_code=type(exc).__name__,
-                        retry_of=req.retry_of,
-                        input_chars=input_chars,
-                        latency_ms=round((time.perf_counter() - t0) * 1000.0, 2),
-                        timeout_ms=req.timeout_sec * 1000.0,
-                        is_censored=True,
-                        prefix_hash=req.prefix_hash,
-                        context_hash=req.context_hash,
-                        snapshot_id=req.snapshot_id,
+                if self.record_to_ledger:
+                    self.ledger.record_usage(usage)
+                return LLMResponse(
+                    text=text,
+                    usage=usage,
+                    interaction_id=str(conv_id) if conv_id else None,
+                )
+            except (TimeoutError, asyncio.TimeoutError, subprocess.TimeoutExpired, httpx.TimeoutException) as exc:
+                if self.record_to_ledger:
+                    self.ledger.record_usage(
+                        UsageRecordV1(
+                            record_id=rec_id,
+                            decision_id=req.decision_id,
+                            stage=req.stage,
+                            transport=TransportChannel.AGY_CLI_PROXY,
+                            model_provider_id=req.model,
+                            agy_alias=agy_alias,
+                            thinking_level=effective_level,
+                            request_status=RequestStatus.TIMEOUT,
+                            error_code=type(exc).__name__,
+                            retry_of=effective_retry_of,
+                            input_chars=input_chars,
+                            latency_ms=round((time.perf_counter() - t0) * 1000.0, 2),
+                            timeout_ms=req.timeout_sec * 1000.0,
+                            is_censored=True,
+                            prefix_hash=req.prefix_hash,
+                            context_hash=req.context_hash,
+                            snapshot_id=req.snapshot_id,
+                        )
                     )
-                )
-            raise
-        except Exception as exc:
-            if self.record_to_ledger:
-                self.ledger.record_usage(
-                    UsageRecordV1(
-                        record_id=rec_id,
-                        decision_id=req.decision_id,
-                        stage=req.stage,
-                        transport=TransportChannel.AGY_CLI_PROXY,
-                        model_provider_id=req.model,
-                        agy_alias=agy_alias,
-                        thinking_level=effective_level,
-                        request_status=RequestStatus.ERROR,
-                        error_code=str(exc)[:180],
-                        retry_of=req.retry_of,
-                        input_chars=input_chars,
-                        latency_ms=round((time.perf_counter() - t0) * 1000.0, 2),
-                        timeout_ms=req.timeout_sec * 1000.0,
-                        is_censored=False,
-                        prefix_hash=req.prefix_hash,
-                        context_hash=req.context_hash,
-                        snapshot_id=req.snapshot_id,
+                self.reset_session()
+                if attempt < max_attempts:
+                    backoff = self.retry_backoff_sec[
+                        min(attempt - 1, len(self.retry_backoff_sec) - 1)
+                    ]
+                    if backoff > 0:
+                        await asyncio.sleep(backoff)
+                    continue
+                raise
+            except Exception as exc:
+                is_quota = self._is_quota_error(exc)
+                status = RequestStatus.QUOTA_REACHED if is_quota else RequestStatus.ERROR
+                if self.record_to_ledger:
+                    self.ledger.record_usage(
+                        UsageRecordV1(
+                            record_id=rec_id,
+                            decision_id=req.decision_id,
+                            stage=req.stage,
+                            transport=TransportChannel.AGY_CLI_PROXY,
+                            model_provider_id=req.model,
+                            agy_alias=agy_alias,
+                            thinking_level=effective_level,
+                            request_status=status,
+                            error_code=str(exc)[:180],
+                            retry_of=effective_retry_of,
+                            input_chars=input_chars,
+                            latency_ms=round((time.perf_counter() - t0) * 1000.0, 2),
+                            timeout_ms=req.timeout_sec * 1000.0,
+                            is_censored=False,
+                            prefix_hash=req.prefix_hash,
+                            context_hash=req.context_hash,
+                            snapshot_id=req.snapshot_id,
+                        )
                     )
-                )
-            raise
+                self.reset_session()
+                if not is_quota and self._is_transient_error(exc) and attempt < max_attempts:
+                    backoff = self.retry_backoff_sec[
+                        min(attempt - 1, len(self.retry_backoff_sec) - 1)
+                    ]
+                    if backoff > 0:
+                        await asyncio.sleep(backoff)
+                    continue
+                raise
+
+        raise RuntimeError("AgyDirectCliTransport retry loop exhausted unexpectedly")
 
     async def count_tokens(
         self,
@@ -539,7 +604,7 @@ class AgyDirectCliTransport(LLMTransport):
         raise NotImplementedError("Use GeminiDirectClient.count_tokens() for exact token counting.")
 
     async def close(self) -> None:
-        self._session_ids_by_decision.clear()
+        self.reset_session()
 
 
 __all__ = [

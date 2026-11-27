@@ -162,7 +162,10 @@ def _format_tf_indicator_snippet(serializer: MarketContextSerializer, ctx: dict[
     if not bars:
         return f"{tf}:N/A"
     p = serializer.build_structural_profile(tf, bars)
-    return f"{tf}[adx={p['adx14']},rsi={p['rsi14']},mc={p['macd_cross']},div={p['rsi_div']}/{p['macd_div']}]"
+    return (
+        f"{tf}[adx={p['adx14']},di={p['di_diff']},rsi={p['rsi14']},"
+        f"mc={p['macd_cross']},div={p['rsi_div']}/{p['macd_div']}]"
+    )
 
 
 def _render_session_markdown(summary: dict[str, Any]) -> str:
@@ -177,7 +180,7 @@ def _render_session_markdown(summary: dict[str, Any]) -> str:
         f"- **Transport / Model:** `{summary.get('transport')}` / `{summary.get('model')}` (reuse_session=`{summary.get('reuse_session')}`)",
         f"- **Universe (1d/4h + 1h/15m/5m):** `{','.join(summary.get('symbols') or [])}`",
         f"- **Start Equity (VST):** `{summary.get('start_equity_vst')}` -> **End Equity (VST):** `{summary.get('end_equity_vst')}`",
-        f"- **Cycles Executed:** `{summary.get('cycles_count')}` | **Prefix Hash Stable:** `{summary.get('prefix_hash_stable')}` (`{summary.get('unique_prefix_hashes')}`)",
+        f"- **Cycles Executed:** `{summary.get('cycles_count')}` (cycle_errors=`{summary.get('cycle_errors_count', 0)}`, quota_stopped=`{summary.get('quota_stopped', False)}`) | **Prefix Hash Stable:** `{summary.get('prefix_hash_stable')}` (`{summary.get('unique_prefix_hashes')}`)",
         f"- **PositionProtectionWatcher Runs:** `{summary.get('watcher_runs')}`",
         "",
         "## 2. UsageLedger Telemetry",
@@ -293,6 +296,9 @@ async def run_persistent_session(
         bridge,
         allowed_symbols=symbols,
         interval_sec=float(args.protection_interval_sec),
+        enable_breakeven_sl=bool(getattr(args, "enable_breakeven_sl", True)),
+        breakeven_trigger_pct=float(getattr(args, "be_trigger_pct", 0.40)),
+        breakeven_offset_pct=float(getattr(args, "be_offset_pct", 0.12)),
         dry_run=dry_run,
     )
     watcher_runs = 0
@@ -336,112 +342,187 @@ async def run_persistent_session(
     duration_sec = max(0.0, float(args.duration_minutes) * 60.0)
     t_start_mono = time.monotonic()
     deadline = t_start_mono + duration_sec
-    prefetch = PreFetchCoordinator(ex_client, symbols=symbols, risk_config=risk_cfg)
+    prefetch = PreFetchCoordinator(
+        ex_client,
+        symbols=symbols,
+        risk_config=risk_cfg,
+        include_btc_leader=bool(getattr(args, "include_btc_leader", True)),
+    )
     seq = 0
-    exit_cleanup: dict[str, Any] = {"executed": False, "closed_symbols": [], "cancelled_orders": {}}
+    cycle_errors_count = 0
+    quota_stopped = False
+    unhandled_crash = False
+    exit_cleanup: dict[str, Any] = {
+        "executed": False,
+        "crash_preserved": False,
+        "closed_symbols": [],
+        "cancelled_orders": {},
+    }
 
     try:
         while not stop_requested.is_set():
             seq += 1
-            if not dry_run or exchange_client_override is not None:
-                bundle = await prefetch.fetch_all(include_analytics=True)
-            else:
-                bundle = _build_offline_mock_bundle(symbols)
-            watcher.touch_feed_heartbeat()
+            cycle_action_cursor = len(watcher_actions)
+            try:
+                if not dry_run or exchange_client_override is not None:
+                    bundle = await prefetch.fetch_all(include_analytics=True)
+                else:
+                    bundle = _build_offline_mock_bundle(symbols)
+                watcher.touch_feed_heartbeat()
 
-            forecasts = forecast_provider.build_forecasts(bundle)
-            regime_sig = _derive_regime_signature(forecasts)
-            audit = await orchestrator.run_decision_cycle(
-                bundle,
-                trigger_summary=f"SESSION_CYCLE_{seq}",
-                forecasts_by_symbol=forecasts or None,
-                dry_run=dry_run,
-                current_seq=seq,
-                regime_signature=regime_sig,
-            )
-            resync_mode_val = (
-                assembler.last_resync_mode.value
-                if assembler.last_resync_mode is not None
-                else "UNKNOWN"
-            )
-            dp = audit.decision_payload
-            exec_res = audit.execution_result or {}
-            sizing = dp.get("sizing")
-            usage_snap = usage_ledger.summarize()
-
-            elapsed_s = round(time.monotonic() - t_start_mono, 1)
-            now_utc_str = datetime.now(timezone.utc).strftime("%H:%M:%SZ")
-            print(
-                f"[{now_utc_str}] Cycle #{seq} ({elapsed_s}s/{round(duration_sec, 1)}s) "
-                f"| resync={resync_mode_val} | prefix_hash={audit.prefix_hash}",
-                flush=True,
-            )
-            for sym in sorted(bundle.contexts_by_symbol.keys()):
-                ctx = bundle.contexts_by_symbol[sym]
-                snap = ctx.get("market_snapshot") or {}
-                s_1d = _format_tf_indicator_snippet(serializer, ctx, "1d")
-                s_4h = _format_tf_indicator_snippet(serializer, ctx, "4h")
-                fc = forecasts.get(sym)
-                fc_txt = (
-                    f"U={fc.regime_probs.get('UP', 0):.2f}/R={fc.regime_probs.get('RANGE', 0):.2f}/D={fc.regime_probs.get('DOWN', 0):.2f}"
-                    if fc is not None
-                    else "N/A"
+                forecasts = forecast_provider.build_forecasts(bundle)
+                regime_sig = _derive_regime_signature(forecasts)
+                audit = await orchestrator.run_decision_cycle(
+                    bundle,
+                    trigger_summary=f"SESSION_CYCLE_{seq}",
+                    forecasts_by_symbol=forecasts or None,
+                    dry_run=dry_run,
+                    current_seq=seq,
+                    regime_signature=regime_sig,
                 )
+                resync_mode_val = (
+                    assembler.last_resync_mode.value
+                    if assembler.last_resync_mode is not None
+                    else "UNKNOWN"
+                )
+                if resync_mode_val == "RESYNC" and hasattr(transport, "reset_session"):
+                    transport.reset_session()
+
+                dp = audit.decision_payload
+                exec_res = audit.execution_result or {}
+                sizing = dp.get("sizing")
+                usage_snap = usage_ledger.summarize()
+
+                elapsed_s = round(time.monotonic() - t_start_mono, 1)
+                now_utc_str = datetime.now(timezone.utc).strftime("%H:%M:%SZ")
                 print(
-                    f"  PAIR     | {sym}: px={snap.get('last_price')} spr={snap.get('spread_bps')}bps "
-                    f"| {s_1d} {s_4h} | FC:{fc_txt}",
+                    f"[{now_utc_str}] Cycle #{seq} ({elapsed_s}s/{round(duration_sec, 1)}s) "
+                    f"| resync={resync_mode_val} | prefix_hash={audit.prefix_hash}",
                     flush=True,
                 )
-            print(
-                f"  DECISION | action={dp.get('action')} sym={dp.get('symbol')} type={dp.get('order_type')} "
-                f"entry={dp.get('entry_price')} sl={dp.get('sl_price')} tp={dp.get('tp_price')} "
-                f"| think={audit.thinking_level.value} val={audit.validator_passed} ({audit.validator_reason})",
-                flush=True,
-            )
-            if isinstance(sizing, dict):
+                ml = bundle.market_leader
+                if isinstance(ml, dict) and ml.get("px") is not None:
+                    print(
+                        f"  BTC_LDR  | px={ml.get('px')} 15m={ml.get('chg_15m_bps')}bps "
+                        f"1h={ml.get('chg_1h_bps')}bps 4h={ml.get('chg_4h_bps')}bps "
+                        f"rsi15m={ml.get('rsi14_15m')} mc15m={ml.get('macd_15m')} trend={ml.get('trend')}",
+                        flush=True,
+                    )
+                for sym in sorted(bundle.contexts_by_symbol.keys()):
+                    ctx = bundle.contexts_by_symbol[sym]
+                    snap = ctx.get("market_snapshot") or {}
+                    s_1d = _format_tf_indicator_snippet(serializer, ctx, "1d")
+                    s_4h = _format_tf_indicator_snippet(serializer, ctx, "4h")
+                    fc = forecasts.get(sym)
+                    fc_txt = (
+                        f"U={fc.regime_probs.get('UP', 0):.2f}/R={fc.regime_probs.get('RANGE', 0):.2f}/D={fc.regime_probs.get('DOWN', 0):.2f}"
+                        if fc is not None
+                        else "N/A"
+                    )
+                    print(
+                        f"  PAIR     | {sym}: px={snap.get('last_price')} spr={snap.get('spread_bps')}bps "
+                        f"| {s_1d} {s_4h} | FC:{fc_txt}",
+                        flush=True,
+                    )
                 print(
-                    f"  SIZING   | ConvictionPositionSizer risk={sizing.get('risk_score')} conv={sizing.get('conviction')} "
-                    f"| notional={sizing.get('notional_vst')} VST | margin={sizing.get('margin_vst')} x {sizing.get('leverage')}x "
-                    f"| est_sl_loss={sizing.get('est_loss_at_sl_vst')} VST",
+                    f"  DECISION | action={dp.get('action')} sym={dp.get('symbol')} type={dp.get('order_type')} "
+                    f"entry={dp.get('entry_price')} sl={dp.get('sl_price')} tp={dp.get('tp_price')} "
+                    f"| think={audit.thinking_level.value} val={audit.validator_passed} ({audit.validator_reason})",
                     flush=True,
                 )
-            scoped_now = scope_vst_status_to_symbols(bundle.vst_status, symbols)
-            upnl_sum = round(
-                sum(float(p.get("unrealized_pnl") or 0.0) for p in scoped_now.get("open_positions") or []),
-                4,
-            )
-            print(
-                f"  EXEC     | status={exec_res.get('status')} order_id={exec_res.get('exchange_order_id')} "
-                f"| open_pos={scoped_now.get('open_positions_count', 0)} open_ord={scoped_now.get('open_orders_count', 0)} uPnL={upnl_sum}",
-                flush=True,
-            )
-            print(
-                f"  LEDGER   | UsageLedger reqs={usage_snap.get('total_requests', 0)} fail={usage_snap.get('failure_rate', 0.0)} "
-                f"| in={usage_snap.get('sum_provider_input_tokens', 0)} cache={usage_snap.get('sum_cache_read_tokens', 0)} "
-                f"out={usage_snap.get('sum_output_tokens', 0)} think={usage_snap.get('sum_thinking_tokens', 0)} "
-                f"| IECU={usage_snap.get('sum_iecu', 0.0)} p95={usage_snap.get('latency_imputed_p95_ms')}ms",
-                flush=True,
-            )
+                print(
+                    f"  THESIS   | reg={dp.get('regime_read') or ''} | edge={dp.get('primary_edge') or ''} "
+                    f"| ctr={dp.get('counter_thesis') or ''}",
+                    flush=True,
+                )
+                if isinstance(sizing, dict):
+                    print(
+                        f"  SIZING   | ConvictionPositionSizer risk={sizing.get('risk_score')} conv={sizing.get('conviction')} "
+                        f"| notional={sizing.get('notional_vst')} VST | margin={sizing.get('margin_vst')} x {sizing.get('leverage')}x "
+                        f"| est_sl_loss={sizing.get('est_loss_at_sl_vst')} VST",
+                        flush=True,
+                    )
+                pre_scoped = scope_vst_status_to_symbols(bundle.vst_status, symbols)
+                if not dry_run and exec_res.get("status") not in (None, "SKIPPED_HOLD", "REJECTED"):
+                    raw_post = await asyncio.to_thread(
+                        fetch_vst_status, ex_client, fallback_symbols=symbols
+                    )
+                    post_scoped = scope_vst_status_to_symbols(raw_post, symbols)
+                else:
+                    post_scoped = pre_scoped
+                upnl_sum = round(
+                    sum(float(p.get("unrealized_pnl") or 0.0) for p in post_scoped.get("open_positions") or []),
+                    4,
+                )
+                recent_prot = watcher_actions[cycle_action_cursor:]
+                prot_suffix = f" | prot={','.join(recent_prot)}" if recent_prot else ""
+                print(
+                    f"  EXEC     | status={exec_res.get('status')} order_id={exec_res.get('exchange_order_id')} "
+                    f"| pre_pos={pre_scoped.get('open_positions_count', 0)}/post_pos={post_scoped.get('open_positions_count', 0)} "
+                    f"pre_ord={pre_scoped.get('open_orders_count', 0)}/post_ord={post_scoped.get('open_orders_count', 0)} "
+                    f"uPnL={upnl_sum}{prot_suffix}",
+                    flush=True,
+                )
+                print(
+                    f"  LEDGER   | UsageLedger reqs={usage_snap.get('total_requests', 0)} fail={usage_snap.get('failure_rate', 0.0)} "
+                    f"| in={usage_snap.get('sum_provider_input_tokens', 0)} cache={usage_snap.get('sum_cache_read_tokens', 0)} "
+                    f"out={usage_snap.get('sum_output_tokens', 0)} think={usage_snap.get('sum_thinking_tokens', 0)} "
+                    f"| IECU={usage_snap.get('sum_iecu', 0.0)} p95={usage_snap.get('latency_imputed_p95_ms')}ms",
+                    flush=True,
+                )
 
-            cycles.append(
-                {
-                    "cycle": seq,
-                    "decision_id": audit.decision_id,
-                    "snapshot_id": audit.snapshot_id,
-                    "prefix_hash": audit.prefix_hash,
-                    "context_hash": audit.context_hash,
-                    "resync_mode": resync_mode_val,
-                    "action": dp.get("action"),
-                    "symbol": dp.get("symbol"),
-                    "thinking_level": audit.thinking_level.value,
-                    "complexity_score": audit.complexity_score,
-                    "validator_passed": audit.validator_passed,
-                    "validator_reason": audit.validator_reason,
-                    "execution_status": exec_res.get("status"),
-                    "sizing": sizing,
-                    "forecast_symbols": sorted(forecasts.keys()),
-                }
-            )
+                cycles.append(
+                    {
+                        "cycle": seq,
+                        "decision_id": audit.decision_id,
+                        "snapshot_id": audit.snapshot_id,
+                        "prefix_hash": audit.prefix_hash,
+                        "context_hash": audit.context_hash,
+                        "resync_mode": resync_mode_val,
+                        "action": dp.get("action"),
+                        "symbol": dp.get("symbol"),
+                        "thinking_level": audit.thinking_level.value,
+                        "complexity_score": audit.complexity_score,
+                        "validator_passed": audit.validator_passed,
+                        "validator_reason": audit.validator_reason,
+                        "execution_status": exec_res.get("status"),
+                        "sizing": sizing,
+                        "forecast_symbols": sorted(forecasts.keys()),
+                    }
+                )
+            except Exception as cycle_exc:
+                cycle_errors_count += 1
+                is_quota = AgyDirectCliTransport._is_quota_error(cycle_exc)
+                print(
+                    f"[ERROR] Cycle #{seq} failed (quota={is_quota}): {cycle_exc}",
+                    flush=True,
+                )
+                if hasattr(transport, "reset_session"):
+                    transport.reset_session()
+                cycles.append(
+                    {
+                        "cycle": seq,
+                        "decision_id": None,
+                        "snapshot_id": None,
+                        "prefix_hash": "",
+                        "context_hash": "",
+                        "resync_mode": "ERROR",
+                        "action": "CYCLE_ERROR",
+                        "symbol": None,
+                        "thinking_level": "N/A",
+                        "complexity_score": None,
+                        "validator_passed": False,
+                        "validator_reason": str(cycle_exc)[:180],
+                        "execution_status": "QUOTA_REACHED" if is_quota else "ERROR",
+                        "sizing": None,
+                        "forecast_symbols": [],
+                    }
+                )
+                if is_quota:
+                    quota_stopped = True
+                    stop_requested.set()
+                    break
+
             remaining = deadline - time.monotonic()
             if remaining <= 0.0 or stop_requested.is_set():
                 break
@@ -458,6 +539,11 @@ async def run_persistent_session(
                 if len(cycles) == 1 and float(args.duration_minutes) > 0:
                     continue
                 break
+    except KeyboardInterrupt:
+        stop_requested.set()
+    except BaseException:
+        unhandled_crash = True
+        raise
     finally:
         for sig, prev in old_handlers.items():
             with contextlib.suppress(Exception):
@@ -471,7 +557,19 @@ async def run_persistent_session(
             with contextlib.suppress(Exception):
                 await watcher_task
 
-        if not dry_run and bool(args.close_on_exit):
+        should_close_on_exit = (
+            not dry_run
+            and bool(args.close_on_exit)
+            and (not unhandled_crash or bool(getattr(args, "close_on_crash", False)))
+        )
+        if not dry_run and bool(args.close_on_exit) and not should_close_on_exit:
+            exit_cleanup["crash_preserved"] = True
+            print(
+                "[WARN] Crash exit: leaving positions & exchange SL/TP untouched (pass --close-on-crash to force close).",
+                flush=True,
+            )
+
+        if should_close_on_exit:
             exit_cleanup["executed"] = True
             raw_status = await asyncio.to_thread(
                 fetch_vst_status, ex_client, fallback_symbols=symbols
@@ -513,7 +611,7 @@ async def run_persistent_session(
         thesis_store.close()
         usage_ledger.close()
 
-    prefix_hashes = [c["prefix_hash"] for c in cycles]
+    prefix_hashes = [c["prefix_hash"] for c in cycles if c.get("prefix_hash")]
     prefix_hash_stable = len(set(prefix_hashes)) <= 1 if prefix_hashes else False
 
     ram_path = (
@@ -533,6 +631,9 @@ async def run_persistent_session(
         "start_equity_vst": start_equity_vst,
         "end_equity_vst": end_equity_vst,
         "cycles_count": len(cycles),
+        "cycle_errors_count": cycle_errors_count,
+        "quota_stopped": quota_stopped,
+        "unhandled_crash": unhandled_crash,
         "prefix_hash_stable": prefix_hash_stable,
         "unique_prefix_hashes": sorted(set(prefix_hashes)),
         "cycles": cycles,
@@ -598,9 +699,14 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--max-notional-vst", type=float, default=50_000.0)
     parser.add_argument("--stage1-timeout", type=float, default=90.0)
     parser.add_argument("--stage2-timeout", type=float, default=150.0)
+    parser.add_argument("--be-trigger-pct", type=float, default=0.40, help="Breakeven SL trigger move pct (default: 0.40)")
+    parser.add_argument("--be-offset-pct", type=float, default=0.12, help="Breakeven SL lock offset pct (default: 0.12)")
+    parser.add_argument("--no-breakeven-sl", dest="enable_breakeven_sl", action="store_false", default=True, help="Disable deterministic breakeven SL move in watcher")
+    parser.add_argument("--no-btc-leader", dest="include_btc_leader", action="store_false", default=True, help="Disable read-only BTC_LEADER pulse in PreFetchCoordinator")
     exit_grp = parser.add_mutually_exclusive_group()
-    exit_grp.add_argument("--close-on-exit", dest="close_on_exit", action="store_true", default=True, help="Close scoped positions & cancel orders on exit (default)")
+    exit_grp.add_argument("--close-on-exit", dest="close_on_exit", action="store_true", default=True, help="Close scoped positions & cancel orders on clean exit/SIGINT/SIGTERM (default)")
     exit_grp.add_argument("--keep-positions-on-exit", dest="close_on_exit", action="store_false", help="Leave scoped positions open on exit")
+    parser.add_argument("--close-on-crash", action="store_true", default=False, help="Allow --close-on-exit even on unhandled exception crash")
     parser.add_argument("--ledger-db", type=Path, default=DEFAULT_USAGE_LEDGER_DB)
     parser.add_argument("--order-ledger-db", type=Path, default=DEFAULT_LEDGER_DB)
     parser.add_argument("--thesis-db", type=Path, default=None)

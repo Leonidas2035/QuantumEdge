@@ -5,8 +5,10 @@ from __future__ import annotations
 from collections.abc import Mapping, Sequence
 from datetime import datetime, timezone
 from decimal import Decimal
+import logging
 import os
 from typing import Any
+import uuid
 
 import ccxt
 from dotenv import load_dotenv
@@ -374,7 +376,7 @@ def fetch_vst_status(
                 "symbol": compact_sym or o.get("symbol"),
                 "ccxt_symbol": o.get("symbol"),
                 "type": o.get("type"),
-                "rawType": info.get("type"),
+                "rawType": info.get("type") or info.get("rawType"),
                 "workingType": info.get("workingType"),
                 "side": o.get("side"),
                 "positionSide": info.get("positionSide"),
@@ -619,3 +621,105 @@ def fetch_full_vst_context(
             "provider_gets": provider_gets,
         },
     )
+
+
+_vst_logger = logging.getLogger("quantum_edge_core.execution.bingx_vst_adapter")
+
+
+def move_vst_stop_loss(
+    client: Any,
+    *,
+    symbol: str,
+    position_side: str,
+    contracts: float,
+    new_stop_price: float,
+    old_order_id: str | None = None,
+    decision_id: str | None = None,
+) -> dict[str, Any]:
+    """Create a replacement reduceOnly STOP_MARKET order FIRST, then cancel old SL.
+
+    Enforces strict BingX VST sandbox verification and NEVER cancels old_order_id
+    unless the replacement STOP_MARKET order returns a confirmed exchange order id.
+    """
+    if not is_vst_sandbox_client(client):
+        raise RuntimeError(
+            "Refusing to move stop loss: client is not verified in BingX VST sandbox mode or REAL_TRADING is enabled."
+        )
+    qty = float(contracts)
+    stop_p = float(new_stop_price)
+    if qty <= 0 or stop_p <= 0:
+        raise ValueError(
+            f"move_vst_stop_loss requires positive contracts ({qty}) and new_stop_price ({stop_p})."
+        )
+    compact = normalize_compact_symbol(symbol) or str(symbol).strip().upper()
+    ccxt_sym = to_ccxt_swap_symbol(compact)
+    side_norm = str(position_side or "").strip().upper()
+    if "LONG" in side_norm:
+        pos_side = "LONG"
+        close_side = "sell"
+    elif "SHORT" in side_norm:
+        pos_side = "SHORT"
+        close_side = "buy"
+    else:
+        raise ValueError(f"Unsupported position_side for move_vst_stop_loss: {position_side!r}")
+
+    suffix = (decision_id or uuid.uuid4().hex[:8]).replace(" ", "")[:18]
+    coid = f"qe-be-{compact.lower()}-{suffix}"[:36]
+    params = {
+        "positionSide": pos_side,
+        "reduceOnly": True,
+        "hedged": True,
+        "stopPrice": stop_p,
+        "stopLossPrice": stop_p,
+        "workingType": "MARK_PRICE",
+        "clientOrderId": coid,
+    }
+    created = client.create_order(
+        ccxt_sym,
+        "STOP_MARKET",
+        close_side,
+        qty,
+        None,
+        params,
+    )
+    new_order_id: str | None = None
+    if isinstance(created, Mapping):
+        raw_id = created.get("id")
+        if raw_id is None and isinstance(created.get("info"), Mapping):
+            raw_id = created["info"].get("orderId")
+        if raw_id is not None and str(raw_id).strip():
+            new_order_id = str(raw_id).strip()
+    if not new_order_id:
+        raise RuntimeError(
+            f"Replacement STOP_MARKET order for {compact} returned no order id; keeping old SL {old_order_id}."
+        )
+
+    old_cancelled = False
+    cancel_error: str | None = None
+    if old_order_id:
+        try:
+            client.cancel_order(str(old_order_id), ccxt_sym)
+            old_cancelled = True
+        except Exception as exc:
+            cancel_error = str(exc)
+            _vst_logger.warning(
+                "Created replacement SL %s (%s @ %s), but cancelling old SL %s failed: %s",
+                new_order_id,
+                compact,
+                stop_p,
+                old_order_id,
+                exc,
+            )
+
+    return {
+        "symbol": compact,
+        "ccxt_symbol": ccxt_sym,
+        "position_side": pos_side,
+        "contracts": qty,
+        "new_stop_price": stop_p,
+        "client_order_id": coid,
+        "new_order_id": new_order_id,
+        "old_order_id": old_order_id,
+        "old_cancelled": old_cancelled,
+        "cancel_error": cancel_error,
+    }

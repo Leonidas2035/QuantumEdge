@@ -18,6 +18,7 @@ from quantum_edge_core.execution.bingx_vst_adapter import (
     cancel_vst_open_orders,
     fetch_vst_status,
     is_vst_sandbox_client,
+    move_vst_stop_loss,
     to_ccxt_swap_symbol,
 )
 from quantum_edge_core.execution.harness_bridge import HarnessBridge
@@ -49,6 +50,9 @@ class PositionProtectionWatcher:
         interval_sec: float = 5.0,
         max_liq_distance_pct: float = 2.0,
         stale_feed_limit_sec: float = 30.0,
+        enable_breakeven_sl: bool = True,
+        breakeven_trigger_pct: float = 0.40,
+        breakeven_offset_pct: float = 0.12,
         dry_run: bool = False,
     ) -> None:
         self.client = exchange_client
@@ -61,6 +65,9 @@ class PositionProtectionWatcher:
         self.interval_sec = max(interval_sec, 1.0)
         self.max_liq_distance_pct = max_liq_distance_pct
         self.stale_feed_limit_sec = stale_feed_limit_sec
+        self.enable_breakeven_sl = bool(enable_breakeven_sl)
+        self.breakeven_trigger_pct = float(breakeven_trigger_pct)
+        self.breakeven_offset_pct = float(breakeven_offset_pct)
         self.dry_run = dry_run
         self._last_feed_ts = time.time()
         self._stop = asyncio.Event()
@@ -209,6 +216,90 @@ class PositionProtectionWatcher:
                         position_qty=qty,
                     )
                 actions_taken.append(f"EMERGENCY_{close_action}:{sym}")
+                continue
+
+            if not (self.enable_breakeven_sl and qty > 0 and mark > 0):
+                continue
+            entry = float(pos.get("entry_price") or pos.get("entryPrice") or 0.0)
+            if entry <= 0:
+                continue
+            is_long = "LONG" in side
+            is_short = "SHORT" in side
+            if not (is_long or is_short):
+                continue
+            pos_side = "LONG" if is_long else "SHORT"
+            fav_move_pct = (
+                (mark - entry) / entry * 100.0
+                if is_long
+                else (entry - mark) / entry * 100.0
+            )
+            if fav_move_pct < self.breakeven_trigger_pct:
+                continue
+
+            target_be_sl = (
+                round(entry * (1.0 + self.breakeven_offset_pct / 100.0), 6)
+                if is_long
+                else round(entry * (1.0 - self.breakeven_offset_pct / 100.0), 6)
+            )
+            # Ensure target breakeven stop stays strictly behind current mark price
+            if (is_long and target_be_sl >= mark) or (is_short and target_be_sl <= mark):
+                continue
+
+            managed_sl_orders = [
+                o
+                for o in sym_orders
+                if self._is_managed_order(o)
+                and "STOP" in str(o.get("rawType") or o.get("type") or "").upper()
+                and "PROFIT" not in str(o.get("rawType") or o.get("type") or "").upper()
+                and (
+                    not str(o.get("positionSide") or "").strip()
+                    or str(o.get("positionSide") or "").upper() == pos_side
+                )
+            ]
+            # If foreign/unmanaged SL exists without any managed SL, do not overwrite foreign orders
+            if has_sl and not managed_sl_orders:
+                continue
+
+            old_sl_id: str | None = None
+            existing_sl_price: float | None = None
+            for sl_ord in managed_sl_orders:
+                p_raw = sl_ord.get("triggerPrice") or sl_ord.get("stopPrice")
+                if p_raw is None:
+                    continue
+                try:
+                    p_val = float(p_raw)
+                except (TypeError, ValueError):
+                    continue
+                if p_val <= 0:
+                    continue
+                if existing_sl_price is None or (
+                    (is_long and p_val > existing_sl_price)
+                    or (is_short and p_val < existing_sl_price)
+                ):
+                    existing_sl_price = p_val
+                    old_sl_id = str(sl_ord["id"]) if sl_ord.get("id") is not None else None
+
+            # Never loosen SL: only move strictly closer to profit / above entry (LONG) or below (SHORT)
+            if existing_sl_price is not None:
+                if is_long and target_be_sl <= existing_sl_price * (1.0 + 1e-6):
+                    continue
+                if is_short and target_be_sl >= existing_sl_price * (1.0 - 1e-6):
+                    continue
+
+            if self.dry_run:
+                actions_taken.append(f"DRY_WOULD_MOVE_BE_SL:{sym}->{target_be_sl}")
+            else:
+                await asyncio.to_thread(
+                    move_vst_stop_loss,
+                    self.client,
+                    symbol=sym,
+                    position_side=pos_side,
+                    contracts=qty,
+                    new_stop_price=target_be_sl,
+                    old_order_id=old_sl_id,
+                    decision_id=f"{int(now_ts)}",
+                )
+                actions_taken.append(f"MOVED_BE_SL:{sym}->{target_be_sl}")
 
         return {
             "dry_run": self.dry_run,
