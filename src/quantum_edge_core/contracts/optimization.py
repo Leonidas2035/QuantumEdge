@@ -7,7 +7,17 @@ from enum import Enum
 from typing import Any, Literal
 import uuid
 
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+
+def _normalize_trading_symbol(value: str) -> str:
+    """Normalize and validate an exchange symbol like 'BTCUSDT' or 'AVAXUSDT'."""
+    cleaned = value.strip().upper()
+    if not (4 <= len(cleaned) <= 20) or not cleaned.isalnum():
+        raise ValueError(
+            f"Invalid trading symbol {value!r}: expected 4..20 alphanumeric characters."
+        )
+    return cleaned
 
 
 class TransportChannel(str, Enum):
@@ -134,16 +144,26 @@ class HoldBlockerCode(str, Enum):
 
 
 class ScreeningDecisionV1(BaseModel):
-    """Stage 1 (low thinking): cross-asset 4-pair screening contract."""
+    """Stage 1 (low thinking): cross-asset pair screening contract."""
 
     model_config = ConfigDict(extra="ignore")
 
     market_regime_summary: str = Field(..., max_length=240)
     action: Literal["HOLD", "DRILL_DOWN", "MANAGE_OPEN_POSITION"]
-    candidate_symbol: Literal["BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT"] | None = None
+    candidate_symbol: str | None = None
     hold_blocker_code: HoldBlockerCode = HoldBlockerCode.NONE
     candidate_rationale: str = Field(..., max_length=220)
     estimated_edge_bps: float = Field(0.0, ge=-500.0, le=2000.0)
+
+    @field_validator("candidate_symbol")
+    @classmethod
+    def _normalize_candidate_symbol(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        cleaned = value.strip().upper()
+        if not cleaned:
+            return None
+        return _normalize_trading_symbol(cleaned)
 
     @model_validator(mode="after")
     def _validate_candidate(self) -> ScreeningDecisionV1:
@@ -178,11 +198,16 @@ class TradeDecisionV2(BaseModel):
         "REDUCE",
         "HOLD",
     ]
-    symbol: Literal["BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT"]
+    symbol: str = Field(..., min_length=4, max_length=20)
     hold_blocker_code: HoldBlockerCode = HoldBlockerCode.NONE
     thesis_status: Literal["NEW", "CONFIRMED", "WEAKENED", "INVALIDATED"] = "NEW"
     confidence: float = Field(..., ge=0.0, le=1.0)
     evidence_refs: list[str] = Field(default_factory=list, max_length=8)
+
+    @field_validator("symbol")
+    @classmethod
+    def _normalize_symbol(cls, value: str) -> str:
+        return _normalize_trading_symbol(value)
 
     # 3. Order parameters
     order_type: Literal["MARKET", "LIMIT"] = "MARKET"

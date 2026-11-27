@@ -11,12 +11,14 @@ import asyncio
 import logging
 import time
 import uuid
-from typing import Any, Sequence
+from typing import Any, Mapping, Sequence
 
 from quantum_edge_core.contracts.lean import TradeDecision
 from quantum_edge_core.execution.bingx_vst_adapter import (
     cancel_vst_open_orders,
     fetch_vst_status,
+    is_vst_sandbox_client,
+    to_ccxt_swap_symbol,
 )
 from quantum_edge_core.execution.harness_bridge import HarnessBridge
 
@@ -34,6 +36,8 @@ class PositionProtectionWatcher:
         bridge: HarnessBridge,
         *,
         allowed_symbols: Sequence[str] = DEFAULT_ALLOWED_SYMBOLS,
+        order_id_prefix: str | None = "qe-",
+        strict_prefix: bool = False,
         interval_sec: float = 5.0,
         max_liq_distance_pct: float = 2.0,
         stale_feed_limit_sec: float = 30.0,
@@ -44,12 +48,29 @@ class PositionProtectionWatcher:
         self.allowed_symbols: frozenset[str] = frozenset(
             str(s).strip().upper() for s in allowed_symbols if str(s).strip()
         )
+        self.order_id_prefix = order_id_prefix.strip() if order_id_prefix else None
+        self.strict_prefix = bool(strict_prefix)
         self.interval_sec = max(interval_sec, 1.0)
         self.max_liq_distance_pct = max_liq_distance_pct
         self.stale_feed_limit_sec = stale_feed_limit_sec
         self.dry_run = dry_run
         self._last_feed_ts = time.time()
         self._stop = asyncio.Event()
+
+    def _is_managed_order(self, order: Mapping[str, Any]) -> bool:
+        """Check whether an open order belongs to QuantumEdge via clientOrderId prefix."""
+        if not self.order_id_prefix:
+            return True
+        info = order.get("info") if isinstance(order.get("info"), Mapping) else {}
+        coid = str(
+            order.get("clientOrderId")
+            or info.get("clientOrderId")
+            or info.get("clientOrderID")
+            or ""
+        ).strip()
+        if coid:
+            return coid.startswith(self.order_id_prefix)
+        return not self.strict_prefix
 
     def touch_feed_heartbeat(self, ts_sec: float | None = None) -> None:
         self._last_feed_ts = ts_sec if ts_sec is not None else time.time()
@@ -77,33 +98,58 @@ class PositionProtectionWatcher:
         positions = [
             p for p in all_positions if str(p.get("symbol") or "").upper() in self.allowed_symbols
         ]
-        open_orders = [
+        scoped_orders = [
             o for o in all_orders if str(o.get("symbol") or "").upper() in self.allowed_symbols
         ]
+        managed_orders = [o for o in scoped_orders if self._is_managed_order(o)]
         ignored_foreign_positions = len(all_positions) - len(positions)
-        ignored_foreign_orders = len(all_orders) - len(open_orders)
+        ignored_foreign_orders = len(all_orders) - len(managed_orders)
 
-        # 1. Clean up orphan protective orders when scoped account positions are FLAT
-        if len(positions) == 0 and len(open_orders) > 0:
-            reduce_only_orphans = [
-                o
-                for o in open_orders
-                if o.get("reduceOnly") is True
+        # 1. Clean up orphan protective orders per symbol when that symbol has NO active position
+        active_pos_symbols = {
+            str(p.get("symbol") or "").upper()
+            for p in positions
+            if str(p.get("symbol") or "").strip()
+        }
+        reduce_only_orphans = [
+            o
+            for o in managed_orders
+            if str(o.get("symbol") or "").upper() not in active_pos_symbols
+            and (
+                o.get("reduceOnly") is True
                 or str(o.get("rawType") or o.get("type") or "").upper()
                 in ("STOP_MARKET", "TAKE_PROFIT_MARKET")
-            ]
-            if reduce_only_orphans:
-                orphan_symbols = sorted(
-                    {
-                        str(o.get("symbol") or "").upper()
-                        for o in reduce_only_orphans
-                        if str(o.get("symbol") or "").strip()
-                    }
-                )
-                if not self.dry_run:
-                    for sym in orphan_symbols:
+            )
+        ]
+        if reduce_only_orphans:
+            orphan_symbols = sorted(
+                {
+                    str(o.get("symbol") or "").upper()
+                    for o in reduce_only_orphans
+                    if str(o.get("symbol") or "").strip()
+                }
+            )
+            if not self.dry_run:
+                for sym in orphan_symbols:
+                    has_foreign_on_sym = any(
+                        str(o.get("symbol") or "").upper() == sym
+                        and not self._is_managed_order(o)
+                        for o in scoped_orders
+                    )
+                    if has_foreign_on_sym:
+                        if not is_vst_sandbox_client(self.client):
+                            raise RuntimeError(
+                                "Refusing to cancel orders: client is not verified in BingX VST sandbox mode or REAL_TRADING is enabled."
+                            )
+                        for orphan in reduce_only_orphans:
+                            if str(orphan.get("symbol") or "").upper() == sym and orphan.get("id"):
+                                ccxt_sym = orphan.get("ccxt_symbol") or to_ccxt_swap_symbol(sym)
+                                await asyncio.to_thread(
+                                    self.client.cancel_order, str(orphan["id"]), ccxt_sym
+                                )
+                    else:
                         await asyncio.to_thread(cancel_vst_open_orders, self.client, sym)
-                actions_taken.append(f"CANCELLED_ORPHANS:{len(reduce_only_orphans)}")
+            actions_taken.append(f"CANCELLED_ORPHANS:{len(reduce_only_orphans)}")
 
         # 2. Check open scoped positions for missing SL + stale feed or imminent liquidation
         now_ts = time.time()
@@ -117,7 +163,7 @@ class PositionProtectionWatcher:
             qty = float(pos.get("contracts") or 0.0)
 
             sym_orders = [
-                o for o in open_orders if str(o.get("symbol") or "").upper() == sym
+                o for o in scoped_orders if str(o.get("symbol") or "").upper() == sym
             ]
             has_sl = any(
                 "STOP" in str(o.get("rawType") or o.get("type") or "").upper()
@@ -160,7 +206,7 @@ class PositionProtectionWatcher:
             "dry_run": self.dry_run,
             "allowed_symbols": sorted(self.allowed_symbols),
             "open_positions": len(positions),
-            "open_orders": len(open_orders),
+            "open_orders": len(managed_orders),
             "ignored_foreign_positions": ignored_foreign_positions,
             "ignored_foreign_orders": ignored_foreign_orders,
             "feed_stale": feed_stale,

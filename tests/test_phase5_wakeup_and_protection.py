@@ -516,3 +516,146 @@ def test_position_protection_ignores_foreign_symbols_and_never_cancels_all(
     assert "ALL" not in client.cancelled_symbols
     assert "BNB/USDT:USDT" not in client.cancelled_symbols
     assert client.submitted_orders == []
+
+
+def test_position_protection_per_symbol_orphan_cleanup_with_other_open_position(
+    tmp_path: Path,
+) -> None:
+    class _MixedMultiBotClient:
+        _qe_sandbox_verified = True
+
+        def __init__(self) -> None:
+            self.cancelled_orders: list[tuple[str, str]] = []
+            self.submitted_orders: list[dict[str, Any]] = []
+
+        def fetch_balance(self) -> dict[str, Any]:
+            return {"VST": {"free": 9000.0, "total": 10000.0, "used": 1000.0}}
+
+        def fetch_positions(self) -> list[dict[str, Any]]:
+            return [
+                {
+                    "symbol": "BTC/USDT:USDT",
+                    "side": "long",
+                    "contracts": 0.05,
+                    "entryPrice": 60000.0,
+                    "markPrice": 60200.0,
+                    "liquidationPrice": 55000.0,
+                    "info": {"positionSide": "LONG"},
+                },
+                {
+                    "symbol": "BNB/USDT:USDT",
+                    "side": "long",
+                    "contracts": 100.0,
+                    "entryPrice": 550.0,
+                    "markPrice": 560.0,
+                    "liquidationPrice": 500.0,
+                    "info": {"positionSide": "LONG"},
+                },
+            ]
+
+        def fetch_open_orders(self, symbol: str | None = None) -> list[dict[str, Any]]:
+            orders = [
+                {
+                    "id": "btc-valid-sl",
+                    "clientOrderId": "qe-btcusdt-sl-1",
+                    "symbol": "BTC/USDT:USDT",
+                    "type": "market",
+                    "side": "sell",
+                    "reduceOnly": True,
+                    "stopPrice": 59500.0,
+                    "info": {"rawType": "STOP_MARKET", "positionSide": "LONG"},
+                },
+                {
+                    "id": "eth-orphan-sl",
+                    "clientOrderId": "qe-ethusdt-sl-orphan",
+                    "symbol": "ETH/USDT:USDT",
+                    "type": "market",
+                    "side": "sell",
+                    "reduceOnly": True,
+                    "stopPrice": 2380.0,
+                    "info": {"rawType": "STOP_MARKET", "positionSide": "LONG"},
+                },
+                {
+                    "id": "sol-hermes-sl",
+                    "clientOrderId": "hermes-solusdt-sl-1",
+                    "symbol": "SOL/USDT:USDT",
+                    "type": "market",
+                    "side": "sell",
+                    "reduceOnly": True,
+                    "stopPrice": 140.0,
+                    "info": {"rawType": "STOP_MARKET", "positionSide": "LONG"},
+                },
+                {
+                    "id": "xrp-qe-orphan",
+                    "clientOrderId": "qe-xrpusdt-sl-orphan",
+                    "symbol": "XRP/USDT:USDT",
+                    "type": "market",
+                    "side": "sell",
+                    "reduceOnly": True,
+                    "stopPrice": 0.55,
+                    "info": {"rawType": "STOP_MARKET", "positionSide": "LONG"},
+                },
+                {
+                    "id": "xrp-foreign-keep",
+                    "clientOrderId": "xrp-dca-keep-1",
+                    "symbol": "XRP/USDT:USDT",
+                    "type": "limit",
+                    "side": "buy",
+                    "reduceOnly": False,
+                    "price": 0.54,
+                    "info": {"rawType": "LIMIT", "positionSide": "LONG"},
+                },
+                {
+                    "id": "bnb-foreign-sl",
+                    "symbol": "BNB/USDT:USDT",
+                    "type": "market",
+                    "side": "sell",
+                    "reduceOnly": True,
+                    "stopPrice": 540.0,
+                    "info": {"rawType": "STOP_MARKET", "positionSide": "LONG"},
+                },
+            ]
+            if symbol is None:
+                return orders
+            return [o for o in orders if o["symbol"] == symbol]
+
+        def cancel_order(self, oid: str, sym: str) -> dict[str, Any]:
+            self.cancelled_orders.append((oid, sym))
+            return {"id": oid, "status": "canceled"}
+
+        def create_order(
+            self,
+            symbol: str,
+            type: str,
+            side: str,
+            amount: float,
+            price: float | None = None,
+            params: dict[str, Any] | None = None,
+        ) -> dict[str, Any]:
+            self.submitted_orders.append({"symbol": symbol, "params": params or {}})
+            return {"id": "emerg-1", "status": "closed"}
+
+    from quantum_edge_core.execution.risk_guard import RiskConfig
+
+    client = _MixedMultiBotClient()
+    ledger = OrderLedger(tmp_path / "per_sym_orders.sqlite3")
+    executor = LeanExecutor(client, ledger, LeanRiskGuard(RiskConfig()))
+    bridge = HarnessBridge(executor, journal_path=tmp_path / "per_sym_journal.jsonl")
+    watcher = PositionProtectionWatcher(
+        client,
+        bridge,
+        allowed_symbols=("BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT"),
+        order_id_prefix="qe-",
+        stale_feed_limit_sec=30.0,
+        dry_run=False,
+    )
+    watcher.touch_feed_heartbeat()
+    res = asyncio.run(watcher.check_once())
+
+    assert res["open_positions"] == 1
+    assert res["actions"] == ["CANCELLED_ORPHANS:2"]
+    assert sorted(client.cancelled_orders) == [
+        ("eth-orphan-sl", "ETH/USDT:USDT"),
+        ("xrp-qe-orphan", "XRP/USDT:USDT"),
+    ]
+    assert client.submitted_orders == []

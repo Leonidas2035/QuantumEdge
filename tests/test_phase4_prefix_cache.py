@@ -13,6 +13,7 @@ import pytest
 
 import tools.qe_harness_cli as harness_cli
 from quantum_edge_core.contracts import (
+    ForecastBundleV1,
     RequestStatus,
     ThinkingLevel,
     TradeDecisionV2,
@@ -394,3 +395,109 @@ def test_orchestrator_with_prefix_assembler_updates_thesis_and_cache_monitor(
     finally:
         u_ledger.close()
         t_store.close()
+
+
+def test_stage2_no_duplicate_ohlcv_and_intra_hour_thesis_delta_and_compact_forecast(
+    tmp_path: Path,
+) -> None:
+    store = ThesisMemoryStore(tmp_path / "thesis_delta.sqlite3")
+    try:
+        asm = PrefixContextAssembler(thesis_store=store, include_images=False)
+        bundle = _make_4pair_bundle()
+        fc = ForecastBundleV1(
+            symbol="BTCUSDT",
+            horizon="15m",
+            regime_probs={"UP": 0.65, "RANGE": 0.25, "DOWN": 0.10},
+            regime_maturity="ESTABLISHED",
+            regime_entropy=0.48,
+            cond_vol_bps=22.4,
+            vol_zscore=0.35,
+            return_quantiles_bps={
+                "q05": -35.0,
+                "q10": -22.0,
+                "q25": -8.0,
+                "q50": 6.5,
+                "q75": 21.0,
+                "q90": 38.0,
+                "q95": 49.0,
+            },
+            barrier_probs={"up_first": 0.61, "down_first": 0.21, "neither": 0.18},
+            expected_mfe_bps={"q50": 31.0, "q90": 64.0},
+            expected_mae_bps={"q50": -14.0, "q90": -28.0},
+            tsfm_disagreement=0.12,
+            disagreement_level="LOW",
+            aci_alpha_t=0.19,
+        )
+
+        # Cycle 1 (RESYNC)
+        s1 = asm.assemble_stage1(
+            bundle=bundle,
+            trigger_summary="HEARTBEAT_1H",
+            forecasts_by_symbol={"BTCUSDT": fc},
+            current_seq=1,
+            now_ts=3_600_000.0,
+        )
+        s2 = asm.assemble_stage2(
+            bundle=bundle,
+            candidate_symbol="BTCUSDT",
+            stage1_summary={"action": "DRILL_DOWN", "candidate_symbol": "BTCUSDT"},
+            forecast=fc,
+        )
+
+        # 1. Stage 2 text-only has NO duplicate DELTA_BPS_V1 on 15m/5m/1m (or 4h/1h), keeps PROF + OHLCV_TICK_V1 + LIQMAP + L2
+        for tf in ("4h", "1h", "15m", "5m", "1m"):
+            assert f"DELTA_BPS_V1|BTCUSDT|{tf}|" not in s2.p2_dynamic
+            assert f"PROF_{tf}:" in s2.p2_dynamic
+        for tf in ("15m", "5m", "1m"):
+            assert f"OHLCV_TICK_V1|BTCUSDT|{tf}|" in s2.p2_dynamic
+        assert "LIQMAP|BTCUSDT|" in s2.p2_dynamic
+        assert "L2_TOP15|" in s2.p2_dynamic
+        assert estimate_gemini_sp_tokens(s2.p2_dynamic) >= 2_050
+
+        # 2. ForecastBundleV1 renders via compact FORECAST_V1| line in both Stage 1 and Stage 2
+        assert "FORECAST_V1|BTCUSDT|15m|" in s1.p2_dynamic
+        assert "FORECAST_V1|BTCUSDT|15m|" in s2.p2_dynamic
+        assert "return_quantiles_bps" not in s2.p2_dynamic
+        assert "INTRA_HOUR_THESIS_DELTA" not in s1.p2_dynamic
+        assert "INTRA_HOUR_THESIS_DELTA" not in s2.p2_dynamic
+
+        # 3. Intra-hour thesis upsert must show up in P2 WITHOUT mutating P0+P1 prefix_hash!
+        dec = TradeDecisionV2(
+            regime_read="1h bullish trend continuation",
+            primary_edge="BTC SHORT_LIQ @ 60656 with tight 0.28bps spread",
+            counter_thesis="5m retest to 59850",
+            invalidation_price=59550.0,
+            action="OPEN_LONG",
+            symbol="BTCUSDT",
+            confidence=0.77,
+            order_type="MARKET",
+            entry_price=60021.0,
+            sl_price=59500.0,
+            tp_price=60640.0,
+            margin_vst=700.0,
+            leverage=5,
+        )
+        store.upsert_from_decision(decision_id="d-intra-1", decision=dec, snapshot_id="snap-1", seq=1)
+
+        s1_intra = asm.assemble_stage1(
+            bundle=bundle,
+            trigger_summary="WAKEUP_5M",
+            forecasts_by_symbol={"BTCUSDT": fc.model_dump()},
+            current_seq=2,
+            now_ts=3_600_300.0,
+        )
+        s2_intra = asm.assemble_stage2(
+            bundle=bundle,
+            candidate_symbol="BTCUSDT",
+            stage1_summary={"action": "MANAGE_OPEN_POSITION", "candidate_symbol": "BTCUSDT"},
+            forecast=fc.model_dump(),
+        )
+        assert s1_intra.resync_mode == ResyncMode.LOCAL_RECONSTRUCT
+        assert s1_intra.prefix_hash == s1.prefix_hash
+        assert s1_intra.p1_slow == s1.p1_slow
+        assert "INTRA_HOUR_THESIS_DELTA|" in s1_intra.p2_dynamic
+        assert "d-intra-1|BTCUSDT|LONG|ACTIVE" in s1_intra.p2_dynamic
+        assert "INTRA_HOUR_THESIS_DELTA|" in s2_intra.p2_dynamic
+        assert "d-intra-1|BTCUSDT|LONG|ACTIVE" in s2_intra.p2_dynamic
+    finally:
+        store.close()

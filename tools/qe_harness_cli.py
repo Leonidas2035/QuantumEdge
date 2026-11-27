@@ -8,6 +8,13 @@ Subcommands:
       Fetch full uncompressed FullMarketContext from BingX VST sandbox.
   execute --decision-json '<JSON>' [--dry-run | --live-vst]
       Validate and execute a TradeDecision via HarnessBridge (default: --dry-run).
+  run-cycle [--dry-run | --live-vst] [--transport agy-proxy|gemini-direct|mock]
+      Run a 2-stage Progressive Disclosure decision cycle.
+      IMPORTANT (UsageLedger isolation): When using `--transport agy-proxy`,
+      `AgyProxyTransport` itself writes full `UsageRecordV1` telemetry (including
+      `decision_id`, `stage`, `prefix_hash`, `context_hash`, `snapshot_id`) to
+      `--ledger-db`. Launch `tools/agy_openai_proxy.py` WITHOUT sharing the same
+      `--ledger-db` (JSONL log only) to prevent double-counting records.
 """
 
 from __future__ import annotations
@@ -249,7 +256,22 @@ def build_parser() -> argparse.ArgumentParser:
         "--ledger-db",
         type=Path,
         default=DEFAULT_USAGE_LEDGER_DB,
-        help="Path to SQLite UsageLedger database",
+        help=(
+            "Path to SQLite UsageLedger DB (AgyProxyTransport writes full UsageRecordV1 here; "
+            "do NOT share this --ledger-db with agy_openai_proxy.py to avoid double-counting)"
+        ),
+    )
+    p_cycle.add_argument(
+        "--stage1-timeout",
+        type=float,
+        default=90.0,
+        help="Stage 1 screening LLM request timeout in seconds (default: 90.0)",
+    )
+    p_cycle.add_argument(
+        "--stage2-timeout",
+        type=float,
+        default=150.0,
+        help="Stage 2 drill-down LLM request timeout in seconds (default: 150.0)",
     )
     p_cycle.add_argument(
         "--order-ledger-db",
@@ -676,7 +698,9 @@ def _cmd_run_cycle(args: argparse.Namespace) -> int:
     elif args.transport == "gemini-direct":
         transport = GeminiDirectClient(usage_ledger, mode="interactions")
     else:
-        transport = AgyProxyTransport(usage_ledger, base_url=args.proxy_url)
+        # AgyProxyTransport writes full UsageRecordV1 (decision_id/stage/prefix_hash/context_hash)
+        # into usage_ledger; agy_openai_proxy.py should run without --ledger-db (JSONL log only).
+        transport = AgyProxyTransport(usage_ledger, base_url=args.proxy_url, record_to_ledger=True)
 
     async def _execute_cycle() -> dict[str, Any]:
         try:
@@ -722,6 +746,8 @@ def _cmd_run_cycle(args: argparse.Namespace) -> int:
                 bridge=bridge,
                 effort_router=effort_router,
                 model_id=args.model,
+                stage1_timeout_sec=args.stage1_timeout,
+                stage2_timeout_sec=args.stage2_timeout,
             )
             try:
                 audit = await orchestrator.run_decision_cycle(

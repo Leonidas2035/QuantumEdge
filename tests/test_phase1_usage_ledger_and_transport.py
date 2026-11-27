@@ -27,8 +27,10 @@ from quantum_edge_ml.model_router.backends.google_gemini import (
     clamp_thinking_level,
 )
 from quantum_edge_ml.model_router.backends.transport import (
+    AgyProxyTransport,
     ImageAttachment,
     LLMRequest,
+    normalize_agy_model_alias,
 )
 from quantum_edge_ml.model_router.router.budgets import BudgetConfig, TeacherBudgets
 from quantum_edge_ml.model_router.usage_ledger import UsageLedger
@@ -492,3 +494,80 @@ def test_cold_start_subprocess_imports_no_circular_import() -> None:
         check=False,
     )
     assert p3.returncode == 0, f"qe_harness_cli.py --help failed: {p3.stderr}"
+
+
+def test_agy_alias_normalization_and_carbon_xhigh_clamp(tmp_path: Path) -> None:
+    import asyncio
+
+    assert normalize_agy_model_alias("gemini-4-carbon-medium", ThinkingLevel.LOW) == "gemini-4-carbon-low"
+    assert normalize_agy_model_alias("gemini-4-carbon", ThinkingLevel.XHIGH) == "gemini-4-carbon-high"
+    assert normalize_agy_model_alias("gemini-4-carbon-high", ThinkingLevel.XHIGH) == "gemini-4-carbon-high"
+    assert normalize_agy_model_alias("gemini-4-neon", ThinkingLevel.XHIGH) == "gemini-4-neon-xhigh"
+    assert normalize_agy_model_alias("gemini-4-neon-low", ThinkingLevel.XHIGH) == "gemini-4-neon-xhigh"
+
+    seen_models: list[str] = []
+
+    def _handler(request: httpx.Request) -> httpx.Response:
+        body = json.loads(request.content.decode("utf-8"))
+        seen_models.append(body["model"])
+        return httpx.Response(
+            200,
+            json={
+                "choices": [{"message": {"content": '{"action":"HOLD"}'}}],
+                "usage": {
+                    "prompt_tokens": 500,
+                    "completion_tokens": 120,
+                    "total_tokens": 620,
+                    "prompt_tokens_details": {"cached_tokens": 100},
+                    "completion_tokens_details": {"reasoning_tokens": 80},
+                },
+            },
+        )
+
+    ledger = UsageLedger(db_path=tmp_path / "agy_norm_ledger.sqlite3")
+
+    async def _run() -> None:
+        mock_http = httpx.AsyncClient(transport=httpx.MockTransport(_handler))
+        t_norec = AgyProxyTransport(
+            ledger, base_url="http://127.0.0.1:8045/v1", http_client=mock_http, record_to_ledger=False
+        )
+        t_rec = AgyProxyTransport(
+            ledger, base_url="http://127.0.0.1:8045/v1", http_client=mock_http, record_to_ledger=True
+        )
+        try:
+            r1 = await t_norec.generate(
+                LLMRequest(
+                    decision_id="d-alias-1",
+                    stage="stage1_screen",
+                    model="gemini-4-carbon-medium",
+                    system_instruction="sys",
+                    p2_dynamic_tail="usr",
+                    thinking_level=ThinkingLevel.LOW,
+                )
+            )
+            assert r1.usage.agy_alias == "gemini-4-carbon-low"
+            assert ledger.summarize()["total_requests"] == 0
+
+            r2 = await t_rec.generate(
+                LLMRequest(
+                    decision_id="d-alias-2",
+                    stage="stage2_drill",
+                    model="gemini-4-carbon",
+                    system_instruction="sys",
+                    p2_dynamic_tail="usr",
+                    thinking_level=ThinkingLevel.XHIGH,
+                )
+            )
+            assert r2.usage.agy_alias == "gemini-4-carbon-high"
+            assert r2.usage.thinking_level == ThinkingLevel.HIGH
+            assert ledger.summarize()["total_requests"] == 1
+        finally:
+            await t_norec.close()
+            await t_rec.close()
+            await mock_http.aclose()
+
+    try:
+        asyncio.run(_run())
+        assert seen_models == ["gemini-4-carbon-low", "gemini-4-carbon-high"]
+    finally:
+        ledger.close()

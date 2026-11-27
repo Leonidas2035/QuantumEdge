@@ -14,13 +14,14 @@ import json
 import time
 import uuid
 from dataclasses import dataclass, field
-from typing import Any, Literal, Protocol, Sequence, TypeVar
+from typing import Any, Literal, Mapping, Protocol, Sequence, TypeVar
 
 from pydantic import BaseModel
 
 from quantum_edge_core.contracts.lean import TradeDecision
 from quantum_edge_core.contracts.optimization import (
     DecisionAuditV1,
+    ForecastBundleV1,
     ScreeningDecisionV1,
     ThinkingLevel,
     TradeDecisionV2,
@@ -28,6 +29,7 @@ from quantum_edge_core.contracts.optimization import (
 from quantum_edge_core.execution.bingx_vst_adapter import (
     fetch_full_vst_context,
     fetch_vst_status,
+    normalize_compact_symbol,
 )
 from quantum_edge_core.execution.harness_bridge import HarnessBridge
 from quantum_edge_core.execution.market_context_serializer import MarketContextSerializer
@@ -41,6 +43,142 @@ from quantum_edge_ml.model_router.backends.transport import (
 from quantum_edge_ml.model_router.usage_ledger import UsageLedger
 
 ModelT = TypeVar("ModelT", bound=BaseModel)
+
+
+def scope_vst_status_to_symbols(
+    vst_status: Mapping[str, Any],
+    allowed_symbols: Sequence[str],
+) -> dict[str, Any]:
+    """Return a copy of vst_status filtered strictly to allowed_symbols.
+
+    Prevents manual trades or sibling bots on shared demo/live accounts from
+    polluting LLM prompts, ReasoningEffortRouter exposure, or LeanRiskGuard caps.
+    """
+    allowed = {
+        normalize_compact_symbol(str(s)) or str(s).strip().upper()
+        for s in allowed_symbols
+        if str(s).strip()
+    }
+    scoped = dict(vst_status)
+    all_positions = list(vst_status.get("open_positions") or [])
+    all_orders = list(vst_status.get("open_orders") or [])
+
+    scoped_positions = [
+        dict(p)
+        for p in all_positions
+        if (normalize_compact_symbol(str(p.get("symbol") or "")) or str(p.get("symbol") or "").strip().upper())
+        in allowed
+    ]
+    scoped_orders = [
+        dict(o)
+        for o in all_orders
+        if (normalize_compact_symbol(str(o.get("symbol") or "")) or str(o.get("symbol") or "").strip().upper())
+        in allowed
+    ]
+
+    scoped["open_positions"] = scoped_positions
+    scoped["open_orders"] = scoped_orders
+    scoped["open_positions_count"] = len(scoped_positions)
+    scoped["open_orders_count"] = len(scoped_orders)
+    scoped["open_positions_symbols"] = sorted(
+        {
+            normalize_compact_symbol(str(p.get("symbol") or ""))
+            for p in scoped_positions
+            if p.get("symbol")
+        }
+    )
+    scoped["open_orders_symbols"] = sorted(
+        {
+            normalize_compact_symbol(str(o.get("symbol") or ""))
+            for o in scoped_orders
+            if o.get("symbol")
+        }
+    )
+    scoped["allowed_symbols"] = sorted(allowed)
+    scoped["ignored_foreign_positions_count"] = len(all_positions) - len(scoped_positions)
+    scoped["ignored_foreign_orders_count"] = len(all_orders) - len(scoped_orders)
+    return scoped
+
+
+def format_forecast_for_prompt(
+    forecast: ForecastBundleV1 | Mapping[str, Any] | None,
+) -> Any:
+    """Render ForecastBundleV1 (or compatible dict) via dense compact wire string."""
+    if forecast is None:
+        return None
+    if isinstance(forecast, ForecastBundleV1):
+        return forecast.to_compact_prompt_str()
+    if isinstance(forecast, Mapping):
+        try:
+            return ForecastBundleV1.model_validate(forecast).to_compact_prompt_str()
+        except Exception:
+            return dict(forecast)
+    return forecast
+
+
+def serialize_stage2_candidate(
+    serializer: MarketContextSerializer,
+    cand_ctx: Mapping[str, Any],
+    *,
+    include_images: bool,
+    ohlcv_tail: int = 25,
+) -> tuple[str, list[ImageAttachment]]:
+    """Serialize Stage-2 candidate context without duplicating 25-bar 15m/5m/1m candles."""
+    if include_images:
+        ser_cand = serializer.serialize_single_asset(
+            cand_ctx,
+            mode="hybrid_webp",
+            ohlcv_tail=ohlcv_tail,
+            include_full_liqmap=True,
+        )
+        return ser_cand.text, ser_cand.images
+
+    snap = cand_ctx.get("market_snapshot") or {}
+    sym = str(snap.get("symbol") or "UNKNOWN").upper()
+    micro = cand_ctx.get("microstructure_and_liquidity") or {}
+    ohlcv = cand_ctx.get("ohlcv_by_tf") or {}
+    sections: list[str] = []
+
+    header_obj = {
+        "sym": sym,
+        "bid": snap.get("bid"),
+        "ask": snap.get("ask"),
+        "last": snap.get("last_price"),
+        "spr_bps": snap.get("spread_bps"),
+        "stale": snap.get("is_stale"),
+        "deriv": cand_ctx.get("derivatives"),
+        "of": (micro.get("orderflow") or {}).get("metrics", {}),
+        "comp": {
+            "sig": (micro.get("composite_signal") or {}).get("signal"),
+            "score": (micro.get("composite_signal") or {}).get("score"),
+            "c": (micro.get("composite_signal") or {}).get("components"),
+        },
+    }
+    sections.append("META:" + json.dumps(header_obj, separators=(",", ":"), sort_keys=True))
+
+    if "liqmap" in micro:
+        sections.append(serializer.encode_liqmap_csv(micro["liqmap"]))
+    if "orderbook" in cand_ctx:
+        sections.append(serializer.encode_orderbook_csv(cand_ctx["orderbook"], top_n=15))
+
+    for tf in ("4h", "1h", "15m", "5m", "1m"):
+        bars = ohlcv.get(tf) or []
+        if not bars:
+            continue
+        ref_hash = hashlib.sha256(
+            json.dumps(bars, separators=(",", ":"), sort_keys=True).encode("utf-8")
+        ).hexdigest()[:12]
+        prof = serializer.build_structural_profile(tf, bars)
+        sections.append(
+            f"PROF_{tf}:"
+            + json.dumps(prof, separators=(",", ":"), sort_keys=True)
+            + f"|ref={ref_hash}"
+        )
+        if tf in ("15m", "5m", "1m"):
+            # Lossless OHLCV_TICK_V1 for 15m/5m/1m only (no duplicate DELTA_BPS_V1)
+            sections.append(serializer.encode_ohlcv_tick_delta(sym, tf, bars[-ohlcv_tail:]))
+
+    return "\n".join(sections), []
 
 
 class EffortRouterProtocol(Protocol):
@@ -77,7 +215,7 @@ class StagePromptAssemblerProtocol(Protocol):
         *,
         bundle: PreFetchedBundle,
         trigger_summary: str,
-        forecasts_by_symbol: dict[str, dict[str, Any]] | None = None,
+        forecasts_by_symbol: dict[str, dict[str, Any] | ForecastBundleV1] | None = None,
     ) -> AssembledStagePrompt: ...
 
     def assemble_stage2(
@@ -86,7 +224,7 @@ class StagePromptAssemblerProtocol(Protocol):
         bundle: PreFetchedBundle,
         candidate_symbol: str,
         stage1_summary: dict[str, Any],
-        forecast: dict[str, Any] | None = None,
+        forecast: dict[str, Any] | ForecastBundleV1 | None = None,
     ) -> AssembledStagePrompt: ...
 
 
@@ -101,7 +239,7 @@ class PreFetchedBundle:
 
 
 class PreFetchCoordinator:
-    """Parallel in-memory collector for VST status and 4-pair enriched FullMarketContexts."""
+    """Parallel in-memory collector for VST status and pair-scoped FullMarketContexts."""
 
     def __init__(
         self,
@@ -115,7 +253,9 @@ class PreFetchCoordinator:
 
     async def fetch_all(self, *, include_analytics: bool = True) -> PreFetchedBundle:
         t0 = time.perf_counter()
-        status_task = asyncio.to_thread(fetch_vst_status, self.client)
+        status_task = asyncio.to_thread(
+            fetch_vst_status, self.client, fallback_symbols=self.symbols
+        )
         ctx_tasks = [
             asyncio.to_thread(
                 fetch_full_vst_context,
@@ -129,7 +269,8 @@ class PreFetchCoordinator:
             )
             for sym in self.symbols
         ]
-        vst_status, *ctx_models = await asyncio.gather(status_task, *ctx_tasks)
+        raw_vst_status, *ctx_models = await asyncio.gather(status_task, *ctx_tasks)
+        vst_status = scope_vst_status_to_symbols(raw_vst_status, self.symbols)
         contexts = {
             sym: m.model_dump(mode="json") for sym, m in zip(self.symbols, ctx_models)
         }
@@ -201,7 +342,7 @@ class StatelessStagePromptAssembler:
         *,
         bundle: PreFetchedBundle,
         trigger_summary: str,
-        forecasts_by_symbol: dict[str, dict[str, Any]] | None = None,
+        forecasts_by_symbol: dict[str, dict[str, Any] | ForecastBundleV1] | None = None,
         current_seq: int = 0,
         regime_signature: str = "DEFAULT",
     ) -> AssembledStagePrompt:
@@ -227,7 +368,8 @@ class StatelessStagePromptAssembler:
             ctx = bundle.contexts_by_symbol[sym]
             snap = ctx.get("market_snapshot") or {}
             micro = ctx.get("microstructure_and_liquidity") or {}
-            row = {
+            fc_fmt = format_forecast_for_prompt((forecasts_by_symbol or {}).get(sym))
+            row: dict[str, Any] = {
                 "sym": sym,
                 "last": snap.get("last_price"),
                 "spr_bps": snap.get("spread_bps"),
@@ -236,11 +378,14 @@ class StatelessStagePromptAssembler:
                 "comp_sig": (micro.get("composite_signal") or {}).get("signal"),
                 "comp_score": (micro.get("composite_signal") or {}).get("score"),
                 "funding": (ctx.get("derivatives") or {}).get("funding_rate"),
-                "forecast": (forecasts_by_symbol or {}).get(sym),
             }
+            if not isinstance(fc_fmt, str):
+                row["forecast"] = fc_fmt
             p2_parts.append(
                 "PAIR_SUM|" + json.dumps(row, separators=(",", ":"), sort_keys=True)
             )
+            if isinstance(fc_fmt, str):
+                p2_parts.append(fc_fmt)
             bars_5m = (ctx.get("ohlcv_by_tf") or {}).get("5m") or []
             if bars_5m:
                 p2_parts.append(
@@ -260,55 +405,39 @@ class StatelessStagePromptAssembler:
         bundle: PreFetchedBundle,
         candidate_symbol: str,
         stage1_summary: dict[str, Any],
-        forecast: dict[str, Any] | None = None,
+        forecast: dict[str, Any] | ForecastBundleV1 | None = None,
     ) -> AssembledStagePrompt:
         p1_slow = self._get_p1_for_bundle(bundle)
         sym = candidate_symbol.upper()
         cand_ctx = bundle.contexts_by_symbol[sym]
-        if self.include_images:
-            ser_cand = self.serializer.serialize_single_asset(
-                cand_ctx, mode="hybrid_webp", ohlcv_tail=25, include_full_liqmap=True
-            )
-            cand_text = ser_cand.text
-            images = ser_cand.images
-        else:
-            # Text-only OAuth proxy mode: multiscale + full liqmap/L2 + exact tick_delta tail on 15m/5m/1m
-            ser_base = self.serializer.serialize_single_asset(
-                cand_ctx, mode="multiscale", ohlcv_tail=25, include_full_liqmap=True
-            )
-            extra_ticks: list[str] = []
-            ohlcv = cand_ctx.get("ohlcv_by_tf") or {}
-            for tf in ("15m", "5m", "1m"):
-                bars = ohlcv.get(tf) or []
-                if bars:
-                    extra_ticks.append(
-                        self.serializer.encode_ohlcv_tick_delta(sym, tf, bars[-25:])
-                    )
-            cand_text = (
-                ser_base.text + ("\n" + "\n".join(extra_ticks) if extra_ticks else "")
-            )
-            images = []
+        cand_text, images = serialize_stage2_candidate(
+            self.serializer,
+            cand_ctx,
+            include_images=self.include_images,
+            ohlcv_tail=25,
+        )
+        fc_fmt = format_forecast_for_prompt(forecast)
+        s2_header: dict[str, Any] = {
+            "snapshot_id": bundle.snapshot_id,
+            "candidate": sym,
+            "stage1": stage1_summary,
+            "account": {
+                "free_vst": (bundle.vst_status.get("balance_vst") or {}).get("free"),
+                "open_pos": bundle.vst_status.get("open_positions", []),
+                "open_orders": bundle.vst_status.get("open_orders", []),
+            },
+        }
+        if not isinstance(fc_fmt, str):
+            s2_header["forecast"] = fc_fmt
 
         p2_parts = [
             "=== P2_STAGE2_DEEP_DRILLDOWN ===",
-            json.dumps(
-                {
-                    "snapshot_id": bundle.snapshot_id,
-                    "candidate": sym,
-                    "stage1": stage1_summary,
-                    "forecast": forecast,
-                    "account": {
-                        "free_vst": (bundle.vst_status.get("balance_vst") or {}).get("free"),
-                        "open_pos": bundle.vst_status.get("open_positions", []),
-                        "open_orders": bundle.vst_status.get("open_orders", []),
-                    },
-                },
-                separators=(",", ":"),
-                sort_keys=True,
-            ),
-            cand_text,
-            "OUTPUT_CONTRACT: Return ONLY valid JSON matching STAGE2_SCHEMA.",
+            json.dumps(s2_header, separators=(",", ":"), sort_keys=True),
         ]
+        if isinstance(fc_fmt, str):
+            p2_parts.append(fc_fmt)
+        p2_parts.append(cand_text)
+        p2_parts.append("OUTPUT_CONTRACT: Return ONLY valid JSON matching STAGE2_SCHEMA.")
         return self._finalize(p1_slow, "\n".join(p2_parts), images)
 
     def observe_cache_result(self, cache_read_tokens: int | None) -> bool:
@@ -387,6 +516,8 @@ class DeterministicTradingOrchestrator:
         assembler: Any | None = None,
         effort_router: EffortRouterProtocol | None = None,
         model_id: str = "gemini-4-carbon",
+        stage1_timeout_sec: float = 90.0,
+        stage2_timeout_sec: float = 150.0,
     ) -> None:
         self.transport = transport
         self.ledger = ledger
@@ -394,6 +525,8 @@ class DeterministicTradingOrchestrator:
         self.bridge = bridge
         self.effort_router = effort_router
         self.model_id = model_id
+        self.stage1_timeout_sec = float(stage1_timeout_sec)
+        self.stage2_timeout_sec = float(stage2_timeout_sec)
 
     def _notify_cache_result(
         self,
@@ -437,7 +570,7 @@ class DeterministicTradingOrchestrator:
         bundle: PreFetchedBundle,
         *,
         trigger_summary: str = "HEARTBEAT_1H",
-        forecasts_by_symbol: dict[str, dict[str, Any]] | None = None,
+        forecasts_by_symbol: dict[str, dict[str, Any] | ForecastBundleV1] | None = None,
         dry_run: bool = False,
         current_seq: int = 0,
         regime_signature: str = "DEFAULT",
@@ -445,9 +578,20 @@ class DeterministicTradingOrchestrator:
         decision_id = f"qe-{int(time.time())}-{uuid.uuid4().hex[:8]}"
         usage_ids: list[str] = []
 
-        # === STAGE 1: 4-Pair Screening (thinking_level=LOW) ===
+        # Defensive symbol scoping so foreign positions/orders never reach LLM, router, or RiskGuard
+        scoped_vst = scope_vst_status_to_symbols(
+            bundle.vst_status, list(bundle.contexts_by_symbol.keys())
+        )
+        scoped_bundle = PreFetchedBundle(
+            snapshot_id=bundle.snapshot_id,
+            vst_status=scoped_vst,
+            contexts_by_symbol=bundle.contexts_by_symbol,
+            fetch_ms=bundle.fetch_ms,
+        )
+
+        # === STAGE 1: Cross-Asset Screening (thinking_level=LOW) ===
         s1_prompt = self.assembler.assemble_stage1(
-            bundle=bundle,
+            bundle=scoped_bundle,
             trigger_summary=trigger_summary,
             forecasts_by_symbol=forecasts_by_symbol,
             current_seq=current_seq,
@@ -465,17 +609,18 @@ class DeterministicTradingOrchestrator:
                 thinking_level=ThinkingLevel.LOW,
                 max_output_tokens=8_192,
                 response_schema=ScreeningDecisionV1.model_json_schema(),
-                timeout_sec=45.0,
+                timeout_sec=self.stage1_timeout_sec,
                 prefix_hash=s1_prompt.prefix_hash,
                 context_hash=s1_prompt.context_hash,
-                snapshot_id=bundle.snapshot_id,
+                snapshot_id=scoped_bundle.snapshot_id,
             )
         )
         usage_ids.append(s1_resp.usage.record_id)
         screen = parse_structured_model_json(s1_resp.text, ScreeningDecisionV1)
 
         if screen.action == "HOLD":
-            primary_sym = screen.candidate_symbol or "BTCUSDT"
+            fallback_sym = next(iter(scoped_bundle.contexts_by_symbol.keys()), "BTCUSDT")
+            primary_sym = screen.candidate_symbol or fallback_sym
             reg_str = (
                 screen.market_regime_summary
                 if len(screen.market_regime_summary) >= 8
@@ -498,7 +643,7 @@ class DeterministicTradingOrchestrator:
             )
             audit = DecisionAuditV1(
                 decision_id=decision_id,
-                snapshot_id=bundle.snapshot_id,
+                snapshot_id=scoped_bundle.snapshot_id,
                 context_hash=s1_prompt.context_hash,
                 prefix_hash=s1_prompt.prefix_hash,
                 model_provider_id=self.model_id,
@@ -513,23 +658,46 @@ class DeterministicTradingOrchestrator:
             return audit
 
         # === STAGE 2: Candidate Deep Drill-Down ===
-        cand_sym = str(screen.candidate_symbol).upper()
-        cand_ctx = bundle.contexts_by_symbol[cand_sym]
+        cand_sym = str(screen.candidate_symbol or "").strip().upper()
+        if cand_sym not in scoped_bundle.contexts_by_symbol:
+            oos_reason = f"SYMBOL_OUT_OF_SCOPE:{cand_sym}"
+            audit = DecisionAuditV1(
+                decision_id=decision_id,
+                snapshot_id=scoped_bundle.snapshot_id,
+                context_hash=s1_prompt.context_hash,
+                prefix_hash=s1_prompt.prefix_hash,
+                model_provider_id=self.model_id,
+                thinking_level=ThinkingLevel.LOW,
+                usage_record_ids=usage_ids,
+                decision_payload=screen.model_dump(mode="json"),
+                validator_passed=False,
+                validator_reason=oos_reason,
+                execution_result={"status": "REJECTED", "reason": oos_reason},
+            )
+            self.ledger.record_decision_audit(audit)
+            return audit
+
+        cand_ctx = scoped_bundle.contexts_by_symbol[cand_sym]
         cand_fc = (forecasts_by_symbol or {}).get(cand_sym)
+        cand_fc_dict = (
+            cand_fc.model_dump()
+            if isinstance(cand_fc, ForecastBundleV1)
+            else cand_fc
+        )
 
         if self.effort_router is not None:
             complexity_score, s2_level = self.effort_router.select_level(
                 symbol=cand_sym,
                 ctx=cand_ctx,
-                forecast=cand_fc,
-                vst_status=bundle.vst_status,
+                forecast=cand_fc_dict,
+                vst_status=scoped_bundle.vst_status,
                 stage=2,
             )
         else:
             complexity_score, s2_level = None, ThinkingLevel.MEDIUM
 
         s2_prompt = self.assembler.assemble_stage2(
-            bundle=bundle,
+            bundle=scoped_bundle,
             candidate_symbol=cand_sym,
             stage1_summary=screen.model_dump(mode="json"),
             forecast=cand_fc,
@@ -546,10 +714,10 @@ class DeterministicTradingOrchestrator:
                 thinking_level=s2_level,
                 max_output_tokens=16_384,
                 response_schema=TradeDecisionV2.model_json_schema(),
-                timeout_sec=75.0,
+                timeout_sec=self.stage2_timeout_sec,
                 prefix_hash=s2_prompt.prefix_hash,
                 context_hash=s2_prompt.context_hash,
-                snapshot_id=bundle.snapshot_id,
+                snapshot_id=scoped_bundle.snapshot_id,
             )
         )
         usage_ids.append(s2_resp.usage.record_id)
@@ -559,12 +727,17 @@ class DeterministicTradingOrchestrator:
             prompt_tokens=s2_resp.usage.provider_input_tokens,
         )
 
-        ok_val, val_reason = self._post_validate_trade(decision_v2, cand_ctx)
+        if decision_v2.symbol not in scoped_bundle.contexts_by_symbol:
+            ok_val, val_reason = False, f"SYMBOL_OUT_OF_SCOPE:{decision_v2.symbol}"
+        else:
+            target_ctx = scoped_bundle.contexts_by_symbol[decision_v2.symbol]
+            ok_val, val_reason = self._post_validate_trade(decision_v2, target_ctx)
         exec_res: dict[str, Any] | None = None
 
         if ok_val and decision_v2.action != "HOLD":
+            target_ctx = scoped_bundle.contexts_by_symbol[decision_v2.symbol]
             active_side, pos_qty = self._find_open_position(
-                bundle.vst_status, decision_v2.symbol
+                scoped_bundle.vst_status, decision_v2.symbol
             )
             lean_dec = TradeDecision.model_validate(
                 decision_v2.to_lean_decision_dict(
@@ -572,13 +745,13 @@ class DeterministicTradingOrchestrator:
                 )
             )
             ref_price = float(
-                (cand_ctx.get("market_snapshot") or {}).get("last_price") or 0.0
+                (target_ctx.get("market_snapshot") or {}).get("last_price") or 0.0
             )
             res = self.bridge.submit_decision(
                 lean_dec,
                 current_price=ref_price,
                 open_positions_count=int(
-                    bundle.vst_status.get("open_positions_count") or 0
+                    scoped_bundle.vst_status.get("open_positions_count") or 0
                 ),
                 position_qty=pos_qty,
             )
@@ -587,14 +760,14 @@ class DeterministicTradingOrchestrator:
                 self._notify_thesis_upsert(
                     decision_id=decision_id,
                     decision=decision_v2,
-                    snapshot_id=bundle.snapshot_id,
+                    snapshot_id=scoped_bundle.snapshot_id,
                 )
         elif decision_v2.action == "HOLD":
             exec_res = {"status": "SKIPPED_HOLD"}
 
         audit = DecisionAuditV1(
             decision_id=decision_id,
-            snapshot_id=bundle.snapshot_id,
+            snapshot_id=scoped_bundle.snapshot_id,
             context_hash=s2_prompt.context_hash,
             prefix_hash=s2_prompt.prefix_hash,
             model_provider_id=self.model_id,
@@ -661,5 +834,8 @@ __all__ = [
     "PreFetchedBundle",
     "StagePromptAssemblerProtocol",
     "StatelessStagePromptAssembler",
+    "format_forecast_for_prompt",
     "parse_structured_model_json",
+    "scope_vst_status_to_symbols",
+    "serialize_stage2_candidate",
 ]

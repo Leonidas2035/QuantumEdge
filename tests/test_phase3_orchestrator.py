@@ -39,6 +39,9 @@ from quantum_edge_core.orchestrator import (
     StatelessStagePromptAssembler,
     build_p0_static_prefix,
 )
+from quantum_edge_core.orchestrator.deterministic_orchestrator import (
+    scope_vst_status_to_symbols,
+)
 from quantum_edge_ml.model_router.backends.transport import (
     ImageAttachment,
     LLMRequest,
@@ -603,3 +606,197 @@ def test_cli_run_cycle_mock_dry_run(tmp_path: Path, capsys: pytest.CaptureFixtur
     with sqlite3.connect(u_db) as conn:
         cnt = conn.execute("SELECT COUNT(*) FROM decision_audits").fetchone()[0]
     assert cnt == 1
+
+
+def test_orchestrator_scopes_foreign_positions_and_accepts_custom_symbols(tmp_path: Path) -> None:
+    # 1. Dynamic symbols accepted and normalized cleanly in ScreeningDecisionV1 & TradeDecisionV2
+    s_custom = ScreeningDecisionV1(
+        market_regime_summary="AVAX impulse breakout",
+        action="DRILL_DOWN",
+        candidate_symbol=" avaxusdt ",
+        hold_blocker_code=HoldBlockerCode.NONE,
+        candidate_rationale="Strong CVD on AVAXUSDT.",
+        estimated_edge_bps=95.0,
+    )
+    assert s_custom.candidate_symbol == "AVAXUSDT"
+
+    d_custom = TradeDecisionV2(
+        regime_read="15m momentum expansion on LINKUSDT",
+        primary_edge="LINKUSDT passive limit into liquidity cluster",
+        counter_thesis="BTC stall could slow alt follow-through",
+        action="OPEN_LONG",
+        symbol=" linkusdt ",
+        confidence=0.71,
+        order_type="LIMIT",
+        entry_price=15.20,
+        sl_price=14.85,
+        tp_price=15.90,
+        margin_vst=250.0,
+        leverage=3,
+    )
+    assert d_custom.symbol == "LINKUSDT"
+
+    with pytest.raises(ValidationError):
+        TradeDecisionV2(
+            regime_read="bad symbol format",
+            primary_edge="reject slash symbol",
+            counter_thesis="invalid",
+            action="HOLD",
+            symbol="AVAX/USDT",
+            hold_blocker_code=HoldBlockerCode.NO_LIQ_ASYMMETRY,
+            confidence=0.5,
+        )
+
+    # 2. Scope helper strips foreign positions/orders (e.g. BNBUSDT) while preserving ignored counters
+    raw_status = {
+        "sandbox": True,
+        "balance_vst": {"free": 9000.0, "total": 10000.0, "used": 1000.0},
+        "open_positions_count": 2,
+        "open_positions": [
+            {"symbol": "BNBUSDT", "positionSide": "LONG", "contracts": 10.0},
+            {"symbol": "AVAX/USDT:USDT", "positionSide": "SHORT", "contracts": 5.0},
+        ],
+        "open_orders_count": 2,
+        "open_orders": [
+            {"id": "f-1", "symbol": "BNB/USDT:USDT"},
+            {"id": "a-1", "symbol": "AVAXUSDT"},
+        ],
+    }
+    scoped = scope_vst_status_to_symbols(raw_status, ("AVAXUSDT", "LINKUSDT"))
+    assert scoped["open_positions_count"] == 1
+    assert scoped["open_positions_symbols"] == ["AVAXUSDT"]
+    assert scoped["open_orders_count"] == 1
+    assert scoped["ignored_foreign_positions_count"] == 1
+    assert scoped["ignored_foreign_orders_count"] == 1
+
+    # 3. End-to-end orchestrator ignores foreign BNBUSDT position for LLM, router, and LeanRiskGuard
+    t0 = 1_795_641_840_000
+    contexts: dict[str, dict[str, Any]] = {}
+    for sym, px in (("AVAXUSDT", 28.0), ("LINKUSDT", 15.2)):
+        bars = [
+            {
+                "ts": t0 + i * 300_000,
+                "open": px,
+                "high": round(px * 1.003, 4),
+                "low": round(px * 0.997, 4),
+                "close": round(px * 1.001, 4),
+                "volume": 200.0,
+            }
+            for i in range(60)
+        ]
+        contexts[sym] = {
+            "market_snapshot": {
+                "symbol": sym,
+                "bid": px,
+                "ask": round(px * 1.002, 4),
+                "last_price": px,
+                "spread_bps": 20.0,
+                "is_stale": False,
+            },
+            "ohlcv_by_tf": {"4h": bars, "1h": bars, "15m": bars, "5m": bars, "1m": bars},
+            "orderbook": {"bids": [[px, 25.0]], "asks": [[round(px * 1.002, 4), 20.0]]},
+            "derivatives": {"funding_rate": 0.0001, "open_interest": 10000.0},
+            "microstructure_and_liquidity": {
+                "liqmap": {"status": "OK", "symbol": sym, "timeframe": "1h", "regime": "flat", "last_price": px, "zones": []},
+                "orderflow": {"status": "OK", "imbalance": 0.25, "cvd_or_delta": 10.0, "metrics": {"imbalance_top10": 0.25}},
+                "composite_signal": {"status": "OK", "signal": "LONG", "score": 45, "components": {}},
+            },
+        }
+
+    bundle_with_foreign = PreFetchedBundle(
+        snapshot_id="snap-custom-01",
+        vst_status={
+            "sandbox": True,
+            "balance_vst": {"free": 9200.0, "total": 10000.0, "used": 800.0},
+            "open_positions_count": 2,  # Polluted by foreign positions!
+            "open_positions": [
+                {"symbol": "BNBUSDT", "positionSide": "LONG", "contracts": 50.0},
+                {"symbol": "ETHUSDT", "positionSide": "SHORT", "contracts": 2.0},
+            ],
+            "open_orders_count": 1,
+            "open_orders": [{"id": "bnb-sl", "symbol": "BNBUSDT"}],
+        },
+        contexts_by_symbol=contexts,
+        fetch_ms=1.0,
+    )
+
+    u_ledger = UsageLedger(tmp_path / "custom_u.sqlite3")
+    o_ledger = OrderLedger(tmp_path / "custom_o.sqlite3")
+    paper = PaperExchangeClient()
+    # max_open_positions=1 would BLOCK AVAXUSDT if foreign BNBUSDT/ETHUSDT were counted!
+    risk_cfg = RiskConfig(allowed_symbols=("AVAXUSDT", "LINKUSDT"), max_open_positions=1)
+    bridge = HarnessBridge(LeanExecutor(paper, o_ledger, LeanRiskGuard(risk_cfg)), tmp_path / "custom_j.jsonl")
+
+    s1_reply = json.dumps(
+        {
+            "market_regime_summary": "AVAXUSDT breakout while LINKUSDT flat.",
+            "action": "DRILL_DOWN",
+            "candidate_symbol": "AVAXUSDT",
+            "hold_blocker_code": "NONE",
+            "candidate_rationale": "Strong composite +45 on AVAXUSDT.",
+            "estimated_edge_bps": 110.0,
+        }
+    )
+    s2_reply = json.dumps(
+        {
+            "regime_read": "15m constructive range breakout on AVAXUSDT",
+            "primary_edge": "Orderflow +0.25 and +125bps upside target via passive LIMIT",
+            "counter_thesis": "Support pullback to 27.60 possible",
+            "invalidation_price": 27.45,
+            "action": "OPEN_LONG",
+            "symbol": "AVAXUSDT",
+            "hold_blocker_code": "NONE",
+            "thesis_status": "NEW",
+            "confidence": 0.74,
+            "evidence_refs": ["AVAXUSDT:15m"],
+            "order_type": "LIMIT",
+            "entry_price": 28.0,
+            "sl_price": 27.40,
+            "tp_price": 28.40,
+            "margin_vst": 300.0,
+            "leverage": 3,
+            "qty": None,
+        }
+    )
+    transport = _ScriptedTransport(u_ledger, [s1_reply, s2_reply])
+    orch = DeterministicTradingOrchestrator(
+        transport=transport,
+        ledger=u_ledger,
+        bridge=bridge,
+        stage1_timeout_sec=90.0,
+        stage2_timeout_sec=150.0,
+    )
+    try:
+        audit = asyncio.run(orch.run_decision_cycle(bundle_with_foreign, trigger_summary="CUSTOM_SCOPED"))
+        assert audit.validator_passed is True
+        assert audit.execution_result is not None
+        assert audit.execution_result["status"] == "SUBMITTED"
+        assert len(transport.requests) == 2
+        assert transport.requests[0].timeout_sec == 90.0
+        assert transport.requests[1].timeout_sec == 150.0
+        assert "BNBUSDT" not in transport.requests[0].combined_user_text
+        assert "BNBUSDT" not in transport.requests[1].combined_user_text
+        assert "ETHUSDT" not in transport.requests[1].combined_user_text
+
+        # Out-of-scope candidate from Stage 1 must fail safely without KeyError
+        t_oos = _ScriptedTransport(
+            u_ledger,
+            [
+                json.dumps(
+                    {
+                        "market_regime_summary": "Model halllucinated symbol.",
+                        "action": "DRILL_DOWN",
+                        "candidate_symbol": "DOGEUSDT",
+                        "hold_blocker_code": "NONE",
+                        "candidate_rationale": "Out of session scope.",
+                        "estimated_edge_bps": 50.0,
+                    }
+                )
+            ],
+        )
+        orch_oos = DeterministicTradingOrchestrator(transport=t_oos, ledger=u_ledger, bridge=bridge)
+        audit_oos = asyncio.run(orch_oos.run_decision_cycle(bundle_with_foreign, trigger_summary="OOS_CHECK"))
+        assert audit_oos.validator_passed is False
+        assert audit_oos.validator_reason == "SYMBOL_OUT_OF_SCOPE:DOGEUSDT"
+    finally:
+        u_ledger.close()

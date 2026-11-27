@@ -109,23 +109,47 @@ class LLMTransport(abc.ABC):
         ...
 
 
+def normalize_agy_model_alias(model: str, level: ThinkingLevel) -> str:
+    """Strip any existing thinking-level suffix, clamp per model, and return canonical alias."""
+    from quantum_edge_ml.model_router.backends.google_gemini import clamp_thinking_level
+
+    base = model.strip()
+    for suffix in ("-xhigh", "-high", "-medium", "-low"):
+        if base.lower().endswith(suffix):
+            base = base[: -len(suffix)]
+            break
+    clamped = clamp_thinking_level(base, level)
+    return f"{base}-{clamped.value}"
+
+
 class AgyProxyTransport(LLMTransport):
-    """Adapter over local tools/agy_openai_proxy.py for paired A/B benchmarking."""
+    """Adapter over local tools/agy_openai_proxy.py for paired A/B benchmarking.
+
+    Note on UsageLedger isolation: ``AgyProxyTransport`` records full
+    ``UsageRecordV1`` telemetry (including ``decision_id``, ``stage``,
+    ``prefix_hash``, ``context_hash``, and ``snapshot_id``) when
+    ``record_to_ledger=True``. Do not pass the same ``--ledger-db`` to
+    ``tools/agy_openai_proxy.py`` concurrently unless ``record_to_ledger=False``.
+    """
 
     def __init__(
         self,
         ledger: UsageLedger,
         base_url: str = "http://127.0.0.1:8045/v1",
         http_client: httpx.AsyncClient | None = None,
+        *,
+        record_to_ledger: bool = True,
     ) -> None:
         super().__init__(ledger)
         self.base_url = base_url.rstrip("/")
+        self.record_to_ledger = bool(record_to_ledger)
         self._owns_http = http_client is None
         self._http = http_client or httpx.AsyncClient(timeout=httpx.Timeout(200.0, connect=5.0))
 
     async def generate(self, req: LLMRequest) -> LLMResponse:
         rec_id = f"agy-{uuid.uuid4().hex[:16]}"
-        agy_alias = f"{req.model}-{req.thinking_level.value}"
+        agy_alias = normalize_agy_model_alias(req.model, req.thinking_level)
+        effective_level = ThinkingLevel(agy_alias.rsplit("-", 1)[-1])
         t0 = time.perf_counter()
         user_text = req.combined_user_text
         input_chars = len(req.system_instruction) + len(user_text)
@@ -163,7 +187,7 @@ class AgyProxyTransport(LLMTransport):
                 transport=TransportChannel.AGY_CLI_PROXY,
                 model_provider_id=req.model,
                 agy_alias=agy_alias,
-                thinking_level=req.thinking_level,
+                thinking_level=effective_level,
                 request_status=RequestStatus.OK,
                 retry_of=req.retry_of,
                 provider_input_tokens=u.get("prompt_tokens"),
@@ -180,53 +204,56 @@ class AgyProxyTransport(LLMTransport):
                 context_hash=req.context_hash,
                 snapshot_id=req.snapshot_id,
             )
-            self.ledger.record_usage(usage)
+            if self.record_to_ledger:
+                self.ledger.record_usage(usage)
             return LLMResponse(text=text, usage=usage)
         except httpx.TimeoutException as exc:
-            self.ledger.record_usage(
-                UsageRecordV1(
-                    record_id=rec_id,
-                    decision_id=req.decision_id,
-                    stage=req.stage,
-                    transport=TransportChannel.AGY_CLI_PROXY,
-                    model_provider_id=req.model,
-                    agy_alias=agy_alias,
-                    thinking_level=req.thinking_level,
-                    request_status=RequestStatus.TIMEOUT,
-                    error_code=type(exc).__name__,
-                    retry_of=req.retry_of,
-                    input_chars=input_chars,
-                    latency_ms=round((time.perf_counter() - t0) * 1000.0, 2),
-                    timeout_ms=req.timeout_sec * 1000.0,
-                    is_censored=True,
-                    prefix_hash=req.prefix_hash,
-                    context_hash=req.context_hash,
-                    snapshot_id=req.snapshot_id,
+            if self.record_to_ledger:
+                self.ledger.record_usage(
+                    UsageRecordV1(
+                        record_id=rec_id,
+                        decision_id=req.decision_id,
+                        stage=req.stage,
+                        transport=TransportChannel.AGY_CLI_PROXY,
+                        model_provider_id=req.model,
+                        agy_alias=agy_alias,
+                        thinking_level=effective_level,
+                        request_status=RequestStatus.TIMEOUT,
+                        error_code=type(exc).__name__,
+                        retry_of=req.retry_of,
+                        input_chars=input_chars,
+                        latency_ms=round((time.perf_counter() - t0) * 1000.0, 2),
+                        timeout_ms=req.timeout_sec * 1000.0,
+                        is_censored=True,
+                        prefix_hash=req.prefix_hash,
+                        context_hash=req.context_hash,
+                        snapshot_id=req.snapshot_id,
+                    )
                 )
-            )
             raise
         except Exception as exc:
-            self.ledger.record_usage(
-                UsageRecordV1(
-                    record_id=rec_id,
-                    decision_id=req.decision_id,
-                    stage=req.stage,
-                    transport=TransportChannel.AGY_CLI_PROXY,
-                    model_provider_id=req.model,
-                    agy_alias=agy_alias,
-                    thinking_level=req.thinking_level,
-                    request_status=RequestStatus.ERROR,
-                    error_code=str(exc)[:180],
-                    retry_of=req.retry_of,
-                    input_chars=input_chars,
-                    latency_ms=round((time.perf_counter() - t0) * 1000.0, 2),
-                    timeout_ms=req.timeout_sec * 1000.0,
-                    is_censored=False,
-                    prefix_hash=req.prefix_hash,
-                    context_hash=req.context_hash,
-                    snapshot_id=req.snapshot_id,
+            if self.record_to_ledger:
+                self.ledger.record_usage(
+                    UsageRecordV1(
+                        record_id=rec_id,
+                        decision_id=req.decision_id,
+                        stage=req.stage,
+                        transport=TransportChannel.AGY_CLI_PROXY,
+                        model_provider_id=req.model,
+                        agy_alias=agy_alias,
+                        thinking_level=effective_level,
+                        request_status=RequestStatus.ERROR,
+                        error_code=str(exc)[:180],
+                        retry_of=req.retry_of,
+                        input_chars=input_chars,
+                        latency_ms=round((time.perf_counter() - t0) * 1000.0, 2),
+                        timeout_ms=req.timeout_sec * 1000.0,
+                        is_censored=False,
+                        prefix_hash=req.prefix_hash,
+                        context_hash=req.context_hash,
+                        snapshot_id=req.snapshot_id,
+                    )
                 )
-            )
             raise
 
     async def count_tokens(
@@ -249,4 +276,5 @@ __all__ = [
     "LLMRequest",
     "LLMResponse",
     "LLMTransport",
+    "normalize_agy_model_alias",
 ]

@@ -13,11 +13,15 @@ from enum import Enum
 from pathlib import Path
 from typing import Any
 
-from quantum_edge_core.contracts.optimization import TradeDecisionV2
+from quantum_edge_core.contracts.optimization import ForecastBundleV1, TradeDecisionV2
 from quantum_edge_core.execution.market_context_serializer import MarketContextSerializer
 from quantum_edge_core.execution.storage_policy import (
     CANONICAL_SSD_DURABLE_PATHS,
     apply_sqlite_wal_pragmas,
+)
+from quantum_edge_core.orchestrator.deterministic_orchestrator import (
+    format_forecast_for_prompt,
+    serialize_stage2_candidate,
 )
 from quantum_edge_core.orchestrator.prompts import build_p0_static_prefix
 from quantum_edge_ml.model_router.backends.transport import ImageAttachment
@@ -168,6 +172,29 @@ class ThesisMemoryStore:
             )
         return "\n".join(lines)
 
+    def max_rowid(self) -> int:
+        """Return monotonic SQLite rowid watermark for checkpointing P1 without clock drift."""
+        with self._lock:
+            row = self._conn.execute("SELECT COALESCE(MAX(rowid), 0) FROM theses").fetchone()
+            return int(row[0]) if row is not None else 0
+
+    def render_intra_hour_delta_block(self, *, since_rowid: int, max_rows: int = 12) -> str:
+        """Render theses inserted/updated AFTER the current P1 checkpoint for P2 injection."""
+        with self._lock:
+            rows = self._conn.execute(
+                "SELECT * FROM theses WHERE rowid > ? ORDER BY rowid ASC LIMIT ?",
+                (int(since_rowid), int(max_rows)),
+            ).fetchall()
+        if not rows:
+            return ""
+        lines = ["INTRA_HOUR_THESIS_DELTA|id,sym,dir,state,conf,inv,tgt,summary"]
+        for r in rows:
+            lines.append(
+                f"{r['thesis_id']}|{r['symbol']}|{r['direction']}|{r['position_state']}|"
+                f"{r['confidence']:.2f}|{r['invalidation_json']}|{r['target_zones_json']}|{r['summary_text']}"
+            )
+        return "\n".join(lines)
+
 
 @dataclass(slots=True)
 class CheckpointState:
@@ -180,6 +207,7 @@ class CheckpointState:
     base_hash: str
     p1_text: str
     regime_signature: str
+    thesis_watermark: int = 0
 
 
 class SnapshotStore:
@@ -231,6 +259,7 @@ class SnapshotStore:
         seq: int,
         p1_text: str,
         regime_signature: str,
+        thesis_watermark: int = 0,
     ) -> CheckpointState:
         b_hash = hashlib.sha256(p1_text.encode("utf-8")).hexdigest()[:16]
         self._checkpoint = CheckpointState(
@@ -241,6 +270,7 @@ class SnapshotStore:
             base_hash=b_hash,
             p1_text=p1_text,
             regime_signature=regime_signature,
+            thesis_watermark=int(thesis_watermark),
         )
         self.eviction_monitor.reset_misses()
         return self._checkpoint
@@ -352,6 +382,11 @@ class PrefixContextAssembler:
         )
         if mode == ResyncMode.RESYNC or self.snapshot_store.current is None:
             self.thesis_store.compact_expired()
+            watermark = (
+                self.thesis_store.max_rowid()
+                if hasattr(self.thesis_store, "max_rowid")
+                else 0
+            )
             p1_text = self._build_p1_slow(bundle.contexts_by_symbol)
             self.snapshot_store.commit_checkpoint(
                 snapshot_id=bundle.snapshot_id,
@@ -359,18 +394,27 @@ class PrefixContextAssembler:
                 seq=current_seq,
                 p1_text=p1_text,
                 regime_signature=regime_signature,
+                thesis_watermark=watermark,
             )
             return p1_text, ResyncMode.RESYNC
         if mode == ResyncMode.LOCAL_RECONSTRUCT:
             self.snapshot_store.advance_seq(current_seq)
         return self.snapshot_store.current.p1_text, mode
 
+    def _intra_hour_thesis_delta(self) -> str:
+        cp = self.snapshot_store.current
+        if cp is None or not hasattr(self.thesis_store, "render_intra_hour_delta_block"):
+            return ""
+        return self.thesis_store.render_intra_hour_delta_block(
+            since_rowid=cp.thesis_watermark
+        )
+
     def assemble_stage1(
         self,
         *,
         bundle: Any,
         trigger_summary: str,
-        forecasts_by_symbol: dict[str, dict[str, Any]] | None = None,
+        forecasts_by_symbol: dict[str, dict[str, Any] | ForecastBundleV1] | None = None,
         current_seq: int = 0,
         regime_signature: str = "DEFAULT",
         now_ts: float | None = None,
@@ -398,11 +442,15 @@ class PrefixContextAssembler:
                 sort_keys=True,
             ),
         ]
+        intra_delta = self._intra_hour_thesis_delta()
+        if intra_delta:
+            p2_parts.append(intra_delta)
         for sym in sorted(bundle.contexts_by_symbol.keys()):
             ctx = bundle.contexts_by_symbol[sym]
             snap = ctx.get("market_snapshot") or {}
             micro = ctx.get("microstructure_and_liquidity") or {}
-            row = {
+            fc_fmt = format_forecast_for_prompt((forecasts_by_symbol or {}).get(sym))
+            row: dict[str, Any] = {
                 "sym": sym,
                 "last": snap.get("last_price"),
                 "spr_bps": snap.get("spread_bps"),
@@ -411,11 +459,14 @@ class PrefixContextAssembler:
                 "comp_sig": (micro.get("composite_signal") or {}).get("signal"),
                 "comp_score": (micro.get("composite_signal") or {}).get("score"),
                 "funding": (ctx.get("derivatives") or {}).get("funding_rate"),
-                "forecast": (forecasts_by_symbol or {}).get(sym),
             }
+            if not isinstance(fc_fmt, str):
+                row["forecast"] = fc_fmt
             p2_parts.append(
                 "PAIR_SUM|" + json.dumps(row, separators=(",", ":"), sort_keys=True)
             )
+            if isinstance(fc_fmt, str):
+                p2_parts.append(fc_fmt)
             bars_5m = (ctx.get("ohlcv_by_tf") or {}).get("5m") or []
             if bars_5m:
                 p2_parts.append(
@@ -435,7 +486,7 @@ class PrefixContextAssembler:
         bundle: Any,
         candidate_symbol: str,
         stage1_summary: dict[str, Any],
-        forecast: dict[str, Any] | None = None,
+        forecast: dict[str, Any] | ForecastBundleV1 | None = None,
     ) -> AssembledPrompt:
         p1_slow = (
             self.snapshot_store.current.p1_text
@@ -444,49 +495,37 @@ class PrefixContextAssembler:
         )
         sym = candidate_symbol.upper()
         cand_ctx = bundle.contexts_by_symbol[sym]
-        if self.include_images:
-            ser_cand = self.serializer.serialize_single_asset(
-                cand_ctx, mode="hybrid_webp", ohlcv_tail=25, include_full_liqmap=True
-            )
-            cand_text = ser_cand.text
-            images = ser_cand.images
-        else:
-            ser_base = self.serializer.serialize_single_asset(
-                cand_ctx, mode="multiscale", ohlcv_tail=25, include_full_liqmap=True
-            )
-            extra_ticks: list[str] = []
-            ohlcv = cand_ctx.get("ohlcv_by_tf") or {}
-            for tf in ("15m", "5m", "1m"):
-                bars = ohlcv.get(tf) or []
-                if bars:
-                    extra_ticks.append(
-                        self.serializer.encode_ohlcv_tick_delta(sym, tf, bars[-25:])
-                    )
-            cand_text = ser_base.text + (
-                "\n" + "\n".join(extra_ticks) if extra_ticks else ""
-            )
-            images = []
+        cand_text, images = serialize_stage2_candidate(
+            self.serializer,
+            cand_ctx,
+            include_images=self.include_images,
+            ohlcv_tail=25,
+        )
+        fc_fmt = format_forecast_for_prompt(forecast)
+        s2_header: dict[str, Any] = {
+            "snapshot_id": bundle.snapshot_id,
+            "candidate": sym,
+            "stage1": stage1_summary,
+            "account": {
+                "free_vst": (bundle.vst_status.get("balance_vst") or {}).get("free"),
+                "open_pos": bundle.vst_status.get("open_positions", []),
+                "open_orders": bundle.vst_status.get("open_orders", []),
+            },
+        }
+        if not isinstance(fc_fmt, str):
+            s2_header["forecast"] = fc_fmt
 
         p2_parts = [
             "=== P2_STAGE2_DEEP_DRILLDOWN ===",
-            json.dumps(
-                {
-                    "snapshot_id": bundle.snapshot_id,
-                    "candidate": sym,
-                    "stage1": stage1_summary,
-                    "forecast": forecast,
-                    "account": {
-                        "free_vst": (bundle.vst_status.get("balance_vst") or {}).get("free"),
-                        "open_pos": bundle.vst_status.get("open_positions", []),
-                        "open_orders": bundle.vst_status.get("open_orders", []),
-                    },
-                },
-                separators=(",", ":"),
-                sort_keys=True,
-            ),
-            cand_text,
-            "OUTPUT_CONTRACT: Return ONLY valid JSON matching STAGE2_SCHEMA.",
+            json.dumps(s2_header, separators=(",", ":"), sort_keys=True),
         ]
+        intra_delta = self._intra_hour_thesis_delta()
+        if intra_delta:
+            p2_parts.append(intra_delta)
+        if isinstance(fc_fmt, str):
+            p2_parts.append(fc_fmt)
+        p2_parts.append(cand_text)
+        p2_parts.append("OUTPUT_CONTRACT: Return ONLY valid JSON matching STAGE2_SCHEMA.")
         return self._finalize(p1_slow, "\n".join(p2_parts), images, ResyncMode.CACHE_HIT)
 
     def observe_cache_result(
