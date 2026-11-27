@@ -6,6 +6,7 @@ from typing import Any
 
 from quantum_edge_core.contracts.lean import OrderResult, TradeDecision
 from quantum_edge_core.execution.bingx_intent import build_bingx_order_params
+from quantum_edge_core.execution.bingx_vst_adapter import ensure_isolated_margin_and_leverage
 from quantum_edge_core.execution.order_ledger import OrderLedger
 from quantum_edge_core.execution.risk_guard import LeanRiskGuard
 
@@ -89,9 +90,31 @@ class LeanExecutor:
                 error="DUPLICATE_CLIENT_ORDER_ID",
             )
 
-        # 4. Canonical BingX Hedge Mode parameters
+        # 4. Canonical BingX Hedge Mode parameters & exchange ISOLATED / leverage enforcement
         intent = _ACTION_TO_INTENT[decision.action]
         mapped = build_bingx_order_params(intent, hedged=True)
+        lev = int(decision.leverage) if decision.leverage is not None else 1
+
+        if decision.action in ("OPEN_LONG", "OPEN_SHORT") and not mapped["reduceOnly"]:
+            try:
+                ensure_isolated_margin_and_leverage(
+                    self.exchange_client,
+                    symbol=decision.symbol,
+                    leverage=lev,
+                    position_side=mapped["positionSide"],
+                    require_isolated=self.risk_guard.config.require_isolated_margin,
+                )
+            except Exception as exc:
+                err_msg = f"ISOLATED_LEVERAGE_SETUP_FAILED: {exc}"
+                self.ledger.update_status(coid, status="REJECTED", error=err_msg)
+                return OrderResult(
+                    client_order_id=coid,
+                    symbol=decision.symbol,
+                    action=decision.action,
+                    status="REJECTED",
+                    error=err_msg,
+                )
+
         params: dict[str, Any] = {
             "positionSide": mapped["positionSide"],
             "reduceOnly": mapped["reduceOnly"],

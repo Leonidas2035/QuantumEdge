@@ -49,7 +49,11 @@ from quantum_edge_core.execution.harness_bridge import (
 )
 from quantum_edge_core.execution.lean_executor import LeanExecutor
 from quantum_edge_core.execution.order_ledger import OrderLedger
-from quantum_edge_core.execution.risk_guard import LeanRiskGuard, RiskConfig
+from quantum_edge_core.execution.risk_guard import (
+    QUANTUMEDGE_DEFAULT_UNIVERSE,
+    LeanRiskGuard,
+    RiskConfig,
+)
 
 
 DEFAULT_LEDGER_DB = ROOT / "runtime" / "lean_orders.sqlite3"
@@ -230,8 +234,32 @@ def build_parser() -> argparse.ArgumentParser:
     )
     p_cycle.add_argument(
         "--symbols",
-        default="BTCUSDT,ETHUSDT,SOLUSDT,XRPUSDT",
-        help="Comma-separated symbols (default: BTCUSDT,ETHUSDT,SOLUSDT,XRPUSDT)",
+        default=",".join(QUANTUMEDGE_DEFAULT_UNIVERSE),
+        help="Comma-separated symbols (default: BNBUSDT,LINKUSDT,SUIUSDT)",
+    )
+    p_cycle.add_argument(
+        "--max-margin-vst",
+        type=float,
+        default=1000.0,
+        help="Max isolated margin per pair in VST (default: 1000.0)",
+    )
+    p_cycle.add_argument(
+        "--max-leverage",
+        type=int,
+        default=50,
+        help="Max leverage multiplier per pair (default: 50)",
+    )
+    p_cycle.add_argument(
+        "--max-open-positions",
+        type=int,
+        default=3,
+        help="Max simultaneous open positions across scoped universe (default: 3)",
+    )
+    p_cycle.add_argument(
+        "--max-notional-vst",
+        type=float,
+        default=50_000.0,
+        help="Max notional per pair in VST (default: 50000.0)",
     )
     p_cycle.add_argument(
         "--trigger",
@@ -552,6 +580,9 @@ def _build_offline_mock_bundle(
         "ETHUSDT": (2420.0, 25.0),
         "SOLUSDT": (143.0, 26.0),
         "XRPUSDT": (0.58, 27.0),
+        "BNBUSDT": (620.0, 1.5),
+        "LINKUSDT": (15.5, 18.0),
+        "SUIUSDT": (3.2, 16.0),
     }
     t0 = 1_795_641_840_000
     for sym in symbols:
@@ -635,15 +666,19 @@ def _cmd_run_cycle(args: argparse.Namespace) -> int:
     from quantum_edge_ml.model_router.usage_ledger import UsageLedger
 
     class _CliMockTransport(LLMTransport):
+        def __init__(self, ledger: UsageLedger, default_symbol: str = "BNBUSDT") -> None:
+            super().__init__(ledger)
+            self.default_symbol = default_symbol
+
         async def generate(self, req: LLMRequest) -> LLMResponse:
             rec_id = f"mock-{uuid.uuid4().hex[:12]}"
             in_chars = len(req.system_instruction) + len(req.combined_user_text)
             if req.stage == "stage1_screen":
                 txt = json.dumps(
                     {
-                        "market_regime_summary": "BTC 1h constructive; alt spreads wide.",
+                        "market_regime_summary": f"{self.default_symbol} 1h constructive; alt spreads wide.",
                         "action": "HOLD",
-                        "candidate_symbol": "BTCUSDT",
+                        "candidate_symbol": self.default_symbol,
                         "hold_blocker_code": "NO_LIQ_ASYMMETRY",
                         "candidate_rationale": "Offline mock fast screen HOLD.",
                         "estimated_edge_bps": 12.0,
@@ -690,11 +725,19 @@ def _cmd_run_cycle(args: argparse.Namespace) -> int:
 
     usage_ledger = UsageLedger(args.ledger_db)
     order_ledger = OrderLedger(args.order_ledger_db)
-    risk_cfg = RiskConfig(allowed_symbols=symbols)
+    risk_cfg = RiskConfig.for_qe_isolated_50x(
+        symbols=symbols,
+        max_margin_vst=args.max_margin_vst,
+        max_leverage=args.max_leverage,
+        max_open_positions=args.max_open_positions,
+        max_notional_per_pair_vst=args.max_notional_vst,
+    )
     risk_guard = LeanRiskGuard(risk_cfg)
 
     if args.transport == "mock":
-        transport: LLMTransport = _CliMockTransport(usage_ledger)
+        transport: LLMTransport = _CliMockTransport(
+            usage_ledger, default_symbol=symbols[0] if symbols else "BNBUSDT"
+        )
     elif args.transport == "gemini-direct":
         transport = GeminiDirectClient(usage_ledger, mode="interactions")
     else:
@@ -794,6 +837,8 @@ def _cmd_protect_once(args: argparse.Namespace) -> int:
         allowed_symbols = tuple(
             s.strip().upper() for s in str(raw_allowed).split(",") if s.strip()
         )
+    elif args.live_vst or args.read_live_vst:
+        allowed_symbols = QUANTUMEDGE_DEFAULT_UNIVERSE
     else:
         allowed_symbols = tuple(risk_cfg.allowed_symbols)
 

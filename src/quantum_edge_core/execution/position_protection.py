@@ -24,7 +24,15 @@ from quantum_edge_core.execution.harness_bridge import HarnessBridge
 
 logger = logging.getLogger("quantum_edge_core.execution.position_protection")
 
-DEFAULT_ALLOWED_SYMBOLS: tuple[str, ...] = ("BTCUSDT", "ETHUSDT", "SOLUSDT", "XRPUSDT")
+DEFAULT_ALLOWED_SYMBOLS: tuple[str, ...] = (
+    "BTCUSDT",
+    "ETHUSDT",
+    "SOLUSDT",
+    "XRPUSDT",
+    "BNBUSDT",
+    "LINKUSDT",
+    "SUIUSDT",
+)
 
 
 class PositionProtectionWatcher:

@@ -215,7 +215,7 @@ class TradeDecisionV2(BaseModel):
     sl_price: float | None = Field(default=None, gt=0)
     tp_price: float | None = Field(default=None, gt=0)
     margin_vst: float | None = Field(default=None, gt=0)
-    leverage: int | None = Field(default=None, ge=1, le=20)
+    leverage: int | None = Field(default=None, ge=1, le=50)
     qty: float | None = Field(default=None, gt=0)
 
     @model_validator(mode="after")

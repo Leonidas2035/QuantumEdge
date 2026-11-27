@@ -146,6 +146,90 @@ def is_vst_sandbox_client(client: Any) -> bool:
     return False
 
 
+_HARMLESS_MARGIN_LEV_FRAGMENTS: tuple[str, ...] = (
+    "no need to change",
+    "already",
+    "not modified",
+    "same",
+)
+
+
+def _is_harmless_setup_error(exc: Exception) -> bool:
+    msg = str(exc).lower()
+    return any(frag in msg for frag in _HARMLESS_MARGIN_LEV_FRAGMENTS)
+
+
+def ensure_isolated_margin_and_leverage(
+    client: Any,
+    *,
+    symbol: str,
+    leverage: int,
+    position_side: str,
+    require_isolated: bool = True,
+) -> dict[str, Any]:
+    """Ensure ISOLATED margin mode and target leverage on BingX VST before opening a trade.
+
+    Fail-safe on paper/offline clients that do not implement set_margin_mode / set_leverage.
+    Enforces VST sandbox check for real ccxt.Exchange clients.
+    """
+    if str(os.getenv("REAL_TRADING", "false")).strip().lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }:
+        raise RuntimeError(
+            "REAL_TRADING is prohibited in ensure_isolated_margin_and_leverage()."
+        )
+
+    set_mm = getattr(client, "set_margin_mode", None)
+    set_lev = getattr(client, "set_leverage", None)
+    if not callable(set_mm) and not callable(set_lev):
+        return {"applied": False, "reason": "client_unsupported"}
+
+    if isinstance(client, ccxt.Exchange) and not is_vst_sandbox_client(client):
+        raise RuntimeError(
+            "Refusing to set margin mode / leverage: ccxt client is not verified in VST sandbox mode."
+        )
+
+    ccxt_sym = to_ccxt_swap_symbol(symbol)
+    side_upper = position_side.strip().upper()
+    mm_status = "skipped"
+    lev_status = "skipped"
+
+    if require_isolated and callable(set_mm):
+        try:
+            set_mm("ISOLATED", ccxt_sym)
+            mm_status = "applied"
+        except Exception as exc:
+            if _is_harmless_setup_error(exc):
+                mm_status = "already_isolated"
+            else:
+                raise RuntimeError(f"set_margin_mode('ISOLATED', {ccxt_sym}) failed: {exc}") from exc
+
+    if callable(set_lev):
+        try:
+            set_lev(int(leverage), ccxt_sym, params={"side": side_upper})
+            lev_status = "applied"
+        except Exception as exc:
+            if _is_harmless_setup_error(exc):
+                lev_status = "already_set"
+            else:
+                raise RuntimeError(
+                    f"set_leverage({int(leverage)}, {ccxt_sym}, side={side_upper}) failed: {exc}"
+                ) from exc
+
+    return {
+        "applied": True,
+        "symbol": normalize_compact_symbol(ccxt_sym) or symbol.upper(),
+        "ccxt_symbol": ccxt_sym,
+        "margin_mode": mm_status,
+        "leverage": int(leverage),
+        "leverage_status": lev_status,
+        "position_side": side_upper,
+    }
+
+
 def cancel_vst_open_orders(
     client: Any,
     symbol: str | None = None,

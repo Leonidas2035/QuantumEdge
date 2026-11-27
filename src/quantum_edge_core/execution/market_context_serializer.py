@@ -43,6 +43,9 @@ DEFAULT_INSTRUMENT_SPECS: dict[str, tuple[Decimal, Decimal]] = {
     "ETHUSDT": (Decimal("0.01"), Decimal("0.01")),
     "SOLUSDT": (Decimal("0.001"), Decimal("0.1")),
     "XRPUSDT": (Decimal("0.0001"), Decimal("1")),
+    "BNBUSDT": (Decimal("0.01"), Decimal("0.01")),
+    "LINKUSDT": (Decimal("0.001"), Decimal("0.1")),
+    "SUIUSDT": (Decimal("0.0001"), Decimal("1")),
 }
 
 
