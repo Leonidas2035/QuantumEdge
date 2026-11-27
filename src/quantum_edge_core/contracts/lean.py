@@ -74,8 +74,11 @@ class FullMarketContext(BaseModel):
 
 from quantum_edge_core.contracts.optimization import (  # noqa: E402, F401
     DecisionAuditV1,
+    HoldBlockerCode,
     RequestStatus,
+    ScreeningDecisionV1,
     ThinkingLevel,
+    TradeDecisionV2,
     TransportChannel,
     UsageRecordV1,
 )

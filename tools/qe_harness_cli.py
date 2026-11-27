@@ -14,11 +14,14 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 import argparse
+import asyncio
 import json
 import os
 from pathlib import Path
 import sys
-from typing import Sequence
+import time
+from typing import Any, Sequence
+import uuid
 
 ROOT = Path(__file__).resolve().parents[1]
 SRC_DIR = ROOT / "src"
@@ -43,6 +46,7 @@ from quantum_edge_core.execution.risk_guard import LeanRiskGuard, RiskConfig
 
 
 DEFAULT_LEDGER_DB = ROOT / "runtime" / "lean_orders.sqlite3"
+DEFAULT_USAGE_LEDGER_DB = ROOT / "runtime" / "usage_ledger.sqlite3"
 DEFAULT_JOURNAL_PATH = ROOT / "runtime" / "lean_trade_journal.jsonl"
 
 
@@ -181,6 +185,95 @@ def build_parser() -> argparse.ArgumentParser:
         "--allowed-symbols",
         default=os.getenv("QE_ALLOWED_SYMBOLS", ""),
         help="Comma-separated allowed symbols override (default: RiskConfig defaults)",
+    )
+
+    # run-cycle
+    p_cycle = sub.add_parser(
+        "run-cycle",
+        help="Run a 2-stage Progressive Disclosure decision cycle (--dry-run by default)",
+    )
+    cycle_mode = p_cycle.add_mutually_exclusive_group()
+    cycle_mode.add_argument(
+        "--dry-run",
+        action="store_true",
+        default=False,
+        help="Run cycle against PaperExchangeClient with zero exchange mutations (default)",
+    )
+    cycle_mode.add_argument(
+        "--live-vst",
+        action="store_true",
+        default=False,
+        help="Run cycle against BingX VST sandbox via HarnessBridge",
+    )
+    p_cycle.add_argument(
+        "--transport",
+        choices=("mock", "agy-proxy", "gemini-direct"),
+        default="agy-proxy",
+        help="LLM transport backend (default: agy-proxy OAuth proxy)",
+    )
+    p_cycle.add_argument(
+        "--proxy-url",
+        default="http://127.0.0.1:8045/v1",
+        help="Local agy_openai_proxy URL (default: http://127.0.0.1:8045/v1)",
+    )
+    p_cycle.add_argument(
+        "--model",
+        default="gemini-4-carbon",
+        help="Canonical Gemini 4 model ID (default: gemini-4-carbon)",
+    )
+    p_cycle.add_argument(
+        "--symbols",
+        default="BTCUSDT,ETHUSDT,SOLUSDT,XRPUSDT",
+        help="Comma-separated symbols (default: BTCUSDT,ETHUSDT,SOLUSDT,XRPUSDT)",
+    )
+    p_cycle.add_argument(
+        "--trigger",
+        default="HEARTBEAT_1H",
+        help="Cycle trigger summary (default: HEARTBEAT_1H)",
+    )
+    img_group = p_cycle.add_mutually_exclusive_group()
+    img_group.add_argument(
+        "--include-images",
+        dest="include_images",
+        action="store_true",
+        default=None,
+        help="Force WebP image attachments in Stage 1/2 prompts",
+    )
+    img_group.add_argument(
+        "--no-images",
+        dest="include_images",
+        action="store_false",
+        help="Disable WebP image attachments (default for agy-proxy and mock)",
+    )
+    p_cycle.add_argument(
+        "--ledger-db",
+        type=Path,
+        default=DEFAULT_USAGE_LEDGER_DB,
+        help="Path to SQLite UsageLedger database",
+    )
+    p_cycle.add_argument(
+        "--order-ledger-db",
+        type=Path,
+        default=DEFAULT_LEDGER_DB,
+        help="Path to SQLite OrderLedger database",
+    )
+    p_cycle.add_argument(
+        "--journal-path",
+        type=Path,
+        default=DEFAULT_JOURNAL_PATH,
+        help="Path to JSONL trade decision journal",
+    )
+    p_cycle.add_argument(
+        "--fixture",
+        type=Path,
+        default=None,
+        help="Optional context JSON fixture for offline --dry-run",
+    )
+    p_cycle.add_argument(
+        "--dump-ram",
+        action="store_true",
+        default=False,
+        help="Dump cycle DecisionAuditV1 JSON to /dev/shm/quantumedge/cycles",
     )
 
     return parser
@@ -343,6 +436,208 @@ def _cmd_execute(args: argparse.Namespace) -> int:
     return 0
 
 
+def _build_offline_mock_bundle(
+    symbols: tuple[str, ...],
+    fixture_path: Path | None = None,
+) -> Any:
+    from quantum_edge_core.orchestrator.deterministic_orchestrator import PreFetchedBundle
+
+    base_ctx: dict[str, Any] | None = None
+    candidate_fixture = fixture_path or (ROOT / "runtime" / "step1_enriched_ctx_btcusdt.json")
+    if candidate_fixture.is_file():
+        base_ctx = json.loads(candidate_fixture.read_text(encoding="utf-8"))
+
+    contexts: dict[str, dict[str, Any]] = {}
+    default_prices = {
+        "BTCUSDT": (60150.0, 0.25),
+        "ETHUSDT": (2420.0, 25.0),
+        "SOLUSDT": (143.0, 26.0),
+        "XRPUSDT": (0.58, 27.0),
+    }
+    t0 = 1_795_641_840_000
+    for sym in symbols:
+        if sym == "BTCUSDT" and base_ctx is not None:
+            contexts[sym] = base_ctx
+            continue
+        px, spr = default_prices.get(sym, (100.0, 20.0))
+        bars_5m = [
+            {
+                "ts": t0 + i * 300_000,
+                "open": px,
+                "high": round(px * 1.002, 4),
+                "low": round(px * 0.998, 4),
+                "close": round(px * 1.0005, 4),
+                "volume": 120.0,
+            }
+            for i in range(30)
+        ]
+        contexts[sym] = {
+            "market_snapshot": {
+                "symbol": sym,
+                "bid": px,
+                "ask": round(px * (1.0 + spr / 10_000.0), 6),
+                "last_price": px,
+                "spread_bps": spr,
+                "is_stale": False,
+            },
+            "ohlcv_by_tf": {"4h": bars_5m, "1h": bars_5m, "15m": bars_5m, "5m": bars_5m, "1m": bars_5m},
+            "orderbook": {"bids": [[px, 10.0]], "asks": [[round(px * 1.001, 6), 10.0]]},
+            "derivatives": {"funding_rate": 0.0001, "open_interest": 50000.0},
+            "microstructure_and_liquidity": {
+                "liqmap": {"status": "OK", "symbol": sym, "timeframe": "1h", "regime": "flat", "last_price": px, "zones": []},
+                "orderflow": {"status": "OK", "imbalance": 0.12, "cvd_or_delta": 15.0, "metrics": {"imbalance_top10": 0.12}},
+                "composite_signal": {"status": "OK", "signal": "LONG", "score": 35, "components": {}},
+            },
+        }
+
+    return PreFetchedBundle(
+        snapshot_id=f"snap-mock-{uuid.uuid4().hex[:8]}",
+        vst_status={
+            "sandbox": True,
+            "balance_vst": {"free": 9500.0, "total": 10000.0, "used": 500.0},
+            "open_positions_count": 0,
+            "open_positions": [],
+            "open_orders_count": 0,
+            "open_orders": [],
+        },
+        contexts_by_symbol=contexts,
+        fetch_ms=0.5,
+    )
+
+
+def _cmd_run_cycle(args: argparse.Namespace) -> int:
+    from quantum_edge_core.contracts.optimization import (
+        RequestStatus,
+        TransportChannel,
+        UsageRecordV1,
+    )
+    from quantum_edge_core.execution.storage_policy import get_ram_tmp_dir
+    from quantum_edge_core.orchestrator.deterministic_orchestrator import (
+        DeterministicTradingOrchestrator,
+        PreFetchCoordinator,
+        StatelessStagePromptAssembler,
+    )
+    from quantum_edge_ml.model_router.backends.google_gemini import GeminiDirectClient
+    from quantum_edge_ml.model_router.backends.transport import (
+        AgyProxyTransport,
+        ImageAttachment,
+        LLMRequest,
+        LLMResponse,
+        LLMTransport,
+    )
+    from quantum_edge_ml.model_router.usage_ledger import UsageLedger
+
+    class _CliMockTransport(LLMTransport):
+        async def generate(self, req: LLMRequest) -> LLMResponse:
+            rec_id = f"mock-{uuid.uuid4().hex[:12]}"
+            in_chars = len(req.system_instruction) + len(req.combined_user_text)
+            if req.stage == "stage1_screen":
+                txt = json.dumps(
+                    {
+                        "market_regime_summary": "BTC 1h constructive; alt spreads wide.",
+                        "action": "HOLD",
+                        "candidate_symbol": "BTCUSDT",
+                        "hold_blocker_code": "NO_LIQ_ASYMMETRY",
+                        "candidate_rationale": "Offline mock fast screen HOLD.",
+                        "estimated_edge_bps": 12.0,
+                    }
+                )
+            else:
+                txt = "{}"
+            usage = UsageRecordV1(
+                record_id=rec_id,
+                decision_id=req.decision_id,
+                stage=req.stage,
+                transport=TransportChannel.AGY_CLI_PROXY,
+                model_provider_id=req.model,
+                thinking_level=req.thinking_level,
+                request_status=RequestStatus.OK,
+                provider_input_tokens=max(1, in_chars // 4),
+                cache_read_tokens=0,
+                output_tokens=45,
+                thinking_tokens=120,
+                total_tokens=max(1, in_chars // 4) + 165,
+                input_chars=in_chars,
+                output_chars=len(txt),
+                latency_ms=5.0,
+                timeout_ms=req.timeout_sec * 1000.0,
+            )
+            self.ledger.record_usage(usage)
+            return LLMResponse(text=txt, usage=usage)
+
+        async def count_tokens(
+            self, model: str, text_parts: list[str], images: list[ImageAttachment] | None = None
+        ) -> dict[str, int]:
+            return {"text_tokens": 0, "image_tokens_media_res": 0, "total_tokens": 0}
+
+        async def close(self) -> None:
+            return None
+
+    symbols = tuple(s.strip().upper() for s in args.symbols.split(",") if s.strip())
+    dry_run = not bool(args.live_vst)
+    include_images = (
+        args.include_images
+        if args.include_images is not None
+        else (args.transport == "gemini-direct")
+    )
+
+    usage_ledger = UsageLedger(args.ledger_db)
+    order_ledger = OrderLedger(args.order_ledger_db)
+    risk_cfg = RiskConfig(allowed_symbols=symbols)
+    risk_guard = LeanRiskGuard(risk_cfg)
+
+    if args.transport == "mock":
+        transport: LLMTransport = _CliMockTransport(usage_ledger)
+    elif args.transport == "gemini-direct":
+        transport = GeminiDirectClient(usage_ledger, mode="interactions")
+    else:
+        transport = AgyProxyTransport(usage_ledger, base_url=args.proxy_url)
+
+    async def _execute_cycle() -> dict[str, Any]:
+        try:
+            if args.live_vst:
+                ex_client: Any = create_bingx_vst_client()
+                prefetch = PreFetchCoordinator(ex_client, symbols=symbols, risk_config=risk_cfg)
+                bundle = await prefetch.fetch_all(include_analytics=True)
+            else:
+                ex_client = PaperExchangeClient()
+                if args.transport == "mock" or args.fixture is not None:
+                    bundle = _build_offline_mock_bundle(symbols, fixture_path=args.fixture)
+                else:
+                    vst_client = create_bingx_vst_client()
+                    prefetch = PreFetchCoordinator(vst_client, symbols=symbols, risk_config=risk_cfg)
+                    bundle = await prefetch.fetch_all(include_analytics=True)
+
+            executor = LeanExecutor(ex_client, order_ledger, risk_guard)
+            bridge = HarnessBridge(executor, journal_path=args.journal_path)
+            assembler = StatelessStagePromptAssembler(include_images=include_images)
+            orchestrator = DeterministicTradingOrchestrator(
+                transport=transport,
+                ledger=usage_ledger,
+                assembler=assembler,
+                bridge=bridge,
+                model_id=args.model,
+            )
+            audit = await orchestrator.run_decision_cycle(
+                bundle,
+                trigger_summary=args.trigger,
+                dry_run=dry_run,
+            )
+            out_dict = audit.model_dump(mode="json")
+            if args.dump_ram:
+                ram_file = get_ram_tmp_dir("cycles") / f"{audit.decision_id}.json"
+                ram_file.write_text(json.dumps(out_dict, indent=2), encoding="utf-8")
+                out_dict["ram_dump_path"] = str(ram_file)
+            return out_dict
+        finally:
+            await transport.close()
+            usage_ledger.close()
+
+    summary = asyncio.run(_execute_cycle())
+    print(json.dumps(summary, ensure_ascii=False))
+    return 0
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     parser = build_parser()
     args = parser.parse_args(argv)
@@ -354,6 +649,8 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _cmd_cancel_open_orders(args)
     if args.command == "execute":
         return _cmd_execute(args)
+    if args.command == "run-cycle":
+        return _cmd_run_cycle(args)
     parser.error(f"Unknown command: {args.command}")
     return 2
 
