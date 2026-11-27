@@ -269,9 +269,50 @@ class DecisionEventV1(BaseModel):
     metrics_snapshot: dict[str, Any] = Field(default_factory=dict)
 
 
+class ForecastBundleV1(BaseModel):
+    """Compact calibrated forecast packet (~250 tokens/pair) for LLM synthesis."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    symbol: str
+    horizon: Literal["5m", "15m", "1h"] = "15m"
+    regime_probs: dict[str, float]  # {"UP": ..., "RANGE": ..., "DOWN": ...}
+    regime_maturity: Literal["EARLY", "ESTABLISHED", "MATURE", "EXHAUSTION"]
+    regime_entropy: float = Field(..., ge=0.0, le=1.0)
+    cond_vol_bps: float = Field(..., ge=0.0)
+    vol_zscore: float
+    return_quantiles_bps: dict[str, float]  # q05..q95 (ACI-adjusted)
+    barrier_probs: dict[str, float]  # up_first, down_first, neither
+    expected_mfe_bps: dict[str, float]  # q50, q90
+    expected_mae_bps: dict[str, float]  # q50, q90
+    tsfm_disagreement: float = Field(0.0, ge=0.0, le=1.0)
+    disagreement_level: Literal["LOW", "MEDIUM", "HIGH"] = "LOW"
+    aci_alpha_t: float = 0.20
+
+    def to_compact_prompt_str(self) -> str:
+        """Render a dense ~140-token FORECAST_V1 line avoiding JSON punctuation/digit bloat."""
+        rp = self.regime_probs
+        q = self.return_quantiles_bps
+        bp = self.barrier_probs
+        q_csv = ",".join(
+            f"{q.get(k, 0.0):g}" for k in ("q05", "q10", "q25", "q50", "q75", "q90", "q95")
+        )
+        return (
+            f"FORECAST_V1|{self.symbol}|{self.horizon}"
+            f"|U/R/D={rp.get('UP', 0.0):.2f}/{rp.get('RANGE', 0.0):.2f}/{rp.get('DOWN', 0.0):.2f},{self.regime_maturity},ent={self.regime_entropy:.2f}"
+            f"|vol={self.cond_vol_bps:.1f}bps,z={self.vol_zscore:+.2f}"
+            f"|q_bps={q_csv}"
+            f"|tb_u/n/d={bp.get('up_first', 0.0):.2f}/{bp.get('neither', 0.0):.2f}/{bp.get('down_first', 0.0):.2f}"
+            f"|mfe={self.expected_mfe_bps.get('q50', 0.0):.1f}/{self.expected_mfe_bps.get('q90', 0.0):.1f}"
+            f"|mae={self.expected_mae_bps.get('q50', 0.0):.1f}/{self.expected_mae_bps.get('q90', 0.0):.1f}"
+            f"|dis={self.tsfm_disagreement:.2f},{self.disagreement_level}|aci={self.aci_alpha_t:.2f}"
+        )
+
+
 __all__ = [
     "DecisionAuditV1",
     "DecisionEventV1",
+    "ForecastBundleV1",
     "HoldBlockerCode",
     "RequestStatus",
     "ScreeningDecisionV1",

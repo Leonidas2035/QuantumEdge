@@ -287,6 +287,12 @@ def build_parser() -> argparse.ArgumentParser:
         default=False,
         help="Use StatelessStagePromptAssembler instead of 3-layer PrefixContextAssembler",
     )
+    p_cycle.add_argument(
+        "--fixed-thinking-medium",
+        action="store_true",
+        default=False,
+        help="Disable adaptive ReasoningEffortRouter and use fixed MEDIUM on Stage 2",
+    )
 
     # protect-once
     p_prot = sub.add_parser(
@@ -592,6 +598,7 @@ def _cmd_run_cycle(args: argparse.Namespace) -> int:
         LLMResponse,
         LLMTransport,
     )
+    from quantum_edge_ml.model_router.reasoning_router import ReasoningEffortRouter
     from quantum_edge_ml.model_router.usage_ledger import UsageLedger
 
     class _CliMockTransport(LLMTransport):
@@ -692,11 +699,17 @@ def _cmd_run_cycle(args: argparse.Namespace) -> int:
                     thesis_store=thesis_store,
                     include_images=include_images,
                 )
+            effort_router = (
+                None
+                if args.fixed_thinking_medium
+                else ReasoningEffortRouter(model_id=args.model)
+            )
             orchestrator = DeterministicTradingOrchestrator(
                 transport=transport,
                 ledger=usage_ledger,
                 assembler=assembler,
                 bridge=bridge,
+                effort_router=effort_router,
                 model_id=args.model,
             )
             try:
@@ -706,6 +719,8 @@ def _cmd_run_cycle(args: argparse.Namespace) -> int:
                     dry_run=dry_run,
                 )
                 out_dict = audit.model_dump(mode="json")
+                out_dict["stage2_thinking_level"] = audit.thinking_level.value
+                out_dict["effort_router_enabled"] = effort_router is not None
                 if isinstance(assembler, PrefixContextAssembler):
                     cp = assembler.snapshot_store.current
                     out_dict["resync_mode"] = "RESYNC" if cp is not None else "UNKNOWN"
