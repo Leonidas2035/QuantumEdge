@@ -24,6 +24,7 @@ from pydantic import BaseModel
 from quantum_edge_core.contracts.lean import TradeDecision
 from quantum_edge_core.contracts.optimization import (
     DecisionAuditV1,
+    ExternalAdvisoryV1,
     ForecastBundleV1,
     ScreeningDecisionV1,
     ThinkingLevel,
@@ -303,6 +304,23 @@ def format_forecast_for_prompt(
     return forecast
 
 
+def format_external_advisory_line(advisory: Any) -> str:
+    """Render compact EXT_MACRO_V1 line for Stage-1/Stage-2 P2 when advisory is available."""
+    if advisory is None:
+        return ""
+    status = getattr(advisory, "status", None)
+    if status == "UNAVAILABLE":
+        return ""
+    if hasattr(advisory, "to_compact_prompt_line"):
+        return str(advisory.to_compact_prompt_line())
+    if isinstance(advisory, Mapping) and advisory.get("status") != "UNAVAILABLE":
+        try:
+            return ExternalAdvisoryV1.model_validate(advisory).to_compact_prompt_line()
+        except Exception:
+            return ""
+    return ""
+
+
 def format_btc_leader_line(market_leader: Mapping[str, Any] | None) -> str:
     """Render compact read-only BTC_LEADER macro pulse line for Stage-1/Stage-2 P2."""
     if not isinstance(market_leader, Mapping) or market_leader.get("px") is None:
@@ -571,6 +589,7 @@ class PreFetchedBundle:
     contexts_by_symbol: dict[str, dict[str, Any]]
     fetch_ms: float
     market_leader: dict[str, Any] | None = None
+    external_advisory: ExternalAdvisoryV1 | None = None
 
 
 class PreFetchCoordinator:
@@ -588,6 +607,7 @@ class PreFetchCoordinator:
         replay_recorder: Any | None = None,
         rate_limiter: BingXRestRateLimiter | None = None,
         api_stats: ApiBudgetStats | None = None,
+        external_intel_client: Any | None = None,
     ) -> None:
         self.client = exchange_client
         self.symbols = tuple(s.upper() for s in symbols)
@@ -598,6 +618,7 @@ class PreFetchCoordinator:
         self.replay_recorder = replay_recorder
         self.rate_limiter = rate_limiter
         self.api_stats = api_stats
+        self.external_intel_client = external_intel_client
 
     async def fetch_all(self, *, include_analytics: bool = True) -> PreFetchedBundle:
         t0 = time.perf_counter()
@@ -647,6 +668,22 @@ class PreFetchCoordinator:
         contexts = {
             sym: m.model_dump(mode="json") for sym, m in zip(self.symbols, ctx_models)
         }
+        external_advisory: ExternalAdvisoryV1 | None = None
+        if self.external_intel_client is not None:
+            bingx_prices = {
+                sym: float(m.market_snapshot.last_price)
+                for sym, m in zip(self.symbols, ctx_models)
+                if m.market_snapshot.last_price > 0
+            }
+            try:
+                external_advisory = await asyncio.to_thread(
+                    self.external_intel_client.get_advisory,
+                    self.symbols,
+                    bingx_prices=bingx_prices,
+                )
+            except Exception as exc:
+                logger.warning("PreFetchCoordinator external_intel failed soft: %s", exc)
+                external_advisory = None
         snap_id = f"snap-{int(time.time() * 1000)}-{uuid.uuid4().hex[:8]}"
         bundle = PreFetchedBundle(
             snapshot_id=snap_id,
@@ -654,6 +691,7 @@ class PreFetchCoordinator:
             contexts_by_symbol=contexts,
             fetch_ms=round((time.perf_counter() - t0) * 1000.0, 2),
             market_leader=market_leader,
+            external_advisory=external_advisory,
         )
         if self.replay_recorder is not None and hasattr(self.replay_recorder, "record_bundle"):
             self.replay_recorder.record_bundle(bundle)
@@ -748,6 +786,9 @@ class StatelessStagePromptAssembler:
         btc_line = format_btc_leader_line(getattr(bundle, "market_leader", None))
         if btc_line:
             p2_parts.append(btc_line)
+        ext_line = format_external_advisory_line(getattr(bundle, "external_advisory", None))
+        if ext_line:
+            p2_parts.append(ext_line)
         for sym in sorted(bundle.contexts_by_symbol.keys()):
             ctx = bundle.contexts_by_symbol[sym]
             snap = ctx.get("market_snapshot") or {}
@@ -825,6 +866,9 @@ class StatelessStagePromptAssembler:
         btc_line = format_btc_leader_line(getattr(bundle, "market_leader", None))
         if btc_line:
             p2_parts.append(btc_line)
+        ext_line = format_external_advisory_line(getattr(bundle, "external_advisory", None))
+        if ext_line:
+            p2_parts.append(ext_line)
         if isinstance(fc_fmt, str):
             p2_parts.append(fc_fmt)
         p2_parts.append(cand_text)
@@ -989,6 +1033,7 @@ class DeterministicTradingOrchestrator:
             contexts_by_symbol=bundle.contexts_by_symbol,
             fetch_ms=bundle.fetch_ms,
             market_leader=bundle.market_leader,
+            external_advisory=bundle.external_advisory,
         )
 
         # === STAGE 1: Cross-Asset Screening (thinking_level=LOW) ===
@@ -1279,6 +1324,7 @@ __all__ = [
     "StatelessStagePromptAssembler",
     "extract_account_risk_limits",
     "format_btc_leader_line",
+    "format_external_advisory_line",
     "format_forecast_for_prompt",
     "format_tactical_indicators_line",
     "parse_structured_model_json",

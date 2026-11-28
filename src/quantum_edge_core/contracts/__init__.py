@@ -3,6 +3,7 @@
 from quantum_edge_core.contracts.lean import (
     DecisionAuditV1,
     DecisionEventV1,
+    ExternalAdvisoryV1,
     ForecastBundleV1,
     FullMarketContext,
     HoldBlockerCode,
@@ -20,6 +21,7 @@ from quantum_edge_core.contracts.lean import (
 __all__ = [
     "DecisionAuditV1",
     "DecisionEventV1",
+    "ExternalAdvisoryV1",
     "ForecastBundleV1",
     "FullMarketContext",
     "HoldBlockerCode",

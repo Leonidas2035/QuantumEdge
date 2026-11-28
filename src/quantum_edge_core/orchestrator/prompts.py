@@ -35,10 +35,11 @@ Emit valid JSON matching the schema. Never invoke shell or file tools.
 - `DELTA_BPS_V1`: `p0,vmed,t0,step`, rows `dc,uw,lw,vr` (error <= 0.5 bps).
 - `OHLCV_TICK_V1`: exact tick deltas (`dt?,do,dc,uw,lw,vq`) at `t0` with `tick_size` & `qty_step` on `1h`/`15m`/`5m`.
 - `PROF_*`: `rsi14`, `macd_hist_bps`, `macd_cross` (`BULL`/`BEAR`/`FLAT`), `bb_pos`, `bb_bw_bps`, `adx14`, `di_diff` (`di_diff > 0`: `+DI > -DI`; `di_diff < 0`: `-DI > +DI`), `rsi_div`/`macd_div`.
-- `BTC_LEADER`: read-only `BTCUSDT` pulse (`px`, `15m`/`1h`/`4h` bps, `rsi15m`, `mc15m`, `trend`)—macro context only.
+- `BTC_LEADER`: BTCUSDT macro pulse (`px,15m/1h/4h,rsi,mc,trend`).
+- `EXT_MACRO_V1`: CoinGecko macro (`mcap,btcd,reg,basis`); heed `RISK_OFF`/`BTC_DRAIN`.
 - `LIQMAP`: `side(L/S),price,dist_pct,intensity,conf`.
 - `L2_TOP15`: `bid_p,bid_q|ask_p,ask_q`.
-- `FORECAST_V1`: causal HMM regime probs, EGARCH vol, ACI-LGBM quantiles, Triple-Barrier probs, MFE/MAE, TSFM disagreement.
+- `FORECAST_V1`: causal HMM, EGARCH vol, ACI-LGBM quantiles, Triple-Barrier, MFE/MAE, TSFM dis.
 """
 
 CANONICAL_FEW_SHOT_EXAMPLES = """## 5. CANONICAL CALIBRATION EXAMPLES

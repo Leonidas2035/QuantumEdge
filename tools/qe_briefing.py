@@ -240,6 +240,8 @@ def _reconstruct_session_from_event_log(event_log_path: Path | None) -> dict[str
                 sess["usage_summary"] = rec["usage_summary"]
             if isinstance(rec.get("api_stats"), dict):
                 sess["api_stats"] = rec["api_stats"]
+            if isinstance(rec.get("external_advisory"), dict):
+                sess["external_advisory"] = rec["external_advisory"]
         elif ev == "CYCLE_ERROR":
             sess["errors"].append(rec)
             sess["cycle_errors_count"] = len(sess["errors"])
@@ -260,6 +262,8 @@ def _reconstruct_session_from_event_log(event_log_path: Path | None) -> dict[str
                 sess["usage_summary"] = rec["usage_summary"]
             if isinstance(rec.get("api_stats"), dict):
                 sess["api_stats"] = rec["api_stats"]
+            if isinstance(rec.get("external_advisory"), dict):
+                sess["external_advisory"] = rec["external_advisory"]
     return sess if parsed_any else {}
 
 
@@ -359,6 +363,12 @@ def build_briefing_payload(
             "watcher_mode": sess.get("watcher_mode", api_stats.get("watcher_mode", "IDLE")),
             "watcher_runs": int(sess.get("watcher_runs", 0)),
         },
+        "external_advisory": (
+            dict(sess.get("external_advisory"))
+            if isinstance(sess.get("external_advisory"), dict)
+            else None
+        ),
+        "external_intel_stats": dict(sess.get("external_intel_stats") or {}),
     }
 
 
@@ -428,6 +438,30 @@ def render_human_briefing(data: dict[str, Any]) -> str:
             f"- **BingX API Телеметрія:** REST calls=`{api.get('rest_calls_total', 0)}` | RAM cache hits=`{api.get('rest_cache_hits', 0)}` | WS updates=`{api.get('ws_updates_applied', 0)}` | Rate-limit retries=`{api.get('rate_limit_retries', 0)}` | Watcher=`{api.get('watcher_mode')}` (runs=`{api.get('watcher_runs', 0)}`)",
         ]
     )
+    ext_adv = data.get("external_advisory") if isinstance(data.get("external_advisory"), dict) else None
+    lines.extend(["", "## 4. Глобальний макро-контекст (CoinGecko)"])
+    if ext_adv:
+        mcap_val = ext_adv.get("total_market_cap_usd_b")
+        mcap_b = f"${float(mcap_val):.1f}B" if isinstance(mcap_val, (int, float)) else "N/A"
+        vol_val = ext_adv.get("global_volume_24h_usd_b")
+        vol_b = f"${float(vol_val):.1f}B" if isinstance(vol_val, (int, float)) else "N/A"
+        snaps = ext_adv.get("asset_snapshots") or {}
+        basis_parts: list[str] = []
+        if isinstance(snaps, dict):
+            for sym in sorted(snaps.keys()):
+                row = snaps[sym]
+                if isinstance(row, dict) and row.get("bingx_basis_bps") is not None:
+                    basis_parts.append(f"{sym}:{float(row['bingx_basis_bps']):+.1f}bps")
+        basis_str = ", ".join(basis_parts) if basis_parts else "N/A"
+        lines.extend(
+            [
+                f"- **Статус / Режим:** `{ext_adv.get('status', 'UNAVAILABLE')}` | **Макро-режим:** `{ext_adv.get('macro_regime_tag', 'NEUTRAL')}` | `age={ext_adv.get('age_sec', 0.0)}s`",
+                f"- **Global Market Cap:** `{mcap_b}` (24h: `{ext_adv.get('market_cap_change_24h_pct')}%`) | **24h Volume:** `{vol_b}` | **BTC.D:** `{ext_adv.get('btc_dominance_pct')}%` | **ETH.D:** `{ext_adv.get('eth_dominance_pct')}%`",
+                f"- **BingX vs CoinGecko Basis:** `{basis_str}`",
+            ]
+        )
+    else:
+        lines.append("- CoinGecko external advisory: `DISABLED / UNAVAILABLE` (немає даних у сесії).")
     return "\n".join(lines) + "\n"
 
 

@@ -350,9 +350,70 @@ class ForecastBundleV1(BaseModel):
         )
 
 
+class ExternalAdvisoryV1(BaseModel):
+    """Read-only global market intelligence packet (CoinGecko advisory, never execution price)."""
+
+    model_config = ConfigDict(extra="ignore")
+
+    source: Literal["coingecko"] = "coingecko"
+    status: Literal["OK", "STALE", "UNAVAILABLE"] = "OK"
+    fetched_ts_utc: str = Field(
+        default_factory=lambda: datetime.now(timezone.utc).isoformat()
+    )
+    age_sec: float = Field(0.0, ge=0.0)
+    total_market_cap_usd_b: float | None = None
+    market_cap_change_24h_pct: float | None = None
+    btc_dominance_pct: float | None = None
+    eth_dominance_pct: float | None = None
+    global_volume_24h_usd_b: float | None = None
+    macro_regime_tag: Literal[
+        "RISK_ON", "NEUTRAL", "RISK_OFF", "ALT_ROTATION", "BTC_DRAIN"
+    ] = "NEUTRAL"
+    asset_snapshots: dict[str, dict[str, float]] = Field(default_factory=dict)
+    trending_symbols: list[str] = Field(default_factory=list, max_length=5)
+
+    def to_compact_prompt_line(self) -> str:
+        """Render ~40-65 token EXT_MACRO_V1 advisory line for P2."""
+        if self.status == "UNAVAILABLE":
+            return f"EXT_MACRO_V1|src={self.source}|st=UNAVAILABLE"
+        mcap_s = (
+            f"{round(self.total_market_cap_usd_b)}B"
+            if self.total_market_cap_usd_b is not None
+            else "N/A"
+        )
+        chg_s = (
+            f"({self.market_cap_change_24h_pct:+.1f}%)"
+            if self.market_cap_change_24h_pct is not None
+            else ""
+        )
+        btcd_s = (
+            f"{self.btc_dominance_pct:.1f}%"
+            if self.btc_dominance_pct is not None
+            else "N/A"
+        )
+        vol_s = (
+            f"{round(self.global_volume_24h_usd_b)}B"
+            if self.global_volume_24h_usd_b is not None
+            else "N/A"
+        )
+        basis_parts: list[str] = []
+        for sym in sorted(self.asset_snapshots.keys()):
+            snap = self.asset_snapshots[sym]
+            if isinstance(snap, dict) and snap.get("bingx_basis_bps") is not None:
+                short_sym = sym[:-4] if sym.endswith("USDT") and len(sym) > 4 else sym
+                basis_parts.append(f"{short_sym}:{float(snap['bingx_basis_bps']):+.1f}bps")
+        basis_s = f"|basis={','.join(basis_parts)}" if basis_parts else ""
+        return (
+            f"EXT_MACRO_V1|src={self.source}|st={self.status}"
+            f"|mcap={mcap_s}{chg_s}|btcd={btcd_s}|vol24h={vol_s}|reg={self.macro_regime_tag}"
+            f"{basis_s}"
+        )
+
+
 __all__ = [
     "DecisionAuditV1",
     "DecisionEventV1",
+    "ExternalAdvisoryV1",
     "ForecastBundleV1",
     "HoldBlockerCode",
     "RequestStatus",

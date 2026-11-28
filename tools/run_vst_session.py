@@ -68,6 +68,7 @@ from quantum_edge_core.execution.storage_policy import (
     CANONICAL_SSD_DURABLE_PATHS,
     get_ram_tmp_dir,
 )
+from quantum_edge_core.external_intel import CoinGeckoIntelClient
 from quantum_edge_core.orchestrator.deterministic_orchestrator import (
     DeterministicTradingOrchestrator,
     LocalForecastProvider,
@@ -346,6 +347,15 @@ def _render_session_report(summary: dict[str, Any]) -> str:
         "```",
         f"- **Mode / Transport / Model:** `{'DRY_RUN' if summary.get('dry_run') else 'LIVE_VST'}` / `{summary.get('transport')}` / `{summary.get('model')}` (reuse_session=`{summary.get('reuse_session')}`)",
         f"- **Universe:** `{','.join(summary.get('symbols') or [])}` | **Prefix Hash Stable:** `{summary.get('prefix_hash_stable')}` (`{summary.get('unique_prefix_hashes')}`)",
+    ]
+    ext_adv = summary.get("external_advisory") if isinstance(summary.get("external_advisory"), dict) else None
+    if ext_adv:
+        lines.append(
+            f"- **External Intel (CoinGecko):** `status={ext_adv.get('status')}` | `regime={ext_adv.get('macro_regime_tag')}` "
+            f"| `btcd={ext_adv.get('btc_dominance_pct')}%` | `mcap={ext_adv.get('total_market_cap_usd_b')}B` "
+            f"(`{ext_adv.get('market_cap_change_24h_pct')}%`) | `age={ext_adv.get('age_sec', 0.0)}s`"
+        )
+    lines += [
         "",
         "## 2. UsageLedger Telemetry",
         f"- Total Requests: `{u.get('total_requests', 0)}` (failures=`{u.get('failure_rate', 0.0)}`)",
@@ -634,6 +644,15 @@ async def run_persistent_session(
     duration_sec = max(0.0, float(args.duration_minutes) * 60.0)
     t_start_mono = time.monotonic()
     deadline = t_start_mono + duration_sec
+    cg_flag = getattr(args, "enable_coingecko", None)
+    enable_coingecko = (
+        bool(cg_flag)
+        if cg_flag is not None
+        else (not dry_run and str(getattr(args, "transport", "")) != "mock")
+    )
+    cg_ttl_sec = float(getattr(args, "coingecko_ttl_sec", 600.0))
+    ext_intel_client = CoinGeckoIntelClient(ttl_sec=cg_ttl_sec) if enable_coingecko else None
+    last_external_advisory: dict[str, Any] | None = None
     prefetch = PreFetchCoordinator(
         ex_client,
         symbols=symbols,
@@ -644,6 +663,7 @@ async def run_persistent_session(
         replay_recorder=replay_recorder,
         rate_limiter=session_rate_limiter,
         api_stats=session_api_stats,
+        external_intel_client=ext_intel_client,
     )
     seq = 0
     cycle_errors_count = 0
@@ -702,6 +722,8 @@ async def run_persistent_session(
             "exit_cleanup": exit_cleanup,
             "usage_summary": usage_snap,
             "api_stats": api_snap,
+            "external_advisory": last_external_advisory,
+            "external_intel_stats": ext_intel_client.stats if ext_intel_client is not None else {},
         }
 
     async def _flush_incremental_outputs(
@@ -844,6 +866,23 @@ async def run_persistent_session(
                     f"| watcher_mode={watcher.last_mode}",
                     flush=True,
                 )
+                ext_adv = getattr(bundle, "external_advisory", None)
+                if isinstance(ext_adv, dict) and ext_adv:
+                    last_external_advisory = dict(ext_adv)
+                    ext_stats = ext_intel_client.stats if ext_intel_client is not None else {}
+                    mcap_val = ext_adv.get("total_market_cap_usd_b")
+                    mcap_b = f"{float(mcap_val):.0f}B" if isinstance(mcap_val, (int, float)) else "-"
+                    mcap_chg = ext_adv.get("market_cap_change_24h_pct")
+                    mcap_chg_s = f"({float(mcap_chg):+.1f}%)" if isinstance(mcap_chg, (int, float)) else ""
+                    btcd = ext_adv.get("btc_dominance_pct")
+                    btcd_s = f"{float(btcd):.1f}%" if isinstance(btcd, (int, float)) else "-"
+                    print(
+                        f"  EXT_INT  | src={ext_adv.get('source', 'coingecko')} st={ext_adv.get('status', 'UNAVAILABLE')} "
+                        f"reg={ext_adv.get('macro_regime_tag', 'NEUTRAL')} mcap={mcap_b}{mcap_chg_s} btcd={btcd_s} "
+                        f"age={float(ext_adv.get('age_sec') or 0.0):.0f}s "
+                        f"hits={ext_stats.get('cache_hits', 0)} http={ext_stats.get('http_calls', 0)} err={ext_stats.get('errors', 0)}",
+                        flush=True,
+                    )
 
                 ml_dict = bundle.market_leader if isinstance(bundle.market_leader, dict) else {}
                 btc_pulse_str = (
@@ -895,6 +934,7 @@ async def run_persistent_session(
                         "current_equity_vst": cur_eq_live,
                         "usage_summary": usage_snap,
                         "api_stats": api_snap,
+                        "external_advisory": last_external_advisory,
                     },
                 )
                 snap_inc = _build_snapshot_dict(
@@ -1212,6 +1252,10 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--limit-order-ttl-min", type=float, default=45.0, help="Cancel unfilled entry LIMIT orders older than N minutes (default: 45.0, 0=disabled)")
     parser.add_argument("--no-breakeven-sl", dest="enable_breakeven_sl", action="store_false", default=True, help="Disable deterministic breakeven SL move in watcher")
     parser.add_argument("--no-btc-leader", dest="include_btc_leader", action="store_false", default=True, help="Disable read-only BTC_LEADER pulse in PreFetchCoordinator")
+    cg_grp = parser.add_mutually_exclusive_group()
+    cg_grp.add_argument("--enable-coingecko", dest="enable_coingecko", action="store_true", default=None, help="Enable CoinGecko global market intelligence (default: auto-enabled on --live-vst)")
+    cg_grp.add_argument("--no-coingecko", dest="enable_coingecko", action="store_false", help="Disable CoinGecko global market intelligence")
+    parser.add_argument("--coingecko-ttl-sec", type=float, default=600.0, help="RAM TTL in seconds for CoinGecko external advisory (default: 600.0)")
     parser.add_argument("--hub-zmq-endpoint", default=None, help="Optional MarketDataHub ZMQ PUB endpoint (e.g. tcp://127.0.0.1:5555) for WS-First RAM snapshots")
     parser.add_argument("--record-replay", nargs="?", const="AUTO_RAM", default=None, help="Record PreFetchedBundles via RAM-buffered MarketSnapshotRecorder")
     parser.add_argument("--latest-session-ram", type=Path, default=None, help=argparse.SUPPRESS)

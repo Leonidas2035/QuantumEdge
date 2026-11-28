@@ -26,6 +26,7 @@ from quantum_edge_core.execution.storage_policy import (
 from quantum_edge_core.orchestrator.deterministic_orchestrator import (
     extract_account_risk_limits,
     format_btc_leader_line,
+    format_external_advisory_line,
     format_forecast_for_prompt,
     format_tactical_indicators_line,
     serialize_stage2_candidate,
@@ -461,6 +462,9 @@ class PrefixContextAssembler:
         btc_line = format_btc_leader_line(getattr(bundle, "market_leader", None))
         if btc_line:
             p2_parts.append(btc_line)
+        ext_line = format_external_advisory_line(getattr(bundle, "external_advisory", None))
+        if ext_line:
+            p2_parts.append(ext_line)
         for sym in sorted(bundle.contexts_by_symbol.keys()):
             ctx = bundle.contexts_by_symbol[sym]
             snap = ctx.get("market_snapshot") or {}
@@ -545,6 +549,9 @@ class PrefixContextAssembler:
         btc_line = format_btc_leader_line(getattr(bundle, "market_leader", None))
         if btc_line:
             p2_parts.append(btc_line)
+        ext_line = format_external_advisory_line(getattr(bundle, "external_advisory", None))
+        if ext_line:
+            p2_parts.append(ext_line)
         if isinstance(fc_fmt, str):
             p2_parts.append(fc_fmt)
         p2_parts.append(cand_text)
