@@ -143,17 +143,28 @@ class HoldBlockerCode(str, Enum):
     EXHAUSTION_HIGH_MAE = "EXHAUSTION_HIGH_MAE"
 
 
+def _truncate_str_400(value: Any) -> Any:
+    if isinstance(value, str) and len(value) > 400:
+        return value[:397] + "..."
+    return value
+
+
 class ScreeningDecisionV1(BaseModel):
     """Stage 1 (low thinking): cross-asset pair screening contract."""
 
     model_config = ConfigDict(extra="ignore")
 
-    market_regime_summary: str = Field(..., max_length=240)
+    market_regime_summary: str = Field(..., max_length=400)
     action: Literal["HOLD", "DRILL_DOWN", "MANAGE_OPEN_POSITION"]
     candidate_symbol: str | None = None
     hold_blocker_code: HoldBlockerCode = HoldBlockerCode.NONE
-    candidate_rationale: str = Field(..., max_length=220)
+    candidate_rationale: str = Field(..., max_length=400)
     estimated_edge_bps: float = Field(0.0, ge=-500.0, le=2000.0)
+
+    @field_validator("market_regime_summary", "candidate_rationale", mode="before")
+    @classmethod
+    def _truncate_text_fields(cls, value: Any) -> Any:
+        return _truncate_str_400(value)
 
     @field_validator("candidate_symbol")
     @classmethod
@@ -184,10 +195,15 @@ class TradeDecisionV2(BaseModel):
     model_config = ConfigDict(extra="ignore")
 
     # 1. Causal analysis (strictly BEFORE action)
-    regime_read: str = Field(..., min_length=8, max_length=220)
-    primary_edge: str = Field(..., min_length=8, max_length=240)
-    counter_thesis: str = Field(..., min_length=4, max_length=160)
+    regime_read: str = Field(..., min_length=8, max_length=400)
+    primary_edge: str = Field(..., min_length=8, max_length=400)
+    counter_thesis: str = Field(..., min_length=4, max_length=400)
     invalidation_price: float | None = Field(default=None, gt=0)
+
+    @field_validator("regime_read", "primary_edge", "counter_thesis", mode="before")
+    @classmethod
+    def _truncate_reasoning_fields(cls, value: Any) -> Any:
+        return _truncate_str_400(value)
 
     # 2. Strategic action
     action: Literal[

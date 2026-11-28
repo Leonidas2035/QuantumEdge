@@ -16,6 +16,7 @@ from typing import Any, Literal, Mapping, Sequence
 from quantum_edge_core.contracts.lean import TradeDecision
 from quantum_edge_core.execution.bingx_vst_adapter import (
     cancel_vst_open_orders,
+    cancel_vst_order_by_id,
     fetch_vst_positions_and_orders,
     fetch_vst_status,
     get_symbol_tick_size,
@@ -58,6 +59,8 @@ class PositionProtectionWatcher:
         status_cache_ttl_sec: float | None = None,
         max_liq_distance_pct: float = 2.0,
         stale_feed_limit_sec: float = 30.0,
+        new_position_sl_grace_sec: float = 20.0,
+        limit_order_ttl_sec: float = 2700.0,
         enable_breakeven_sl: bool = True,
         breakeven_trigger_pct: float = 0.50,
         breakeven_offset_pct: float = 0.20,
@@ -75,12 +78,15 @@ class PositionProtectionWatcher:
         self.status_cache_ttl_sec = status_cache_ttl_sec
         self.max_liq_distance_pct = max_liq_distance_pct
         self.stale_feed_limit_sec = stale_feed_limit_sec
+        self.new_position_sl_grace_sec = max(0.0, float(new_position_sl_grace_sec))
+        self.limit_order_ttl_sec = max(0.0, float(limit_order_ttl_sec))
         self.enable_breakeven_sl = bool(enable_breakeven_sl)
         self.breakeven_trigger_pct = float(breakeven_trigger_pct)
         self.breakeven_offset_pct = float(breakeven_offset_pct)
         self.dry_run = dry_run
         self._last_feed_ts = time.time()
         self._be_moved_positions: dict[tuple[str, str], float] = {}
+        self._position_first_seen_ts: dict[tuple[str, str], float] = {}
         self.last_mode: Literal["ACTIVE", "IDLE"] = "IDLE"
         self.next_sleep_sec: float = self.interval_sec
         self._stop = asyncio.Event()
@@ -162,6 +168,8 @@ class PositionProtectionWatcher:
         }
         for stale_key in [k for k in self._be_moved_positions if k not in active_pos_keys]:
             del self._be_moved_positions[stale_key]
+        for stale_seen in [k for k in self._position_first_seen_ts if k not in active_pos_keys]:
+            del self._position_first_seen_ts[stale_seen]
         scoped_orders = [
             o for o in all_orders if str(o.get("symbol") or "").upper() in self.allowed_symbols
         ]
@@ -215,8 +223,42 @@ class PositionProtectionWatcher:
                         await asyncio.to_thread(cancel_vst_open_orders, self.client, sym)
             actions_taken.append(f"CANCELLED_ORPHANS:{len(reduce_only_orphans)}")
 
-        # 2. Check open scoped positions for missing SL + stale feed or imminent liquidation
+        # 2. Expire stale resting entry LIMIT orders older than limit_order_ttl_sec
         now_ts = time.time()
+        expired_limit_ids: set[str] = set()
+        if self.limit_order_ttl_sec > 0:
+            for ord_obj in managed_orders:
+                sym_o = str(ord_obj.get("symbol") or "").upper()
+                oid = str(ord_obj.get("id") or "").strip()
+                raw_t = str(ord_obj.get("rawType") or ord_obj.get("type") or "").upper()
+                if (
+                    not oid
+                    or sym_o not in self.allowed_symbols
+                    or ord_obj.get("reduceOnly") is True
+                    or raw_t != "LIMIT"
+                ):
+                    continue
+                ts_raw = ord_obj.get("timestamp")
+                if ts_raw is None:
+                    continue
+                try:
+                    ts_num = float(ts_raw)
+                except (TypeError, ValueError):
+                    continue
+                ts_sec = (ts_num / 1000.0) if ts_num > 1e11 else ts_num
+                if ts_sec > 0 and (now_ts - ts_sec) > self.limit_order_ttl_sec:
+                    if not self.dry_run:
+                        res_c = await asyncio.to_thread(
+                            cancel_vst_order_by_id, self.client, sym_o, oid
+                        )
+                        if res_c.get("cancelled"):
+                            expired_limit_ids.add(oid)
+                            actions_taken.append(f"EXPIRED_STALE_LIMIT:{sym_o}:{oid}")
+                    else:
+                        expired_limit_ids.add(oid)
+                        actions_taken.append(f"DRY_WOULD_EXPIRE_LIMIT:{sym_o}:{oid}")
+
+        # 3. Check open scoped positions for missing SL + stale feed (with grace period) or imminent liquidation
         feed_stale = (now_ts - self._last_feed_ts) > self.stale_feed_limit_sec
 
         for pos in positions:
@@ -225,6 +267,16 @@ class PositionProtectionWatcher:
             mark = float(pos.get("mark_price") or pos.get("entry_price") or 0.0)
             liq_p = pos.get("liquidation_price")
             qty = float(pos.get("contracts") or 0.0)
+            pos_side = "LONG" if "LONG" in side else ("SHORT" if "SHORT" in side else "")
+            first_seen_ts = (
+                self._position_first_seen_ts.setdefault((sym, pos_side), now_ts)
+                if pos_side
+                else now_ts
+            )
+            in_sl_grace = (
+                self._last_feed_ts > 1_000_000_000.0
+                and (now_ts - first_seen_ts) < self.new_position_sl_grace_sec
+            )
 
             sym_orders = [
                 o for o in scoped_orders if str(o.get("symbol") or "").upper() == sym
@@ -241,7 +293,7 @@ class PositionProtectionWatcher:
                 and abs(mark - float(liq_p)) / mark * 100.0 <= self.max_liq_distance_pct
             )
 
-            if near_liq or (not has_sl and feed_stale):
+            if near_liq or (not has_sl and feed_stale and not in_sl_grace):
                 close_action = "CLOSE_LONG" if "LONG" in side else "CLOSE_SHORT"
                 dec = TradeDecision.model_validate(
                     {
@@ -389,7 +441,9 @@ class PositionProtectionWatcher:
                 self._be_moved_positions[pos_key] = rounded_entry
                 actions_taken.append(f"MOVED_BE_SL:{sym}->{target_be_sl}")
 
-        remaining_managed_orders = max(0, len(managed_orders) - len(reduce_only_orphans))
+        remaining_managed_orders = max(
+            0, len(managed_orders) - len(reduce_only_orphans) - len(expired_limit_ids)
+        )
         if len(positions) > 0 or remaining_managed_orders > 0:
             self.last_mode = "ACTIVE"
             self.next_sleep_sec = self.interval_sec

@@ -113,6 +113,28 @@ def _is_bingx_rate_limit_error(exc: Exception) -> bool:
     )
 
 
+def _is_bingx_transient_error(exc: Exception) -> bool:
+    if _is_bingx_rate_limit_error(exc):
+        return True
+    if isinstance(exc, (ConnectionError, TimeoutError)):
+        return True
+    msg = str(exc).lower()
+    return any(
+        token in msg
+        for token in (
+            "100421",
+            "timestamp",
+            "remotedisconnected",
+            "remote end closed",
+            "connectionerror",
+            "networkerror",
+            "readtimeout",
+            "connection aborted",
+            "connection reset",
+        )
+    )
+
+
 class BingXRestRateLimiter:
     """Thread-safe token-bucket limiter with jittered retry on BingX code=100410 / HTTP 429."""
 
@@ -171,7 +193,7 @@ class BingXRestRateLimiter:
             try:
                 return fn(*args, **kwargs)
             except Exception as exc:
-                if attempt + 1 < attempts and _is_bingx_rate_limit_error(exc):
+                if attempt + 1 < attempts and _is_bingx_transient_error(exc):
                     target_stats.inc_rate_limit_retry(1)
                     jitter = 0.85 + 0.30 * random.random()
                     delay = self.base_backoff_sec * (2**attempt) * jitter
@@ -513,6 +535,50 @@ def cancel_vst_open_orders(
         "cancelled_count": len(cancelled_ids),
         "cancelled_order_ids": cancelled_ids,
         "errors": errors,
+    }
+
+
+def cancel_vst_order_by_id(
+    client: Any,
+    symbol: str,
+    order_id: str,
+    *,
+    rate_limiter: BingXRestRateLimiter | None = None,
+    stats: ApiBudgetStats | None = None,
+) -> dict[str, Any]:
+    """Safely cancel a single open order by id on BingX VST sandbox (fail-soft on already gone)."""
+    if not is_vst_sandbox_client(client):
+        raise RuntimeError(
+            "Refusing to cancel order: client is not verified in BingX VST sandbox mode or REAL_TRADING is enabled."
+        )
+    compact_sym = normalize_compact_symbol(symbol) or str(symbol).strip().upper()
+    ccxt_sym = to_ccxt_swap_symbol(compact_sym)
+    oid = str(order_id).strip()
+    if not oid:
+        return {"sandbox": True, "symbol": compact_sym, "order_id": oid, "cancelled": False, "error": "empty_order_id"}
+    try:
+        _exec_rest_call(
+            client,
+            client.cancel_order,
+            oid,
+            ccxt_sym,
+            rate_limiter=rate_limiter,
+            stats=stats,
+        )
+        cancelled = True
+        err = None
+    except Exception as exc:
+        cancelled = False
+        err = str(exc)
+        _vst_logger.warning("cancel_vst_order_by_id(%s, %s) failed soft: %s", compact_sym, oid, exc)
+    invalidate_vst_status_cache(client)
+    return {
+        "sandbox": True,
+        "symbol": compact_sym,
+        "ccxt_symbol": ccxt_sym,
+        "order_id": oid,
+        "cancelled": cancelled,
+        "error": err,
     }
 
 

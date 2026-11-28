@@ -798,3 +798,312 @@ def test_qe_briefing_falls_back_to_durable_event_log_when_ram_snapshot_missing(
     assert out["session_source"] == "event_log"
     assert out["status"] == "COMPLETED"
     assert out["cycles_count"] >= 1
+
+
+def test_schema_auto_truncates_long_rationale_and_regime_read_without_error() -> None:
+    from quantum_edge_core.contracts.optimization import ScreeningDecisionV1
+
+    long_txt = "X" * 500
+    s1 = ScreeningDecisionV1.model_validate(
+        {
+            "market_regime_summary": long_txt,
+            "action": "DRILL_DOWN",
+            "candidate_symbol": "BNBUSDT",
+            "candidate_rationale": long_txt,
+            "estimated_edge_bps": 12.0,
+        }
+    )
+    assert len(s1.market_regime_summary) == 400
+    assert s1.market_regime_summary.endswith("...")
+    assert len(s1.candidate_rationale) == 400
+    assert s1.candidate_rationale.endswith("...")
+
+    t2 = TradeDecisionV2.model_validate(
+        {
+            "regime_read": long_txt,
+            "primary_edge": long_txt,
+            "counter_thesis": long_txt,
+            "invalidation_price": 600.0,
+            "action": "OPEN_LONG",
+            "symbol": "BNBUSDT",
+            "confidence": 0.72,
+            "order_type": "LIMIT",
+            "entry_price": 610.0,
+            "sl_price": 600.0,
+            "tp_price": 630.0,
+        }
+    )
+    assert len(t2.regime_read) == 400
+    assert len(t2.primary_edge) == 400
+    assert len(t2.counter_thesis) == 400
+
+
+def test_rate_limiter_retries_100421_and_remote_disconnected() -> None:
+    slept: list[float] = []
+    stats = ApiBudgetStats()
+    limiter = BingXRestRateLimiter(
+        rate_per_sec=100.0,
+        burst=5,
+        stats=stats,
+        sleep_fn=lambda d: slept.append(float(d)),
+        base_backoff_sec=0.10,
+    )
+    cnt = {"n": 0}
+
+    def _transient_endpoint() -> str:
+        cnt["n"] += 1
+        if cnt["n"] == 1:
+            raise RuntimeError("bingx error code=100421 timestamp mismatch")
+        if cnt["n"] == 2:
+            raise ConnectionError("RemoteDisconnected: Remote end closed connection without response")
+        return "OK"
+
+    assert limiter.call_with_rate_limit(_transient_endpoint, max_retries=2) == "OK"
+    snap = stats.snapshot()
+    assert snap["rest_calls_total"] == 3
+    assert snap["rate_limit_retries"] == 2
+    assert len(slept) == 2
+
+
+def test_watcher_new_position_grace_period_and_stale_limit_ttl_cancel(
+    tmp_path: Path,
+) -> None:
+    import time as _time
+
+    class _GraceAndTtlClient:
+        _qe_sandbox_verified = True
+
+        def __init__(self) -> None:
+            now_ms = int(_time.time() * 1000)
+            self.cancelled_ids: list[str] = []
+            self.submitted_orders: list[dict[str, Any]] = []
+            self.positions = [
+                {
+                    "symbol": "LINK/USDT:USDT",
+                    "side": "long",
+                    "contracts": 10.0,
+                    "entryPrice": 15.0,
+                    "markPrice": 15.05,
+                    "liquidationPrice": 10.0,
+                    "info": {"positionSide": "LONG"},
+                }
+            ]
+            # 1 stale LIMIT (>45 min old) + 1 fresh LIMIT (10s old) + 1 reduceOnly SL? No SL on LINK yet!
+            self.orders = [
+                {
+                    "id": "lim-stale-1",
+                    "clientOrderId": "qe-bnb-lim-old",
+                    "symbol": "BNB/USDT:USDT",
+                    "type": "limit",
+                    "side": "buy",
+                    "reduceOnly": False,
+                    "price": 605.0,
+                    "timestamp": now_ms - 3_600_000,  # 60 min old -> must expire
+                    "info": {"type": "LIMIT", "positionSide": "LONG"},
+                },
+                {
+                    "id": "lim-fresh-2",
+                    "clientOrderId": "qe-sui-lim-new",
+                    "symbol": "SUI/USDT:USDT",
+                    "type": "limit",
+                    "side": "buy",
+                    "reduceOnly": False,
+                    "price": 1.20,
+                    "timestamp": now_ms - 10_000,  # 10s old -> keep
+                    "info": {"type": "LIMIT", "positionSide": "LONG"},
+                },
+            ]
+
+        def fetch_balance(self) -> dict[str, Any]:
+            return {"VST": {"free": 1000.0, "total": 1000.0, "used": 0.0}}
+
+        def fetch_positions(self) -> list[dict[str, Any]]:
+            return list(self.positions)
+
+        def fetch_open_orders(self, symbol: str | None = None) -> list[dict[str, Any]]:
+            if symbol is None:
+                return list(self.orders)
+            return [o for o in self.orders if o["symbol"] == symbol]
+
+        def cancel_order(self, oid: str, symbol: str) -> dict[str, Any]:
+            _ = symbol
+            self.cancelled_ids.append(oid)
+            self.orders = [o for o in self.orders if o["id"] != oid]
+            return {"id": oid, "status": "canceled"}
+
+        def create_order(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+            self.submitted_orders.append({"args": args, "kwargs": kwargs})
+            return {"id": "emerg-1", "status": "closed"}
+
+    client = _GraceAndTtlClient()
+    ledger = OrderLedger(tmp_path / "grace_ttl.sqlite3")
+    executor = LeanExecutor(client, ledger, LeanRiskGuard(RiskConfig.for_qe_isolated_50x()))
+    bridge = HarnessBridge(executor, journal_path=tmp_path / "grace_ttl.jsonl")
+    watcher = PositionProtectionWatcher(
+        client,
+        bridge,
+        allowed_symbols=("BNBUSDT", "LINKUSDT", "SUIUSDT"),
+        stale_feed_limit_sec=30.0,
+        new_position_sl_grace_sec=20.0,
+        limit_order_ttl_sec=2700.0,
+        dry_run=False,
+    )
+    # Simulate stale feed (60s ago); new LINK position without SL must NOT emergency-close during 20s grace!
+    watcher.touch_feed_heartbeat(_time.time() - 60.0)
+    res = asyncio.run(watcher.check_once())
+
+    assert "EXPIRED_STALE_LIMIT:BNBUSDT:lim-stale-1" in res["actions"]
+    assert client.cancelled_ids == ["lim-stale-1"]
+    assert not any("EMERGENCY_CLOSE" in a for a in res["actions"])
+    assert client.submitted_orders == []
+
+
+def test_orchestrator_replaces_existing_entry_limit_instead_of_stacking_duplicates(
+    tmp_path: Path,
+) -> None:
+    from quantum_edge_core.orchestrator import DeterministicTradingOrchestrator
+    from quantum_edge_ml.model_router.backends.transport import LLMRequest, LLMResponse, LLMTransport
+
+    class _TwoStageLimitTransport(LLMTransport):
+        async def generate(self, req: LLMRequest) -> LLMResponse:
+            if req.stage == "stage1_screen":
+                txt = json.dumps(
+                    {
+                        "market_regime_summary": "LINKUSDT pullback setup.",
+                        "action": "DRILL_DOWN",
+                        "candidate_symbol": "LINKUSDT",
+                        "hold_blocker_code": "NONE",
+                        "candidate_rationale": "Strong bid wall at 15.0.",
+                        "estimated_edge_bps": 45.0,
+                    }
+                )
+            else:
+                txt = json.dumps(
+                    {
+                        "regime_read": "LINKUSDT 1h pullback into demand.",
+                        "primary_edge": "Replacing stale LIMIT at better fill 15.05.",
+                        "counter_thesis": "BTC weakness drags LINK.",
+                        "invalidation_price": 14.80,
+                        "action": "OPEN_LONG",
+                        "symbol": "LINKUSDT",
+                        "hold_blocker_code": "NONE",
+                        "thesis_status": "NEW",
+                        "confidence": 0.74,
+                        "order_type": "LIMIT",
+                        "entry_price": 15.05,
+                        "sl_price": 14.80,
+                        "tp_price": 15.60,
+                        "margin_vst": 250.0,
+                        "leverage": 10,
+                    }
+                )
+            u = UsageRecordV1(
+                record_id=f"rep-{req.stage}",
+                decision_id=req.decision_id,
+                stage=req.stage,
+                transport=TransportChannel.AGY_CLI_PROXY,
+                model_provider_id=req.model,
+                agy_alias=f"{req.model}-low",
+                thinking_level=req.thinking_level,
+                request_status=RequestStatus.OK,
+                provider_input_tokens=1000,
+                output_tokens=50,
+                total_tokens=1050,
+                input_chars=100,
+                output_chars=len(txt),
+                latency_ms=1.0,
+                timeout_ms=1000.0,
+            )
+            self.ledger.record_usage(u)
+            return LLMResponse(text=txt, usage=u)
+
+        async def count_tokens(self, model: str, text_parts: list[str], images: Any = None) -> dict[str, int]:
+            return {}
+
+        async def close(self) -> None:
+            return None
+
+    class _ReplaceLimitClient:
+        _qe_sandbox_verified = True
+
+        def __init__(self) -> None:
+            self.events: list[tuple[str, Any]] = []
+
+        def cancel_order(self, oid: str, symbol: str) -> dict[str, Any]:
+            self.events.append(("cancel", oid, symbol))
+            return {"id": oid, "status": "canceled"}
+
+        def create_order(self, **kwargs: Any) -> dict[str, Any]:
+            self.events.append(("create", kwargs.get("symbol"), kwargs.get("price")))
+            return {"id": "new-lim-2", "status": "open", "filled": 0.0, "price": kwargs.get("price")}
+
+    client = _ReplaceLimitClient()
+    u_ledger = UsageLedger(tmp_path / "rep_u.sqlite3")
+    o_ledger = OrderLedger(tmp_path / "rep_o.sqlite3")
+    executor = LeanExecutor(client, o_ledger, LeanRiskGuard(RiskConfig.for_qe_isolated_50x()))
+    bridge = HarnessBridge(executor, journal_path=tmp_path / "rep_j.jsonl")
+    tr = _TwoStageLimitTransport(u_ledger)
+    orch = DeterministicTradingOrchestrator(transport=tr, ledger=u_ledger, bridge=bridge)
+
+    bundle = PreFetchedBundle(
+        snapshot_id="snap-rep-lim",
+        vst_status={
+            "balance_vst": {"free": 5000.0, "total": 5000.0, "used": 0.0},
+            "open_positions": [],
+            "open_orders": [
+                {
+                    "id": "old-lim-1",
+                    "symbol": "LINKUSDT",
+                    "rawType": "LIMIT",
+                    "type": "limit",
+                    "reduceOnly": False,
+                    "price": 15.10,
+                    "amount": 100.0,
+                }
+            ],
+        },
+        contexts_by_symbol={
+            "LINKUSDT": {
+                "market_snapshot": {"symbol": "LINKUSDT", "last_price": 15.20, "spread_bps": 10.0},
+                "ohlcv_by_tf": {"15m": [], "1h": []},
+            }
+        },
+        fetch_ms=1.0,
+    )
+    try:
+        audit = asyncio.run(orch.run_decision_cycle(bundle, dry_run=False))
+        assert audit.execution_result is not None
+        assert audit.execution_result["replaced_entry_order_ids"] == ["old-lim-1"]
+        assert client.events[0] == ("cancel", "old-lim-1", "LINK/USDT:USDT")
+        assert client.events[1][0] == "create"
+    finally:
+        u_ledger.close()
+
+
+def test_equity_breakdown_separates_open_order_margin_from_true_pnl() -> None:
+    vst_status = {
+        "balance_vst": {"free": 7213.0, "total": 7213.0, "used": 0.0},
+        "open_orders": [
+            {
+                "id": "lim-1",
+                "symbol": "LINKUSDT",
+                "rawType": "LIMIT",
+                "reduceOnly": False,
+                "price": 15.0,
+                "amount": 9290.0,
+                "leverage": 50,
+            },
+            {
+                "id": "sl-1",
+                "symbol": "LINKUSDT",
+                "rawType": "STOP_MARKET",
+                "reduceOnly": True,
+                "price": 14.5,
+                "amount": 100.0,
+            },
+        ],
+    }
+    bd = session_runner._compute_equity_breakdown(vst_status, default_leverage=50)
+    assert bd["free_vst"] == 7213.0
+    assert bd["open_orders_est_margin_vst"] == 2787.0
+    assert bd["total_vst"] == 10000.0

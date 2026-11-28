@@ -35,8 +35,10 @@ from quantum_edge_core.execution.bingx_vst_adapter import (
     GLOBAL_API_BUDGET_STATS,
     OhlcvRamTtlCache,
     _exec_rest_call,
+    cancel_vst_order_by_id,
     fetch_full_vst_context,
     fetch_vst_status,
+    is_vst_sandbox_client,
     normalize_compact_symbol,
     to_ccxt_swap_symbol,
 )
@@ -123,7 +125,9 @@ class LocalForecastProvider:
         self.refit_interval_sec = float(refit_interval_sec)
         self.random_state = int(random_state)
         self._pipelines: dict[str, tuple[float, Any]] = {}
+        self._hmm_1h: dict[str, tuple[float, Any]] = {}
         self.last_used_tf_by_symbol: dict[str, str] = {}
+        self.last_hmm_tf_by_symbol: dict[str, str] = {}
 
     @staticmethod
     def _bars_to_ohlcv_df(bars: Sequence[Any]) -> pd.DataFrame:
@@ -160,8 +164,8 @@ class LocalForecastProvider:
         *,
         now_monotonic: float | None = None,
     ) -> dict[str, ForecastBundleV1]:
-        """Fit/reuse cached in-RAM ForecastPipelines and return per-symbol ForecastBundleV1."""
-        from quantum_edge_ml.forecasting.pipeline import ForecastPipeline
+        """Fit/reuse cached in-RAM ForecastPipelines (15m LGBM + 1h CausalHMM) and return ForecastBundleV1."""
+        from quantum_edge_ml.forecasting.pipeline import CausalHMMFilter, ForecastPipeline
 
         now = time.monotonic() if now_monotonic is None else float(now_monotonic)
         out: dict[str, ForecastBundleV1] = {}
@@ -196,9 +200,30 @@ class LocalForecastProvider:
                     self._pipelines[sym] = (now, pipe)
                 else:
                     pipe = cached[1]
+
+                hmm_features_override: np.ndarray | None = None
+                self.last_hmm_tf_by_symbol[sym] = chosen_tf
+                bars_1h = ohlcv.get("1h") or []
+                if len(bars_1h) >= 60:
+                    df_1h = self._bars_to_ohlcv_df(bars_1h)
+                    if len(df_1h) >= 60 and df_1h["close"].nunique() >= 5:
+                        hmm_1h_x, _ = ForecastPipeline.build_causal_features(df_1h)
+                        cached_h = self._hmm_1h.get(sym)
+                        if cached_h is None or (now - cached_h[0]) >= self.refit_interval_sec:
+                            hmm_1h = CausalHMMFilter(
+                                n_states=3, random_state=self.random_state
+                            ).fit(hmm_1h_x)
+                            self._hmm_1h[sym] = (now, hmm_1h)
+                        else:
+                            hmm_1h = cached_h[1]
+                        pipe.hmm = hmm_1h
+                        hmm_features_override = hmm_1h_x
+                        self.last_hmm_tf_by_symbol[sym] = "1h"
+
                 out[sym] = pipe.predict_bundle(
                     symbol=sym,
                     ohlcv_df=df,
+                    hmm_features=hmm_features_override,
                     horizon=self.horizon,
                     horizon_steps=self.horizon_steps,
                 )
@@ -1136,6 +1161,31 @@ class DeterministicTradingOrchestrator:
                 lean_dict["leverage"] = sizing.leverage
                 decision_payload["sizing"] = sizing.to_audit_dict()
 
+            replaced_entry_ids: list[str] = []
+            if (
+                not dry_run
+                and decision_v2.action in ("OPEN_LONG", "OPEN_SHORT")
+                and decision_v2.order_type == "LIMIT"
+            ):
+                ex_client = getattr(
+                    getattr(self.bridge, "executor", None), "exchange_client", None
+                )
+                if ex_client is not None and is_vst_sandbox_client(ex_client):
+                    for ord_obj in scoped_bundle.vst_status.get("open_orders") or []:
+                        if (
+                            str(ord_obj.get("symbol") or "").upper() == decision_v2.symbol.upper()
+                            and ord_obj.get("reduceOnly") is not True
+                            and str(ord_obj.get("rawType") or ord_obj.get("type") or "").upper()
+                            == "LIMIT"
+                            and ord_obj.get("id")
+                        ):
+                            oid_str = str(ord_obj["id"])
+                            c_res = cancel_vst_order_by_id(
+                                ex_client, decision_v2.symbol, oid_str
+                            )
+                            if c_res.get("cancelled"):
+                                replaced_entry_ids.append(oid_str)
+
             lean_dec = TradeDecision.model_validate(lean_dict)
             res = self.bridge.submit_decision(
                 lean_dec,
@@ -1146,6 +1196,8 @@ class DeterministicTradingOrchestrator:
                 position_qty=pos_qty,
             )
             exec_res = res.model_dump(mode="json")
+            if replaced_entry_ids:
+                exec_res["replaced_entry_order_ids"] = replaced_entry_ids
             if not dry_run:
                 self._notify_thesis_upsert(
                     decision_id=decision_id,

@@ -153,10 +153,34 @@ class _SessionMockTransport(LLMTransport):
         return None
 
 
-def _derive_regime_signature(forecasts: dict[str, Any]) -> str:
+def _derive_regime_signature(
+    forecasts: dict[str, Any],
+    contexts_by_symbol: dict[str, dict[str, Any]] | None = None,
+    serializer: MarketContextSerializer | None = None,
+) -> str:
+    """Derive stable 1d/4h DI-direction signature to avoid 15m HMM RESYNC churn."""
+    if contexts_by_symbol:
+        ser = serializer or MarketContextSerializer()
+        tags: list[str] = []
+        for sym in sorted(contexts_by_symbol.keys()):
+            ohlcv = (contexts_by_symbol[sym] or {}).get("ohlcv_by_tf") or {}
+            signs: list[str] = []
+            for tf in ("1d", "4h"):
+                bars = ohlcv.get(tf) or []
+                if bars:
+                    prof = ser.build_structural_profile(tf, bars)
+                    signs.append("UP" if float(prof.get("di_diff") or 0.0) >= 0.0 else "DOWN")
+            if not signs:
+                tags.append(f"{sym}:RANGE")
+            elif len(set(signs)) == 1:
+                tags.append(f"{sym}:{signs[0]}")
+            else:
+                tags.append(f"{sym}:MIXED")
+        return ",".join(tags) if tags else "STEADY"
+
     if not forecasts:
         return "STEADY"
-    tags: list[str] = []
+    tags = []
     for sym in sorted(forecasts.keys()):
         fc = forecasts[sym]
         rp = fc.regime_probs if hasattr(fc, "regime_probs") else (fc.get("regime_probs") or {})
@@ -167,6 +191,54 @@ def _derive_regime_signature(forecasts: dict[str, Any]) -> str:
             dom = "RANGE"
         tags.append(f"{sym}:{dom}")
     return ",".join(tags)
+
+
+def _compute_equity_breakdown(
+    vst_status: dict[str, Any],
+    *,
+    default_leverage: int = 50,
+) -> dict[str, float | None]:
+    """Compute free, locked-in-LIMIT-orders, and effective total VST equity."""
+    bal = (vst_status or {}).get("balance_vst") or {}
+
+    def _f(v: Any) -> float | None:
+        if v is None or v == "":
+            return None
+        try:
+            return float(v)
+        except (TypeError, ValueError):
+            return None
+
+    free_vst = _f(bal.get("free"))
+    total_raw = _f(bal.get("total"))
+    used_raw = _f(bal.get("used"))
+
+    lev_fallback = max(1, int(default_leverage))
+    open_orders_est_margin = 0.0
+    for ord_obj in (vst_status or {}).get("open_orders") or []:
+        if ord_obj.get("reduceOnly") is True:
+            continue
+        raw_t = str(ord_obj.get("rawType") or ord_obj.get("type") or "").upper()
+        if raw_t != "LIMIT":
+            continue
+        px = _f(ord_obj.get("price")) or _f(ord_obj.get("triggerPrice")) or 0.0
+        amt = _f(ord_obj.get("amount")) or 0.0
+        o_lev = _f(ord_obj.get("leverage")) or lev_fallback
+        if px > 0 and amt > 0:
+            open_orders_est_margin += (px * amt) / max(1.0, float(o_lev))
+
+    eff_used = max(used_raw or 0.0, open_orders_est_margin)
+    if free_vst is not None:
+        total_eff = round(max(total_raw or 0.0, free_vst + eff_used), 4)
+    else:
+        total_eff = total_raw
+
+    return {
+        "total_vst": total_eff,
+        "free_vst": round(free_vst, 4) if free_vst is not None else None,
+        "used_vst": round(eff_used, 4),
+        "open_orders_est_margin_vst": round(open_orders_est_margin, 4),
+    }
 
 
 def _format_tf_indicator_snippet(serializer: MarketContextSerializer, ctx: dict[str, Any], tf: str) -> str:
@@ -255,6 +327,10 @@ def _render_session_report(summary: dict[str, Any]) -> str:
         f"LAST_UPDATE_UTC={last_upd}",
         f"START_EQUITY_VST={start_eq}",
         f"CURRENT_OR_END_EQUITY_VST={cur_eq}",
+        f"END_EQUITY_TOTAL_VST={summary.get('end_equity_total_vst', cur_eq)}",
+        f"END_BALANCE_FREE_VST={summary.get('end_balance_free_vst')}",
+        f"OPEN_ORDERS_LOCKED_MARGIN_VST={summary.get('open_orders_locked_margin_vst', 0.0)}",
+        f"EST_TRUE_PNL_VST={net_pnl}",
         f"NET_PNL_VST={net_pnl}",
         f"CYCLES_COMPLETED={summary.get('cycles_count', len(cycles))}",
         f"CYCLE_ERRORS={summary.get('cycle_errors_count', len(errors))}",
@@ -452,6 +528,7 @@ async def run_persistent_session(
         allowed_symbols=symbols,
         interval_sec=float(args.protection_interval_sec),
         idle_interval_sec=float(getattr(args, "protection_idle_interval_sec", 25.0)),
+        limit_order_ttl_sec=max(0.0, float(getattr(args, "limit_order_ttl_min", 45.0)) * 60.0),
         enable_breakeven_sl=bool(getattr(args, "enable_breakeven_sl", True)),
         breakeven_trigger_pct=float(getattr(args, "be_trigger_pct", 0.50)),
         breakeven_offset_pct=float(getattr(args, "be_offset_pct", 0.20)),
@@ -499,7 +576,9 @@ async def run_persistent_session(
         rate_limiter=session_rate_limiter,
         stats=session_api_stats,
     )
-    start_equity_vst = (init_status.get("balance_vst") or {}).get("total")
+    start_eq_bd = _compute_equity_breakdown(init_status, default_leverage=args.max_leverage)
+    start_equity_vst = start_eq_bd["total_vst"]
+    cur_eq_bd: dict[str, float | None] = dict(start_eq_bd)
     _append_durable_event(
         event_log_path,
         "SESSION_START",
@@ -527,6 +606,7 @@ async def run_persistent_session(
         while not watcher._stop.is_set():
             try:
                 res = await watcher.check_once()
+                watcher.touch_feed_heartbeat()
                 watcher_runs += 1
                 new_acts = res.get("actions") or []
                 if new_acts:
@@ -656,7 +736,9 @@ async def run_persistent_session(
                 watcher.touch_feed_heartbeat()
 
                 forecasts = forecast_provider.build_forecasts(bundle)
-                regime_sig = _derive_regime_signature(forecasts)
+                regime_sig = _derive_regime_signature(
+                    forecasts, bundle.contexts_by_symbol, serializer
+                )
                 audit = await orchestrator.run_decision_cycle(
                     bundle,
                     trigger_summary=f"SESSION_CYCLE_{seq}",
@@ -801,7 +883,10 @@ async def run_persistent_session(
                     "forecast_symbols": sorted(forecasts.keys()),
                 }
                 cycles.append(cycle_rec)
-                cur_eq_live = (bundle.vst_status.get("balance_vst") or {}).get("total", start_equity_vst)
+                cur_eq_bd = _compute_equity_breakdown(
+                    bundle.vst_status, default_leverage=args.max_leverage
+                )
+                cur_eq_live = cur_eq_bd["total_vst"] if cur_eq_bd["total_vst"] is not None else start_equity_vst
                 _append_durable_event(
                     event_log_path,
                     "CYCLE_COMPLETE",
@@ -1011,7 +1096,8 @@ async def run_persistent_session(
             rate_limiter=session_rate_limiter,
             stats=session_api_stats,
         )
-        end_equity_vst = (end_status.get("balance_vst") or {}).get("total")
+        end_eq_bd = _compute_equity_breakdown(end_status, default_leverage=args.max_leverage)
+        end_equity_vst = end_eq_bd["total_vst"]
         end_scoped = scope_vst_status_to_symbols(end_status, symbols)
         usage_summary = usage_ledger.summarize()
         await transport.close()
@@ -1055,6 +1141,9 @@ async def run_persistent_session(
     summary["latest_session_ram_path"] = str(latest_session_path)
     summary["replay_path"] = str(replay_recorder.path) if replay_recorder is not None else None
     summary["event_log_path"] = str(event_log_path) if event_log_path is not None else None
+    summary["end_equity_total_vst"] = end_eq_bd["total_vst"]
+    summary["end_balance_free_vst"] = end_eq_bd["free_vst"]
+    summary["open_orders_locked_margin_vst"] = end_eq_bd["open_orders_est_margin_vst"]
 
     _append_durable_event(
         event_log_path,
@@ -1120,6 +1209,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument("--stage2-timeout", type=float, default=150.0)
     parser.add_argument("--be-trigger-pct", type=float, default=0.50, help="Breakeven SL trigger move pct (default: 0.50)")
     parser.add_argument("--be-offset-pct", type=float, default=0.20, help="Breakeven SL lock offset pct (default: 0.20)")
+    parser.add_argument("--limit-order-ttl-min", type=float, default=45.0, help="Cancel unfilled entry LIMIT orders older than N minutes (default: 45.0, 0=disabled)")
     parser.add_argument("--no-breakeven-sl", dest="enable_breakeven_sl", action="store_false", default=True, help="Disable deterministic breakeven SL move in watcher")
     parser.add_argument("--no-btc-leader", dest="include_btc_leader", action="store_false", default=True, help="Disable read-only BTC_LEADER pulse in PreFetchCoordinator")
     parser.add_argument("--hub-zmq-endpoint", default=None, help="Optional MarketDataHub ZMQ PUB endpoint (e.g. tcp://127.0.0.1:5555) for WS-First RAM snapshots")
